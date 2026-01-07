@@ -7,12 +7,15 @@ mimo_pack.egg-info/
 build/
 dist/
 dist/mimo_pack-0.0.0-py3.10.egg
+.history/
 
 # 大文件 - 不应该提交到 Git
 # 数据文件
 *.npy
 *.mp4
 *.tsv
+
+*.pth
 
 # MNIST 原始数据文件
 **/mnist_data_pytorch/MNIST/raw/*
