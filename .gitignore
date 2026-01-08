@@ -16,6 +16,7 @@ dist/mimo_pack-0.0.0-py3.10.egg
 *.tsv
 
 *.pth
+*.pkl
 
 # MNIST 原始数据文件
 **/mnist_data_pytorch/MNIST/raw/*
