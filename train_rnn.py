@@ -591,7 +591,7 @@ def find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=3
     optimal_batch_size = start_batch_size
     
     # Test different batch sizes
-    for batch_size in [start_batch_size, 64, 128, 256]:
+    for batch_size in [start_batch_size]:#, 64, 128, 256]:
         if batch_size > max_batch_size:
             break
         
@@ -660,8 +660,14 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=[1, 1],
     mdl.to(device)
     
     # Automatically set num_workers (based on CPU cores)
+    # In WSL, set num_workers=0 to avoid multiprocessing resource leaks
     if num_workers is None:
-        if psutil is not None:
+        # Check if running in WSL
+        is_wsl = os.name == 'posix' and os.path.exists('/mnt/c')
+        if is_wsl:
+            num_workers = 0  # Disable multiprocessing in WSL to avoid semaphore leaks
+            print("Running in WSL: setting num_workers=0 to avoid multiprocessing resource leaks")
+        elif psutil is not None:
             num_workers = min(4, psutil.cpu_count(logical=False))  # Use physical cores, max 4
         else:
             num_workers = min(4, os.cpu_count() or 1)  # fallback to os.cpu_count()
@@ -669,7 +675,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=[1, 1],
     # Automatically find optimal batch_size
     if batch_size is None and not isinstance(mdl, GaWFRNNConv):
         print("Automatically finding optimal batch_size...")
-        batch_size = find_optimal_batch_size(mdl, train_data, device=device)
+        batch_size = find_optimal_batch_size(mdl, train_data, device=device, start_batch_size=8)
         print(f"Using batch_size = {batch_size}")
     else:
         batch_size = 256
@@ -857,6 +863,24 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=[1, 1],
             print(train_str, val_str)
 
     torch.cuda.empty_cache()
+    
+    # Clean up DataLoader resources to prevent multiprocessing leaks
+    # This is especially important in WSL environments
+    try:
+        if hasattr(train_dl, '_iterator'):
+            train_dl._iterator = None
+        if hasattr(val_dl, '_iterator'):
+            val_dl._iterator = None
+        # Explicitly close DataLoader if it has workers
+        if num_workers > 0:
+            train_dl._shutdown_workers()
+            val_dl._shutdown_workers()
+    except Exception:
+        pass  # Ignore errors during cleanup
+    
+    # Force garbage collection
+    import gc
+    gc.collect()
 
     return {
         "train_acc_char": train_acc_char,
@@ -906,71 +930,114 @@ def save_results(results, filepath):
 
 # ==================== Main Training Code ====================
 if __name__ == "__main__":
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Train RNN models for sector classification')
-    parser.add_argument('--model_types', type=str, nargs='+', default=["rnn"],
-                        choices=["rnn", "lstm", "gru", "gawf", "ffn"],
-                        help='Model types to train (default: ["rnn"])')
-    parser.add_argument('--hidden_sizes', type=int, nargs='+', default=[256],
-                        help='Hidden sizes to test (default: [256])')
-    parser.add_argument('--num_epochs', type=int, default=200,
-                        help='Number of training epochs (default: 200)')
-    args = parser.parse_args()
-    
-    # Data path configuration
-    stim_train_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-train.npy"
-    label_train_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-train.tsv"
-    stim_val_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-validation.npy"
-    label_val_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-validation.tsv"
-    
-    # Load data
-    print("Loading data...")
-    stims_train = np.load(stim_train_path, allow_pickle=True)
-    lbls_train = pd.read_csv(label_train_path, sep="\t", index_col=0)
-    
-    stims_val = np.load(stim_val_path, allow_pickle=True)
-    lbls_val = pd.read_csv(label_val_path, sep="\t", index_col=0)
-    
-    # Create datasets (sector mode, 3x3 grid -> 9 sectors)
-    print("Creating datasets...")
-    train_ds_sector = MC_RNN_Dataset(stims_train, lbls_train, use_sector=True, num_sectors=9)
-    val_ds_sector = MC_RNN_Dataset(stims_val, lbls_val, use_sector=True, num_sectors=9)
-    
-    # Model class mapping
-    MODEL_CLASSES = {
-        "rnn": RNNConv,
-        "lstm": LSTMConv,
-        "gru": GRUConv,
-        "gawf": GaWFRNNConv,
-        "ffn": FeedForwardConv,
-    }
-    
-    # Training configuration (from command line arguments)
-    model_types = args.model_types
-    hidden_sizes = args.hidden_sizes
-    
-    # Modification settings: control gradient clipping and learning rate decay
-    use_modification = True  # Set to True to enable gradient clipping and LR decay, False to train in original way
-    
-    # Create results directory
-    results_dir = "results"
-    if not os.path.exists(results_dir):
-        os.makedirs(results_dir, exist_ok=True)
-        print(f"Created results directory: {results_dir}")
-    
-    # Training loop: 4 models × 3 hidden_sizes = 12 experiments
-    total_experiments = len(model_types) * len(hidden_sizes)
-    experiment_num = 0
-    
-    print(f"\n{'='*60}")
-    print(f"Starting training loop: {total_experiments} experiments")
-    print(f"Models: {model_types}")
-    print(f"Hidden sizes: {hidden_sizes}")
-    print(f"{'='*60}\n")
-    
-    for model_type in model_types:
-        for hidden_size in hidden_sizes:
-            experiment_num += 1
+    try:
+        # Parse command line arguments
+        parser = argparse.ArgumentParser(description='Train RNN models for sector classification')
+        parser.add_argument('--model_types', type=str, nargs='+', default=["rnn"],
+                            choices=["rnn", "lstm", "gru", "gawf", "ffn"],
+                            help='Model types to train (default: ["rnn"])')
+        parser.add_argument('--hidden_sizes', type=int, nargs='+', default=[256],
+                            help='Hidden sizes to test (default: [256])')
+        parser.add_argument('--num_epochs', type=int, default=200,
+                            help='Number of training epochs (default: 200)')
+        args = parser.parse_args()
+        
+        # Helper function to convert Windows path to WSL path if needed
+        def convert_to_wsl_path(windows_path):
+            """Convert Windows path to WSL path if running in WSL"""
+            try:
+                # Check if running in WSL by checking for /mnt/c directory
+                if os.name == 'posix' and os.path.exists('/mnt/c'):
+                    # Running in WSL, convert Windows path to WSL path
+                    # C:\Users\... -> /mnt/c/Users/...
+                    path = windows_path.replace('\\', '/')
+                    if path.startswith('C:/') or path.startswith('c:/'):
+                        path = '/mnt/c' + path[2:]
+                    return path
+                else:
+                    # Running on Windows, use as is
+                    return windows_path
+            except Exception as e:
+                # Fallback: assume Windows path format
+                print(f"Warning: Could not determine environment, using Windows path format. Error: {e}")
+                return windows_path
+        
+        # Data path configuration
+        # Base path: C:\Users\12265\Desktop\SJC\archive\Aim3\stimuli
+        base_path_windows = r"C:\Users\12265\Desktop\SJC\archive\Aim3\stimuli"
+        base_path = convert_to_wsl_path(base_path_windows)
+        stim_train_path = os.path.join(base_path, "stimulus_reg-train.npy")
+        label_train_path = os.path.join(base_path, "stimulus_reg-train.tsv")
+        stim_val_path = os.path.join(base_path, "stimulus_reg-validation.npy")
+        label_val_path = os.path.join(base_path, "stimulus_reg-validation.tsv")
+        
+        # Verify paths exist before loading
+        print(f"Checking data paths...")
+        print(f"Base path: {base_path}")
+        for path_name, path in [("train stim", stim_train_path), ("train label", label_train_path),
+                                 ("val stim", stim_val_path), ("val label", label_val_path)]:
+            if not os.path.exists(path):
+                print(f"ERROR: {path_name} path does not exist: {path}")
+                raise FileNotFoundError(f"Data file not found: {path}")
+            else:
+                print(f"  ✓ {path_name}: {path}")
+        
+        # Load data with error handling
+        print("\nLoading data...")
+        try:
+            stims_train = np.load(stim_train_path, allow_pickle=True)
+            print(f"  ✓ Loaded training stimuli: {stims_train.shape}")
+            lbls_train = pd.read_csv(label_train_path, sep="\t", index_col=0)
+            print(f"  ✓ Loaded training labels: {lbls_train.shape}")
+            
+            stims_val = np.load(stim_val_path, allow_pickle=True)
+            print(f"  ✓ Loaded validation stimuli: {stims_val.shape}")
+            lbls_val = pd.read_csv(label_val_path, sep="\t", index_col=0)
+            print(f"  ✓ Loaded validation labels: {lbls_val.shape}")
+        except Exception as e:
+            print(f"ERROR: Failed to load data files: {e}")
+            raise
+        
+        # Create datasets (sector mode, 3x3 grid -> 9 sectors)
+        print("Creating datasets...")
+        train_ds_sector = MC_RNN_Dataset(stims_train, lbls_train, use_sector=True, num_sectors=9)
+        val_ds_sector = MC_RNN_Dataset(stims_val, lbls_val, use_sector=True, num_sectors=9)
+        
+        # Model class mapping
+        MODEL_CLASSES = {
+            "rnn": RNNConv,
+            "lstm": LSTMConv,
+            "gru": GRUConv,
+            "gawf": GaWFRNNConv,
+            "ffn": FeedForwardConv,
+        }
+        
+        # Training configuration (from command line arguments)
+        model_types = args.model_types
+        hidden_sizes = args.hidden_sizes
+        
+        # Modification settings: control gradient clipping and learning rate decay
+        use_modification = True  # Set to True to enable gradient clipping and LR decay, False to train in original way
+        
+        # Create results directory
+        results_dir = "results"
+        if not os.path.exists(results_dir):
+            os.makedirs(results_dir, exist_ok=True)
+            print(f"Created results directory: {results_dir}")
+        
+        # Training loop: 4 models × 3 hidden_sizes = 12 experiments
+        total_experiments = len(model_types) * len(hidden_sizes)
+        experiment_num = 0
+        
+        print(f"\n{'='*60}")
+        print(f"Starting training loop: {total_experiments} experiments")
+        print(f"Models: {model_types}")
+        print(f"Hidden sizes: {hidden_sizes}")
+        print(f"{'='*60}\n")
+        
+        for model_type in model_types:
+            for hidden_size in hidden_sizes:
+                experiment_num += 1
             print(f"\n{'='*60}")
             print(f"Experiment {experiment_num}/{total_experiments}: {model_type.upper()} with hidden_size={hidden_size}")
             print(f"{'='*60}\n")
@@ -1026,9 +1093,28 @@ if __name__ == "__main__":
             
             save_results(results, results_path)
             print(f"Experiment {experiment_num}/{total_experiments} completed!\n")
+        
+        print(f"\n{'='*60}")
+        print(f"All {total_experiments} experiments completed!")
+        print(f"Results saved in: {results_dir}/")
+        print(f"{'='*60}\n")
     
-    print(f"\n{'='*60}")
-    print(f"All {total_experiments} experiments completed!")
-    print(f"Results saved in: {results_dir}/")
-    print(f"{'='*60}\n")
+    except KeyboardInterrupt:
+        print("\n\nTraining interrupted by user (Ctrl+C)")
+        print("Exiting gracefully...")
+        exit(0)
+    except FileNotFoundError as e:
+        print(f"\n\nERROR: File not found: {e}")
+        print("Please check that the data paths are correct.")
+        exit(1)
+    except MemoryError as e:
+        print(f"\n\nERROR: Out of memory: {e}")
+        print("Try reducing batch_size or using a smaller model.")
+        exit(1)
+    except Exception as e:
+        print(f"\n\nERROR: Unexpected error occurred: {e}")
+        import traceback
+        print("\nFull traceback:")
+        traceback.print_exc()
+        exit(1)
 

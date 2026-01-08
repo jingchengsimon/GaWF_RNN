@@ -2,6 +2,7 @@
 Standalone RNN Sector training script
 Used to train RNN models and save results
 """
+import argparse
 import pickle
 import numpy as np
 import pandas as pd
@@ -1022,6 +1023,17 @@ def save_results(results, filepath):
 if __name__ == "__main__":
     import os
     
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Train RNN models for sector classification')
+    parser.add_argument('--model_types', type=str, nargs='+', default=["lstm"],
+                        choices=["rnn", "lstm", "gru", "gawf"],
+                        help='Model types to train (default: ["lstm"])')
+    parser.add_argument('--hidden_sizes', type=int, nargs='+', default=[256],
+                        help='Hidden sizes to test (default: [256])')
+    parser.add_argument('--num_epochs', type=int, default=200,
+                        help='Number of training epochs (default: 200)')
+    args = parser.parse_args()
+    
     # Data path configuration
     stim_train_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-train.npy"
     label_train_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-train.tsv"
@@ -1062,9 +1074,9 @@ if __name__ == "__main__":
         "gawf": GaWFRNNConv,
     }
     
-    # Training configuration
-    model_types = ["lstm"]  # Models to train
-    hidden_sizes = [256]  # Hidden sizes to test
+    # Training configuration (from command line arguments)
+    model_types = args.model_types
+    hidden_sizes = args.hidden_sizes
     
     # Modification settings: control weight_decay, dropout_rate, and early stopping together
     use_modification = True  # Set to True to enable regularization modifications, False to disable
@@ -1120,7 +1132,7 @@ if __name__ == "__main__":
                 mdl, 
                 train_ds, 
                 val_ds, 
-                num_epochs=200, 
+                num_epochs=args.num_epochs, 
                 use_acceleration=use_acceleration,
                 use_modification=use_modification,
                 early_stopping_patience=15,
