@@ -5,6 +5,7 @@ Used to train RNN models and save results
 
 import os
 import pickle
+import argparse
 import numpy as np
 import pandas as pd
 import torch
@@ -905,6 +906,17 @@ def save_results(results, filepath):
 
 # ==================== Main Training Code ====================
 if __name__ == "__main__":
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Train RNN models for sector classification')
+    parser.add_argument('--model_types', type=str, nargs='+', default=["rnn"],
+                        choices=["rnn", "lstm", "gru", "gawf", "ffn"],
+                        help='Model types to train (default: ["rnn"])')
+    parser.add_argument('--hidden_sizes', type=int, nargs='+', default=[256],
+                        help='Hidden sizes to test (default: [256])')
+    parser.add_argument('--num_epochs', type=int, default=200,
+                        help='Number of training epochs (default: 200)')
+    args = parser.parse_args()
+    
     # Data path configuration
     stim_train_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-train.npy"
     label_train_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-train.tsv"
@@ -933,9 +945,9 @@ if __name__ == "__main__":
         "ffn": FeedForwardConv,
     }
     
-    # Training configuration
-    model_types = ["gawf"]  # Models to train
-    hidden_sizes = [128, 256, 512]  # Hidden sizes to test
+    # Training configuration (from command line arguments)
+    model_types = args.model_types
+    hidden_sizes = args.hidden_sizes
     
     # Modification settings: control gradient clipping and learning rate decay
     use_modification = True  # Set to True to enable gradient clipping and LR decay, False to train in original way
@@ -999,7 +1011,7 @@ if __name__ == "__main__":
                 mdl, 
                 train_ds_sector, 
                 val_ds_sector, 
-                num_epochs=200, 
+                num_epochs=args.num_epochs, 
                 loss_weights=[1.0, 1.0],
                 batch_size=None,  # Automatically find optimal value
                 use_amp=True,     # Use mixed precision training
