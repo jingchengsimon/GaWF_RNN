@@ -789,22 +789,31 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             elif isinstance(mdl, GaWFRNNConv):
                 print(f"Detected GaWFRNNConv model, skipping batch_size search, using default batch_size = {batch_size}")
             
-            # Automatically set num_workers 
-            # IMPORTANT: WSL-specific setting only applies in WSL environment
-            # In pure Linux environment, original multiprocessing settings will be used
+            # Automatically set num_workers and batch_size
+            # IMPORTANT: WSL-specific settings only apply in WSL environment
+            # In pure Linux environment, original multiprocessing and batch_size settings will be used
             is_wsl = os.name == 'posix' and os.path.exists('/mnt/c')
+            
             if is_wsl:
-                # WSL environment: disable multiprocessing to avoid semaphore leaks
+                # WSL environment: apply WSL-specific limitations
+                # 1. Disable multiprocessing to avoid semaphore leaks
                 num_workers = 0
-                print("Running in WSL: setting num_workers=0 to avoid multiprocessing resource leaks")
+                # 2. Limit batch_size to 8 to maintain convergence characteristics
+                if batch_size > 8:
+                    original_batch_size = batch_size
+                    batch_size = 8
+                    print(f"WSL environment: num_workers=0, batch_size limited from {original_batch_size} to {batch_size}")
+                else:
+                    print(f"WSL environment: num_workers=0, batch_size={batch_size}")
             else:
-                # Pure Linux or Windows: use original multiprocessing settings
+                # Pure Linux or Windows: use original settings
                 # This ensures original behavior is maintained when running on Linux servers
                 if psutil_module is not None:
                     num_workers = min(4, psutil_module.cpu_count(logical=False))
                 else:
                     num_workers = min(4, os.cpu_count() or 1)
-                print(f"Running in {'Linux' if os.name == 'posix' else 'Windows'}: using num_workers={num_workers} (original multiprocessing settings)")
+                env_name = 'Linux' if os.name == 'posix' else 'Windows'
+                print(f"{env_name} environment: num_workers={num_workers}, batch_size={batch_size} (using optimal settings without limitation)")
             
             # Enable pin_memory (GPU only)
             pin_memory = (device == 'cuda')
@@ -815,14 +824,6 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 scaler = GradScaler_cls('cuda')
                 print(f"Acceleration settings: batch_size={batch_size}, num_workers={num_workers}, "
                       f"pin_memory={pin_memory}, mixed precision training=enabled")
-            
-            # In acceleration mode, limit batch_size to no more than 32 to maintain same convergence characteristics as original mode
-            # Larger batch_size changes gradient estimation characteristics, may slow convergence
-            # Acceleration mainly achieved through mixed precision training, not by increasing batch_size
-            if batch_size > 8:
-                original_batch_size = batch_size
-                batch_size = 8
-                print(f"batch_size limited from {original_batch_size} to {batch_size} to maintain same convergence speed as original mode")
     # ========== Acceleration Module Initialization End ==========
     
     # Add weight decay (L2 regularization) to prevent overfitting
@@ -1413,6 +1414,10 @@ if __name__ == "__main__":
                         help='Number of training epochs (default: 200)')
     parser.add_argument('--result_suffix', type=str, default='',
                         help='Suffix to append to result file names for distinguishing different training runs (default: empty string)')
+    parser.add_argument('--use_sector_mode', action='store_true', default=False,
+                        help='Use sector mode (3x3 grid, 9 sectors) instead of coordinate mode (default: False)')
+    parser.add_argument('--predict_all_chars', action='store_true', default=False,
+                        help='Predict all characters (fg+bg) per frame instead of only foreground character (default: False)')
     args = parser.parse_args()
     
     # Helper function to convert Windows path to WSL path if needed
@@ -1484,9 +1489,9 @@ if __name__ == "__main__":
     
     # Create datasets (can choose sector mode or coordinate mode, and all-chars mode)
     print("Creating datasets...")
-    use_sector_mode = False  # Not used in all-chars mode
+    use_sector_mode = args.use_sector_mode
     use_acceleration = True  # Set to True to enable acceleration training, False to use original method
-    predict_all_chars = True  # Set to True to predict all characters (fg+bg), False for original mode
+    predict_all_chars = args.predict_all_chars
     max_chars = 10  # Maximum number of characters per frame (1 fg + up to 4 bg = 5, but use 10 for safety)
     
     if predict_all_chars:
