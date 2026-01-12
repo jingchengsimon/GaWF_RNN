@@ -1411,6 +1411,8 @@ if __name__ == "__main__":
                         help='Hidden sizes to test (default: [256])')
     parser.add_argument('--num_epochs', type=int, default=200,
                         help='Number of training epochs (default: 200)')
+    parser.add_argument('--result_suffix', type=str, default='',
+                        help='Suffix to append to result file names for distinguishing different training runs (default: empty string)')
     args = parser.parse_args()
     
     # Helper function to convert Windows path to WSL path if needed
@@ -1607,7 +1609,8 @@ if __name__ == "__main__":
             else:
                 mode_suffix = "coord"
             acc_suffix = "_acc" if use_acceleration else ""
-            results_path = os.path.join(results_dir, f"{model_type}_{mode_suffix}{acc_suffix}_h{hidden_size}")
+            result_suffix = f"_{args.result_suffix}" if args.result_suffix else ""
+            results_path = os.path.join(results_dir, f"{model_type}_{mode_suffix}{acc_suffix}_h{hidden_size}{result_suffix}")
             
             save_results(results, results_path)
             print(f"Experiment {experiment_num}/{total_experiments} completed!\n")
