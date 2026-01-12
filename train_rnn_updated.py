@@ -790,16 +790,21 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 print(f"Detected GaWFRNNConv model, skipping batch_size search, using default batch_size = {batch_size}")
             
             # Automatically set num_workers 
-            # In WSL, set num_workers=0 to avoid multiprocessing resource leaks
-            import os
+            # IMPORTANT: WSL-specific setting only applies in WSL environment
+            # In pure Linux environment, original multiprocessing settings will be used
             is_wsl = os.name == 'posix' and os.path.exists('/mnt/c')
             if is_wsl:
-                num_workers = 0  # Disable multiprocessing in WSL to avoid semaphore leaks
+                # WSL environment: disable multiprocessing to avoid semaphore leaks
+                num_workers = 0
                 print("Running in WSL: setting num_workers=0 to avoid multiprocessing resource leaks")
-            elif psutil_module is not None:
-                num_workers = min(4, psutil_module.cpu_count(logical=False))
             else:
-                num_workers = min(4, os.cpu_count() or 1)
+                # Pure Linux or Windows: use original multiprocessing settings
+                # This ensures original behavior is maintained when running on Linux servers
+                if psutil_module is not None:
+                    num_workers = min(4, psutil_module.cpu_count(logical=False))
+                else:
+                    num_workers = min(4, os.cpu_count() or 1)
+                print(f"Running in {'Linux' if os.name == 'posix' else 'Windows'}: using num_workers={num_workers} (original multiprocessing settings)")
             
             # Enable pin_memory (GPU only)
             pin_memory = (device == 'cuda')
