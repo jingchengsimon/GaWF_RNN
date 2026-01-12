@@ -3,6 +3,7 @@ Standalone RNN Sector training script
 Used to train RNN models and save results
 """
 import os
+import sys
 import argparse
 import pickle
 import numpy as np
@@ -950,7 +951,9 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         total_frames = 0
         
         # Use tqdm for validation progress bar
-        val_pbar = tqdm(data_loader, desc="[Val]", ncols=100, leave=False, unit="batch")
+        # Disable tqdm in non-interactive terminals to avoid display issues
+        use_tqdm = sys.stdout.isatty()
+        val_pbar = tqdm(data_loader, desc="[Val]", ncols=100, leave=False, unit="batch", disable=not use_tqdm)
         
         with torch.no_grad():
             for batch in val_pbar:
@@ -1102,9 +1105,11 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         print(f"Epoch {epoch + 1}/{num_epochs}: Starting training...")
         
         # Use tqdm for progress bar
+        # Disable tqdm in non-interactive terminals to avoid display issues
+        use_tqdm = sys.stdout.isatty()
         train_pbar = tqdm(enumerate(train_dl), total=len(train_dl), 
                          desc=f"Epoch {epoch + 1}/{num_epochs} [Train]",
-                         ncols=100, leave=False)
+                         ncols=100, leave=False, disable=not use_tqdm)
         
         for batch_idx, batch in train_pbar:
             inputs, labels = batch
