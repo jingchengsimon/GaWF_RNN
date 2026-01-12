@@ -3,7 +3,9 @@ Standalone RNN Sector training script
 Used to train RNN models and save results
 """
 import os
+import gc
 import sys
+import signal
 import argparse
 import pickle
 import numpy as np
@@ -1094,248 +1096,284 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     patience_counter = 0
     best_model_state = None
 
-    for epoch in range(num_epochs):
-        mdl.train()
-        
-        # Training loop
-        epoch_train_acc_char = 0.0
-        epoch_train_metric_pos = 0.0
-        num_batches = 0
-        
-        print(f"Epoch {epoch + 1}/{num_epochs}: Starting training...")
-        
-        # Use tqdm for progress bar
-        # Disable tqdm in non-interactive terminals to avoid display issues
-        use_tqdm = sys.stdout.isatty()
-        train_pbar = tqdm(enumerate(train_dl), total=len(train_dl), 
-                         desc=f"Epoch {epoch + 1}/{num_epochs} [Train]",
-                         ncols=100, leave=False, disable=not use_tqdm)
-        
-        for batch_idx, batch in train_pbar:
-            inputs, labels = batch
+    # Signal handler for graceful shutdown to prevent semaphore leaks
+    def cleanup_dataloaders(signum, frame):
+        """Clean up DataLoader workers when receiving termination signal"""
+        if use_acceleration and num_workers > 0:
+            print("\nReceived termination signal, cleaning up DataLoader workers...")
+            try:
+                if 'train_dl' in locals():
+                    train_dl._iterator = None
+                if 'val_dl' in locals():
+                    val_dl._iterator = None
+                import gc
+                gc.collect()
+            except:
+                pass
+        sys.exit(0)
+    
+    # Register signal handlers for graceful cleanup (only when using multiprocessing)
+    if use_acceleration and num_workers > 0:
+        signal.signal(signal.SIGTERM, cleanup_dataloaders)
+        signal.signal(signal.SIGINT, cleanup_dataloaders)
+
+    try:
+        for epoch in range(num_epochs):
+            mdl.train()
             
-            # Reset feedback at start of each batch (if GaWFRNNConv)
-            # This ensures feedback's batch_size and seq_len match current batch
-            if hasattr(mdl, 'prev_feedback'):
-                mdl.prev_feedback = None
+            # Training loop
+            epoch_train_acc_char = 0.0
+            epoch_train_metric_pos = 0.0
+            num_batches = 0
             
-            # Select data transfer method based on acceleration mode
-            if use_acceleration and pin_memory:
-                inputs = inputs.to(device, non_blocking=True)
-                labels = labels.to(device, non_blocking=True)
-            else:
-                labels = labels.to(device)
+            print(f"Epoch {epoch + 1}/{num_epochs}: Starting training...")
             
-            optim.zero_grad()
+            # Use tqdm for progress bar
+            # Disable tqdm in non-interactive terminals to avoid display issues
+            use_tqdm = sys.stdout.isatty()
+            train_pbar = tqdm(enumerate(train_dl), total=len(train_dl), 
+                             desc=f"Epoch {epoch + 1}/{num_epochs} [Train]",
+                             ncols=100, leave=False, disable=not use_tqdm)
             
-            # Select whether to use mixed precision training based on acceleration mode
-            if use_acceleration and scaler is not None and autocast_fn is not None:
-                with autocast_fn('cuda'):
+            for batch_idx, batch in train_pbar:
+                inputs, labels = batch
+                
+                # Reset feedback at start of each batch (if GaWFRNNConv)
+                # This ensures feedback's batch_size and seq_len match current batch
+                if hasattr(mdl, 'prev_feedback'):
+                    mdl.prev_feedback = None
+                
+                # Select data transfer method based on acceleration mode
+                if use_acceleration and pin_memory:
+                    inputs = inputs.to(device, non_blocking=True)
+                    labels = labels.to(device, non_blocking=True)
+                else:
+                    labels = labels.to(device)
+                
+                optim.zero_grad()
+                
+                # Select whether to use mixed precision training based on acceleration mode
+                if use_acceleration and scaler is not None and autocast_fn is not None:
+                    with autocast_fn('cuda'):
+                        out_char, out_pos = mdl(inputs)
+                        loss = loss_fn(out_char, out_pos, labels)
+                    
+                    scaler.scale(loss).backward()
+                    # Gradient clipping (mixed precision training)
+                    scaler.unscale_(optim)
+                    torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
+                    scaler.step(optim)
+                    scaler.update()
+                    current_loss = loss.item()
+                else:
+                    # Original method: standard training
                     out_char, out_pos = mdl(inputs)
                     loss = loss_fn(out_char, out_pos, labels)
+                    loss.backward()
+                    # Gradient clipping (standard training)
+                    torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
+                    optim.step()
+                    current_loss = loss.item()
                 
-                scaler.scale(loss).backward()
-                # Gradient clipping (mixed precision training)
-                scaler.unscale_(optim)
-                torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
-                scaler.step(optim)
-                scaler.update()
-                current_loss = loss.item()
-            else:
-                # Original method: standard training
-                out_char, out_pos = mdl(inputs)
-                loss = loss_fn(out_char, out_pos, labels)
-                loss.backward()
-                # Gradient clipping (standard training)
-                torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
-                optim.step()
-                current_loss = loss.item()
-            
-            # Calculate training metrics
-            if predict_all_chars:
-                # All-chars mode: use greedy matching to compute accuracy
-                # Optimize: only compute accuracy every N batches to speed up training
-                # Changed from every 10 batches to every 50 batches for better performance
-                if batch_idx % 50 == 0 or batch_idx == len(train_dl) - 1:
-                    batch_size, frame_num = labels.shape[:2]
-                    batch_correct = 0.0
-                    batch_total_chars = 0
-                    
-                    # Vectorized: compute softmax for all frames at once
-                    pred_probs = F.softmax(out_char, dim=-1)  # (B, T, max_chars, num_classes)
-                    
-                    for b in range(batch_size):
-                        for t in range(frame_num):
-                            true_chars = labels[b, t]  # (max_chars,)
-                            valid_mask = true_chars >= 0
-                            valid_true_chars = true_chars[valid_mask]
-                            
-                            if len(valid_true_chars) == 0:
-                                continue
-                            
-                            frame_probs = pred_probs[b, t]  # (max_chars, num_classes)
-                            frame_logits = out_char[b, t]  # (max_chars, num_classes)
-                            
-                            # Vectorized greedy matching (same as in loss function)
-                            used_mask = torch.zeros(max_chars, dtype=torch.bool, device=out_char.device)
-                            matched_correct = 0
-                            
-                            for true_char_id in valid_true_chars:
-                                # Vectorized: get probabilities and mask used slots
-                                char_probs = frame_probs[:, true_char_id]
-                                char_probs = char_probs.masked_fill(used_mask, -1.0)
-                                
-                                # Find best matching slot
-                                best_pred_idx = torch.argmax(char_probs).item()
-                                
-                                # Check if prediction is correct
-                                pred_char = torch.argmax(frame_logits[best_pred_idx]).item()
-                                true_char_val = true_char_id.item() if isinstance(true_char_id, torch.Tensor) else int(true_char_id)
-                                if pred_char == true_char_val:
-                                    matched_correct += 1
-                                
-                                # Update used mask
-                                used_mask[best_pred_idx] = True
-                            
-                            if len(valid_true_chars) > 0:
-                                batch_correct += matched_correct / len(valid_true_chars)
-                                batch_total_chars += 1
-                    
-                    if batch_total_chars > 0:
-                        # Scale by the number of batches we're actually computing accuracy for
-                        epoch_train_acc_char += (batch_correct / batch_total_chars) * 50  # Multiply by 50 since we compute every 50 batches
-                else:
-                    # For batches we skip, add a placeholder value (will be averaged out)
-                    epoch_train_acc_char += 0.0
-                # No position metric in all-chars mode
-            else:
-                # Original mode: single char + position
-                # Character accuracy (same for both modes)
-                epoch_train_acc_char += (torch.argmax(out_char, dim=2) == labels[:, :, 0].long()).float().mean().item()
-                
-                # Position-related metrics (different methods based on use_sector)
-                if use_sector:
-                    # sector mode: calculate accuracy
-                    epoch_train_metric_pos += (torch.argmax(out_pos, dim=2) == labels[:, :, 1].long()).float().mean().item()
-                else:
-                    # coordinate mode: calculate MSE
-                    labels_pos = labels[:, :, 1:].float()  # (B, T, 2)
-                    epoch_train_metric_pos += F.mse_loss(out_pos, labels_pos, reduction='mean').item()
-            
-            num_batches += 1
-            
-            # Update progress bar (every 10 batches to avoid too frequent updates)
-            if batch_idx % 10 == 0:
+                    # Calculate training metrics
                 if predict_all_chars:
-                    # All-chars mode: only show loss
-                    train_pbar.set_postfix({'loss': f'{current_loss:.4f}'})
+                    # All-chars mode: use greedy matching to compute accuracy
+                    # Optimize: only compute accuracy every N batches to speed up training
+                    # Changed from every 10 batches to every 50 batches for better performance
+                    if batch_idx % 50 == 0 or batch_idx == len(train_dl) - 1:
+                        batch_size, frame_num = labels.shape[:2]
+                        batch_correct = 0.0
+                        batch_total_chars = 0
+                        
+                        # Vectorized: compute softmax for all frames at once
+                        pred_probs = F.softmax(out_char, dim=-1)  # (B, T, max_chars, num_classes)
+                        
+                        for b in range(batch_size):
+                            for t in range(frame_num):
+                                true_chars = labels[b, t]  # (max_chars,)
+                                valid_mask = true_chars >= 0
+                                valid_true_chars = true_chars[valid_mask]
+                                
+                                if len(valid_true_chars) == 0:
+                                    continue
+                                
+                                frame_probs = pred_probs[b, t]  # (max_chars, num_classes)
+                                frame_logits = out_char[b, t]  # (max_chars, num_classes)
+                                
+                                # Vectorized greedy matching (same as in loss function)
+                                used_mask = torch.zeros(max_chars, dtype=torch.bool, device=out_char.device)
+                                matched_correct = 0
+                                
+                                for true_char_id in valid_true_chars:
+                                    # Vectorized: get probabilities and mask used slots
+                                    char_probs = frame_probs[:, true_char_id]
+                                    char_probs = char_probs.masked_fill(used_mask, -1.0)
+                                    
+                                    # Find best matching slot
+                                    best_pred_idx = torch.argmax(char_probs).item()
+                                    
+                                    # Check if prediction is correct
+                                    pred_char = torch.argmax(frame_logits[best_pred_idx]).item()
+                                    true_char_val = true_char_id.item() if isinstance(true_char_id, torch.Tensor) else int(true_char_id)
+                                    if pred_char == true_char_val:
+                                        matched_correct += 1
+                                    
+                                    # Update used mask
+                                    used_mask[best_pred_idx] = True
+                                
+                                if len(valid_true_chars) > 0:
+                                    batch_correct += matched_correct / len(valid_true_chars)
+                                    batch_total_chars += 1
+                        
+                        if batch_total_chars > 0:
+                            # Accumulate batch accuracy (0-1 range)
+                            # batch_correct / batch_total_chars is the average accuracy for this batch
+                            epoch_train_acc_char += (batch_correct / batch_total_chars)
+                    # For batches we skip, don't add anything (will be averaged correctly later)
+                    # No position metric in all-chars mode
                 else:
-                    # Original mode: show loss and pos info
-                    # Calculate current batch pos metric for display
+                    # Original mode: single char + position
+                    # Character accuracy (same for both modes)
+                    epoch_train_acc_char += (torch.argmax(out_char, dim=2) == labels[:, :, 0].long()).float().mean().item()
+                    
+                    # Position-related metrics (different methods based on use_sector)
                     if use_sector:
-                        # sector mode: calculate accuracy for current batch
-                        batch_pos_acc = (torch.argmax(out_pos, dim=2) == labels[:, :, 1].long()).float().mean().item() * 100
-                        train_pbar.set_postfix({
-                            'loss': f'{current_loss:.4f}',
-                            'pos_acc': f'{batch_pos_acc:.2f}%'
-                        })
+                        # sector mode: calculate accuracy
+                        epoch_train_metric_pos += (torch.argmax(out_pos, dim=2) == labels[:, :, 1].long()).float().mean().item()
                     else:
-                        # coordinate mode: calculate MSE for current batch
+                        # coordinate mode: calculate MSE
                         labels_pos = labels[:, :, 1:].float()  # (B, T, 2)
-                        batch_pos_mse = F.mse_loss(out_pos, labels_pos, reduction='mean').item()
-                        train_pbar.set_postfix({
-                            'loss': f'{current_loss:.4f}',
-                            'pos_mse': f'{batch_pos_mse:.2f}'
-                        })
+                        epoch_train_metric_pos += F.mse_loss(out_pos, labels_pos, reduction='mean').item()
+                
+                num_batches += 1
+                
+                # Update progress bar (every 10 batches to avoid too frequent updates)
+                if batch_idx % 10 == 0:
+                    if predict_all_chars:
+                        # All-chars mode: only show loss
+                        train_pbar.set_postfix({'loss': f'{current_loss:.4f}'})
+                    else:
+                        # Original mode: show loss and pos info
+                        # Calculate current batch pos metric for display
+                        if use_sector:
+                            # sector mode: calculate accuracy for current batch
+                            batch_pos_acc = (torch.argmax(out_pos, dim=2) == labels[:, :, 1].long()).float().mean().item() * 100
+                            train_pbar.set_postfix({
+                                'loss': f'{current_loss:.4f}',
+                                'pos_acc': f'{batch_pos_acc:.2f}%'
+                            })
+                        else:
+                            # coordinate mode: calculate MSE for current batch
+                            labels_pos = labels[:, :, 1:].float()  # (B, T, 2)
+                            batch_pos_mse = F.mse_loss(out_pos, labels_pos, reduction='mean').item()
+                            train_pbar.set_postfix({
+                                'loss': f'{current_loss:.4f}',
+                                'pos_mse': f'{batch_pos_mse:.2f}'
+                            })
+                
+                # Acceleration mode: periodically clear GPU cache
+                if use_acceleration and batch_idx % 100 == 0 and device == 'cuda':
+                    torch.cuda.empty_cache()
             
-            # Acceleration mode: periodically clear GPU cache
-            if use_acceleration and batch_idx % 100 == 0 and device == 'cuda':
-                torch.cuda.empty_cache()
-        
-        # Calculate epoch average metrics
-        if predict_all_chars:
-            # For all-chars mode, we compute accuracy every 50 batches, so divide by the number of times we computed it
-            num_acc_computations = max(1, (num_batches + 49) // 50)  # Round up division
-            train_acc_char[epoch] = (epoch_train_acc_char / num_acc_computations) * 100
-            train_metric_pos[epoch] = 0.0  # No position metric in all-chars mode
-        elif use_sector:
-            train_acc_char[epoch] = (epoch_train_acc_char / num_batches) * 100
-            train_metric_pos[epoch] = (epoch_train_metric_pos / num_batches) * 100  # accuracy (percentage)
-        else:
-            train_acc_char[epoch] = (epoch_train_acc_char / num_batches) * 100
-            train_metric_pos[epoch] = epoch_train_metric_pos / num_batches  # MSE (pixel squared)
-        
-        # Format output string
-        gpu_info = ""
-        if use_acceleration and show_gpu_usage and device == 'cuda' and torch.cuda.is_available():
-            gpu_mem = _get_gpu_memory_usage()
-            gpu_info = f" | GPU memory: {gpu_mem:.1f}%"
-        
-        # Format output based on mode (ensure predict_all_chars is checked first)
-        if predict_all_chars:
-            # All-chars mode: only show character accuracy, no position
-            train_str = f"Epoch {epoch + 1}/{num_epochs} - Train (all chars acc): {train_acc_char[epoch]:.2f}%{gpu_info}"
-        elif use_sector:
-            train_str = f"Epoch {epoch + 1}/{num_epochs} - Train (char, sector): ({train_acc_char[epoch]:.2f}%, {train_metric_pos[epoch]:.2f}%){gpu_info}"
-        else:
-            train_str = f"Epoch {epoch + 1}/{num_epochs} - Train (char, pos): ({train_acc_char[epoch]:.2f}%, {train_metric_pos[epoch]:.2f} pix^2){gpu_info}"
-
-        # Training completed, now validate
-        with torch.no_grad():
-            val_acc_char[epoch], val_metric_pos[epoch] = evaluate(mdl, val_dl)
-            # Format validation output based on mode (ensure predict_all_chars is checked first)
+            # Calculate epoch average metrics
+            if predict_all_chars:
+                # For all-chars mode, we compute accuracy every 50 batches
+                # epoch_train_acc_char accumulates the average accuracy (0-1) for each computed batch
+                # Divide by the number of times we computed it to get the overall average, then convert to percentage
+                num_acc_computations = max(1, (num_batches + 49) // 50)  # Round up division: ceil(num_batches / 50)
+                train_acc_char[epoch] = (epoch_train_acc_char / num_acc_computations) * 100
+                train_metric_pos[epoch] = 0.0  # No position metric in all-chars mode
+            elif use_sector:
+                train_acc_char[epoch] = (epoch_train_acc_char / num_batches) * 100
+                train_metric_pos[epoch] = (epoch_train_metric_pos / num_batches) * 100  # accuracy (percentage)
+            else:
+                train_acc_char[epoch] = (epoch_train_acc_char / num_batches) * 100
+                train_metric_pos[epoch] = epoch_train_metric_pos / num_batches  # MSE (pixel squared)
+            
+            # Format output string
+            gpu_info = ""
+            if use_acceleration and show_gpu_usage and device == 'cuda' and torch.cuda.is_available():
+                gpu_mem = _get_gpu_memory_usage()
+                gpu_info = f" | GPU memory: {gpu_mem:.1f}%"
+            
+            # Format output based on mode (ensure predict_all_chars is checked first)
             if predict_all_chars:
                 # All-chars mode: only show character accuracy, no position
-                val_str = f" Validation (all chars acc): {val_acc_char[epoch]:.2f}%"
+                train_str = f"Epoch {epoch + 1}/{num_epochs} - Train (all chars acc): {train_acc_char[epoch]:.2f}%{gpu_info}"
             elif use_sector:
-                val_str = f" Validation (char, sector): ({val_acc_char[epoch]:.2f}%, {val_metric_pos[epoch]:.2f}%)"
+                train_str = f"Epoch {epoch + 1}/{num_epochs} - Train (char, sector): ({train_acc_char[epoch]:.2f}%, {train_metric_pos[epoch]:.2f}%){gpu_info}"
             else:
-                val_str = f" Validation (char, pos): ({val_acc_char[epoch]:.2f}%, {val_metric_pos[epoch]:.2f} pix^2)"
-            print(train_str, val_str)
-            
-            # Early stopping check: judge based on validation accuracy of main task (character recognition)
-            if use_early_stopping:
-                current_val_metric = val_acc_char[epoch]
-                if use_sector:
-                    # sector mode: use weighted average of character accuracy and sector accuracy
-                    current_val_metric = (val_acc_char[epoch] + val_metric_pos[epoch]) / 2.0
-                
-                improved = False
-                if use_sector:
-                    # sector mode: higher accuracy is better
-                    if current_val_metric > best_val_metric + min_delta:
-                        improved = True
+                train_str = f"Epoch {epoch + 1}/{num_epochs} - Train (char, pos): ({train_acc_char[epoch]:.2f}%, {train_metric_pos[epoch]:.2f} pix^2){gpu_info}"
+
+            # Training completed, now validate
+            with torch.no_grad():
+                val_acc_char[epoch], val_metric_pos[epoch] = evaluate(mdl, val_dl)
+                # Format validation output based on mode (ensure predict_all_chars is checked first)
+                if predict_all_chars:
+                    # All-chars mode: only show character accuracy, no position
+                    val_str = f" Validation (all chars acc): {val_acc_char[epoch]:.2f}%"
+                elif use_sector:
+                    val_str = f" Validation (char, sector): ({val_acc_char[epoch]:.2f}%, {val_metric_pos[epoch]:.2f}%)"
                 else:
-                    # coordinate mode: smaller MSE is better (but here use character accuracy as main metric)
-                    if current_val_metric > best_val_metric + min_delta:
-                        improved = True
+                    val_str = f" Validation (char, pos): ({val_acc_char[epoch]:.2f}%, {val_metric_pos[epoch]:.2f} pix^2)"
+                print(train_str, val_str)
                 
-                if improved:
-                    best_val_metric = current_val_metric
-                    best_val_epoch = epoch
-                    patience_counter = 0
-                    # Save best model state
-                    best_model_state = mdl.state_dict().copy()
-                    print(f"  ✓ Validation performance improved! Current best: {best_val_metric:.2f} (epoch {epoch + 1})")
-                else:
-                    patience_counter += 1
-                    if patience_counter >= early_stopping_patience:
-                        print(f"\nEarly stopping triggered: validation performance did not improve for {early_stopping_patience} epochs")
-                        print(f"Best validation performance: {best_val_metric:.2f} (epoch {best_val_epoch + 1})")
-                        # Restore best model
-                        if best_model_state is not None:
-                            mdl.load_state_dict(best_model_state)
-                            print("Best model state restored")
-                        break
+                # Early stopping check: judge based on validation accuracy of main task (character recognition)
+                if use_early_stopping:
+                    current_val_metric = val_acc_char[epoch]
+                    if use_sector:
+                        # sector mode: use weighted average of character accuracy and sector accuracy
+                        current_val_metric = (val_acc_char[epoch] + val_metric_pos[epoch]) / 2.0
+                    
+                    improved = False
+                    if use_sector:
+                        # sector mode: higher accuracy is better
+                        if current_val_metric > best_val_metric + min_delta:
+                            improved = True
+                    else:
+                        # coordinate mode: smaller MSE is better (but here use character accuracy as main metric)
+                        if current_val_metric > best_val_metric + min_delta:
+                            improved = True
+                    
+                    if improved:
+                        best_val_metric = current_val_metric
+                        best_val_epoch = epoch
+                        patience_counter = 0
+                        # Save best model state
+                        best_model_state = mdl.state_dict().copy()
+                        print(f"  ✓ Validation performance improved! Current best: {best_val_metric:.2f} (epoch {epoch + 1})")
+                    else:
+                        patience_counter += 1
+                        if patience_counter >= early_stopping_patience:
+                            print(f"\nEarly stopping triggered: validation performance did not improve for {early_stopping_patience} epochs")
+                            print(f"Best validation performance: {best_val_metric:.2f} (epoch {best_val_epoch + 1})")
+                            # Restore best model
+                            if best_model_state is not None:
+                                mdl.load_state_dict(best_model_state)
+                                print("Best model state restored")
+                            break
+    except (KeyboardInterrupt, SystemExit):
+        # Handle interruption gracefully
+        print("\nTraining interrupted, cleaning up resources...")
+    finally:
+        # Explicit resource cleanup for DataLoader to prevent semaphore leaks
+        # This is critical when using persistent_workers=True with multiprocessing
+        if use_acceleration and num_workers > 0:
+            try:
+                # Shutdown DataLoader workers properly to prevent semaphore leaks
+                if 'train_dl' in locals():
+                    train_dl._iterator = None
+                    del train_dl
+                if 'val_dl' in locals():
+                    val_dl._iterator = None
+                    del val_dl
+                
+                gc.collect()
+                print("DataLoader workers cleaned up successfully")
+            except Exception as e:
+                print(f"Warning: Error during DataLoader cleanup: {e}")
 
     torch.cuda.empty_cache()
-    
-    # Explicit resource cleanup for DataLoader to prevent semaphore leaks
-    # Especially important in WSL environment
-    if use_acceleration:
-        del train_dl, val_dl
-        import gc
-        gc.collect()
 
     # If early stopping triggered, only return actual trained epochs (epoch starts from 0, so actually trained epoch+1 epochs)
     actual_epochs = epoch + 1
@@ -1395,8 +1433,15 @@ def save_results(results, filepath):
     # Save model state dict (can be saved separately if needed)
     model_path = results_path.replace('.pkl', '_model.pth')
     if "model" in results:
-        # Verify model's num_pos before saving
-        saved_num_pos = results["model"].fcpos.out_features
+        # Check if model has fcpos (position prediction layer)
+        # In predict_all_chars mode, fcpos is None
+        if hasattr(results["model"], 'fcpos') and results["model"].fcpos is not None:
+            saved_num_pos = results["model"].fcpos.out_features
+            print(f"Model has position prediction layer (num_pos={saved_num_pos})")
+        elif hasattr(results["model"], 'predict_all_chars') and results["model"].predict_all_chars:
+            print("Model is in predict_all_chars mode (no position prediction)")
+        else:
+            print("Model does not have position prediction layer")
         torch.save(results["model"].state_dict(), model_path)
         print(f"Model state dict saved to: {model_path}")
     
