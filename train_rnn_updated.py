@@ -2,6 +2,7 @@
 Standalone RNN Sector training script
 Used to train RNN models and save results
 """
+import os
 import argparse
 import pickle
 import numpy as np
@@ -10,6 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+from tqdm import tqdm
 
 # ==================== Acceleration Training Modules (Optional) ====================
 # These modules are only used when use_acceleration=True
@@ -88,6 +90,12 @@ def _find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=
                 break
             else:
                 raise e
+        finally:
+            # Explicit cleanup of test_loader to prevent resource leaks
+            if 'test_loader' in locals():
+                del test_loader
+                import gc
+                gc.collect()
     
     torch.cuda.empty_cache()
     model.train()
@@ -96,22 +104,36 @@ def _find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=
 
 # ==================== Dataset Class ====================
 class MC_RNN_Dataset(Dataset):
-    def __init__(self, data, labels, frame_num=32, chan_num=2, use_sector=False, num_sectors=9):
+    def __init__(self, data, labels, frame_num=32, chan_num=2, use_sector=False, num_sectors=9, 
+                 max_chars=10, predict_all_chars=False):
         """
         Args:
             data (np.ndarray): Array of shape (num_samples, num_frames, height, width)
-            labels (np.ndarray): DataFrame with columns ['fg_char_id', 'fg_char_x', 'fg_char_y']
+            labels (np.ndarray): DataFrame with columns ['fg_char_id', 'fg_char_x', 'fg_char_y', 'bg_char_ids']
             frame_num (int): Number of frames to stack for input as multichannel image
             chan_num (int): Number of channels in the input images. Each channel is a previous frame.
             use_sector (bool): If True, map (x, y) position to sector id 0-(num_sectors-1)
             num_sectors (int): Number of sectors, e.g., 9 means 0-8 sectors (3x3 grid)
+            max_chars (int): Maximum number of characters per frame (for padding)
+            predict_all_chars (bool): If True, predict all characters (fg+bg), else only fg
         """
         self.data = data
-        self.labels = labels[['fg_char_id', 'fg_char_x', 'fg_char_y']].values
         self.frame_num = frame_num
         self.chan_num = chan_num
         self.use_sector = use_sector
         self.num_sectors = num_sectors
+        self.max_chars = max_chars
+        self.predict_all_chars = predict_all_chars
+        
+        if predict_all_chars:
+            # Store full DataFrame to access bg_char_ids
+            self.labels_df = labels
+            # Extract columns we need
+            self.fg_char_ids = labels['fg_char_id'].values
+            self.bg_char_ids_str = labels['bg_char_ids'].values
+        else:
+            # Original behavior: only fg char
+            self.labels = labels[['fg_char_id', 'fg_char_x', 'fg_char_y']].values
 
     def __len__(self):
         return (self.data.shape[0]-self.chan_num) // self.frame_num
@@ -130,46 +152,74 @@ class MC_RNN_Dataset(Dataset):
                                                                 axis=1)), axis=1)
         stacked_frames = stacked_frames.astype(np.float32)
 
-        # labels: (frame_num, 3) -> [char_id, x, y]
-        labels = self.labels[start_idx:end_idx].copy()
+        if self.predict_all_chars:
+            # New mode: predict all characters (fg + bg)
+            # Process each frame to extract all characters
+            all_chars_per_frame = []
+            for frame_idx in range(start_idx, end_idx):
+                # Get fg char
+                fg_char_id = int(self.fg_char_ids[frame_idx])
+                
+                # Get bg chars from comma-separated string
+                bg_chars_str = str(self.bg_char_ids_str[frame_idx])
+                if bg_chars_str and bg_chars_str != 'nan':
+                    bg_char_ids = [int(x) for x in bg_chars_str.split(',') if x.strip()]
+                else:
+                    bg_char_ids = []
+                
+                # Combine fg and bg chars
+                all_chars = [fg_char_id] + bg_char_ids
+                
+                # Pad to max_chars with -1 (no character)
+                padded_chars = all_chars[:self.max_chars] + [-1] * max(0, self.max_chars - len(all_chars))
+                all_chars_per_frame.append(padded_chars)
+            
+            # Convert to numpy array: (frame_num, max_chars)
+            labels = np.array(all_chars_per_frame, dtype=np.int64)
+        else:
+            # Original mode: only predict fg char
+            labels = self.labels[start_idx:end_idx].copy()
 
-        if self.use_sector:
-            # Use image width and height to map (x, y) to a grid_size x grid_size grid,
-            # obtaining sector id 0-(num_sectors-1) (e.g., num_sectors=9 -> 3x3 grid)
-            height = self.data.shape[-2]
-            width = self.data.shape[-1]
+            if self.use_sector:
+                # Use image width and height to map (x, y) to a grid_size x grid_size grid,
+                # obtaining sector id 0-(num_sectors-1) (e.g., num_sectors=9 -> 3x3 grid)
+                height = self.data.shape[-2]
+                width = self.data.shape[-1]
 
-            # Derive grid_size for each dimension from num_sectors (assuming num_sectors is a perfect square, e.g., 9, 16)
-            grid_size = int(np.sqrt(self.num_sectors))
-            if grid_size * grid_size != self.num_sectors:
-                raise ValueError(f"num_sectors={self.num_sectors} is not a perfect square, cannot form grid_size x grid_size grid")
+                # Derive grid_size for each dimension from num_sectors (assuming num_sectors is a perfect square, e.g., 9, 16)
+                grid_size = int(np.sqrt(self.num_sectors))
+                if grid_size * grid_size != self.num_sectors:
+                    raise ValueError(f"num_sectors={self.num_sectors} is not a perfect square, cannot form grid_size x grid_size grid")
 
-            x = labels[:, 1].astype(np.float32)
-            y = labels[:, 2].astype(np.float32)
+                x = labels[:, 1].astype(np.float32)
+                y = labels[:, 2].astype(np.float32)
 
-            # Normalize coordinates to [0, grid_size) then round, using (width-1)/(height-1) to avoid out-of-bounds
-            col = (x / max(width - 1, 1) * grid_size).astype(np.int64)
-            row = (y / max(height - 1, 1) * grid_size).astype(np.int64)
+                # Normalize coordinates to [0, grid_size) then round, using (width-1)/(height-1) to avoid out-of-bounds
+                col = (x / max(width - 1, 1) * grid_size).astype(np.int64)
+                row = (y / max(height - 1, 1) * grid_size).astype(np.int64)
 
-            # Prevent out-of-bounds due to numerical or boundary issues
-            col = np.clip(col, 0, grid_size - 1)
-            row = np.clip(row, 0, grid_size - 1)
+                # Prevent out-of-bounds due to numerical or boundary issues
+                col = np.clip(col, 0, grid_size - 1)
+                row = np.clip(row, 0, grid_size - 1)
 
-            # Encode sector id in row-major order: row * grid_size + col, range 0-(num_sectors-1)
-            sector = row * grid_size + col
+                # Encode sector id in row-major order: row * grid_size + col, range 0-(num_sectors-1)
+                sector = row * grid_size + col
 
-            # New label: [char_id, sector_id]
-            labels = np.stack([labels[:, 0].astype(np.int64), sector], axis=1)
+                # New label: [char_id, sector_id]
+                labels = np.stack([labels[:, 0].astype(np.int64), sector], axis=1)
 
         return stacked_frames, labels
 
 
 # ==================== Model Classes ====================
 class RNNConv(nn.Module):
-    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256):
+    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256, 
+                 max_chars=10, predict_all_chars=False):
         super(RNNConv, self).__init__()
         self.device = device
         self.dropout_rate = dropout_rate
+        self.max_chars = max_chars
+        self.predict_all_chars = predict_all_chars
         self.conv1 = nn.Conv2d(2, 32, kernel_size=kernel_size, padding='same')
         self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.LNorm1 = nn.LayerNorm([32, 48, 48])
@@ -180,8 +230,15 @@ class RNNConv(nn.Module):
         self.rnn = nn.RNN(input_size=64 * 12 * 12, hidden_size=hidden_size,
                           num_layers=1, batch_first=True)
         self.LNormRNN = nn.LayerNorm(hidden_size)
-        self.fcchar = nn.Linear(hidden_size, num_classes)
-        self.fcpos = nn.Linear(hidden_size, num_pos)
+        
+        if predict_all_chars:
+            # For predicting all chars: output (max_chars, num_classes) for each frame
+            self.fcchars = nn.Linear(hidden_size, max_chars * num_classes)
+            self.fcpos = None  # No position prediction in all-chars mode
+        else:
+            # Original: single char + position
+            self.fcchar = nn.Linear(hidden_size, num_classes)
+            self.fcpos = nn.Linear(hidden_size, num_pos)
         self.to(self.device)
 
     def encoder(self, x):
@@ -207,7 +264,15 @@ class RNNConv(nn.Module):
         return x
 
     def classifier(self, x):
-        return self.fcchar(x), self.fcpos(x)
+        if self.predict_all_chars:
+            # Output: (B, T, max_chars * num_classes) -> reshape to (B, T, max_chars, num_classes)
+            chars_out = self.fcchars(x)
+            batch_size, frame_num = chars_out.shape[:2]
+            num_classes = chars_out.shape[-1] // self.max_chars
+            chars_out = chars_out.view(batch_size, frame_num, self.max_chars, num_classes)
+            return chars_out, None
+        else:
+            return self.fcchar(x), self.fcpos(x)
 
     def forward(self, x):
         x = x.to(self.device)
@@ -464,10 +529,13 @@ class GaWFRNNConv(nn.Module):
 
 
 class GRUConv(nn.Module):
-    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256):
+    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
+                 max_chars=10, predict_all_chars=False):
         super(GRUConv, self).__init__()
         self.device = device
         self.dropout_rate = dropout_rate
+        self.max_chars = max_chars
+        self.predict_all_chars = predict_all_chars
         self.conv1 = nn.Conv2d(2, 32, kernel_size=kernel_size, padding='same')
         self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.LNorm1 = nn.LayerNorm([32, 48, 48])
@@ -477,8 +545,13 @@ class GRUConv(nn.Module):
         self.rnn = nn.GRU(input_size=64 * 12 * 12, hidden_size=hidden_size,
                           num_layers=1, batch_first=True)
         self.LNormRNN = nn.LayerNorm(hidden_size)
-        self.fcchar = nn.Linear(hidden_size, num_classes)
-        self.fcpos = nn.Linear(hidden_size, num_pos)
+        
+        if predict_all_chars:
+            self.fcchars = nn.Linear(hidden_size, max_chars * num_classes)
+            self.fcpos = None
+        else:
+            self.fcchar = nn.Linear(hidden_size, num_classes)
+            self.fcpos = nn.Linear(hidden_size, num_pos)
         self.to(self.device)
 
     def encoder(self, x):
@@ -503,7 +576,14 @@ class GRUConv(nn.Module):
         return x
 
     def classifier(self, x):
-        return self.fcchar(x), self.fcpos(x)
+        if self.predict_all_chars:
+            chars_out = self.fcchars(x)
+            batch_size, frame_num = chars_out.shape[:2]
+            num_classes = chars_out.shape[-1] // self.max_chars
+            chars_out = chars_out.view(batch_size, frame_num, self.max_chars, num_classes)
+            return chars_out, None
+        else:
+            return self.fcchar(x), self.fcpos(x)
 
     def forward(self, x):
         x = x.to(self.device)
@@ -528,10 +608,13 @@ class GRUConv(nn.Module):
 
 
 class LSTMConv(nn.Module):
-    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256):
+    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
+                 max_chars=10, predict_all_chars=False):
         super(LSTMConv, self).__init__()
         self.device = device
         self.dropout_rate = dropout_rate
+        self.max_chars = max_chars
+        self.predict_all_chars = predict_all_chars
         self.conv1 = nn.Conv2d(2, 32, kernel_size=kernel_size, padding='same')
         self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.LNorm1 = nn.LayerNorm([32, 48, 48])
@@ -541,8 +624,13 @@ class LSTMConv(nn.Module):
         self.rnn = nn.LSTM(input_size=64 * 12 * 12, hidden_size=hidden_size,
                            num_layers=1, batch_first=True)
         self.LNormRNN = nn.LayerNorm(hidden_size)
-        self.fcchar = nn.Linear(hidden_size, num_classes)
-        self.fcpos = nn.Linear(hidden_size, num_pos)
+        
+        if predict_all_chars:
+            self.fcchars = nn.Linear(hidden_size, max_chars * num_classes)
+            self.fcpos = None
+        else:
+            self.fcchar = nn.Linear(hidden_size, num_classes)
+            self.fcpos = nn.Linear(hidden_size, num_pos)
         self.to(self.device)
 
     def encoder(self, x):
@@ -567,7 +655,14 @@ class LSTMConv(nn.Module):
         return x
 
     def classifier(self, x):
-        return self.fcchar(x), self.fcpos(x)
+        if self.predict_all_chars:
+            chars_out = self.fcchars(x)
+            batch_size, frame_num = chars_out.shape[:2]
+            num_classes = chars_out.shape[-1] // self.max_chars
+            chars_out = chars_out.view(batch_size, frame_num, self.max_chars, num_classes)
+            return chars_out, None
+        else:
+            return self.fcchar(x), self.fcpos(x)
 
     def forward(self, x):
         x = x.to(self.device)
@@ -630,12 +725,17 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         early_stopping_patience: Early stopping patience, number of epochs without validation improvement, default 15
         min_delta: Minimum improvement threshold for early stopping, default 0.001
     """
-    # Get use_sector information from dataset
+    # Get use_sector and predict_all_chars information from dataset
     use_sector = train_data.use_sector
+    predict_all_chars = train_data.predict_all_chars
+    max_chars = train_data.max_chars if predict_all_chars else None
     
-    # Set default loss_weights based on use_sector
+    # Set default loss_weights based on mode
     if loss_weights is None:
-        if use_sector:
+        if predict_all_chars:
+            # All-chars mode: only predict character identity, no position prediction
+            loss_weights = [1, 0]  # Only character loss, no position loss
+        elif use_sector:
             loss_weights = [1, 1]  # sector mode: character and sector loss weights equal
         else:
             loss_weights = [1, 0.001]  # coordinate mode: position loss weight smaller (MSE usually has larger values)
@@ -684,16 +784,21 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             # Because GaWFRNNConv uses feedback mechanism, batch_size changes cause prev_feedback dimension mismatch
             if device == 'cuda' and not isinstance(mdl, GaWFRNNConv):
                 print("Automatically finding optimal batch_size...")
-                batch_size = _find_optimal_batch_size(mdl, train_data, device=device)
+                batch_size = _find_optimal_batch_size(mdl, train_data, device=device, start_batch_size=32)
                 print(f"Using batch_size = {batch_size}")
             elif isinstance(mdl, GaWFRNNConv):
                 print(f"Detected GaWFRNNConv model, skipping batch_size search, using default batch_size = {batch_size}")
             
-            # Automatically set num_workers
-            if psutil_module is not None:
+            # Automatically set num_workers 
+            # In WSL, set num_workers=0 to avoid multiprocessing resource leaks
+            import os
+            is_wsl = os.name == 'posix' and os.path.exists('/mnt/c')
+            if is_wsl:
+                num_workers = 0  # Disable multiprocessing in WSL to avoid semaphore leaks
+                print("Running in WSL: setting num_workers=0 to avoid multiprocessing resource leaks")
+            elif psutil_module is not None:
                 num_workers = min(4, psutil_module.cpu_count(logical=False))
             else:
-                import os
                 num_workers = min(4, os.cpu_count() or 1)
             
             # Enable pin_memory (GPU only)
@@ -709,9 +814,9 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             # In acceleration mode, limit batch_size to no more than 32 to maintain same convergence characteristics as original mode
             # Larger batch_size changes gradient estimation characteristics, may slow convergence
             # Acceleration mainly achieved through mixed precision training, not by increasing batch_size
-            if batch_size > 32:
+            if batch_size > 8:
                 original_batch_size = batch_size
-                batch_size = 32
+                batch_size = 8
                 print(f"batch_size limited from {original_batch_size} to {batch_size} to maintain same convergence speed as original mode")
     # ========== Acceleration Module Initialization End ==========
     
@@ -726,26 +831,109 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         criterion_pos = nn.MSELoss()  # coordinate regression
     
     def loss_fn(out_char, out_pos, labels):
-        # Character loss (same for both modes)
-        labels_char = labels[:, :, 0].long().view(-1)
-        outputs_char = out_char.view(-1, out_char.shape[-1])  # (B*T, num_classes)
-        loss_char = criterion_char(outputs_char, labels_char)
-        
-        # Position loss (different methods based on use_sector)
-        if use_sector:
-            # sector mode: classification loss
-            labels_pos = labels[:, :, 1].long().view(-1)
-            outputs_pos = out_pos.view(-1, out_pos.shape[-1])  # (B*T, num_sectors)
-            loss_pos = criterion_pos(outputs_pos, labels_pos)
+        if predict_all_chars:
+            # New mode: predict all characters (fg + bg)
+            # out_char: (B, T, max_chars, num_classes)
+            # labels: (B, T, max_chars) - each position is char_id or -1 (no char)
+            batch_size, frame_num, max_chars_pred, num_classes = out_char.shape
+            
+            # Vectorized: compute softmax for all frames at once
+            pred_probs = F.softmax(out_char, dim=-1)  # (B, T, max_chars, num_classes)
+            
+            total_loss = 0.0
+            total_valid_chars = 0
+            
+            # Process each frame independently (still need loop for greedy matching logic)
+            # But use vectorized operations within each frame
+            for b in range(batch_size):
+                for t in range(frame_num):
+                    # Get true characters for this frame (remove padding -1)
+                    true_chars = labels[b, t]  # (max_chars,)
+                    valid_mask = true_chars >= 0  # (max_chars,)
+                    valid_true_chars = true_chars[valid_mask]  # (num_valid_chars,)
+                    
+                    if len(valid_true_chars) == 0:
+                        continue  # Skip frames with no characters
+                    
+                    # Get predictions for this frame (already computed softmax)
+                    frame_probs = pred_probs[b, t]  # (max_chars, num_classes)
+                    frame_logits = out_char[b, t]  # (max_chars, num_classes)
+                    
+                    # Vectorized greedy matching: use torch operations instead of Python loops
+                    num_valid = len(valid_true_chars)
+                    
+                    # Create mask for used slots (vectorized)
+                    used_mask = torch.zeros(max_chars, dtype=torch.bool, device=out_char.device)
+                    
+                    # Pre-allocate arrays for matched pairs
+                    matched_pred_indices = []
+                    matched_true_chars = []
+                    
+                    # Greedy matching: process each true char
+                    for i, true_char_id in enumerate(valid_true_chars):
+                        # Vectorized: get probabilities for this char across all slots
+                        char_probs = frame_probs[:, true_char_id]  # (max_chars,)
+                        
+                        # Vectorized: mask out already used slots
+                        char_probs = char_probs.masked_fill(used_mask, -1.0)
+                        
+                        # Find best matching slot (vectorized)
+                        best_pred_idx = torch.argmax(char_probs).item()
+                        
+                        # Store matched pair
+                        matched_pred_indices.append(best_pred_idx)
+                        matched_true_chars.append(true_char_id)
+                        
+                        # Update used mask (vectorized)
+                        used_mask[best_pred_idx] = True
+                    
+                    # Vectorized loss computation: batch all matched pairs
+                    if len(matched_pred_indices) > 0:
+                        # Convert to tensors for vectorized operations
+                        matched_pred_indices_tensor = torch.tensor(matched_pred_indices, device=out_char.device)
+                        matched_true_chars_tensor = torch.tensor(matched_true_chars, dtype=torch.long, device=out_char.device)
+                        
+                        # Gather matched logits: (num_matched, num_classes)
+                        matched_logits = frame_logits[matched_pred_indices_tensor]  # (num_matched, num_classes)
+                        
+                        # Compute loss for all matched pairs at once (vectorized)
+                        batch_loss = criterion_char(matched_logits, matched_true_chars_tensor)
+                        total_loss += batch_loss
+                        total_valid_chars += len(matched_pred_indices)
+            
+            if total_valid_chars == 0:
+                loss_char = torch.tensor(0.0, device=out_char.device)
+            else:
+                loss_char = total_loss / total_valid_chars
+            
+            # No position loss in all-chars mode
+            loss_pos = torch.tensor(0.0, device=out_char.device)
         else:
-            # coordinate mode: regression loss (MSE)
-            labels_pos = labels[:, :, 1:].float()  # (B, T, 2) -> [x, y]
-            outputs_pos = out_pos  # (B, T, 2) -> [x, y]
-            loss_pos = criterion_pos(outputs_pos, labels_pos)
+            # Original mode: single char + position
+            # Character loss (same for both modes)
+            labels_char = labels[:, :, 0].long().view(-1)
+            outputs_char = out_char.view(-1, out_char.shape[-1])  # (B*T, num_classes)
+            loss_char = criterion_char(outputs_char, labels_char)
+            
+            # Position loss (different methods based on use_sector)
+            if use_sector:
+                # sector mode: classification loss
+                labels_pos = labels[:, :, 1].long().view(-1)
+                outputs_pos = out_pos.view(-1, out_pos.shape[-1])  # (B*T, num_sectors)
+                loss_pos = criterion_pos(outputs_pos, labels_pos)
+            else:
+                # coordinate mode: regression loss (MSE)
+                labels_pos = labels[:, :, 1:].float()  # (B, T, 2) -> [x, y]
+                outputs_pos = out_pos  # (B, T, 2) -> [x, y]
+                loss_pos = criterion_pos(outputs_pos, labels_pos)
 
         # Keep regularization consistent with original (if model doesn't have mdl.rnn, need corresponding modification)
-        rnn_hh = mdl.rnn.weight_hh_l0
-        rnn_hh_diag = torch.diagonal(rnn_hh).abs().sum()
+        if hasattr(mdl, 'rnn') and mdl.rnn is not None:
+            rnn_hh = mdl.rnn.weight_hh_l0
+            rnn_hh_diag = torch.diagonal(rnn_hh).abs().sum()
+        else:
+            rnn_hh_diag = torch.tensor(0.0, device=out_char.device)
+        
         loss = (loss_weights[0] * loss_char) + (loss_weights[1] * loss_pos) + rnn_hh_diag
         return loss
 
@@ -753,8 +941,13 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         mdl.eval()
         total_acc_char = 0
         total_metric_pos = 0  # sector mode: accuracy; coordinate mode: MSE
+        total_frames = 0
+        
+        # Use tqdm for validation progress bar
+        val_pbar = tqdm(data_loader, desc="[Val]", ncols=100, leave=False, unit="batch")
+        
         with torch.no_grad():
-            for batch in data_loader:
+            for batch in val_pbar:
                 inputs, labels = batch
                 
                 # Reset feedback at start of each batch (if GaWFRNNConv)
@@ -776,24 +969,77 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 else:
                     out_char, out_pos = mdl(inputs)
                 
-                # char accuracy (same for both modes)
-                total_acc_char += (torch.argmax(out_char, dim=2) == labels[:, :, 0].long()).float().mean().item()
-                
-                # Position-related metrics (different methods based on use_sector)
-                if use_sector:
-                    # sector mode: calculate accuracy
-                    total_metric_pos += (torch.argmax(out_pos, dim=2) == labels[:, :, 1].long()).float().mean().item()
+                if predict_all_chars:
+                    # New mode: evaluate all characters prediction
+                    # out_char: (B, T, max_chars, num_classes)
+                    # labels: (B, T, max_chars)
+                    batch_size, frame_num = labels.shape[:2]
+                    total_frames += batch_size * frame_num
+                    
+                    # Vectorized: compute softmax for all frames at once
+                    pred_probs = F.softmax(out_char, dim=-1)  # (B, T, max_chars, num_classes)
+                    
+                    # For each frame, match predictions to true chars and compute accuracy
+                    for b in range(batch_size):
+                        for t in range(frame_num):
+                            true_chars = labels[b, t]  # (max_chars,)
+                            valid_mask = true_chars >= 0
+                            valid_true_chars = true_chars[valid_mask]
+                            
+                            if len(valid_true_chars) == 0:
+                                continue
+                            
+                            frame_probs = pred_probs[b, t]  # (max_chars, num_classes)
+                            frame_logits = out_char[b, t]  # (max_chars, num_classes)
+                            
+                            # Vectorized greedy matching (same as in loss function)
+                            used_mask = torch.zeros(max_chars, dtype=torch.bool, device=out_char.device)
+                            matched_correct = 0
+                            
+                            for true_char_id in valid_true_chars:
+                                # Vectorized: get probabilities and mask used slots
+                                char_probs = frame_probs[:, true_char_id]
+                                char_probs = char_probs.masked_fill(used_mask, -1.0)
+                                
+                                # Find best matching slot
+                                best_pred_idx = torch.argmax(char_probs).item()
+                                
+                                # Check if prediction is correct
+                                pred_char = torch.argmax(frame_logits[best_pred_idx]).item()
+                                true_char_val = true_char_id.item() if isinstance(true_char_id, torch.Tensor) else int(true_char_id)
+                                if pred_char == true_char_val:
+                                    matched_correct += 1
+                                
+                                # Update used mask
+                                used_mask[best_pred_idx] = True
+                            
+                            # Accuracy = correct matches / total valid chars
+                            if len(valid_true_chars) > 0:
+                                total_acc_char += matched_correct / len(valid_true_chars)
                 else:
-                    # coordinate mode: calculate MSE
-                    labels_pos = labels[:, :, 1:].float()  # (B, T, 2)
-                    total_metric_pos += F.mse_loss(out_pos, labels_pos, reduction='mean').item()
+                    # Original mode: single char + position
+                    # char accuracy (same for both modes)
+                    total_acc_char += (torch.argmax(out_char, dim=2) == labels[:, :, 0].long()).float().mean().item()
+                    
+                    # Position-related metrics (different methods based on use_sector)
+                    if use_sector:
+                        # sector mode: calculate accuracy
+                        total_metric_pos += (torch.argmax(out_pos, dim=2) == labels[:, :, 1].long()).float().mean().item()
+                    else:
+                        # coordinate mode: calculate MSE
+                        labels_pos = labels[:, :, 1:].float()  # (B, T, 2)
+                        total_metric_pos += F.mse_loss(out_pos, labels_pos, reduction='mean').item()
         
         # Return results
-        acc_char = total_acc_char * 100 / len(data_loader)
-        if use_sector:
-            metric_pos = total_metric_pos * 100 / len(data_loader)  # accuracy (percentage)
+        if predict_all_chars:
+            acc_char = (total_acc_char / total_frames) * 100 if total_frames > 0 else 0.0
+            metric_pos = 0.0  # No position metric in all-chars mode
         else:
-            metric_pos = total_metric_pos / len(data_loader)  # MSE (pixel squared)
+            acc_char = total_acc_char * 100 / len(data_loader)
+            if use_sector:
+                metric_pos = total_metric_pos * 100 / len(data_loader)  # accuracy (percentage)
+            else:
+                metric_pos = total_metric_pos / len(data_loader)  # MSE (pixel squared)
         return acc_char, metric_pos
 
     # data loader (select different configurations based on acceleration mode)
@@ -818,6 +1064,16 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         # Original method: simple configuration
         train_dl = DataLoader(train_data, batch_size=32, shuffle=True)
         val_dl = DataLoader(val_data, batch_size=32, shuffle=False)  # validation set should not be shuffled
+    
+    # Print dataset and batch information
+    print(f"\nDataset Information:")
+    print(f"  Training dataset size: {len(train_data)} samples")
+    print(f"  Validation dataset size: {len(val_data)} samples")
+    print(f"  Batch size: {batch_size}")
+    print(f"  Number of batches per epoch: {len(train_dl)}")
+    print(f"  predict_all_chars mode: {predict_all_chars}")
+    print(f"  use_sector mode: {use_sector}")
+    print()
     train_acc_char = np.zeros(num_epochs)
     val_acc_char = np.zeros(num_epochs)
     train_metric_pos = np.zeros(num_epochs)  # sector mode: accuracy; coordinate mode: MSE
@@ -837,7 +1093,14 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         epoch_train_metric_pos = 0.0
         num_batches = 0
         
-        for batch_idx, batch in enumerate(train_dl):
+        print(f"Epoch {epoch + 1}/{num_epochs}: Starting training...")
+        
+        # Use tqdm for progress bar
+        train_pbar = tqdm(enumerate(train_dl), total=len(train_dl), 
+                         desc=f"Epoch {epoch + 1}/{num_epochs} [Train]",
+                         ncols=100, leave=False)
+        
+        for batch_idx, batch in train_pbar:
             inputs, labels = batch
             
             # Reset feedback at start of each batch (if GaWFRNNConv)
@@ -866,6 +1129,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
                 scaler.step(optim)
                 scaler.update()
+                current_loss = loss.item()
             else:
                 # Original method: standard training
                 out_char, out_pos = mdl(inputs)
@@ -874,31 +1138,120 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 # Gradient clipping (standard training)
                 torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
                 optim.step()
+                current_loss = loss.item()
             
             # Calculate training metrics
-            # Character accuracy (same for both modes)
-            epoch_train_acc_char += (torch.argmax(out_char, dim=2) == labels[:, :, 0].long()).float().mean().item()
-            
-            # Position-related metrics (different methods based on use_sector)
-            if use_sector:
-                # sector mode: calculate accuracy
-                epoch_train_metric_pos += (torch.argmax(out_pos, dim=2) == labels[:, :, 1].long()).float().mean().item()
+            if predict_all_chars:
+                # All-chars mode: use greedy matching to compute accuracy
+                # Optimize: only compute accuracy every N batches to speed up training
+                # Changed from every 10 batches to every 50 batches for better performance
+                if batch_idx % 50 == 0 or batch_idx == len(train_dl) - 1:
+                    batch_size, frame_num = labels.shape[:2]
+                    batch_correct = 0.0
+                    batch_total_chars = 0
+                    
+                    # Vectorized: compute softmax for all frames at once
+                    pred_probs = F.softmax(out_char, dim=-1)  # (B, T, max_chars, num_classes)
+                    
+                    for b in range(batch_size):
+                        for t in range(frame_num):
+                            true_chars = labels[b, t]  # (max_chars,)
+                            valid_mask = true_chars >= 0
+                            valid_true_chars = true_chars[valid_mask]
+                            
+                            if len(valid_true_chars) == 0:
+                                continue
+                            
+                            frame_probs = pred_probs[b, t]  # (max_chars, num_classes)
+                            frame_logits = out_char[b, t]  # (max_chars, num_classes)
+                            
+                            # Vectorized greedy matching (same as in loss function)
+                            used_mask = torch.zeros(max_chars, dtype=torch.bool, device=out_char.device)
+                            matched_correct = 0
+                            
+                            for true_char_id in valid_true_chars:
+                                # Vectorized: get probabilities and mask used slots
+                                char_probs = frame_probs[:, true_char_id]
+                                char_probs = char_probs.masked_fill(used_mask, -1.0)
+                                
+                                # Find best matching slot
+                                best_pred_idx = torch.argmax(char_probs).item()
+                                
+                                # Check if prediction is correct
+                                pred_char = torch.argmax(frame_logits[best_pred_idx]).item()
+                                true_char_val = true_char_id.item() if isinstance(true_char_id, torch.Tensor) else int(true_char_id)
+                                if pred_char == true_char_val:
+                                    matched_correct += 1
+                                
+                                # Update used mask
+                                used_mask[best_pred_idx] = True
+                            
+                            if len(valid_true_chars) > 0:
+                                batch_correct += matched_correct / len(valid_true_chars)
+                                batch_total_chars += 1
+                    
+                    if batch_total_chars > 0:
+                        # Scale by the number of batches we're actually computing accuracy for
+                        epoch_train_acc_char += (batch_correct / batch_total_chars) * 50  # Multiply by 50 since we compute every 50 batches
+                else:
+                    # For batches we skip, add a placeholder value (will be averaged out)
+                    epoch_train_acc_char += 0.0
+                # No position metric in all-chars mode
             else:
-                # coordinate mode: calculate MSE
-                labels_pos = labels[:, :, 1:].float()  # (B, T, 2)
-                epoch_train_metric_pos += F.mse_loss(out_pos, labels_pos, reduction='mean').item()
+                # Original mode: single char + position
+                # Character accuracy (same for both modes)
+                epoch_train_acc_char += (torch.argmax(out_char, dim=2) == labels[:, :, 0].long()).float().mean().item()
+                
+                # Position-related metrics (different methods based on use_sector)
+                if use_sector:
+                    # sector mode: calculate accuracy
+                    epoch_train_metric_pos += (torch.argmax(out_pos, dim=2) == labels[:, :, 1].long()).float().mean().item()
+                else:
+                    # coordinate mode: calculate MSE
+                    labels_pos = labels[:, :, 1:].float()  # (B, T, 2)
+                    epoch_train_metric_pos += F.mse_loss(out_pos, labels_pos, reduction='mean').item()
             
             num_batches += 1
+            
+            # Update progress bar (every 10 batches to avoid too frequent updates)
+            if batch_idx % 10 == 0:
+                if predict_all_chars:
+                    # All-chars mode: only show loss
+                    train_pbar.set_postfix({'loss': f'{current_loss:.4f}'})
+                else:
+                    # Original mode: show loss and pos info
+                    # Calculate current batch pos metric for display
+                    if use_sector:
+                        # sector mode: calculate accuracy for current batch
+                        batch_pos_acc = (torch.argmax(out_pos, dim=2) == labels[:, :, 1].long()).float().mean().item() * 100
+                        train_pbar.set_postfix({
+                            'loss': f'{current_loss:.4f}',
+                            'pos_acc': f'{batch_pos_acc:.2f}%'
+                        })
+                    else:
+                        # coordinate mode: calculate MSE for current batch
+                        labels_pos = labels[:, :, 1:].float()  # (B, T, 2)
+                        batch_pos_mse = F.mse_loss(out_pos, labels_pos, reduction='mean').item()
+                        train_pbar.set_postfix({
+                            'loss': f'{current_loss:.4f}',
+                            'pos_mse': f'{batch_pos_mse:.2f}'
+                        })
             
             # Acceleration mode: periodically clear GPU cache
             if use_acceleration and batch_idx % 100 == 0 and device == 'cuda':
                 torch.cuda.empty_cache()
         
         # Calculate epoch average metrics
-        train_acc_char[epoch] = (epoch_train_acc_char / num_batches) * 100
-        if use_sector:
+        if predict_all_chars:
+            # For all-chars mode, we compute accuracy every 50 batches, so divide by the number of times we computed it
+            num_acc_computations = max(1, (num_batches + 49) // 50)  # Round up division
+            train_acc_char[epoch] = (epoch_train_acc_char / num_acc_computations) * 100
+            train_metric_pos[epoch] = 0.0  # No position metric in all-chars mode
+        elif use_sector:
+            train_acc_char[epoch] = (epoch_train_acc_char / num_batches) * 100
             train_metric_pos[epoch] = (epoch_train_metric_pos / num_batches) * 100  # accuracy (percentage)
         else:
+            train_acc_char[epoch] = (epoch_train_acc_char / num_batches) * 100
             train_metric_pos[epoch] = epoch_train_metric_pos / num_batches  # MSE (pixel squared)
         
         # Format output string
@@ -907,14 +1260,23 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             gpu_mem = _get_gpu_memory_usage()
             gpu_info = f" | GPU memory: {gpu_mem:.1f}%"
         
-        if use_sector:
+        # Format output based on mode (ensure predict_all_chars is checked first)
+        if predict_all_chars:
+            # All-chars mode: only show character accuracy, no position
+            train_str = f"Epoch {epoch + 1}/{num_epochs} - Train (all chars acc): {train_acc_char[epoch]:.2f}%{gpu_info}"
+        elif use_sector:
             train_str = f"Epoch {epoch + 1}/{num_epochs} - Train (char, sector): ({train_acc_char[epoch]:.2f}%, {train_metric_pos[epoch]:.2f}%){gpu_info}"
         else:
             train_str = f"Epoch {epoch + 1}/{num_epochs} - Train (char, pos): ({train_acc_char[epoch]:.2f}%, {train_metric_pos[epoch]:.2f} pix^2){gpu_info}"
 
+        # Training completed, now validate
         with torch.no_grad():
             val_acc_char[epoch], val_metric_pos[epoch] = evaluate(mdl, val_dl)
-            if use_sector:
+            # Format validation output based on mode (ensure predict_all_chars is checked first)
+            if predict_all_chars:
+                # All-chars mode: only show character accuracy, no position
+                val_str = f" Validation (all chars acc): {val_acc_char[epoch]:.2f}%"
+            elif use_sector:
                 val_str = f" Validation (char, sector): ({val_acc_char[epoch]:.2f}%, {val_metric_pos[epoch]:.2f}%)"
             else:
                 val_str = f" Validation (char, pos): ({val_acc_char[epoch]:.2f}%, {val_metric_pos[epoch]:.2f} pix^2)"
@@ -956,12 +1318,26 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                         break
 
     torch.cuda.empty_cache()
+    
+    # Explicit resource cleanup for DataLoader to prevent semaphore leaks
+    # Especially important in WSL environment
+    if use_acceleration:
+        del train_dl, val_dl
+        import gc
+        gc.collect()
 
     # If early stopping triggered, only return actual trained epochs (epoch starts from 0, so actually trained epoch+1 epochs)
     actual_epochs = epoch + 1
     
-    # Return different key names based on use_sector, only return actual trained epochs
-    if use_sector:
+    # Return different key names based on mode, only return actual trained epochs
+    if predict_all_chars:
+        return {
+            "train_acc_char": train_acc_char[:actual_epochs],
+            "val_acc_char": val_acc_char[:actual_epochs],
+            "model": mdl.to("cpu"),
+            "actual_epochs": actual_epochs  # save actual trained epochs
+        }
+    elif use_sector:
         return {
             "train_acc_char": train_acc_char[:actual_epochs],
             "val_acc_char": val_acc_char[:actual_epochs],
@@ -1021,8 +1397,6 @@ def save_results(results, filepath):
 
 # ==================== Main Training Code ====================
 if __name__ == "__main__":
-    import os
-    
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Train RNN models for sector classification')
     parser.add_argument('--model_types', type=str, nargs='+', default=["lstm"],
@@ -1034,35 +1408,100 @@ if __name__ == "__main__":
                         help='Number of training epochs (default: 200)')
     args = parser.parse_args()
     
-    # Data path configuration
-    stim_train_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-train.npy"
-    label_train_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-train.tsv"
-    stim_val_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-validation.npy"
-    label_val_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-validation.tsv"
+    # Helper function to convert Windows path to WSL path if needed
+    def convert_to_wsl_path(windows_path):
+        """Convert Windows path to WSL path if running in WSL"""
+        try:
+            # Check if running in WSL by checking for /mnt/c directory
+            if os.name == 'posix' and os.path.exists('/mnt/c'):
+                # Running in WSL, convert Windows path to WSL path
+                # C:\Users\... -> /mnt/c/Users/...
+                path = windows_path.replace('\\', '/')
+                if path.startswith('C:/') or path.startswith('c:/'):
+                    path = '/mnt/c' + path[2:]
+                return path
+            else:
+                # Running on Windows, use as is
+                return windows_path
+        except Exception as e:
+            # Fallback: assume Windows path format
+            print(f"Warning: Could not determine environment, using Windows path format. Error: {e}")
+            return windows_path
+    
+    # Data path configuration - dynamically adapt to running environment
+    # Detect running environment
+    is_wsl = os.name == 'posix' and os.path.exists('/mnt/c')
+    is_linux = os.name == 'posix' and not os.path.exists('/mnt/c')
+    is_windows = os.name == 'nt'
+    
+    if is_wsl:
+        # Running in WSL: convert Windows path to WSL path
+        base_path_windows = r"C:\Users\12265\Desktop\SJC\archive\Aim3\stimuli"
+        base_path = convert_to_wsl_path(base_path_windows)
+        print(f"Detected WSL environment, using path: {base_path}")
+    elif is_linux:
+        # Running on Linux: use Linux path directly
+        base_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli"
+        print(f"Detected Linux environment, using path: {base_path}")
+    else:
+        # Running on Windows: use Windows path directly
+        base_path = r"C:\Users\12265\Desktop\SJC\archive\Aim3\stimuli"
+        print(f"Detected Windows environment, using path: {base_path}")
+    stim_train_path = os.path.join(base_path, "stimulus_reg-train.npy")
+    label_train_path = os.path.join(base_path, "stimulus_reg-train.tsv")
+    stim_val_path = os.path.join(base_path, "stimulus_reg-validation.npy")
+    label_val_path = os.path.join(base_path, "stimulus_reg-validation.tsv")
+    
+    # Verify paths exist before loading
+    print(f"Checking data paths...")
+    print(f"Base path: {base_path}")
+    for path_name, path in [("train stim", stim_train_path), ("train label", label_train_path),
+                             ("val stim", stim_val_path), ("val label", label_val_path)]:
+        if not os.path.exists(path):
+            print(f"ERROR: {path_name} path does not exist: {path}")
+            raise FileNotFoundError(f"Data file not found: {path}")
+        else:
+            print(f"  ✓ {path_name}: {path}")
     
     # Load data
-    print("Loading data...")
+    print("\nLoading data...")
     stims_train = np.load(stim_train_path, allow_pickle=True)
+    print(f"  ✓ Loaded training stimuli: {stims_train.shape}")
     lbls_train = pd.read_csv(label_train_path, sep="\t", index_col=0)
+    print(f"  ✓ Loaded training labels: {lbls_train.shape}")
     
     stims_val = np.load(stim_val_path, allow_pickle=True)
+    print(f"  ✓ Loaded validation stimuli: {stims_val.shape}")
     lbls_val = pd.read_csv(label_val_path, sep="\t", index_col=0)
+    print(f"  ✓ Loaded validation labels: {lbls_val.shape}")
     
-    # Create datasets (can choose sector mode or coordinate mode)
+    # Create datasets (can choose sector mode or coordinate mode, and all-chars mode)
     print("Creating datasets...")
-    use_sector_mode = True   # Set to True to use sector mode, False to use coordinate mode
+    use_sector_mode = False  # Not used in all-chars mode
     use_acceleration = True  # Set to True to enable acceleration training, False to use original method
+    predict_all_chars = True  # Set to True to predict all characters (fg+bg), False for original mode
+    max_chars = 10  # Maximum number of characters per frame (1 fg + up to 4 bg = 5, but use 10 for safety)
     
-    if use_sector_mode:
+    if predict_all_chars:
+        # New mode: predict all characters (fg + bg)
+        train_ds = MC_RNN_Dataset(stims_train, lbls_train, use_sector=False, 
+                                  predict_all_chars=True, max_chars=max_chars)
+        val_ds = MC_RNN_Dataset(stims_val, lbls_val, use_sector=False,
+                                predict_all_chars=True, max_chars=max_chars)
+        num_pos = 0  # No position prediction in all-chars mode
+        print(f"Using all-chars mode: predict all characters (fg+bg) per frame, max_chars={max_chars}")
+    elif use_sector_mode:
         # sector mode: 3x3 grid -> 9 sectors
         num_pos = 9  # number of sectors
-        train_ds = MC_RNN_Dataset(stims_train, lbls_train, use_sector=True, num_sectors=num_pos)
-        val_ds = MC_RNN_Dataset(stims_val, lbls_val, use_sector=True, num_sectors=num_pos)
+        train_ds = MC_RNN_Dataset(stims_train, lbls_train, use_sector=True, num_sectors=num_pos,
+                                  predict_all_chars=False)
+        val_ds = MC_RNN_Dataset(stims_val, lbls_val, use_sector=True, num_sectors=num_pos,
+                                predict_all_chars=False)
         print("Using sector mode (3x3 grid, 9 sectors)")
     else:
         # coordinate mode: directly predict (x, y) coordinates
-        train_ds = MC_RNN_Dataset(stims_train, lbls_train, use_sector=False)
-        val_ds = MC_RNN_Dataset(stims_val, lbls_val, use_sector=False)
+        train_ds = MC_RNN_Dataset(stims_train, lbls_train, use_sector=False, predict_all_chars=False)
+        val_ds = MC_RNN_Dataset(stims_val, lbls_val, use_sector=False, predict_all_chars=False)
         num_pos = 2  # x, y coordinates
         print("Using coordinate mode (directly predict x, y coordinates)")
     
@@ -1117,9 +1556,24 @@ if __name__ == "__main__":
                 continue
             
             ModelClass = MODEL_CLASSES[model_type]
-            mdl = ModelClass(num_classes=10, num_pos=num_pos, kernel_size=5, 
-                           dropout_rate=dropout_rate, hidden_size=hidden_size)
-            print(f"Created {model_type.upper()} model (num_pos={num_pos}, dropout_rate={dropout_rate}, hidden_size={hidden_size})")
+            
+            # Create model with appropriate parameters
+            if predict_all_chars:
+                # All-chars mode: pass max_chars and predict_all_chars
+                if model_type == "gawf":
+                    print(f"Warning: GaWFRNNConv does not support predict_all_chars mode, skipping...")
+                    continue
+                mdl = ModelClass(num_classes=10, num_pos=0, kernel_size=5,
+                               dropout_rate=dropout_rate, hidden_size=hidden_size,
+                               max_chars=max_chars, predict_all_chars=True)
+                print(f"Created {model_type.upper()} model (predict_all_chars=True, max_chars={max_chars}, "
+                      f"dropout_rate={dropout_rate}, hidden_size={hidden_size})")
+            else:
+                # Original mode
+                mdl = ModelClass(num_classes=10, num_pos=num_pos, kernel_size=5,
+                               dropout_rate=dropout_rate, hidden_size=hidden_size)
+                print(f"Created {model_type.upper()} model (num_pos={num_pos}, dropout_rate={dropout_rate}, "
+                      f"hidden_size={hidden_size})")
             
             # Train model
             print("Starting training...")
@@ -1141,7 +1595,12 @@ if __name__ == "__main__":
             
             # Save training results
             print(f"\nSaving results for {model_type.upper()} (hidden_size={hidden_size})...")
-            mode_suffix = "sector" if use_sector_mode else "coord"
+            if predict_all_chars:
+                mode_suffix = "allchars"
+            elif use_sector_mode:
+                mode_suffix = "sector"
+            else:
+                mode_suffix = "coord"
             acc_suffix = "_acc" if use_acceleration else ""
             results_path = os.path.join(results_dir, f"{model_type}_{mode_suffix}{acc_suffix}_h{hidden_size}")
             

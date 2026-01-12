@@ -863,24 +863,6 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=[1, 1],
             print(train_str, val_str)
 
     torch.cuda.empty_cache()
-    
-    # Clean up DataLoader resources to prevent multiprocessing leaks
-    # This is especially important in WSL environments
-    try:
-        if hasattr(train_dl, '_iterator'):
-            train_dl._iterator = None
-        if hasattr(val_dl, '_iterator'):
-            val_dl._iterator = None
-        # Explicitly close DataLoader if it has workers
-        if num_workers > 0:
-            train_dl._shutdown_workers()
-            val_dl._shutdown_workers()
-    except Exception:
-        pass  # Ignore errors during cleanup
-    
-    # Force garbage collection
-    import gc
-    gc.collect()
 
     return {
         "train_acc_char": train_acc_char,
@@ -930,8 +912,7 @@ def save_results(results, filepath):
 
 # ==================== Main Training Code ====================
 if __name__ == "__main__":
-    try:
-        # Parse command line arguments
+    # Parse command line arguments
         parser = argparse.ArgumentParser(description='Train RNN models for sector classification')
         parser.add_argument('--model_types', type=str, nargs='+', default=["rnn"],
                             choices=["rnn", "lstm", "gru", "gawf", "ffn"],
@@ -962,10 +943,25 @@ if __name__ == "__main__":
                 print(f"Warning: Could not determine environment, using Windows path format. Error: {e}")
                 return windows_path
         
-        # Data path configuration
-        # Base path: C:\Users\12265\Desktop\SJC\archive\Aim3\stimuli
-        base_path_windows = r"C:\Users\12265\Desktop\SJC\archive\Aim3\stimuli"
-        base_path = convert_to_wsl_path(base_path_windows)
+        # Data path configuration - dynamically adapt to running environment
+        # Detect running environment
+        is_wsl = os.name == 'posix' and os.path.exists('/mnt/c')
+        is_linux = os.name == 'posix' and not os.path.exists('/mnt/c')
+        is_windows = os.name == 'nt'
+        
+        if is_wsl:
+            # Running in WSL: convert Windows path to WSL path
+            base_path_windows = r"C:\Users\12265\Desktop\SJC\archive\Aim3\stimuli"
+            base_path = convert_to_wsl_path(base_path_windows)
+            print(f"Detected WSL environment, using path: {base_path}")
+        elif is_linux:
+            # Running on Linux: use Linux path directly
+            base_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli"
+            print(f"Detected Linux environment, using path: {base_path}")
+        else:
+            # Running on Windows: use Windows path directly
+            base_path = r"C:\Users\12265\Desktop\SJC\archive\Aim3\stimuli"
+            print(f"Detected Windows environment, using path: {base_path}")
         stim_train_path = os.path.join(base_path, "stimulus_reg-train.npy")
         label_train_path = os.path.join(base_path, "stimulus_reg-train.tsv")
         stim_val_path = os.path.join(base_path, "stimulus_reg-validation.npy")
@@ -982,21 +978,17 @@ if __name__ == "__main__":
             else:
                 print(f"  ✓ {path_name}: {path}")
         
-        # Load data with error handling
+        # Load data
         print("\nLoading data...")
-        try:
-            stims_train = np.load(stim_train_path, allow_pickle=True)
-            print(f"  ✓ Loaded training stimuli: {stims_train.shape}")
-            lbls_train = pd.read_csv(label_train_path, sep="\t", index_col=0)
-            print(f"  ✓ Loaded training labels: {lbls_train.shape}")
-            
-            stims_val = np.load(stim_val_path, allow_pickle=True)
-            print(f"  ✓ Loaded validation stimuli: {stims_val.shape}")
-            lbls_val = pd.read_csv(label_val_path, sep="\t", index_col=0)
-            print(f"  ✓ Loaded validation labels: {lbls_val.shape}")
-        except Exception as e:
-            print(f"ERROR: Failed to load data files: {e}")
-            raise
+        stims_train = np.load(stim_train_path, allow_pickle=True)
+        print(f"  ✓ Loaded training stimuli: {stims_train.shape}")
+        lbls_train = pd.read_csv(label_train_path, sep="\t", index_col=0)
+        print(f"  ✓ Loaded training labels: {lbls_train.shape}")
+        
+        stims_val = np.load(stim_val_path, allow_pickle=True)
+        print(f"  ✓ Loaded validation stimuli: {stims_val.shape}")
+        lbls_val = pd.read_csv(label_val_path, sep="\t", index_col=0)
+        print(f"  ✓ Loaded validation labels: {lbls_val.shape}")
         
         # Create datasets (sector mode, 3x3 grid -> 9 sectors)
         print("Creating datasets...")
@@ -1038,83 +1030,64 @@ if __name__ == "__main__":
         for model_type in model_types:
             for hidden_size in hidden_sizes:
                 experiment_num += 1
-            print(f"\n{'='*60}")
-            print(f"Experiment {experiment_num}/{total_experiments}: {model_type.upper()} with hidden_size={hidden_size}")
-            print(f"{'='*60}\n")
-            
-            # Create model
-            if model_type not in MODEL_CLASSES:
-                print(f"Warning: Unsupported model type: {model_type}, skipping...")
-                continue
-            
-            ModelClass = MODEL_CLASSES[model_type]
-            
-            # FFN model needs different parameters (input_channels)
-            if model_type == "ffn":
-                # FFN uses frame_num * channels as input_channels
-                frame_num = train_ds_sector.frame_num  # Default 32
-                chan_num = train_ds_sector.chan_num    # Default 2
-                input_channels = frame_num * chan_num   # 64
-                mdl = ModelClass(input_channels=input_channels, num_classes=10, num_pos=9, 
-                               kernel_size=5, hidden_size=hidden_size)
-                print(f"Created {model_type.upper()} model (num_pos=9, hidden_size={hidden_size}, input_channels={input_channels})")
-            elif model_type == "gawf":
-                # GaWFRNNConv needs dropout_rate parameter
-                mdl = ModelClass(num_classes=10, num_pos=9, kernel_size=5, 
-                               dropout_rate=0.3, hidden_size=hidden_size)
-                print(f"Created {model_type.upper()} model (num_pos=9, hidden_size={hidden_size}, dropout_rate=0.3)")
-            else:
-                mdl = ModelClass(num_classes=10, num_pos=9, kernel_size=5, hidden_size=hidden_size)
-                print(f"Created {model_type.upper()} model (num_pos=9, hidden_size={hidden_size})")
-            
-            # Train model
-            print("Starting training...")
-            print("Optimization settings:")
-            print("  - Automatically find optimal batch_size")
-            print("  - Use mixed precision training (FP16)")
-            print("  - Optimize DataLoader (num_workers, pin_memory)")
-            
-            results = network_train(
-                mdl, 
-                train_ds_sector, 
-                val_ds_sector, 
-                num_epochs=args.num_epochs, 
-                loss_weights=[1.0, 1.0],
-                batch_size=None,  # Automatically find optimal value
-                use_amp=True,     # Use mixed precision training
-                num_workers=None, # Automatically set
-                pin_memory=True,  # Accelerate data transfer
-                use_modification=use_modification  # Control whether to enable modification settings
-            )
-            
-            # Save training results
-            print(f"\nSaving {model_type.upper()} (hidden_size={hidden_size}) results...")
-            results_path = os.path.join(results_dir, f"{model_type}_sector_h{hidden_size}")
-            
-            save_results(results, results_path)
-            print(f"Experiment {experiment_num}/{total_experiments} completed!\n")
+                print(f"\n{'='*60}")
+                print(f"Experiment {experiment_num}/{total_experiments}: {model_type.upper()} with hidden_size={hidden_size}")
+                print(f"{'='*60}\n")
+                
+                # Create model
+                if model_type not in MODEL_CLASSES:
+                    print(f"Warning: Unsupported model type: {model_type}, skipping...")
+                    continue
+                
+                ModelClass = MODEL_CLASSES[model_type]
+                
+                # FFN model needs different parameters (input_channels)
+                if model_type == "ffn":
+                    # FFN uses frame_num * channels as input_channels
+                    frame_num = train_ds_sector.frame_num  # Default 32
+                    chan_num = train_ds_sector.chan_num    # Default 2
+                    input_channels = frame_num * chan_num   # 64
+                    mdl = ModelClass(input_channels=input_channels, num_classes=10, num_pos=9, 
+                                   kernel_size=5, hidden_size=hidden_size)
+                    print(f"Created {model_type.upper()} model (num_pos=9, hidden_size={hidden_size}, input_channels={input_channels})")
+                elif model_type == "gawf":
+                    # GaWFRNNConv needs dropout_rate parameter
+                    mdl = ModelClass(num_classes=10, num_pos=9, kernel_size=5, 
+                                   dropout_rate=0.3, hidden_size=hidden_size)
+                    print(f"Created {model_type.upper()} model (num_pos=9, hidden_size={hidden_size}, dropout_rate=0.3)")
+                else:
+                    mdl = ModelClass(num_classes=10, num_pos=9, kernel_size=5, hidden_size=hidden_size)
+                    print(f"Created {model_type.upper()} model (num_pos=9, hidden_size={hidden_size})")
+                
+                # Train model
+                print("Starting training...")
+                print("Optimization settings:")
+                print("  - Automatically find optimal batch_size")
+                print("  - Use mixed precision training (FP16)")
+                print("  - Optimize DataLoader (num_workers, pin_memory)")
+                
+                results = network_train(
+                    mdl, 
+                    train_ds_sector, 
+                    val_ds_sector, 
+                    num_epochs=args.num_epochs, 
+                    loss_weights=[1.0, 1.0],
+                    batch_size=None,  # Automatically find optimal value
+                    use_amp=True,     # Use mixed precision training
+                    num_workers=None, # Automatically set
+                    pin_memory=True,  # Accelerate data transfer
+                    use_modification=use_modification  # Control whether to enable modification settings
+                )
+                
+                # Save training results
+                print(f"\nSaving {model_type.upper()} (hidden_size={hidden_size}) results...")
+                results_path = os.path.join(results_dir, f"{model_type}_sector_h{hidden_size}")
+                
+                save_results(results, results_path)
+                print(f"Experiment {experiment_num}/{total_experiments} completed!\n")
         
         print(f"\n{'='*60}")
         print(f"All {total_experiments} experiments completed!")
         print(f"Results saved in: {results_dir}/")
         print(f"{'='*60}\n")
-    
-    except KeyboardInterrupt:
-        print("\n\nTraining interrupted by user (Ctrl+C)")
-        print("Exiting gracefully...")
-        exit(0)
-    except FileNotFoundError as e:
-        print(f"\n\nERROR: File not found: {e}")
-        print("Please check that the data paths are correct.")
-        exit(1)
-    except MemoryError as e:
-        print(f"\n\nERROR: Out of memory: {e}")
-        print("Try reducing batch_size or using a smaller model.")
-        exit(1)
-    except Exception as e:
-        print(f"\n\nERROR: Unexpected error occurred: {e}")
-        import traceback
-        print("\nFull traceback:")
-        traceback.print_exc()
-        exit(1)
 
