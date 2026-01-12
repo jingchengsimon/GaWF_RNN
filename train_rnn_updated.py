@@ -816,7 +816,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 print(f"{env_name} environment: num_workers={num_workers}, batch_size={batch_size} (using optimal settings without limitation)")
             
             # Enable pin_memory (GPU only)
-            pin_memory = (device == 'cuda')
+            pin_memory = False #(device == 'cuda')
             show_gpu_usage = True
             
             # Initialize mixed precision training scaler
