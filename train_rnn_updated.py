@@ -8,6 +8,7 @@ import sys
 import signal
 import argparse
 import pickle
+from collections import Counter
 import numpy as np
 import pandas as pd
 import torch
@@ -714,7 +715,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                          - False: Disable all modifications (weight_decay=0.0, dropout_rate=0.0, use_early_stopping=False)
                          - If True, you can still override with custom weight_decay, dropout_rate, use_early_stopping values
         weight_decay: L2 regularization coefficient (weight decay)
-                     - If use_modification=False: ignored, set to 0.0
+                     - If use_modification=False: ignored, [set] to 0.0
                      - If use_modification=True and None: default 1e-4
                      - If use_modification=True and specified: use custom value
         dropout_rate: Dropout rate (note: this is only for reference, actual dropout is set when creating the model)
@@ -951,10 +952,20 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         total_acc_char = 0
         total_metric_pos = 0  # sector mode: accuracy; coordinate mode: MSE
         total_frames = 0
+        # all-chars exact-match stats (scheme B): Counter(pred)==Counter(gt) per frame
+        total_frames_eval = 0
+        total_frames_exact = 0
         
         # Use tqdm for validation progress bar
-        # Disable tqdm in non-interactive terminals to avoid display issues
-        use_tqdm = sys.stdout.isatty()
+        # Disable tqdm in non-interactive terminals or when TERM is not set to avoid display issues
+        # Check both isatty(), TERM environment variable, and DISABLE_TQDM env var for better compatibility
+        # Also check if we're in a remote SSH session that might not support tqdm properly
+        disable_tqdm_env = os.environ.get('DISABLE_TQDM', '').lower() in ['1', 'true', 'yes']
+        term_check = os.environ.get('TERM', '').lower() not in ['', 'dumb']
+        # More conservative: disable tqdm by default in remote environments unless explicitly enabled
+        # Set ENABLE_TQDM=1 to force enable tqdm
+        enable_tqdm_env = os.environ.get('ENABLE_TQDM', '').lower() in ['1', 'true', 'yes']
+        use_tqdm = enable_tqdm_env or (not disable_tqdm_env and sys.stdout.isatty() and term_check)
         val_pbar = tqdm(data_loader, desc="[Val]", ncols=100, leave=False, unit="batch", disable=not use_tqdm)
         
         with torch.no_grad():
@@ -999,34 +1010,36 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                             
                             if len(valid_true_chars) == 0:
                                 continue
+                            total_frames_eval += 1
                             
                             frame_probs = pred_probs[b, t]  # (max_chars, num_classes)
                             frame_logits = out_char[b, t]  # (max_chars, num_classes)
                             
-                            # Vectorized greedy matching (same as in loss function)
+                            # Greedy matching to build predicted chars list (same strategy as notebook)
                             used_mask = torch.zeros(max_chars, dtype=torch.bool, device=out_char.device)
-                            matched_correct = 0
-                            
+                            matched_pred_chars = []
+
                             for true_char_id in valid_true_chars:
-                                # Vectorized: get probabilities and mask used slots
-                                char_probs = frame_probs[:, true_char_id]
+                                # Get probabilities for this GT char over all slots, mask used slots
+                                char_probs = frame_probs[:, int(true_char_id)]
                                 char_probs = char_probs.masked_fill(used_mask, -1.0)
-                                
+
                                 # Find best matching slot
                                 best_pred_idx = torch.argmax(char_probs).item()
-                                
-                                # Check if prediction is correct
+
+                                # Predicted char at this slot
                                 pred_char = torch.argmax(frame_logits[best_pred_idx]).item()
-                                true_char_val = true_char_id.item() if isinstance(true_char_id, torch.Tensor) else int(true_char_id)
-                                if pred_char == true_char_val:
-                                    matched_correct += 1
-                                
-                                # Update used mask
+                                matched_pred_chars.append(pred_char)
+
+                                # Mark slot as used
                                 used_mask[best_pred_idx] = True
-                            
-                            # Accuracy = correct matches / total valid chars
-                            if len(valid_true_chars) > 0:
-                                total_acc_char += matched_correct / len(valid_true_chars)
+
+                            # Exact multiset/frame match using Counter, same as notebook logic
+                            gt_chars = [int(c.item()) if isinstance(c, torch.Tensor) else int(c) for c in valid_true_chars]
+                            pred_counter = Counter(matched_pred_chars)
+                            gt_counter = Counter(gt_chars)
+                            if pred_counter == gt_counter:
+                                total_frames_exact += 1
                 else:
                     # Original mode: single char + position
                     # char accuracy (same for both modes)
@@ -1043,7 +1056,8 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         
         # Return results
         if predict_all_chars:
-            acc_char = (total_acc_char / total_frames) * 100 if total_frames > 0 else 0.0
+            # Scheme B: exact frame match rate (always in [0, 100])
+            acc_char = (total_frames_exact / total_frames_eval) * 100 if total_frames_eval > 0 else 0.0
             metric_pos = 0.0  # No position metric in all-chars mode
         else:
             acc_char = total_acc_char * 100 / len(data_loader)
@@ -1124,13 +1138,22 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             # Training loop
             epoch_train_acc_char = 0.0
             epoch_train_metric_pos = 0.0
+            # all-chars exact-match denominator (scheme B): number of evaluated frames (GT has >=1 char)
+            epoch_train_frames_eval = 0
             num_batches = 0
             
             print(f"Epoch {epoch + 1}/{num_epochs}: Starting training...")
             
             # Use tqdm for progress bar
-            # Disable tqdm in non-interactive terminals to avoid display issues
-            use_tqdm = sys.stdout.isatty()
+            # Disable tqdm in non-interactive terminals or when TERM is not set to avoid display issues
+            # Check both isatty(), TERM environment variable, and DISABLE_TQDM env var for better compatibility
+            # Also check if we're in a remote SSH session that might not support tqdm properly
+            disable_tqdm_env = os.environ.get('DISABLE_TQDM', '').lower() in ['1', 'true', 'yes']
+            term_check = os.environ.get('TERM', '').lower() not in ['', 'dumb']
+            # More conservative: disable tqdm by default in remote environments unless explicitly enabled
+            # Set ENABLE_TQDM=1 to force enable tqdm
+            enable_tqdm_env = os.environ.get('ENABLE_TQDM', '').lower() in ['1', 'true', 'yes']
+            use_tqdm = enable_tqdm_env or (not disable_tqdm_env and sys.stdout.isatty() and term_check)
             train_pbar = tqdm(enumerate(train_dl), total=len(train_dl), 
                              desc=f"Epoch {epoch + 1}/{num_epochs} [Train]",
                              ncols=100, leave=False, disable=not use_tqdm)
@@ -1182,8 +1205,9 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                     # Changed from every 10 batches to every 50 batches for better performance
                     if batch_idx % 50 == 0 or batch_idx == len(train_dl) - 1:
                         batch_size, frame_num = labels.shape[:2]
-                        batch_correct = 0.0
-                        batch_total_chars = 0
+                        # Scheme B (exact multiset / frame match) stats for this eval pass
+                        batch_exact = 0
+                        batch_frames_eval = 0
                         
                         # Vectorized: compute softmax for all frames at once
                         pred_probs = F.softmax(out_char, dim=-1)  # (B, T, max_chars, num_classes)
@@ -1196,39 +1220,41 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                                 
                                 if len(valid_true_chars) == 0:
                                     continue
+                                batch_frames_eval += 1
                                 
                                 frame_probs = pred_probs[b, t]  # (max_chars, num_classes)
                                 frame_logits = out_char[b, t]  # (max_chars, num_classes)
                                 
-                                # Vectorized greedy matching (same as in loss function)
+                                # Greedy matching to build predicted chars list (same strategy as notebook)
                                 used_mask = torch.zeros(max_chars, dtype=torch.bool, device=out_char.device)
-                                matched_correct = 0
-                                
+                                matched_pred_chars = []
+
                                 for true_char_id in valid_true_chars:
-                                    # Vectorized: get probabilities and mask used slots
-                                    char_probs = frame_probs[:, true_char_id]
+                                    # Get probabilities for this GT char over all slots, mask used slots
+                                    char_probs = frame_probs[:, int(true_char_id)]
                                     char_probs = char_probs.masked_fill(used_mask, -1.0)
-                                    
+
                                     # Find best matching slot
                                     best_pred_idx = torch.argmax(char_probs).item()
-                                    
-                                    # Check if prediction is correct
+
+                                    # Predicted char at this slot
                                     pred_char = torch.argmax(frame_logits[best_pred_idx]).item()
-                                    true_char_val = true_char_id.item() if isinstance(true_char_id, torch.Tensor) else int(true_char_id)
-                                    if pred_char == true_char_val:
-                                        matched_correct += 1
-                                    
-                                    # Update used mask
+                                    matched_pred_chars.append(pred_char)
+
+                                    # Mark slot as used
                                     used_mask[best_pred_idx] = True
-                                
-                                if len(valid_true_chars) > 0:
-                                    batch_correct += matched_correct / len(valid_true_chars)
-                                    batch_total_chars += 1
-                        
-                        if batch_total_chars > 0:
-                            # Accumulate batch accuracy (0-1 range)
-                            # batch_correct / batch_total_chars is the average accuracy for this batch
-                            epoch_train_acc_char += (batch_correct / batch_total_chars)
+
+                                # Exact multiset/frame match using Counter, same as notebook logic
+                                gt_chars = [int(c.item()) if isinstance(c, torch.Tensor) else int(c) for c in valid_true_chars]
+                                pred_counter = Counter(matched_pred_chars)
+                                gt_counter = Counter(gt_chars)
+                                if pred_counter == gt_counter:
+                                    batch_exact += 1
+
+                        # Accumulate epoch-level exact-match counts (denominator is real evaluated frames)
+                        if batch_frames_eval > 0:
+                            epoch_train_acc_char += batch_exact
+                            epoch_train_frames_eval += batch_frames_eval
                     # For batches we skip, don't add anything (will be averaged correctly later)
                     # No position metric in all-chars mode
                 else:
@@ -1277,11 +1303,9 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             
             # Calculate epoch average metrics
             if predict_all_chars:
-                # For all-chars mode, we compute accuracy every 50 batches
-                # epoch_train_acc_char accumulates the average accuracy (0-1) for each computed batch
-                # Divide by the number of times we computed it to get the overall average, then convert to percentage
-                num_acc_computations = max(1, (num_batches + 49) // 50)  # Round up division: ceil(num_batches / 50)
-                train_acc_char[epoch] = (epoch_train_acc_char / num_acc_computations) * 100
+                # Scheme B: epoch_train_acc_char = total exact-matched frames
+                # epoch_train_frames_eval = total evaluated frames (denominator)
+                train_acc_char[epoch] = (epoch_train_acc_char / epoch_train_frames_eval) * 100 if epoch_train_frames_eval > 0 else 0.0
                 train_metric_pos[epoch] = 0.0  # No position metric in all-chars mode
             elif use_sector:
                 train_acc_char[epoch] = (epoch_train_acc_char / num_batches) * 100
