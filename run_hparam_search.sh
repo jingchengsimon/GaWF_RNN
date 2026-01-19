@@ -47,7 +47,7 @@ for lr in "${LRS[@]}"; do
       job_id=$((job_id + 1))
 
       # 构造日志文件名（方便之后查对应的曲线）
-      LOG_FILE="$LOG_DIR/job${job_id}_lr${lr}_wd${wd}_do${drop}.log"
+      # LOG_FILE="$LOG_DIR/job${job_id}_lr${lr}_wd${wd}_do${drop}.log"
 
       echo "Launching job $job_id on GPU $gpu: lr=$lr, wd=$wd, drop=$drop"
       CUDA_VISIBLE_DEVICES=$gpu nohup python train_rnn_updated.py \
@@ -58,7 +58,7 @@ for lr in "${LRS[@]}"; do
         --dropout_rates "$drop" \
         --num_epochs "$NUM_EPOCHS" \
         --result_suffix "$RESULT_SUFFIX" \
-        > "$LOG_FILE" 2>&1 &
+        > /dev/null 2>&1 &
 
       # 稍微错开发，避免同时抢资源
       sleep 3
