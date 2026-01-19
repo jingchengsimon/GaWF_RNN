@@ -1476,226 +1476,316 @@ def save_results(results, filepath):
 
 
 # ==================== Main Training Code ====================
-if __name__ == "__main__":
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Train RNN models for sector classification')
-    parser.add_argument('--model_types', type=str, nargs='+', default=["lstm"],
-                        choices=["rnn", "lstm", "gru", "gawf"],
-                        help='Model types to train (default: ["lstm"])')
-    parser.add_argument('--hidden_sizes', type=int, nargs='+', default=[256],
-                        help='Hidden sizes to test (default: [256])')
-    parser.add_argument('--num_epochs', type=int, default=200,
-                        help='Number of training epochs (default: 200)')
-    parser.add_argument('--result_suffix', type=str, default='',
-                        help='Suffix to append to result file names for distinguishing different training runs (default: empty string)')
-    parser.add_argument('--use_sector_mode', action='store_true', default=False,
-                        help='Use sector mode (3x3 grid, 9 sectors) instead of coordinate mode (default: False)')
-    parser.add_argument('--predict_all_chars', action='store_true', default=False,
-                        help='Predict all characters (fg+bg) per frame instead of only foreground character (default: False)')
-    args = parser.parse_args()
-    
-    # Helper function to convert Windows path to WSL path if needed
-    def convert_to_wsl_path(windows_path):
-        """Convert Windows path to WSL path if running in WSL"""
-        try:
-            # Check if running in WSL by checking for /mnt/c directory
-            if os.name == 'posix' and os.path.exists('/mnt/c'):
-                # Running in WSL, convert Windows path to WSL path
-                # C:\Users\... -> /mnt/c/Users/...
-                path = windows_path.replace('\\', '/')
-                if path.startswith('C:/') or path.startswith('c:/'):
-                    path = '/mnt/c' + path[2:]
-                return path
-            else:
-                # Running on Windows, use as is
-                return windows_path
-        except Exception as e:
-            # Fallback: assume Windows path format
-            print(f"Warning: Could not determine environment, using Windows path format. Error: {e}")
-            return windows_path
-    
-    # Data path configuration - dynamically adapt to running environment
-    # Detect running environment
-    is_wsl = os.name == 'posix' and os.path.exists('/mnt/c')
-    is_linux = os.name == 'posix' and not os.path.exists('/mnt/c')
-    is_windows = os.name == 'nt'
-    
+
+def convert_to_wsl_path(windows_path: str) -> str:
+    """Convert Windows path to WSL path if running in WSL."""
+    try:
+        if os.name == "posix" and os.path.exists("/mnt/c"):
+            # C:\Users\... -> /mnt/c/Users/...
+            path = windows_path.replace("\\", "/")
+            if path.startswith("C:/") or path.startswith("c:/"):
+                path = "/mnt/c" + path[2:]
+            return path
+        return windows_path
+    except Exception as e:
+        print(f"Warning: Could not determine environment, using Windows path format. Error: {e}")
+        return windows_path
+
+
+def get_base_path() -> str:
+    """Detect runtime environment and return the base stimulus path."""
+    is_wsl = os.name == "posix" and os.path.exists("/mnt/c")
+    is_linux = os.name == "posix" and not os.path.exists("/mnt/c")
+    is_windows = os.name == "nt"
+
     if is_wsl:
-        # Running in WSL: convert Windows path to WSL path
         base_path_windows = r"C:\Users\12265\Desktop\SJC\archive\Aim3\stimuli"
         base_path = convert_to_wsl_path(base_path_windows)
         print(f"Detected WSL environment, using path: {base_path}")
     elif is_linux:
-        # Running on Linux: use Linux path directly
         base_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli"
         print(f"Detected Linux environment, using path: {base_path}")
-    else:
-        # Running on Windows: use Windows path directly
+    elif is_windows:
         base_path = r"C:\Users\12265\Desktop\SJC\archive\Aim3\stimuli"
         print(f"Detected Windows environment, using path: {base_path}")
+    else:
+        base_path = r"C:\Users\12265\Desktop\SJC\archive\Aim3\stimuli"
+        print(f"Unknown environment, falling back to Windows-style path: {base_path}")
+
+    return base_path
+
+
+def prepare_data_paths(base_path: str):
+    """Construct and validate stimulus / label file paths."""
     stim_train_path = os.path.join(base_path, "stimulus_reg-train.npy")
     label_train_path = os.path.join(base_path, "stimulus_reg-train.tsv")
     stim_val_path = os.path.join(base_path, "stimulus_reg-validation.npy")
     label_val_path = os.path.join(base_path, "stimulus_reg-validation.tsv")
-    
-    # Verify paths exist before loading
-    print(f"Checking data paths...")
+
+    print("Checking data paths...")
     print(f"Base path: {base_path}")
-    for path_name, path in [("train stim", stim_train_path), ("train label", label_train_path),
-                             ("val stim", stim_val_path), ("val label", label_val_path)]:
+    for path_name, path in [
+        ("train stim", stim_train_path),
+        ("train label", label_train_path),
+        ("val stim", stim_val_path),
+        ("val label", label_val_path),
+    ]:
         if not os.path.exists(path):
             print(f"ERROR: {path_name} path does not exist: {path}")
             raise FileNotFoundError(f"Data file not found: {path}")
         else:
             print(f"  ✓ {path_name}: {path}")
-    
-    # Load data
+
+    return stim_train_path, label_train_path, stim_val_path, label_val_path
+
+
+def load_raw_data(stim_train_path: str, label_train_path: str,
+                  stim_val_path: str, label_val_path: str):
+    """Load raw numpy and label data from disk."""
     print("\nLoading data...")
     stims_train = np.load(stim_train_path, allow_pickle=True)
     print(f"  ✓ Loaded training stimuli: {stims_train.shape}")
     lbls_train = pd.read_csv(label_train_path, sep="\t", index_col=0)
     print(f"  ✓ Loaded training labels: {lbls_train.shape}")
-    
+
     stims_val = np.load(stim_val_path, allow_pickle=True)
     print(f"  ✓ Loaded validation stimuli: {stims_val.shape}")
     lbls_val = pd.read_csv(label_val_path, sep="\t", index_col=0)
     print(f"  ✓ Loaded validation labels: {lbls_val.shape}")
-    
-    # Create datasets (can choose sector mode or coordinate mode, and all-chars mode)
+
+    return stims_train, lbls_train, stims_val, lbls_val
+
+
+def create_datasets(stims_train, lbls_train, stims_val, lbls_val,
+                    use_sector_mode: bool, predict_all_chars: bool,
+                    max_chars: int = 10):
+    """Create training / validation datasets and return dataset objects and num_pos."""
     print("Creating datasets...")
-    use_sector_mode = args.use_sector_mode
-    use_acceleration = True  # Set to True to enable acceleration training, False to use original method
-    predict_all_chars = args.predict_all_chars
-    max_chars = 10  # Maximum number of characters per frame (1 fg + up to 4 bg = 5, but use 10 for safety)
-    
+
     if predict_all_chars:
-        # New mode: predict all characters (fg + bg)
-        train_ds = MC_RNN_Dataset(stims_train, lbls_train, use_sector=False, 
-                                  predict_all_chars=True, max_chars=max_chars)
-        val_ds = MC_RNN_Dataset(stims_val, lbls_val, use_sector=False,
-                                predict_all_chars=True, max_chars=max_chars)
-        num_pos = 0  # No position prediction in all-chars mode
+        train_ds = MC_RNN_Dataset(
+            stims_train, lbls_train, use_sector=False,
+            predict_all_chars=True, max_chars=max_chars,
+        )
+        val_ds = MC_RNN_Dataset(
+            stims_val, lbls_val, use_sector=False,
+            predict_all_chars=True, max_chars=max_chars,
+        )
+        num_pos = 0
         print(f"Using all-chars mode: predict all characters (fg+bg) per frame, max_chars={max_chars}")
     elif use_sector_mode:
-        # sector mode: 3x3 grid -> 9 sectors
-        num_pos = 9  # number of sectors
-        train_ds = MC_RNN_Dataset(stims_train, lbls_train, use_sector=True, num_sectors=num_pos,
-                                  predict_all_chars=False)
-        val_ds = MC_RNN_Dataset(stims_val, lbls_val, use_sector=True, num_sectors=num_pos,
-                                predict_all_chars=False)
+        num_pos = 9
+        train_ds = MC_RNN_Dataset(
+            stims_train, lbls_train, use_sector=True, num_sectors=num_pos,
+            predict_all_chars=False,
+        )
+        val_ds = MC_RNN_Dataset(
+            stims_val, lbls_val, use_sector=True, num_sectors=num_pos,
+            predict_all_chars=False,
+        )
         print("Using sector mode (3x3 grid, 9 sectors)")
     else:
-        # coordinate mode: directly predict (x, y) coordinates
-        train_ds = MC_RNN_Dataset(stims_train, lbls_train, use_sector=False, predict_all_chars=False)
-        val_ds = MC_RNN_Dataset(stims_val, lbls_val, use_sector=False, predict_all_chars=False)
-        num_pos = 2  # x, y coordinates
+        num_pos = 2
+        train_ds = MC_RNN_Dataset(
+            stims_train, lbls_train, use_sector=False, predict_all_chars=False,
+        )
+        val_ds = MC_RNN_Dataset(
+            stims_val, lbls_val, use_sector=False, predict_all_chars=False,
+        )
         print("Using coordinate mode (directly predict x, y coordinates)")
-    
-    # Model class mapping table
-    MODEL_CLASSES = {
+
+    return train_ds, val_ds, num_pos
+
+
+def get_model_classes():
+    """Return mapping from model type name to model class."""
+    return {
         "rnn": RNNConv,
         "lstm": LSTMConv,
         "gru": GRUConv,
         "gawf": GaWFRNNConv,
     }
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    """Build the argument parser for command line options."""
+    parser = argparse.ArgumentParser(description="Train RNN models for sector classification")
+    parser.add_argument(
+        "--model_types",
+        type=str,
+        nargs="+",
+        default=["lstm"],
+        choices=["rnn", "lstm", "gru", "gawf"],
+        help='Model types to train (default: ["lstm"])',
+    )
+    parser.add_argument(
+        "--hidden_sizes",
+        type=int,
+        nargs="+",
+        default=[256],
+        help="Hidden sizes to test (default: [256])",
+    )
+    parser.add_argument(
+        "--num_epochs",
+        type=int,
+        default=200,
+        help="Number of training epochs (default: 200)",
+    )
+    parser.add_argument(
+        "--result_suffix",
+        type=str,
+        default="",
+        help="Suffix to append to result file names for distinguishing different training runs (default: empty string)",
+    )
+    parser.add_argument(
+        "--use_sector_mode",
+        action="store_true",
+        default=False,
+        help="Use sector mode (3x3 grid, 9 sectors) instead of coordinate mode (default: False)",
+    )
+    parser.add_argument(
+        "--predict_all_chars",
+        action="store_true",
+        default=False,
+        help="Predict all characters (fg+bg) per frame instead of only foreground character (default: False)",
+    )
+    return parser
+
+
+if __name__ == "__main__":
+    # Parse command line arguments
+    parser = build_arg_parser()
+    args = parser.parse_args()
     
+    # Data path configuration
+    base_path = get_base_path()
+    stim_train_path, label_train_path, stim_val_path, label_val_path = prepare_data_paths(base_path)
+    stims_train, lbls_train, stims_val, lbls_val = load_raw_data(
+        stim_train_path, label_train_path, stim_val_path, label_val_path,
+    )
+
+    # Dataset configuration
+    use_sector_mode = args.use_sector_mode
+    predict_all_chars = args.predict_all_chars
+    use_acceleration = True  # keep current default behaviour
+    max_chars = 10
+
+    train_ds, val_ds, num_pos = create_datasets(
+        stims_train,
+        lbls_train,
+        stims_val,
+        lbls_val,
+        use_sector_mode=use_sector_mode,
+        predict_all_chars=predict_all_chars,
+        max_chars=max_chars,
+    )
+
+    # Model class mapping table
+    model_classes = get_model_classes()
+
     # Training configuration (from command line arguments)
     model_types = args.model_types
     hidden_sizes = args.hidden_sizes
-    
+
     # Modification settings: control weight_decay, dropout_rate, and early stopping together
-    use_modification = True  # Set to True to enable regularization modifications, False to disable
-    # Note: use_modification=True helps prevent overfitting and maintains stable validation accuracy
-    
-    # Set dropout_rate for model creation (needed before model instantiation)
-    if use_modification:
-        dropout_rate = 0.3  # Default dropout rate when use_modification=True
-    else:
-        dropout_rate = 0.0  # No dropout when use_modification=False
-    
+    use_modification = True
+    dropout_rate = 0.3 if use_modification else 0.0
+
     # Create results directory
-    results_dir = "results"
+    results_dir = f"results/{args.result_suffix}"
     if not os.path.exists(results_dir):
         os.makedirs(results_dir, exist_ok=True)
         print(f"Created results directory: {results_dir}")
-    
-    # Training loop: 3 models × 2 hidden sizes = 6 experiments
+
+    # Training loop
     total_experiments = len(model_types) * len(hidden_sizes)
     experiment_num = 0
-    
-    print(f"\n{'='*60}")
+
+    print(f"\n{'=' * 60}")
     print(f"Starting training loop: {total_experiments} experiments")
     print(f"Models: {model_types}")
     print(f"Hidden sizes: {hidden_sizes}")
-    print(f"{'='*60}\n")
-    
+    print(f"{'=' * 60}\n")
+
     for model_type in model_types:
         for hidden_size in hidden_sizes:
             experiment_num += 1
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print(f"Experiment {experiment_num}/{total_experiments}: {model_type.upper()} with hidden_size={hidden_size}")
-            print(f"{'='*60}\n")
-            
+            print(f"{'=' * 60}\n")
+
             # Create model
-            if model_type not in MODEL_CLASSES:
+            if model_type not in model_classes:
                 print(f"Warning: Unsupported model_type: {model_type}, skipping...")
                 continue
-            
-            ModelClass = MODEL_CLASSES[model_type]
-            
-            # Create model with appropriate parameters
+
+            ModelClass = model_classes[model_type]
+
             if predict_all_chars:
-                # All-chars mode: pass max_chars and predict_all_chars
                 if model_type == "gawf":
-                    print(f"Warning: GaWFRNNConv does not support predict_all_chars mode, skipping...")
+                    print("Warning: GaWFRNNConv does not support predict_all_chars mode, skipping...")
                     continue
-                mdl = ModelClass(num_classes=10, num_pos=0, kernel_size=5,
-                               dropout_rate=dropout_rate, hidden_size=hidden_size,
-                               max_chars=max_chars, predict_all_chars=True)
-                print(f"Created {model_type.upper()} model (predict_all_chars=True, max_chars={max_chars}, "
-                      f"dropout_rate={dropout_rate}, hidden_size={hidden_size})")
+                mdl = ModelClass(
+                    num_classes=10,
+                    num_pos=0,
+                    kernel_size=5,
+                    dropout_rate=dropout_rate,
+                    hidden_size=hidden_size,
+                    max_chars=max_chars,
+                    predict_all_chars=True,
+                )
+                print(
+                    f"Created {model_type.upper()} model "
+                    f"(predict_all_chars=True, max_chars={max_chars}, "
+                    f"dropout_rate={dropout_rate}, hidden_size={hidden_size})"
+                )
             else:
-                # Original mode
-                mdl = ModelClass(num_classes=10, num_pos=num_pos, kernel_size=5,
-                               dropout_rate=dropout_rate, hidden_size=hidden_size)
-                print(f"Created {model_type.upper()} model (num_pos={num_pos}, dropout_rate={dropout_rate}, "
-                      f"hidden_size={hidden_size})")
-            
+                mdl = ModelClass(
+                    num_classes=10,
+                    num_pos=num_pos,
+                    kernel_size=5,
+                    dropout_rate=dropout_rate,
+                    hidden_size=hidden_size,
+                )
+                print(
+                    f"Created {model_type.upper()} model "
+                    f"(num_pos={num_pos}, dropout_rate={dropout_rate}, "
+                    f"hidden_size={hidden_size})"
+                )
+
             # Train model
             print("Starting training...")
             if use_acceleration:
                 print("Acceleration training enabled")
             else:
                 print("Using standard training method")
-            
+
             results = network_train(
-                mdl, 
-                train_ds, 
-                val_ds, 
-                num_epochs=args.num_epochs, 
+                mdl,
+                train_ds,
+                val_ds,
+                num_epochs=args.num_epochs,
                 use_acceleration=use_acceleration,
                 use_modification=use_modification,
                 early_stopping_patience=15,
-                min_delta=0.001
+                min_delta=0.001,
             )
-            
+
             # Save training results
             print(f"\nSaving results for {model_type.upper()} (hidden_size={hidden_size})...")
-            if predict_all_chars:
-                mode_suffix = "allchars"
-            elif use_sector_mode:
-                mode_suffix = "sector"
-            else:
-                mode_suffix = "coord"
+            mode_suffix = "allchars" if predict_all_chars else ("sector" if use_sector_mode else "coord")
             acc_suffix = "_acc" if use_acceleration else ""
             result_suffix = f"_{args.result_suffix}" if args.result_suffix else ""
-            results_path = os.path.join(results_dir, f"{model_type}_{mode_suffix}{acc_suffix}_h{hidden_size}{result_suffix}")
-            
+            results_path = os.path.join(
+                results_dir,
+                f"{model_type}_{mode_suffix}{acc_suffix}_h{hidden_size}{result_suffix}",
+            )
+
             save_results(results, results_path)
             print(f"Experiment {experiment_num}/{total_experiments} completed!\n")
-    
-    print(f"\n{'='*60}")
+
+    print(f"\n{'=' * 60}")
     print(f"All {total_experiments} experiments completed!")
     print(f"Results saved to: {results_dir}/")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
