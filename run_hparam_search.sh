@@ -2,7 +2,7 @@
 # 或 #!/bin/bash 也可以
 
 # 切到工程目录
-cd /Users/jingchengshi/Desktop/Vscode/FAW_RNN || exit 1
+# cd /Users/jingchengshi/Desktop/Vscode/FAW_RNN || exit 1
 
 # 日志目录
 LOG_DIR="logs_hparam"
