@@ -9,6 +9,7 @@ import signal
 import argparse
 import pickle
 from collections import Counter
+from itertools import product
 import numpy as np
 import pandas as pd
 import torch
@@ -1649,6 +1650,27 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=False,
         help="Predict all characters (fg+bg) per frame instead of only foreground character (default: False)",
     )
+    parser.add_argument(
+        "--lrs",
+        type=float,
+        nargs="+",
+        default=[0.001],
+        help="Learning rates to search over (default: [0.001])",
+    )
+    parser.add_argument(
+        "--weight_decays",
+        type=float,
+        nargs="+",
+        default=[1e-4],
+        help="Weight decay values to search over (default: [1e-4])",
+    )
+    parser.add_argument(
+        "--dropout_rates",
+        type=float,
+        nargs="+",
+        default=[0.3],
+        help="Dropout rates to search over for model creation (default: [0.3])",
+    )
     return parser
 
 
@@ -1686,10 +1708,9 @@ if __name__ == "__main__":
     # Training configuration (from command line arguments)
     model_types = args.model_types
     hidden_sizes = args.hidden_sizes
-
-    # Modification settings: control weight_decay, dropout_rate, and early stopping together
-    use_modification = True
-    dropout_rate = 0.3 if use_modification else 0.0
+    lrs = args.lrs
+    weight_decays = args.weight_decays
+    dropout_rates = args.dropout_rates
 
     # Create results directory
     results_dir = f"results/{args.result_suffix}"
@@ -1697,92 +1718,110 @@ if __name__ == "__main__":
         os.makedirs(results_dir, exist_ok=True)
         print(f"Created results directory: {results_dir}")
 
-    # Training loop
-    total_experiments = len(model_types) * len(hidden_sizes)
+    # Build hyperparameter combinations: (model_type, hidden_size, lr, weight_decay, dropout_rate)
+    experiment_configs = list(
+        product(model_types, hidden_sizes, lrs, weight_decays, dropout_rates)
+    )
+
+    # Modification settings: always enabled for this script
+    use_modification = True
+
+    # Training loop over all hyperparameter combinations
+    total_experiments = len(experiment_configs)
     experiment_num = 0
 
     print(f"\n{'=' * 60}")
     print(f"Starting training loop: {total_experiments} experiments")
     print(f"Models: {model_types}")
     print(f"Hidden sizes: {hidden_sizes}")
+    print(f"Learning rates: {lrs}")
+    print(f"Weight decays: {weight_decays}")
+    print(f"Dropout rates: {dropout_rates}")
     print(f"{'=' * 60}\n")
 
-    for model_type in model_types:
-        for hidden_size in hidden_sizes:
-            experiment_num += 1
-            print(f"\n{'=' * 60}")
-            print(f"Experiment {experiment_num}/{total_experiments}: {model_type.upper()} with hidden_size={hidden_size}")
-            print(f"{'=' * 60}\n")
+    for model_type, hidden_size, lr, weight_decay, dropout_rate in experiment_configs:
+        experiment_num += 1
+        print(f"\n{'=' * 60}")
+        print(
+            f"Experiment {experiment_num}/{total_experiments}: "
+            f"{model_type.upper()} | hidden_size={hidden_size} | "
+            f"lr={lr} | weight_decay={weight_decay} | dropout={dropout_rate}"
+        )
+        print(f"{'=' * 60}\n")
 
-            # Create model
-            if model_type not in model_classes:
-                print(f"Warning: Unsupported model_type: {model_type}, skipping...")
+        # Create model
+        if model_type not in model_classes:
+            print(f"Warning: Unsupported model_type: {model_type}, skipping...")
+            continue
+
+        ModelClass = model_classes[model_type]
+
+        if predict_all_chars:
+            if model_type == "gawf":
+                print("Warning: GaWFRNNConv does not support predict_all_chars mode, skipping...")
                 continue
-
-            ModelClass = model_classes[model_type]
-
-            if predict_all_chars:
-                if model_type == "gawf":
-                    print("Warning: GaWFRNNConv does not support predict_all_chars mode, skipping...")
-                    continue
-                mdl = ModelClass(
-                    num_classes=10,
-                    num_pos=0,
-                    kernel_size=5,
-                    dropout_rate=dropout_rate,
-                    hidden_size=hidden_size,
-                    max_chars=max_chars,
-                    predict_all_chars=True,
-                )
-                print(
-                    f"Created {model_type.upper()} model "
-                    f"(predict_all_chars=True, max_chars={max_chars}, "
-                    f"dropout_rate={dropout_rate}, hidden_size={hidden_size})"
-                )
-            else:
-                mdl = ModelClass(
-                    num_classes=10,
-                    num_pos=num_pos,
-                    kernel_size=5,
-                    dropout_rate=dropout_rate,
-                    hidden_size=hidden_size,
-                )
-                print(
-                    f"Created {model_type.upper()} model "
-                    f"(num_pos={num_pos}, dropout_rate={dropout_rate}, "
-                    f"hidden_size={hidden_size})"
-                )
-
-            # Train model
-            print("Starting training...")
-            if use_acceleration:
-                print("Acceleration training enabled")
-            else:
-                print("Using standard training method")
-
-            results = network_train(
-                mdl,
-                train_ds,
-                val_ds,
-                num_epochs=args.num_epochs,
-                use_acceleration=use_acceleration,
-                use_modification=use_modification,
-                early_stopping_patience=15,
-                min_delta=0.001,
+            mdl = ModelClass(
+                num_classes=10,
+                num_pos=0,
+                kernel_size=5,
+                dropout_rate=dropout_rate,
+                hidden_size=hidden_size,
+                max_chars=max_chars,
+                predict_all_chars=True,
+            )
+            print(
+                f"Created {model_type.upper()} model "
+                f"(predict_all_chars=True, max_chars={max_chars}, "
+                f"dropout_rate={dropout_rate}, hidden_size={hidden_size})"
+            )
+        else:
+            mdl = ModelClass(
+                num_classes=10,
+                num_pos=num_pos,
+                kernel_size=5,
+                dropout_rate=dropout_rate,
+                hidden_size=hidden_size,
+            )
+            print(
+                f"Created {model_type.upper()} model "
+                f"(num_pos={num_pos}, dropout_rate={dropout_rate}, "
+                f"hidden_size={hidden_size})"
             )
 
-            # Save training results
-            print(f"\nSaving results for {model_type.upper()} (hidden_size={hidden_size})...")
-            mode_suffix = "allchars" if predict_all_chars else ("sector" if use_sector_mode else "coord")
-            acc_suffix = "_acc" if use_acceleration else ""
-            result_suffix = f"_{args.result_suffix}" if args.result_suffix else ""
-            results_path = os.path.join(
-                results_dir,
-                f"{model_type}_{mode_suffix}{acc_suffix}_h{hidden_size}{result_suffix}",
-            )
+        # Train model
+        print("Starting training...")
+        if use_acceleration:
+            print("Acceleration training enabled")
+        else:
+            print("Using standard training method")
 
-            save_results(results, results_path)
-            print(f"Experiment {experiment_num}/{total_experiments} completed!\n")
+        results = network_train(
+            mdl,
+            train_ds,
+            val_ds,
+            num_epochs=args.num_epochs,
+            lr=lr,
+            use_acceleration=use_acceleration,
+            use_modification=use_modification,
+            weight_decay=weight_decay,
+            dropout_rate=dropout_rate,
+            early_stopping_patience=15,
+            min_delta=0.001,
+        )
+
+        # Save training results
+        print(f"\nSaving results for {model_type.upper()} (hidden_size={hidden_size})...")
+        mode_suffix = "allchars" if predict_all_chars else ("sector" if use_sector_mode else "coord")
+        acc_suffix = "_acc" if use_acceleration else ""
+        hp_suffix = f"_lr{lr}_wd{weight_decay}_do{dropout_rate}"
+        result_suffix = f"_{args.result_suffix}" if args.result_suffix else ""
+        results_path = os.path.join(
+            results_dir,
+            f"{model_type}_{mode_suffix}{acc_suffix}_h{hidden_size}{hp_suffix}{result_suffix}",
+        )
+
+        save_results(results, results_path)
+        print(f"Experiment {experiment_num}/{total_experiments} completed!\n")
 
     print(f"\n{'=' * 60}")
     print(f"All {total_experiments} experiments completed!")
