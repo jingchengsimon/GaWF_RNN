@@ -31,7 +31,8 @@ for lr in "${LRS[@]}"; do
   for wd in "${WDS[@]}"; do
     for drop in "${DROPS[@]}"; do
       # 轮询分配 GPU
-      gpu_idx=$(( job_id % ${#GPUS[@]} ))
+      # zsh 数组索引从 1 开始，所以需要 +1
+      gpu_idx=$(( (job_id % ${#GPUS[@]}) + 1 ))
       gpu="${GPUS[$gpu_idx]}"
 
       # 控制并发数量：如果当前后台 job 数 >= 总卡数 * 每卡上限，则等待
@@ -50,6 +51,12 @@ for lr in "${LRS[@]}"; do
       LOG_FILE="$LOG_DIR/job${job_id}_lr${lr}_wd${wd}_do${drop}.log"
 
       echo "Launching job $job_id on GPU $gpu: lr=$lr, wd=$wd, drop=$drop"
+      # 验证 GPU 变量不为空
+      if [ -z "$gpu" ]; then
+        echo "ERROR: GPU variable is empty! Check GPUS array indexing."
+        continue
+      fi
+      
       CUDA_VISIBLE_DEVICES=$gpu nohup python train_rnn_updated.py \
         --model_types "${MODEL_TYPES[@]}" \
         --hidden_sizes "${HIDDEN_SIZES[@]}" \
@@ -59,6 +66,9 @@ for lr in "${LRS[@]}"; do
         --num_epochs "$NUM_EPOCHS" \
         --result_suffix "$RESULT_SUFFIX" \
         > "$LOG_FILE" 2>&1 &
+      
+      # 记录进程 PID，方便后续检查
+      echo "  → Job $job_id PID: $!"
 
       # 稍微错开发，避免同时抢资源
       sleep 3
