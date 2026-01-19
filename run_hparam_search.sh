@@ -2,7 +2,7 @@
 # 或 #!/bin/bash 也可以
 
 # 切到工程目录
-cd /Users/jingchengshi/Desktop/Vscode/FAW_RNN || exit 1
+# cd /Users/jingchengshi/Desktop/Vscode/FAW_RNN || exit 1
 
 # 日志目录
 LOG_DIR="logs_hparam"
@@ -10,7 +10,7 @@ mkdir -p "$LOG_DIR"
 
 # 基本固定参数（按需修改）
 NUM_EPOCHS=200
-RESULT_SUFFIX="sector_search"
+RESULT_SUFFIX="hparam_search"
 MODEL_TYPES=("rnn")          # 或加上 "rnn"
 HIDDEN_SIZES=(128 256)              # 你要扫的 hidden size
 
