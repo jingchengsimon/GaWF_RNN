@@ -1,0 +1,76 @@
+Detected Linux environment, using path: /G/MIMOlab/Codes/aim3_RNN/stimuli
+Checking data paths...
+Base path: /G/MIMOlab/Codes/aim3_RNN/stimuli
+  ✓ train stim: /G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-train.npy
+  ✓ train label: /G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-train.tsv
+  ✓ val stim: /G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-validation.npy
+  ✓ val label: /G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-validation.tsv
+
+Loading data...
+  ✓ Loaded training stimuli: (345600, 96, 96)
+  ✓ Loaded training labels: (345600, 8)
+  ✓ Loaded validation stimuli: (57600, 96, 96)
+  ✓ Loaded validation labels: (57600, 8)
+Creating datasets...
+Using coordinate mode (directly predict x, y coordinates)
+
+============================================================
+Starting training loop: 2 experiments
+Models: ['rnn']
+Hidden sizes: [128, 256]
+Learning rates: [0.0003]
+Weight decays: [0.0003]
+Dropout rates: [0.6]
+============================================================
+
+
+============================================================
+Experiment 1/2: RNN | hidden_size=128 | lr=0.0003 | weight_decay=0.0003 | dropout=0.6
+============================================================
+
+Created RNN model (num_pos=2, dropout_rate=0.6, hidden_size=128)
+Starting training...
+Acceleration training enabled
+Modification settings enabled: weight_decay=0.0003, dropout_rate=0.6, use_early_stopping=False
+Enabling acceleration training...
+Automatically finding optimal batch_size...
+Testing batch_size=32: GPU memory usage 4.4%, usable
+Testing batch_size=64: GPU memory usage 8.8%, usable
+Testing batch_size=128: GPU memory usage 17.5%, usable
+Testing batch_size=256: GPU memory usage 35.0%, usable
+Using batch_size = 256
+Linux environment: num_workers=4, batch_size=256 (using optimal settings without limitation)
+Acceleration settings: batch_size=256, num_workers=4, pin_memory=False, mixed precision training=enabled
+
+Dataset Information:
+  Training dataset size: 10799 samples
+  Validation dataset size: 1799 samples
+  Batch size: 256
+  Number of batches per epoch: 43
+  predict_all_chars mode: False
+  use_sector mode: False
+
+Epoch 1/200: Starting training...
+DataLoader workers cleaned up successfully
+Traceback (most recent call last):
+  File "/G/MIMOlab/Codes/aim3_RNN/train_rnn_updated.py", line 1798, in <module>
+    results = network_train(
+        mdl,
+    ...<9 lines>...
+        min_delta=0.001,
+    )
+  File "/G/MIMOlab/Codes/aim3_RNN/train_rnn_updated.py", line 1182, in network_train
+    out_char, out_pos = mdl(inputs)
+                        ~~~^^^^^^^^
+  File "/G/anaconda3/envs/aim3_rnn/lib/python3.14/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/G/anaconda3/envs/aim3_rnn/lib/python3.14/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/G/MIMOlab/Codes/aim3_RNN/train_rnn_updated.py", line 291, in forward
+    x = self.encoder(x)
+  File "/G/MIMOlab/Codes/aim3_RNN/train_rnn_updated.py", line 254, in encoder
+    x = F.relu(x)
+  File "/G/anaconda3/envs/aim3_rnn/lib/python3.14/site-packages/torch/nn/functional.py", line 1697, in relu
+    result = torch.relu(input)
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.25 GiB. GPU 0 has a total capacity of 47.41 GiB of which 487.19 MiB is free. Process 358233 has 30.23 GiB memory in use. Including non-PyTorch memory, this process has 16.68 GiB memory in use. Of the allocated memory 14.36 GiB is allocated by PyTorch, and 2.01 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
