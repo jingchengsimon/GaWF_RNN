@@ -21,7 +21,7 @@ WDS=(0.0003 0.001) # weight decays
 DROPS=(0.5 0.6) # dropout rates
 
 # 每张 GPU 最多同时跑几个进程（并行时建议 1-2）
-MAX_JOBS_PER_GPU=2
+MAX_JOBS_PER_GPU=1
 
 # 如果有多张卡，在这里列出可用 GPU
 GPUS=(0 1)   # 多卡示例: (0 1 2 3)
