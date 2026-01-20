@@ -20,9 +20,6 @@ LRS=(0.0003 0.0004) # learning rates
 WDS=(0.0003 0.001) # weight decays
 DROPS=(0.5 0.6) # dropout rates
 
-# 每张 GPU 最多同时跑几个进程（设为 1 即顺序串行，避免显存叠加）
-MAX_JOBS_PER_GPU=1
-
 # 如果有多张卡，在这里列出可用 GPU；当前仅用 GPU1，避免占用 GPU0 的大任务
 GPUS=(1)   # 多卡示例: (0 1 2 3)
 
@@ -39,16 +36,6 @@ for lr in "${LRS[@]}"; do
       gpu_idx=$(( (job_id % ${#GPUS[@]}) + 1 ))
       gpu="${GPUS[$gpu_idx]}"
 
-      # 控制并发数量：如果当前后台 job 数 >= 总卡数 * 每卡上限，则等待
-      while true; do
-        running_jobs=$(jobs -rp | wc -l | tr -d ' ')
-        max_jobs=$(( ${#GPUS[@]} * MAX_JOBS_PER_GPU ))
-        if [ "$running_jobs" -lt "$max_jobs" ]; then
-          break
-        fi
-        sleep 5
-      done
-
       job_id=$((job_id + 1))
 
       # 构造日志文件名（方便之后查对应的曲线）
@@ -61,7 +48,7 @@ for lr in "${LRS[@]}"; do
         continue
       fi
       
-      CUDA_VISIBLE_DEVICES=$gpu nohup python train_rnn_updated.py \
+      CUDA_VISIBLE_DEVICES=$gpu python train_rnn_updated.py \
         --model_types "${MODEL_TYPES[@]}" \
         --hidden_sizes "${HIDDEN_SIZES[@]}" \
         --lrs "$lr" \
@@ -69,10 +56,13 @@ for lr in "${LRS[@]}"; do
         --dropout_rates "$drop" \
         --num_epochs "$NUM_EPOCHS" \
         --result_suffix "$RESULT_SUFFIX" \
-        > "$LOG_FILE" 2>&1 &
-      
-      # 记录进程 PID，方便后续检查
-      echo "  → Job $job_id PID: $!"
+        > "$LOG_FILE" 2>&1
+      exit_code=$?
+      echo "  → Job $job_id exit code: $exit_code"
+      if [ "$exit_code" -ne 0 ]; then
+        echo "ERROR: Job $job_id failed, stopping the script."
+        exit "$exit_code"
+      fi
 
       # 稍微错开发，避免同时抢资源
       sleep 3
