@@ -20,13 +20,27 @@ LRS=(0.0003 0.0004) # learning rates
 WDS=(0.0003 0.001) # weight decays
 DROPS=(0.5 0.6) # dropout rates
 
-# 如果有多张卡，在这里列出可用 GPU；当前仅用 GPU1，避免占用 GPU0 的大任务
-GPUS=(1)   # 多卡示例: (0 1 2 3)
+# 每张 GPU 最多同时跑几个进程（并行时建议 1-2）
+MAX_JOBS_PER_GPU=2
+
+# 如果有多张卡，在这里列出可用 GPU
+GPUS=(0 1)   # 多卡示例: (0 1 2 3)
 
 # 防止碎片化的可选环境变量（若不需要可注释）
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 job_id=0
+PIDS=()
+
+get_gpu_running_jobs() {
+  local gpu_id="$1"
+  if command -v nvidia-smi > /dev/null 2>&1; then
+    nvidia-smi --query-compute-apps=pid --format=csv,noheader -i "$gpu_id" 2>/dev/null | wc -l | tr -d ' '
+  else
+    # fallback: count all training processes
+    pgrep -f "train_rnn_updated.py" | wc -l | tr -d ' '
+  fi
+}
 
 for lr in "${LRS[@]}"; do
   for wd in "${WDS[@]}"; do
@@ -48,7 +62,16 @@ for lr in "${LRS[@]}"; do
         continue
       fi
       
-      CUDA_VISIBLE_DEVICES=$gpu python train_rnn_updated.py \
+      # 控制并发数量：当前 GPU 上任务数达到上限则等待
+      while true; do
+        running_jobs=$(get_gpu_running_jobs "$gpu")
+        if [ "$running_jobs" -lt "$MAX_JOBS_PER_GPU" ]; then
+          break
+        fi
+        sleep 10
+      done
+
+      CUDA_VISIBLE_DEVICES=$gpu nohup python train_rnn_updated.py \
         --model_types "${MODEL_TYPES[@]}" \
         --hidden_sizes "${HIDDEN_SIZES[@]}" \
         --lrs "$lr" \
@@ -56,13 +79,10 @@ for lr in "${LRS[@]}"; do
         --dropout_rates "$drop" \
         --num_epochs "$NUM_EPOCHS" \
         --result_suffix "$RESULT_SUFFIX" \
-        > "$LOG_FILE" 2>&1
-      exit_code=$?
-      echo "  → Job $job_id exit code: $exit_code"
-      if [ "$exit_code" -ne 0 ]; then
-        echo "ERROR: Job $job_id failed, stopping the script."
-        exit "$exit_code"
-      fi
+        > "$LOG_FILE" 2>&1 &
+      pid=$!
+      PIDS+=("$pid")
+      echo "  → Job $job_id PID: $pid"
 
       # 稍微错开发，避免同时抢资源
       sleep 3
@@ -70,4 +90,9 @@ for lr in "${LRS[@]}"; do
   done
 done
 
-echo "All jobs launched. Use 'jobs -l' 或 'ps | grep train_rnn_updated.py' 查看运行状态。"
+echo "All jobs launched. Use 'ps | grep train_rnn_updated.py' 查看运行状态。"
+
+# 若希望脚本等待所有任务完成，取消注释以下三行
+# for pid in "${PIDS[@]}"; do
+#   wait "$pid"
+# done
