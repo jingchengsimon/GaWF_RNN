@@ -1,29 +1,33 @@
 #!/bin/zsh
 # 或 #!/bin/bash 也可以
 
-# 切到工程目录
-# cd /Users/jingchengshi/Desktop/Vscode/FAW_RNN || exit 1
+# 切到脚本所在目录，确保相对路径正确
+# SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# cd "$SCRIPT_DIR" || exit 1
 
-# 日志目录
+# 日志目录（如不需要日志，可按需重定向到 /dev/null）
 LOG_DIR="logs_hparam"
 mkdir -p "$LOG_DIR"
 
 # 基本固定参数（按需修改）
 NUM_EPOCHS=200
 RESULT_SUFFIX="hparam_search"
-MODEL_TYPES=("rnn")          # 或加上 "rnn"
-HIDDEN_SIZES=(128 256)              # 你要扫的 hidden size
+MODEL_TYPES=("rnn")          # 或加上 "rnn" / "lstm" / "gru"
+HIDDEN_SIZES=(128 256)       # 你要扫的 hidden size
 
 # 超参搜索表（在这里控制哪些组合用“外层并行”）
 LRS=(0.0003 0.0004) # learning rates
 WDS=(0.0003 0.001) # weight decays
 DROPS=(0.5 0.6) # dropout rates
 
-# 每张 GPU 最多同时跑几个进程（单卡情况可以当作总并发上限）
+# 每张 GPU 最多同时跑几个进程（设为 1 即顺序串行，避免显存叠加）
 MAX_JOBS_PER_GPU=1
 
-# 如果有多张卡，在这里列出可用 GPU
+# 如果有多张卡，在这里列出可用 GPU；当前仅用 GPU1，避免占用 GPU0 的大任务
 GPUS=(1)   # 多卡示例: (0 1 2 3)
+
+# 防止碎片化的可选环境变量（若不需要可注释）
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 job_id=0
 
