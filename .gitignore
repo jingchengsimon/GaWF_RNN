@@ -9,6 +9,10 @@ dist/
 dist/mimo_pack-0.0.0-py3.10.egg
 .history/
 
+# log files
+*.log
+logs_hparam/ 
+
 # 大文件 - 不应该提交到 Git
 # 数据文件
 *.npy
