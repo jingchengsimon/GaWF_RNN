@@ -43,7 +43,7 @@ def _get_gpu_memory_usage():
     total = torch.cuda.get_device_properties(0).total_memory / 1024**3  # GB
     return (reserved / total) * 100.0 if total > 0 else 0.0
 
-def _find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=32, max_batch_size=256):
+def _find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=32, max_batch_size=64):
     """
     Automatically find optimal batch_size (only used in acceleration mode)
     
@@ -1814,10 +1814,9 @@ if __name__ == "__main__":
         mode_suffix = "allchars" if predict_all_chars else ("sector" if use_sector_mode else "coord")
         acc_suffix = "_acc" if use_acceleration else ""
         hp_suffix = f"_lr{lr}_wd{weight_decay}_do{dropout_rate}"
-        result_suffix = f"_{args.result_suffix}" if args.result_suffix else ""
         results_path = os.path.join(
             results_dir,
-            f"{model_type}_{mode_suffix}{acc_suffix}_h{hidden_size}{hp_suffix}{result_suffix}",
+            f"{model_type}_{mode_suffix}{acc_suffix}_h{hidden_size}{hp_suffix}",
         )
 
         save_results(results, results_path)
