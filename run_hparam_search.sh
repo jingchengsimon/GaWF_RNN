@@ -5,6 +5,10 @@
 # SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # cd "$SCRIPT_DIR" || exit 1
 
+# 激活 conda 环境
+# source /G/anaconda3/etc/profile.d/conda.sh
+conda activate aim3_rnn
+
 # 日志目录（如不需要日志，可按需重定向到 /dev/null）
 LOG_DIR="logs_hparam"
 mkdir -p "$LOG_DIR"
