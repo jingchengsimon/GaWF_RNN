@@ -16,9 +16,9 @@ MODEL_TYPES=("rnn")          # 或加上 "rnn" / "lstm" / "gru"
 HIDDEN_SIZES=(128 256)       # 你要扫的 hidden size
 
 # 超参搜索表（在这里控制哪些组合用“外层并行”）
-LRS=(0.0003 0.0004) # learning rates
-WDS=(0.0003 0.001) # weight decays
-DROPS=(0.5 0.6) # dropout rates
+LRS=(0.001) #(0.0003 0.0004) # learning rates
+WDS=(0.0001) #(0.0003 0.001) # weight decays
+DROPS=(0.3) #(0.5 0.6) # dropout rates
 
 # 每张 GPU 最多同时跑几个进程（并行时建议 1-2）
 MAX_JOBS_PER_GPU=1
