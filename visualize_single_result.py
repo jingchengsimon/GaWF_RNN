@@ -165,18 +165,18 @@ def parse_hparams_from_filename(filename):
     if h_match:
         hparams['hidden_size'] = int(h_match.group(1))
     
-    # 提取 lr
-    lr_match = re.search(r'_lr([\d.]+)', filename)
+    # 提取 lr (支持科学计数法，如 1e-4)
+    lr_match = re.search(r'_lr([\deE.+-]+?)(?:_|\.)', filename)
     if lr_match:
         hparams['lr'] = float(lr_match.group(1))
     
-    # 提取 wd
-    wd_match = re.search(r'_wd([\d.]+)', filename)
+    # 提取 wd (支持科学计数法)
+    wd_match = re.search(r'_wd([\deE.+-]+?)(?:_|\.)', filename)
     if wd_match:
         hparams['wd'] = float(wd_match.group(1))
     
     # 提取 dropout
-    do_match = re.search(r'_do([\d.]+)', filename)
+    do_match = re.search(r'_do([\d.]+?)(?:_|\.)', filename)
     if do_match:
         hparams['dropout'] = float(do_match.group(1))
     
