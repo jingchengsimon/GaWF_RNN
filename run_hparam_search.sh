@@ -22,7 +22,7 @@
 
 # 激活 conda 环境
 # source /G/anaconda3/etc/profile.d/conda.sh
-conda activate aim3_rnn
+# conda activate aim3_rnn
 
 # 日志目录（如不需要日志，可按需重定向到 /dev/null）
 LOG_DIR="logs_hparam"
@@ -30,16 +30,16 @@ mkdir -p "$LOG_DIR"
 
 # 基本固定参数（按需修改）
 NUM_EPOCHS=200
-RESULT_SUFFIX="hparam_search_2"
+RESULT_SUFFIX="default_sector"
 
 # 超参搜索表（逐个调优策略）
 MODEL_TYPES=("rnn")          # 或加上 "rnn" / "lstm" / "gru"
-HIDDEN_SIZES=(256)       # 你要扫的 hidden size
+HIDDEN_SIZES=(128 256)       # 你要扫的 hidden size
 
 # 定义搜索范围
-LRS=(0.0008 0.001 0.0012)        # learning rates
-WDS=(0.00008 0.0001 0.00012)     # weight decays
-DROPS=(0.25 0.3 0.35)            # dropout rates
+LRS=(0.001) #(0.0008 0.001 0.0012)        # learning rates
+WDS=(0.0001) #(0.00008 0.0001 0.00012)     # weight decays
+DROPS=(0.3) #(0.25 0.3 0.35)            # dropout rates
 
 # 默认值（用于固定其他参数）
 DEFAULT_LR=0.001
@@ -150,6 +150,7 @@ for combo in "${COMBINATIONS[@]}"; do
     --dropout_rates "$drop" \
     --num_epochs "$NUM_EPOCHS" \
     --result_suffix "$RESULT_SUFFIX" \
+    --use_sector_mode \
     > "$LOG_FILE" 2>&1 &
   pid=$!
   PIDS+=("$pid")

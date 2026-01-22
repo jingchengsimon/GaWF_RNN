@@ -43,7 +43,7 @@ def _get_gpu_memory_usage():
     total = torch.cuda.get_device_properties(0).total_memory / 1024**3  # GB
     return (reserved / total) * 100.0 if total > 0 else 0.0
 
-def _find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=32, max_batch_size=64):
+def _find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=32, max_batch_size=256):
     """
     Automatically find optimal batch_size (only used in acceleration mode)
     

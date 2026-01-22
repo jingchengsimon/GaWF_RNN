@@ -13,6 +13,37 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 
+def format_number(value, is_lr_or_wd=False):
+    """
+    智能格式化数值显示
+    - 对于很小的数值（< 0.001）使用科学计数法
+    - 对于lr/wd，如果是常见值则用普通格式，否则用科学计数法
+    - 其他情况显示合适的小数位数
+    """
+    if value == 0:
+        return "0"
+    
+    abs_val = abs(value)
+    
+    # 对于 lr 和 wd，特殊处理
+    if is_lr_or_wd:
+        # 如果小于 0.001 或大于等于 1，使用科学计数法
+        if abs_val < 0.001 or abs_val >= 1:
+            return f"{value:.1e}"
+        # 否则保留 4 位小数
+        else:
+            return f"{value:.4f}".rstrip('0').rstrip('.')
+    
+    # 对于其他参数（如 dropout）
+    if abs_val >= 100:
+        return f"{value:.0f}"
+    elif abs_val >= 1:
+        return f"{value:.2f}".rstrip('0').rstrip('.')
+    else:
+        # 保留足够的有效数字
+        return f"{value:.3f}".rstrip('0').rstrip('.')
+
+
 def visualize_training_curves(pkl_path, output_path, hparams=None):
     """
     可视化训练曲线并保存为PNG
@@ -71,11 +102,11 @@ def visualize_training_curves(pkl_path, output_path, hparams=None):
         if 'hidden_size' in hparams:
             title_parts.append(f"h={hparams['hidden_size']}")
         if 'lr' in hparams:
-            title_parts.append(f"lr={hparams['lr']}")
+            title_parts.append(f"lr={format_number(hparams['lr'], is_lr_or_wd=True)}")
         if 'wd' in hparams:
-            title_parts.append(f"wd={hparams['wd']}")
+            title_parts.append(f"wd={format_number(hparams['wd'], is_lr_or_wd=True)}")
         if 'dropout' in hparams:
-            title_parts.append(f"dropout={hparams['dropout']}")
+            title_parts.append(f"dropout={format_number(hparams['dropout'])}")
         if title_parts:
             plt.suptitle(' | '.join(title_parts), fontsize=14, fontweight='bold')
     
