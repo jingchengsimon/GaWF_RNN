@@ -135,7 +135,7 @@ def visualize_training_curves(pkl_path, output_path, hparams=None):
             plt.xlabel("Epoch", fontsize=12)
             plt.ylabel("Accuracy (%)", fontsize=12)
             plt.title("Sector accuracy", fontsize=13)
-            plt.ylim(-5, 105)
+            plt.ylim(40, 105)
             plt.legend(fontsize=10)
             plt.grid(alpha=0.3)
             

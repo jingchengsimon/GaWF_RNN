@@ -334,6 +334,7 @@ def plot_training_curves_overlay(results_dir, df, output_dir):
         if is_sector:
             ax2.set_ylabel('Accuracy (%)', fontsize=12)
             ax2.set_title('Sector Accuracy', fontsize=13)
+            ax2.set_ylim(40, 105)
         else:
             ax2.set_ylabel('MSE (pixel²)', fontsize=12)
             ax2.set_title('Position Error (MSE)', fontsize=13)
@@ -395,6 +396,7 @@ def plot_training_curves_overlay(results_dir, df, output_dir):
         if is_sector:
             ax2.set_ylabel('Accuracy (%)', fontsize=12)
             ax2.set_title('Sector Accuracy', fontsize=13)
+            ax2.set_ylim(40, 105)
         else:
             ax2.set_ylabel('MSE (pixel²)', fontsize=12)
             ax2.set_title('Position Error (MSE)', fontsize=13)
@@ -456,6 +458,7 @@ def plot_training_curves_overlay(results_dir, df, output_dir):
         if is_sector:
             ax2.set_ylabel('Accuracy (%)', fontsize=12)
             ax2.set_title('Sector Accuracy', fontsize=13)
+            ax2.set_ylim(40, 105)
         else:
             ax2.set_ylabel('MSE (pixel²)', fontsize=12)
             ax2.set_title('Position Error (MSE)', fontsize=13)
