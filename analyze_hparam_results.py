@@ -272,10 +272,16 @@ def plot_training_curves_overlay(results_dir, df, output_dir):
     if len(df_filtered) == 0:
         return
     
+    # 检测是 sector 还是 coord 模式
+    is_sector = df_filtered['mode'].iloc[0] == 'sector' if len(df_filtered) > 0 else False
+    
     # 找到baseline参数
     common_lr = df_filtered['lr'].mode().iloc[0] if len(df_filtered['lr'].mode()) > 0 else 0.001
     common_wd = df_filtered['wd'].mode().iloc[0] if len(df_filtered['wd'].mode()) > 0 else 0.0001
     common_dropout = df_filtered['dropout'].mode().iloc[0] if len(df_filtered['dropout'].mode()) > 0 else 0.3
+    
+    # 定义颜色列表
+    colors = plt.cm.tab10(np.linspace(0, 1, 10))
     
     # 1. 比较不同lr的训练曲线
     df_lr_vary = df_filtered[
@@ -286,7 +292,7 @@ def plot_training_curves_overlay(results_dir, df, output_dir):
     if len(df_lr_vary) > 1:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
         
-        for _, row in df_lr_vary.iterrows():
+        for idx, (_, row) in enumerate(df_lr_vary.iterrows()):
             pkl_file = results_dir / row['filename']
             with open(pkl_file, 'rb') as f:
                 results = pickle.load(f)
@@ -295,20 +301,42 @@ def plot_training_curves_overlay(results_dir, df, output_dir):
             train_acc = np.array(results['train_acc_char'])[:epochs]
             val_acc = np.array(results['val_acc_char'])[:epochs]
             
-            label = f"lr={row['lr']:.4f}"
-            ax1.plot(train_acc, label=label, linewidth=2)
-            ax2.plot(val_acc, label=label, linewidth=2)
+            color = colors[idx % len(colors)]
+            label = f"lr={row['lr']:.4f}, h={int(row['hidden_size'])}"
+            
+            # 左图：字符准确率（train实线，val虚线）
+            ax1.plot(train_acc, label=f'{label} (train)', linewidth=2, color=color, linestyle='-')
+            ax1.plot(val_acc, label=f'{label} (val)', linewidth=2, color=color, linestyle='--', alpha=0.8)
+            
+            # 右图：位置指标
+            if is_sector:
+                # Sector mode: 绘制位置准确率
+                if 'train_acc_pos' in results and 'val_acc_pos' in results:
+                    train_pos = np.array(results['train_acc_pos'])[:epochs]
+                    val_pos = np.array(results['val_acc_pos'])[:epochs]
+                    ax2.plot(train_pos, linewidth=2, color=color, linestyle='-')
+                    ax2.plot(val_pos, linewidth=2, color=color, linestyle='--', alpha=0.8)
+            else:
+                # Coord mode: 绘制位置MSE
+                if 'train_err_pos' in results and 'val_err_pos' in results:
+                    train_mse = np.array(results['train_err_pos'])[:epochs]
+                    val_mse = np.array(results['val_err_pos'])[:epochs]
+                    ax2.plot(train_mse, linewidth=2, color=color, linestyle='-')
+                    ax2.plot(val_mse, linewidth=2, color=color, linestyle='--', alpha=0.8)
         
         ax1.set_xlabel('Epoch', fontsize=12)
         ax1.set_ylabel('Accuracy (%)', fontsize=12)
-        ax1.set_title('Train Character Accuracy', fontsize=13)
-        ax1.legend()
+        ax1.set_title('Character Accuracy', fontsize=13)
+        ax1.legend(fontsize=8, loc='best')
         ax1.grid(alpha=0.3)
         
         ax2.set_xlabel('Epoch', fontsize=12)
-        ax2.set_ylabel('Accuracy (%)', fontsize=12)
-        ax2.set_title('Val Character Accuracy', fontsize=13)
-        ax2.legend()
+        if is_sector:
+            ax2.set_ylabel('Accuracy (%)', fontsize=12)
+            ax2.set_title('Sector Accuracy', fontsize=13)
+        else:
+            ax2.set_ylabel('MSE (pixel²)', fontsize=12)
+            ax2.set_title('Position Error (MSE)', fontsize=13)
         ax2.grid(alpha=0.3)
         
         plt.suptitle(f'Learning Rate Comparison (wd={common_wd:.6f}, dropout={common_dropout:.2f})', 
@@ -318,8 +346,127 @@ def plot_training_curves_overlay(results_dir, df, output_dir):
         plt.close()
         print(f"✓ LR curves overlay saved to: {output_dir / 'lr_curves_overlay.png'}")
     
-    # 类似地绘制wd和dropout的叠加曲线...
-    # (为节省空间，这里省略，可以按需添加)
+    # 2. 比较不同 weight decay 的训练曲线
+    df_wd_vary = df_filtered[
+        (df_filtered['lr'] == common_lr) & 
+        (df_filtered['dropout'] == common_dropout)
+    ].sort_values('wd')
+    
+    if len(df_wd_vary) > 1:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+        
+        for idx, (_, row) in enumerate(df_wd_vary.iterrows()):
+            pkl_file = results_dir / row['filename']
+            with open(pkl_file, 'rb') as f:
+                results = pickle.load(f)
+            
+            epochs = row['actual_epochs']
+            train_acc = np.array(results['train_acc_char'])[:epochs]
+            val_acc = np.array(results['val_acc_char'])[:epochs]
+            
+            color = colors[idx % len(colors)]
+            label = f"wd={row['wd']:.1e}, h={int(row['hidden_size'])}"
+            
+            # 左图：字符准确率
+            ax1.plot(train_acc, label=f'{label} (train)', linewidth=2, color=color, linestyle='-')
+            ax1.plot(val_acc, label=f'{label} (val)', linewidth=2, color=color, linestyle='--', alpha=0.8)
+            
+            # 右图：位置指标
+            if is_sector:
+                if 'train_acc_pos' in results and 'val_acc_pos' in results:
+                    train_pos = np.array(results['train_acc_pos'])[:epochs]
+                    val_pos = np.array(results['val_acc_pos'])[:epochs]
+                    ax2.plot(train_pos, linewidth=2, color=color, linestyle='-')
+                    ax2.plot(val_pos, linewidth=2, color=color, linestyle='--', alpha=0.8)
+            else:
+                if 'train_err_pos' in results and 'val_err_pos' in results:
+                    train_mse = np.array(results['train_err_pos'])[:epochs]
+                    val_mse = np.array(results['val_err_pos'])[:epochs]
+                    ax2.plot(train_mse, linewidth=2, color=color, linestyle='-')
+                    ax2.plot(val_mse, linewidth=2, color=color, linestyle='--', alpha=0.8)
+        
+        ax1.set_xlabel('Epoch', fontsize=12)
+        ax1.set_ylabel('Accuracy (%)', fontsize=12)
+        ax1.set_title('Character Accuracy', fontsize=13)
+        ax1.legend(fontsize=8, loc='best')
+        ax1.grid(alpha=0.3)
+        
+        ax2.set_xlabel('Epoch', fontsize=12)
+        if is_sector:
+            ax2.set_ylabel('Accuracy (%)', fontsize=12)
+            ax2.set_title('Sector Accuracy', fontsize=13)
+        else:
+            ax2.set_ylabel('MSE (pixel²)', fontsize=12)
+            ax2.set_title('Position Error (MSE)', fontsize=13)
+        ax2.grid(alpha=0.3)
+        
+        plt.suptitle(f'Weight Decay Comparison (lr={common_lr:.4f}, dropout={common_dropout:.2f})', 
+                     fontsize=14, fontweight='bold')
+        plt.tight_layout()
+        plt.savefig(output_dir / 'wd_curves_overlay.png', dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f"✓ WD curves overlay saved to: {output_dir / 'wd_curves_overlay.png'}")
+    
+    # 3. 比较不同 dropout 的训练曲线
+    df_dropout_vary = df_filtered[
+        (df_filtered['lr'] == common_lr) & 
+        (df_filtered['wd'] == common_wd)
+    ].sort_values('dropout')
+    
+    if len(df_dropout_vary) > 1:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+        
+        for idx, (_, row) in enumerate(df_dropout_vary.iterrows()):
+            pkl_file = results_dir / row['filename']
+            with open(pkl_file, 'rb') as f:
+                results = pickle.load(f)
+            
+            epochs = row['actual_epochs']
+            train_acc = np.array(results['train_acc_char'])[:epochs]
+            val_acc = np.array(results['val_acc_char'])[:epochs]
+            
+            color = colors[idx % len(colors)]
+            label = f"dropout={row['dropout']:.2f}, h={int(row['hidden_size'])}"
+            
+            # 左图：字符准确率
+            ax1.plot(train_acc, label=f'{label} (train)', linewidth=2, color=color, linestyle='-')
+            ax1.plot(val_acc, label=f'{label} (val)', linewidth=2, color=color, linestyle='--', alpha=0.8)
+            
+            # 右图：位置指标
+            if is_sector:
+                if 'train_acc_pos' in results and 'val_acc_pos' in results:
+                    train_pos = np.array(results['train_acc_pos'])[:epochs]
+                    val_pos = np.array(results['val_acc_pos'])[:epochs]
+                    ax2.plot(train_pos, linewidth=2, color=color, linestyle='-')
+                    ax2.plot(val_pos, linewidth=2, color=color, linestyle='--', alpha=0.8)
+            else:
+                if 'train_err_pos' in results and 'val_err_pos' in results:
+                    train_mse = np.array(results['train_err_pos'])[:epochs]
+                    val_mse = np.array(results['val_err_pos'])[:epochs]
+                    ax2.plot(train_mse, linewidth=2, color=color, linestyle='-')
+                    ax2.plot(val_mse, linewidth=2, color=color, linestyle='--', alpha=0.8)
+        
+        ax1.set_xlabel('Epoch', fontsize=12)
+        ax1.set_ylabel('Accuracy (%)', fontsize=12)
+        ax1.set_title('Character Accuracy', fontsize=13)
+        ax1.legend(fontsize=8, loc='best')
+        ax1.grid(alpha=0.3)
+        
+        ax2.set_xlabel('Epoch', fontsize=12)
+        if is_sector:
+            ax2.set_ylabel('Accuracy (%)', fontsize=12)
+            ax2.set_title('Sector Accuracy', fontsize=13)
+        else:
+            ax2.set_ylabel('MSE (pixel²)', fontsize=12)
+            ax2.set_title('Position Error (MSE)', fontsize=13)
+        ax2.grid(alpha=0.3)
+        
+        plt.suptitle(f'Dropout Comparison (lr={common_lr:.4f}, wd={common_wd:.6f})', 
+                     fontsize=14, fontweight='bold')
+        plt.tight_layout()
+        plt.savefig(output_dir / 'dropout_curves_overlay.png', dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f"✓ Dropout curves overlay saved to: {output_dir / 'dropout_curves_overlay.png'}")
 
 
 def main():
