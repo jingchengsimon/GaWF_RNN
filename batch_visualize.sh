@@ -74,8 +74,8 @@ for pkl_file in "${PKL_FILES[@]}"; do
     # 提取文件名（不含路径）
     filename=$(basename "$pkl_file")
     
-    # 跳过临时文件或备份文件
-    if [[ "$filename" =~ ^\. ]] || [[ "$filename" =~ ~$ ]]; then
+    # 跳过临时文件或备份文件（以.开头或以~结尾）
+    if [[ "$filename" == .* ]] || [[ "$filename" == *~ ]]; then
         echo "跳过: $filename (临时文件)"
         continue
     fi
