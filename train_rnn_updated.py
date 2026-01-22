@@ -1713,7 +1713,7 @@ if __name__ == "__main__":
     dropout_rates = args.dropout_rates
 
     # Create results directory
-    results_dir = f"results/{args.result_suffix}"
+    results_dir = f"results/models/{args.result_suffix}"
     if not os.path.exists(results_dir):
         os.makedirs(results_dir, exist_ok=True)
         print(f"Created results directory: {results_dir}")
