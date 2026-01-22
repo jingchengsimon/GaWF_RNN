@@ -219,3 +219,4 @@ ps aux | grep train_rnn_updated.py
 pkill -f train_rnn_updated.py
 ```
 
+
