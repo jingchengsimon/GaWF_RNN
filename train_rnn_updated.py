@@ -789,7 +789,8 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             # Because GaWFRNNConv uses feedback mechanism, batch_size changes cause prev_feedback dimension mismatch
             if device == 'cuda' and not isinstance(mdl, GaWFRNNConv):
                 print("Automatically finding optimal batch_size...")
-                batch_size = _find_optimal_batch_size(mdl, train_data, device=device, start_batch_size=32)
+                # batch_size = _find_optimal_batch_size(mdl, train_data, device=device, start_batch_size=32)
+                batch_size = 256 # fixed for reproducibility
                 print(f"Using batch_size = {batch_size}")
             elif isinstance(mdl, GaWFRNNConv):
                 print(f"Detected GaWFRNNConv model, skipping batch_size search, using default batch_size = {batch_size}")
