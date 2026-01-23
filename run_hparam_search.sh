@@ -56,7 +56,7 @@
 
 # 日志目录（如不需要日志，可按需重定向到 /dev/null）
 LOG_DIR="logs_hparam"
-mkdir -p "$LOG_DIR"
+# mkdir -p "$LOG_DIR"
 
 # 基本固定参数（按需修改）
 NUM_EPOCHS=200
