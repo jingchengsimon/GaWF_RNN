@@ -56,7 +56,7 @@
 
 # 日志目录（如不需要日志，可按需重定向到 /dev/null）
 LOG_DIR="logs_hparam"
-# mkdir -p "$LOG_DIR"
+mkdir -p "$LOG_DIR"
 
 # 基本固定参数（按需修改）
 NUM_EPOCHS=200
@@ -136,9 +136,9 @@ if [ "$USE_GRID_SEARCH" = true ]; then
     echo ""
     for model_type in "${MODEL_TYPES[@]}"; do
       for hidden_size in "${HIDDEN_SIZES[@]}"; do
-        lr="${LRS[0]}"
-        wd="${WDS[0]}"
-        drop="${DROPS[0]}"
+        lr="${LRS[1]}"
+        wd="${WDS[1]}"
+        drop="${DROPS[1]}"
         COMBINATIONS+=("$model_type,$hidden_size,$lr,$wd,$drop,default")
         echo "添加: model=$model_type, h=$hidden_size, lr=$lr, wd=$wd, drop=$drop"
       done
