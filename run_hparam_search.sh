@@ -23,6 +23,10 @@
 #
 # 使用示例：
 #
+# 【选择训练脚本】
+#   TRAIN_SCRIPT="train_rnn_sector_original.py"  # 原始版本（无 weight_decay/dropout）
+#   TRAIN_SCRIPT="train_rnn_updated.py"          # 完整版本（支持所有超参数）
+#
 # 【快速测试单一配置】
 #   LRS=(0.001)
 #   WDS=(0.0001)
@@ -61,6 +65,11 @@ mkdir -p "$LOG_DIR"
 # 基本固定参数（按需修改）
 NUM_EPOCHS=200
 RESULT_SUFFIX="default_sector"
+
+# 选择训练脚本：
+# - "train_rnn_updated.py": 支持所有超参数 (lr, weight_decay, dropout)
+# - "train_rnn_sector_original.py": 简化版本，只支持 lr，无 weight_decay/dropout
+TRAIN_SCRIPT="train_rnn_sector_original.py"  # 或 "train_rnn_updated.py"
 
 # 超参搜索表（逐个调优策略）
 MODEL_TYPES=("rnn")          # 或加上 "rnn" / "lstm" / "gru"
@@ -120,6 +129,18 @@ get_gpu_running_jobs() {
 # ============================================================
 
 COMBINATIONS=()
+
+echo "============================================================"
+echo "训练脚本: $TRAIN_SCRIPT"
+if [ "$TRAIN_SCRIPT" = "train_rnn_sector_original.py" ]; then
+  echo "  - 原始版本（无 encoder dropout，无 weight_decay）"
+  echo "  - 参数：lr, batch_size, hidden_size"
+else
+  echo "  - 完整版本（支持 weight_decay 和 dropout）"
+  echo "  - 参数：lr, weight_decay, dropout_rate, hidden_size"
+fi
+echo "============================================================"
+echo ""
 
 if [ "$USE_GRID_SEARCH" = true ]; then
   # ========== 全组合搜索模式 ==========
@@ -242,16 +263,31 @@ for combo in "${COMBINATIONS[@]}"; do
     sleep 10
   done
   
-  CUDA_VISIBLE_DEVICES=$gpu nohup python train_rnn_updated.py \
-    --model_types "$model_type" \
-    --hidden_sizes "$hidden_size" \
-    --lrs "$lr" \
-    --weight_decays "$wd" \
-    --dropout_rates "$drop" \
-    --num_epochs "$NUM_EPOCHS" \
-    --result_suffix "$RESULT_SUFFIX" \
-    --use_sector_mode \
-    > "$LOG_FILE" 2>&1 &
+  # 根据训练脚本类型传递不同的参数
+  if [ "$TRAIN_SCRIPT" = "train_rnn_sector_original.py" ]; then
+    # 原始脚本：使用 --lr (单数)，不传递 weight_decay 和 dropout
+    CUDA_VISIBLE_DEVICES=$gpu nohup python "$TRAIN_SCRIPT" \
+      --model_types "$model_type" \
+      --hidden_sizes "$hidden_size" \
+      --lr "$lr" \
+      --batch_size 256 \
+      --num_epochs "$NUM_EPOCHS" \
+      --result_suffix "$RESULT_SUFFIX" \
+      --use_sector_mode \
+      > "$LOG_FILE" 2>&1 &
+  else
+    # 更新版脚本：使用 --lrs (复数)，传递所有超参数
+    CUDA_VISIBLE_DEVICES=$gpu nohup python train_rnn_updated.py \
+      --model_types "$model_type" \
+      --hidden_sizes "$hidden_size" \
+      --lrs "$lr" \
+      --weight_decays "$wd" \
+      --dropout_rates "$drop" \
+      --num_epochs "$NUM_EPOCHS" \
+      --result_suffix "$RESULT_SUFFIX" \
+      --use_sector_mode \
+      > "$LOG_FILE" 2>&1 &
+  fi
   pid=$!
   PIDS+=("$pid")
   echo "  → Job $job_id PID: $pid"
