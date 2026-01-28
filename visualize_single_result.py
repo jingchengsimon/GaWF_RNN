@@ -7,6 +7,17 @@ import sys
 import pickle
 import argparse
 import numpy as np
+
+# Fix numpy version compatibility for pickle loading
+# 修复numpy版本兼容性问题
+import numpy.core.numeric as _num
+try:
+    import numpy._core.numeric
+except ImportError:
+    import sys
+    sys.modules['numpy._core.numeric'] = _num
+    sys.modules['numpy._core'] = np.core
+
 import matplotlib
 matplotlib.use('Agg')  # 无图形界面模式
 import matplotlib.pyplot as plt
