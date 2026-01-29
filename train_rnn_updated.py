@@ -18,9 +18,72 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
-torch.set_num_threads(4) 
+torch.set_num_threads(4)
+
+
+# ==================== Acceleration Configuration ====================
+class AccelerationConfig:
+    """
+    Encapsulated acceleration module configuration for optimized training.
+    Supports AMP, gradient accumulation, memory management, and DataLoader optimization.
+    Can be enabled/disabled to isolate performance impact.
+    """
+    def __init__(self, use_acceleration=False, enable_amp=True, enable_dataloader_opt=True, 
+                 enable_batch_auto=True, enable_gradient_scale=True, enable_grad_accum=False,
+                 grad_accum_steps=4, enable_memory_opt=True, dataloader_prefetch_factor=2):
+        """
+        Args:
+            use_acceleration: Master switch for all acceleration features
+            enable_amp: Enable automatic mixed precision (AMP) for float16 computation
+            enable_dataloader_opt: Enable multi-worker DataLoader optimization
+            enable_batch_auto: Enable automatic batch size optimization
+            enable_gradient_scale: Enable gradient scaling (used with AMP)
+            enable_grad_accum: Enable gradient accumulation for effective larger batch size
+            grad_accum_steps: Number of accumulation steps (effective_batch = batch_size * grad_accum_steps)
+            enable_memory_opt: Enable memory optimization (cache clearing, gradient checkpointing prep)
+            dataloader_prefetch_factor: Prefetch factor for DataLoader (reduces 2 if memory tight)
+        """
+        self.use_acceleration = use_acceleration
+        self.enable_amp = use_acceleration and enable_amp
+        self.enable_dataloader_opt = use_acceleration and enable_dataloader_opt
+        self.enable_batch_auto = use_acceleration and enable_batch_auto
+        self.enable_gradient_scale = use_acceleration and enable_gradient_scale
+        self.enable_grad_accum = use_acceleration and enable_grad_accum
+        self.grad_accum_steps = grad_accum_steps if self.enable_grad_accum else 1
+        self.enable_memory_opt = use_acceleration and enable_memory_opt
+        self.dataloader_prefetch_factor = dataloader_prefetch_factor if use_acceleration else 2
+        
+        # If use_acceleration=False, all sub-features are disabled
+        if not use_acceleration:
+            self.enable_amp = False
+            self.enable_dataloader_opt = False
+            self.enable_batch_auto = False
+            self.enable_gradient_scale = False
+            self.enable_grad_accum = False
+            self.grad_accum_steps = 1
+            self.enable_memory_opt = False
+            self.dataloader_prefetch_factor = 2
+    
+    def summary(self):
+        """Print acceleration configuration summary."""
+        print("\n" + "="*60)
+        print("Acceleration Configuration:")
+        print(f"  Master switch (use_acceleration): {self.use_acceleration}")
+        if self.use_acceleration:
+            print(f"  - AMP (Automatic Mixed Precision): {self.enable_amp}")
+            print(f"  - DataLoader Optimization: {self.enable_dataloader_opt}")
+            print(f"  - Batch Size Auto Optimization: {self.enable_batch_auto}")
+            print(f"  - Gradient Scaling: {self.enable_gradient_scale}")
+            print(f"  - Gradient Accumulation: {self.enable_grad_accum} (steps={self.grad_accum_steps})")
+            print(f"  - Memory Optimization: {self.enable_memory_opt}")
+            print(f"  - DataLoader Prefetch Factor: {self.dataloader_prefetch_factor}")
+        else:
+            print("  All acceleration features disabled")
+        print("="*60 + "\n")
+
+
 # ==================== Acceleration Training Modules (Optional) ====================
-# These modules are only used when use_acceleration=True
+# These modules are only used when acceleration is enabled
 # By default (use_acceleration=False), they are not imported to keep the code clean
 
 def _init_acceleration_modules():
@@ -44,9 +107,11 @@ def _get_gpu_memory_usage():
     total = torch.cuda.get_device_properties(0).total_memory / 1024**3  # GB
     return (reserved / total) * 100.0 if total > 0 else 0.0
 
-def _find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=32, max_batch_size=256):
+def _find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=32, max_batch_size=256, 
+                              enable_grad_accum=False, grad_accum_steps=4):
     """
     Automatically find optimal batch_size (only used in acceleration mode)
+    Uses smaller batch_size with gradient accumulation to save memory while maintaining effective batch size.
     
     Args:
         model: Model
@@ -54,18 +119,23 @@ def _find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=
         device: Device
         start_batch_size: Starting batch_size
         max_batch_size: Maximum batch_size
+        enable_grad_accum: Whether to enable gradient accumulation
+        grad_accum_steps: Gradient accumulation steps
     
     Returns:
-        Optimal batch_size
+        Optimal batch_size, and adjusted num_workers if memory is tight
     """
     if device == 'cpu':
-        return start_batch_size
+        return start_batch_size, 0
     
     model.eval()
     optimal_batch_size = start_batch_size
+    num_workers_adjusted = 0  # Conservative: start with no workers
     
     # Test different batch sizes
-    for batch_size in [start_batch_size, 64, 128, 256]:
+    test_sizes = [start_batch_size, 64, 128, 256] if not enable_grad_accum else [start_batch_size, 32, 16, 8]
+    
+    for batch_size in test_sizes:
         if batch_size > max_batch_size:
             break
         
@@ -82,9 +152,10 @@ def _find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=
             
             memory_usage = _get_gpu_memory_usage()
             
-            if memory_usage < 80.0:
+            if memory_usage < 70.0:  # Conservative threshold to avoid OOM
                 optimal_batch_size = batch_size
-                print(f"Testing batch_size={batch_size}: GPU memory usage {memory_usage:.1f}%, usable")
+                num_workers_adjusted = 2 if enable_grad_accum else 4  # Allow more workers with grad accum
+                print(f"Testing batch_size={batch_size}: GPU memory usage {memory_usage:.1f}%, usable (num_workers will be {num_workers_adjusted})")
             else:
                 print(f"Testing batch_size={batch_size}: GPU memory usage {memory_usage:.1f}%, exceeds limit")
                 break
@@ -105,7 +176,7 @@ def _find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=
     
     torch.cuda.empty_cache()
     model.train()
-    return optimal_batch_size
+    return optimal_batch_size, num_workers_adjusted
 
 
 # ==================== Dataset Class ====================
@@ -218,10 +289,12 @@ class MC_RNN_Dataset(Dataset):
 
 
 # ==================== Model Classes ====================
-class RNNConv(nn.Module):
-    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256, 
-                 max_chars=10, predict_all_chars=False):
-        super(RNNConv, self).__init__()
+class BaseRNNConv(nn.Module):
+    """Base class for CNN-RNN models supporting different RNN types"""
+    
+    def __init__(self, num_classes, num_pos, rnn_class=nn.RNN, kernel_size=3, device='cuda', 
+                 dropout_rate=0.3, hidden_size=256, max_chars=10, predict_all_chars=False):
+        super(BaseRNNConv, self).__init__()
         self.device = device
         self.dropout_rate = dropout_rate
         self.max_chars = max_chars
@@ -232,28 +305,24 @@ class RNNConv(nn.Module):
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
         self.MP2 = nn.MaxPool2d(kernel_size=4, stride=4)
         self.LNorm2 = nn.LayerNorm([64, 12, 12])
-        # Original RNN version
-        self.rnn = nn.RNN(input_size=64 * 12 * 12, hidden_size=hidden_size,
-                          num_layers=1, batch_first=True)
+        self.rnn = rnn_class(input_size=64 * 12 * 12, hidden_size=hidden_size,
+                             num_layers=1, batch_first=True)
         self.LNormRNN = nn.LayerNorm(hidden_size)
         
         if predict_all_chars:
-            # For predicting all chars: output (max_chars, num_classes) for each frame
             self.fcchars = nn.Linear(hidden_size, max_chars * num_classes)
-            self.fcpos = None  # No position prediction in all-chars mode
+            self.fcpos = None
         else:
-            # Original: single char + position
             self.fcchar = nn.Linear(hidden_size, num_classes)
             self.fcpos = nn.Linear(hidden_size, num_pos)
         self.to(self.device)
 
     def encoder(self, x):
-        # Add dropout to prevent overfitting
         x = self.conv1(x)
         x = self.MP1(x)
         x = self.LNorm1(x)
         x = F.relu(x)
-        x = F.dropout2d(x, p=self.dropout_rate, training=self.training)  # 2D dropout for conv layers
+        x = F.dropout2d(x, p=self.dropout_rate, training=self.training)
         
         x = self.conv2(x)
         x = self.MP2(x)
@@ -271,7 +340,6 @@ class RNNConv(nn.Module):
 
     def classifier(self, x):
         if self.predict_all_chars:
-            # Output: (B, T, max_chars * num_classes) -> reshape to (B, T, max_chars, num_classes)
             chars_out = self.fcchars(x)
             batch_size, frame_num = chars_out.shape[:2]
             num_classes = chars_out.shape[-1] // self.max_chars
@@ -282,24 +350,37 @@ class RNNConv(nn.Module):
 
     def forward(self, x):
         x = x.to(self.device)
-
         batch_size, frame_num, channels, height, width = x.size()
-
-        # resize to process each frame individually
         x = x.view(batch_size * frame_num, channels, height, width)
-
-        # apply CNN encoder
         x = self.encoder(x)
-        
-        # reshape back to batches of stacks of frames and flatten each image
         x = x.view(batch_size, frame_num, -1)
-
-        # apply RNN
         x = self.middle(x)
-
-        # apply classification heads
         char_out, pos_out = self.classifier(x)
         return char_out, pos_out
+
+
+class RNNConv(BaseRNNConv):
+    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256, 
+                 max_chars=10, predict_all_chars=False):
+        super(RNNConv, self).__init__(num_classes, num_pos, rnn_class=nn.RNN, kernel_size=kernel_size,
+                                      device=device, dropout_rate=dropout_rate, hidden_size=hidden_size,
+                                      max_chars=max_chars, predict_all_chars=predict_all_chars)
+
+
+class GRUConv(BaseRNNConv):
+    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
+                 max_chars=10, predict_all_chars=False):
+        super(GRUConv, self).__init__(num_classes, num_pos, rnn_class=nn.GRU, kernel_size=kernel_size,
+                                      device=device, dropout_rate=dropout_rate, hidden_size=hidden_size,
+                                      max_chars=max_chars, predict_all_chars=predict_all_chars)
+
+
+class LSTMConv(BaseRNNConv):
+    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
+                 max_chars=10, predict_all_chars=False):
+        super(LSTMConv, self).__init__(num_classes, num_pos, rnn_class=nn.LSTM, kernel_size=kernel_size,
+                                       device=device, dropout_rate=dropout_rate, hidden_size=hidden_size,
+                                       max_chars=max_chars, predict_all_chars=predict_all_chars)
 
 
 class GaWFRNNConv(nn.Module):
@@ -534,169 +615,10 @@ class GaWFRNNConv(nn.Module):
         return char_out, pos_out
 
 
-class GRUConv(nn.Module):
-    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
-                 max_chars=10, predict_all_chars=False):
-        super(GRUConv, self).__init__()
-        self.device = device
-        self.dropout_rate = dropout_rate
-        self.max_chars = max_chars
-        self.predict_all_chars = predict_all_chars
-        self.conv1 = nn.Conv2d(2, 32, kernel_size=kernel_size, padding='same')
-        self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.LNorm1 = nn.LayerNorm([32, 48, 48])
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.MP2 = nn.MaxPool2d(kernel_size=4, stride=4)
-        self.LNorm2 = nn.LayerNorm([64, 12, 12])
-        self.rnn = nn.GRU(input_size=64 * 12 * 12, hidden_size=hidden_size,
-                          num_layers=1, batch_first=True)
-        self.LNormRNN = nn.LayerNorm(hidden_size)
-        
-        if predict_all_chars:
-            self.fcchars = nn.Linear(hidden_size, max_chars * num_classes)
-            self.fcpos = None
-        else:
-            self.fcchar = nn.Linear(hidden_size, num_classes)
-            self.fcpos = nn.Linear(hidden_size, num_pos)
-        self.to(self.device)
-
-    def encoder(self, x):
-        x = self.conv1(x)
-        x = self.MP1(x)
-        x = self.LNorm1(x)
-        x = F.relu(x)
-        x = F.dropout2d(x, p=self.dropout_rate, training=self.training)
-        
-        x = self.conv2(x)
-        x = self.MP2(x)
-        x = self.LNorm2(x)
-        x = F.relu(x)
-        x = F.dropout2d(x, p=self.dropout_rate, training=self.training)
-        return x
-
-    def middle(self, x):
-        x = self.rnn(x)[0]
-        x = self.LNormRNN(x)
-        x = F.relu(x)
-        x = F.dropout(x, p=0.5, training=self.training)
-        return x
-
-    def classifier(self, x):
-        if self.predict_all_chars:
-            chars_out = self.fcchars(x)
-            batch_size, frame_num = chars_out.shape[:2]
-            num_classes = chars_out.shape[-1] // self.max_chars
-            chars_out = chars_out.view(batch_size, frame_num, self.max_chars, num_classes)
-            return chars_out, None
-        else:
-            return self.fcchar(x), self.fcpos(x)
-
-    def forward(self, x):
-        x = x.to(self.device)
-
-        batch_size, frame_num, channels, height, width = x.size()
-
-        # resize to process each frame individually
-        x = x.view(batch_size * frame_num, channels, height, width)
-
-        # apply CNN encoder
-        x = self.encoder(x)
-
-        # reshape back to batches of stacks of frames and flatten each image
-        x = x.view(batch_size, frame_num, -1)
-
-        # apply RNN
-        x = self.middle(x)
-
-        # apply classification heads
-        char_out, pos_out = self.classifier(x)
-        return char_out, pos_out
-
-
-class LSTMConv(nn.Module):
-    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
-                 max_chars=10, predict_all_chars=False):
-        super(LSTMConv, self).__init__()
-        self.device = device
-        self.dropout_rate = dropout_rate
-        self.max_chars = max_chars
-        self.predict_all_chars = predict_all_chars
-        self.conv1 = nn.Conv2d(2, 32, kernel_size=kernel_size, padding='same')
-        self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.LNorm1 = nn.LayerNorm([32, 48, 48])
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.MP2 = nn.MaxPool2d(kernel_size=4, stride=4)
-        self.LNorm2 = nn.LayerNorm([64, 12, 12])
-        self.rnn = nn.LSTM(input_size=64 * 12 * 12, hidden_size=hidden_size,
-                           num_layers=1, batch_first=True)
-        self.LNormRNN = nn.LayerNorm(hidden_size)
-        
-        if predict_all_chars:
-            self.fcchars = nn.Linear(hidden_size, max_chars * num_classes)
-            self.fcpos = None
-        else:
-            self.fcchar = nn.Linear(hidden_size, num_classes)
-            self.fcpos = nn.Linear(hidden_size, num_pos)
-        self.to(self.device)
-
-    def encoder(self, x):
-        x = self.conv1(x)
-        x = self.MP1(x)
-        x = self.LNorm1(x)
-        x = F.relu(x)
-        x = F.dropout2d(x, p=self.dropout_rate, training=self.training)
-        
-        x = self.conv2(x)
-        x = self.MP2(x)
-        x = self.LNorm2(x)
-        x = F.relu(x)
-        x = F.dropout2d(x, p=self.dropout_rate, training=self.training)
-        return x
-
-    def middle(self, x):
-        x = self.rnn(x)[0]
-        x = self.LNormRNN(x)
-        x = F.relu(x)
-        x = F.dropout(x, p=0.5, training=self.training)
-        return x
-
-    def classifier(self, x):
-        if self.predict_all_chars:
-            chars_out = self.fcchars(x)
-            batch_size, frame_num = chars_out.shape[:2]
-            num_classes = chars_out.shape[-1] // self.max_chars
-            chars_out = chars_out.view(batch_size, frame_num, self.max_chars, num_classes)
-            return chars_out, None
-        else:
-            return self.fcchar(x), self.fcpos(x)
-
-    def forward(self, x):
-        x = x.to(self.device)
-
-        batch_size, frame_num, channels, height, width = x.size()
-
-        # resize to process each frame individually
-        x = x.view(batch_size * frame_num, channels, height, width)
-
-        # apply CNN encoder
-        x = self.encoder(x)
-
-        # reshape back to batches of stacks of frames and flatten each image
-        x = x.view(batch_size, frame_num, -1)
-
-        # apply RNN
-        x = self.middle(x)
-
-        # apply classification heads
-        char_out, pos_out = self.classifier(x)
-        return char_out, pos_out
-
-
 # ==================== Training Function ====================
 def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, lr=0.001, 
                   use_acceleration=False, use_modification=False, 
-                  weight_decay=None, dropout_rate=None, use_early_stopping=None,
-                  early_stopping_patience=15, min_delta=0.001):
+                  weight_decay=None, dropout_rate=None, rnn_diag_lambda=1e-4):
     """
     Train model, supports sector mode and coordinate mode
     
@@ -710,26 +632,25 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                      - coordinate mode default: [1, 0.001]
         lr: Learning rate
         use_acceleration: Whether to use acceleration training (default False)
-                         - True: Enable mixed precision training, automatic batch_size optimization, DataLoader optimization, etc.
+                         - True: Enable mixed precision training (AMP), automatic batch_size optimization, 
+                                 gradient accumulation for larger effective batch size, DataLoader optimization, etc.
                          - False: Use original training method, does not affect existing logic
-        use_modification: Whether to use modification settings (weight_decay, dropout_rate, early stopping)
-                         - True: Use modification settings (default: weight_decay=1e-4, dropout_rate=0.3, use_early_stopping=True)
-                         - False: Disable all modifications (weight_decay=0.0, dropout_rate=0.0, use_early_stopping=False)
-                         - If True, you can still override with custom weight_decay, dropout_rate, use_early_stopping values
+                         - Features enabled when True: AMP (float16), gradient accumulation, memory optimization,
+                           multi-worker DataLoader with prefetch, CPU-GPU pinned memory
+        use_modification: Whether to use modification settings (weight_decay, dropout_rate)
+                         - True: Use modification settings (default: weight_decay=1e-4, dropout_rate=0.3)
+                         - False: Disable all modifications (weight_decay=0.0, dropout_rate=0.0)
+                         - If True, you can still override with custom weight_decay, dropout_rate values
         weight_decay: L2 regularization coefficient (weight decay)
-                     - If use_modification=False: ignored, [set] to 0.0
+                     - If use_modification=False: ignored, set to 0.0
                      - If use_modification=True and None: default 1e-4
                      - If use_modification=True and specified: use custom value
         dropout_rate: Dropout rate (note: this is only for reference, actual dropout is set when creating the model)
                      - If use_modification=False: ignored, set to 0.0
                      - If use_modification=True and None: default 0.3
                      - If use_modification=True and specified: use custom value
-        use_early_stopping: Whether to use early stopping mechanism
-                           - If use_modification=False: ignored, set to False
-                           - If use_modification=True and None: default True
-                           - If use_modification=True and specified: use custom value
-        early_stopping_patience: Early stopping patience, number of epochs without validation improvement, default 15
-        min_delta: Minimum improvement threshold for early stopping, default 0.001
+        rnn_diag_lambda: Regularization coefficient for RNN hidden-to-hidden diagonal weight regularization, default 1e-4
+                        This adds L1 penalty on the diagonal elements of RNN hidden weight matrix to improve stability
     """
     # Get use_sector and predict_all_chars information from dataset
     use_sector = train_data.use_sector
@@ -746,28 +667,29 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         else:
             loss_weights = [1, 0.001]  # coordinate mode: position loss weight smaller (MSE usually has larger values)
     
-    # Handle modification settings: weight_decay, dropout_rate, use_early_stopping
+    # Handle modification settings: weight_decay, dropout_rate
     if use_modification:
         # If use_modification=True, use provided values or defaults
         if weight_decay is None:
             weight_decay = 1e-4  # Default weight decay
         if dropout_rate is None:
             dropout_rate = 0.3  # Default dropout rate (for reference, actual dropout is set in model)
-        if use_early_stopping is None:
-            use_early_stopping = False  # Default early stopping
-        print(f"Modification settings enabled: weight_decay={weight_decay}, dropout_rate={dropout_rate}, use_early_stopping={use_early_stopping}")
+        print(f"Modification settings enabled: weight_decay={weight_decay}, dropout_rate={dropout_rate}")
     else:
         # If use_modification=False, force disable all modifications
         weight_decay = 0.0
         dropout_rate = 0.0
-        use_early_stopping = False
-        print("Modification settings disabled: weight_decay=0.0, dropout_rate=0.0, use_early_stopping=False")
+        print("Modification settings disabled: weight_decay=0.0, dropout_rate=0.0")
     
     # Place parameters according to model's internal device (can be 'cuda' or 'cpu')
     device = mdl.device
     mdl.to(device)
     
-    # ========== Acceleration Training Module Initialization (only used when use_acceleration=True) ==========
+    # ========== Acceleration Configuration ==========
+    accel_config = AccelerationConfig(use_acceleration=use_acceleration)
+    accel_config.summary()
+    
+    # ========== Acceleration Training Module Initialization (only used when acceleration is enabled) ==========
     autocast_fn = None
     GradScaler_cls = None
     scaler = None
@@ -785,45 +707,30 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             print("Warning: Unable to import acceleration training modules, will use standard training")
             use_acceleration = False
         else:
-            # Automatically find optimal batch_size
+            # Automatically find optimal batch_size (Ubuntu only)
             # Note: GaWFRNNConv model skips batch_size search, uses default value 32
             # Because GaWFRNNConv uses feedback mechanism, batch_size changes cause prev_feedback dimension mismatch
             if device == 'cuda' and not isinstance(mdl, GaWFRNNConv):
-                print("Automatically finding optimal batch_size...")
-                batch_size = _find_optimal_batch_size(mdl, train_data, device=device, start_batch_size=32)
-                # batch_size = 256 # fixed for reproducibility
-                print(f"Using batch_size = {batch_size}")
+                print("Automatically finding optimal batch_size (with gradient accumulation support)...")
+                batch_size, num_workers = _find_optimal_batch_size(
+                    mdl, train_data, device=device, start_batch_size=32,
+                    enable_grad_accum=accel_config.enable_grad_accum, 
+                    grad_accum_steps=accel_config.grad_accum_steps
+                )
+                print(f"Using batch_size = {batch_size}, suggested num_workers = {num_workers}")
             elif isinstance(mdl, GaWFRNNConv):
                 print(f"Detected GaWFRNNConv model, skipping batch_size search, using default batch_size = {batch_size}")
             
-            # Automatically set num_workers and batch_size
-            # IMPORTANT: WSL-specific settings only apply in WSL environment
-            # In pure Linux environment, original multiprocessing and batch_size settings will be used
-            is_wsl = os.name == 'posix' and os.path.exists('/mnt/c')
-            
-            if is_wsl:
-                # WSL environment: apply WSL-specific limitations
-                # 1. Disable multiprocessing to avoid semaphore leaks
-                num_workers = 0
-                # 2. Limit batch_size to 8 to maintain convergence characteristics
-                if batch_size > 8:
-                    original_batch_size = batch_size
-                    batch_size = 8
-                    print(f"WSL environment: num_workers=0, batch_size limited from {original_batch_size} to {batch_size}")
-                else:
-                    print(f"WSL environment: num_workers=0, batch_size={batch_size}")
-            else:
-                # Pure Linux or Windows: use original settings
-                # This ensures original behavior is maintained when running on Linux servers
+            # Set num_workers for Ubuntu environment (may be overridden by batch_size search)
+            if num_workers == 0:  # Only set if not already set
                 if psutil_module is not None:
-                    num_workers = min(2, psutil_module.cpu_count(logical=False))
+                    num_workers = min(2, psutil_module.cpu_count(logical=False))  # Conservative default
                 else:
                     num_workers = min(2, os.cpu_count() or 1)
-                env_name = 'Linux' if os.name == 'posix' else 'Windows'
-                print(f"{env_name} environment: num_workers={num_workers}, batch_size={batch_size} (using optimal settings without limitation)")
+            print(f"Ubuntu environment: num_workers={num_workers}, batch_size={batch_size}")
             
             # Enable pin_memory (GPU only)
-            pin_memory = False #(device == 'cuda')
+            pin_memory = False
             show_gpu_usage = True
             
             # Initialize mixed precision training scaler
@@ -1074,46 +981,57 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
 
     # data loader (select different configurations based on acceleration mode)
     if use_acceleration:
+        # Memory-optimized DataLoader configuration
+        # - num_workers: CPU parallelism (careful not to overallocate)
+        # - pin_memory: Faster CPU-GPU transfer (only if num_workers > 0)
+        # - persistent_workers: Reuse worker processes to avoid overhead
+        # - prefetch_factor: How many batches to prefetch (reduce if memory tight)
+        # Note: Do NOT use num_workers with mmap_mode='r' (memory mapped data) 
+        # as it causes memory duplication across processes
+        
         train_dl = DataLoader(
             train_data, 
             batch_size=batch_size, 
             shuffle=True,
             num_workers=num_workers,
-            pin_memory=pin_memory,
-            persistent_workers=num_workers > 0
+            pin_memory=pin_memory and num_workers > 0,  # Only pin if using workers
+            persistent_workers=num_workers > 0,
+            prefetch_factor=accel_config.dataloader_prefetch_factor if num_workers > 0 else 2,
+            drop_last=True  # Drop last incomplete batch to avoid small batch issues
         )
         val_dl = DataLoader(
             val_data, 
             batch_size=batch_size, 
-            shuffle=False,  # validation set doesn't need shuffle
+            shuffle=False,
             num_workers=num_workers,
-            pin_memory=pin_memory,
-            persistent_workers=num_workers > 0
+            pin_memory=pin_memory and num_workers > 0,
+            persistent_workers=num_workers > 0,
+            prefetch_factor=accel_config.dataloader_prefetch_factor if num_workers > 0 else 2,
+            drop_last=False  # Keep last incomplete batch for validation
         )
     else:
-        # Original method: simple configuration
-        train_dl = DataLoader(train_data, batch_size=32, shuffle=True)
-        val_dl = DataLoader(val_data, batch_size=32, shuffle=False)  # validation set should not be shuffled
+        # Original method: simple configuration (no workers to avoid memory overhead)
+        train_dl = DataLoader(train_data, batch_size=32, shuffle=True, num_workers=0)
+        val_dl = DataLoader(val_data, batch_size=32, shuffle=False, num_workers=0)
     
     # Print dataset and batch information
     print(f"\nDataset Information:")
     print(f"  Training dataset size: {len(train_data)} samples")
     print(f"  Validation dataset size: {len(val_data)} samples")
-    print(f"  Batch size: {batch_size}")
+    print(f"  Batch size per step: {batch_size}")
+    effective_batch_size = batch_size * accel_config.grad_accum_steps
+    print(f"  Effective batch size (with grad accum): {effective_batch_size}")
     print(f"  Number of batches per epoch: {len(train_dl)}")
     print(f"  predict_all_chars mode: {predict_all_chars}")
     print(f"  use_sector mode: {use_sector}")
+    if use_acceleration:
+        print(f"  Workers: {num_workers}, Pin Memory: {pin_memory and num_workers > 0}")
+        print(f"  DataLoader Prefetch: {accel_config.dataloader_prefetch_factor}")
     print()
     train_acc_char = np.zeros(num_epochs)
     val_acc_char = np.zeros(num_epochs)
     train_metric_pos = np.zeros(num_epochs)  # sector mode: accuracy; coordinate mode: MSE
     val_metric_pos = np.zeros(num_epochs)
-    
-    # Early stopping mechanism
-    best_val_metric = -np.inf if use_sector else np.inf  # sector mode: larger is better; coordinate mode: smaller is better
-    best_val_epoch = 0
-    patience_counter = 0
-    best_model_state = None
 
     # Signal handler for graceful shutdown to prevent semaphore leaks
     def cleanup_dataloaders(signum, frame):
@@ -1178,32 +1096,42 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 else:
                     labels = labels.to(device)
                 
-                optim.zero_grad()
+                # Gradient accumulation: zero_grad only at the first step of accumulation
+                if batch_idx % accel_config.grad_accum_steps == 0:
+                    optim.zero_grad()
+                
+                # Normalize loss by accumulation steps for proper gradient scaling
+                loss_scale = 1.0 / accel_config.grad_accum_steps
                 
                 # Select whether to use mixed precision training based on acceleration mode
                 if use_acceleration and scaler is not None and autocast_fn is not None:
                     with autocast_fn('cuda'):
                         out_char, out_pos = mdl(inputs)
                         loss = loss_fn(out_char, out_pos, labels)
+                        loss = loss * loss_scale  # Scale loss for accumulation
                     
                     scaler.scale(loss).backward()
-                    # Gradient clipping (mixed precision training)
-                    scaler.unscale_(optim)
-                    torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
-                    scaler.step(optim)
-                    scaler.update()
-                    current_loss = loss.item()
+                    # Optimizer step and scaling update only at accumulation boundary
+                    if (batch_idx + 1) % accel_config.grad_accum_steps == 0:
+                        scaler.unscale_(optim)
+                        torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
+                        scaler.step(optim)
+                        scaler.update()
+                    current_loss = loss.item() / loss_scale  # Unscale for logging
                 else:
                     # Original method: standard training
                     out_char, out_pos = mdl(inputs)
                     loss = loss_fn(out_char, out_pos, labels)
+                    loss = loss * loss_scale  # Scale loss for accumulation
                     loss.backward()
-                    # Gradient clipping (standard training)
-                    torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
-                    optim.step()
-                    current_loss = loss.item()
+                    
+                    # Optimizer step only at accumulation boundary
+                    if (batch_idx + 1) % accel_config.grad_accum_steps == 0:
+                        torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
+                        optim.step()
+                    current_loss = loss.item() / loss_scale  # Unscale for logging
                 
-                    # Calculate training metrics
+                # Calculate training metrics
                 if predict_all_chars:
                     # All-chars mode: use greedy matching to compute accuracy
                     # Optimize: only compute accuracy every N batches to speed up training
@@ -1278,6 +1206,12 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 
                 num_batches += 1
                 
+                # Memory optimization: periodically clear GPU cache and unused memory
+                if use_acceleration and accel_config.enable_memory_opt:
+                    if batch_idx % 50 == 0 and device == 'cuda':
+                        torch.cuda.empty_cache()  # Clear GPU cache
+                        torch.cuda.synchronize()  # Ensure all GPU operations complete
+                
                 # Update progress bar (every 10 batches to avoid too frequent updates)
                 if batch_idx % 10 == 0:
                     if predict_all_chars:
@@ -1346,41 +1280,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 else:
                     val_str = f" Validation (char, pos): ({val_acc_char[epoch]:.2f}%, {val_metric_pos[epoch]:.2f} pix^2)"
                 print(train_str, val_str)
-                
-                # Early stopping check: judge based on validation accuracy of main task (character recognition)
-                if use_early_stopping:
-                    current_val_metric = val_acc_char[epoch]
-                    if use_sector:
-                        # sector mode: use weighted average of character accuracy and sector accuracy
-                        current_val_metric = (val_acc_char[epoch] + val_metric_pos[epoch]) / 2.0
-                    
-                    improved = False
-                    if use_sector:
-                        # sector mode: higher accuracy is better
-                        if current_val_metric > best_val_metric + min_delta:
-                            improved = True
-                    else:
-                        # coordinate mode: smaller MSE is better (but here use character accuracy as main metric)
-                        if current_val_metric > best_val_metric + min_delta:
-                            improved = True
-                    
-                    if improved:
-                        best_val_metric = current_val_metric
-                        best_val_epoch = epoch
-                        patience_counter = 0
-                        # Save best model state
-                        best_model_state = mdl.state_dict().copy()
-                        print(f"  ✓ Validation performance improved! Current best: {best_val_metric:.2f} (epoch {epoch + 1})")
-                    else:
-                        patience_counter += 1
-                        if patience_counter >= early_stopping_patience:
-                            print(f"\nEarly stopping triggered: validation performance did not improve for {early_stopping_patience} epochs")
-                            print(f"Best validation performance: {best_val_metric:.2f} (epoch {best_val_epoch + 1})")
-                            # Restore best model
-                            if best_model_state is not None:
-                                mdl.load_state_dict(best_model_state)
-                                print("Best model state restored")
-                            break
+    
     except (KeyboardInterrupt, SystemExit):
         # Handle interruption gracefully
         print("\nTraining interrupted, cleaning up resources...")
@@ -1396,7 +1296,6 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 if 'val_dl' in locals():
                     val_dl._iterator = None
                     del val_dl
-                
                 gc.collect()
                 print("DataLoader workers cleaned up successfully")
             except Exception as e:
@@ -1482,41 +1381,10 @@ def save_results(results, filepath):
 
 # ==================== Main Training Code ====================
 
-def convert_to_wsl_path(windows_path: str) -> str:
-    """Convert Windows path to WSL path if running in WSL."""
-    try:
-        if os.name == "posix" and os.path.exists("/mnt/c"):
-            # C:\Users\... -> /mnt/c/Users/...
-            path = windows_path.replace("\\", "/")
-            if path.startswith("C:/") or path.startswith("c:/"):
-                path = "/mnt/c" + path[2:]
-            return path
-        return windows_path
-    except Exception as e:
-        print(f"Warning: Could not determine environment, using Windows path format. Error: {e}")
-        return windows_path
-
-
 def get_base_path() -> str:
-    """Detect runtime environment and return the base stimulus path."""
-    is_wsl = os.name == "posix" and os.path.exists("/mnt/c")
-    is_linux = os.name == "posix" and not os.path.exists("/mnt/c")
-    is_windows = os.name == "nt"
-
-    if is_wsl:
-        base_path_windows = r"C:\Users\12265\Desktop\SJC\archive\Aim3\stimuli"
-        base_path = convert_to_wsl_path(base_path_windows)
-        print(f"Detected WSL environment, using path: {base_path}")
-    elif is_linux:
-        base_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli"
-        print(f"Detected Linux environment, using path: {base_path}")
-    elif is_windows:
-        base_path = r"C:\Users\12265\Desktop\SJC\archive\Aim3\stimuli"
-        print(f"Detected Windows environment, using path: {base_path}")
-    else:
-        base_path = r"C:\Users\12265\Desktop\SJC\archive\Aim3\stimuli"
-        print(f"Unknown environment, falling back to Windows-style path: {base_path}")
-
+    """Get the base stimulus path (Ubuntu/Linux only)."""
+    base_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli"
+    print(f"Using base path: {base_path}")
     return base_path
 
 
@@ -1811,6 +1679,7 @@ if __name__ == "__main__":
             dropout_rate=dropout_rate,
             early_stopping_patience=15,
             min_delta=0.001,
+            rnn_diag_lambda=1e-4,
         )
 
         # Save training results
