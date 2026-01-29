@@ -47,16 +47,26 @@
 # ============================================================
 
 # 切到脚本所在目录，确保相对路径正确
-# SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# cd "$SCRIPT_DIR" || exit 1
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR" || exit 1
+
+echo "Working directory: $(pwd)"
+echo "Python location: $(which python)"
+echo ""
 
 # 激活 conda 环境
-# source /G/anaconda3/etc/profile.d/conda.sh
-# conda activate aim3_rnn
+# 注意：必须在 nohup 之前激活，并通过 bash -c 传递给后台进程
+source /G/anaconda3/etc/profile.d/conda.sh
+conda activate aim3_rnn
+
+echo "Activated conda environment: $CONDA_DEFAULT_ENV"
+echo ""
 
 # 日志目录（如不需要日志，可按需重定向到 /dev/null）
 LOG_DIR="logs_hparam"
 mkdir -p "$LOG_DIR"
+echo "Log directory: $LOG_DIR"
+echo ""
 
 # 基本固定参数（按需修改）
 NUM_EPOCHS=200
@@ -242,25 +252,35 @@ for combo in "${COMBINATIONS[@]}"; do
     sleep 10
   done
   
-  CUDA_VISIBLE_DEVICES=$gpu nohup python train_rnn_updated.py \
-    --model_types "$model_type" \
-    --hidden_sizes "$hidden_size" \
-    --lrs "$lr" \
-    --weight_decays "$wd" \
-    --dropout_rates "$drop" \
-    --num_epochs "$NUM_EPOCHS" \
-    --result_suffix "$RESULT_SUFFIX" \
-    --use_sector_mode \
+  # 重要：通过 bash -c 执行，确保后台进程继承 conda 环境
+  CUDA_VISIBLE_DEVICES=$gpu nohup bash -c "source /G/anaconda3/etc/profile.d/conda.sh && \
+conda activate aim3_rnn && \
+python train_rnn_updated.py \
+    --model_types '$model_type' \
+    --hidden_sizes '$hidden_size' \
+    --lrs '$lr' \
+    --weight_decays '$wd' \
+    --dropout_rates '$drop' \
+    --num_epochs '$NUM_EPOCHS' \
+    --result_suffix '$RESULT_SUFFIX' \
+    --use_sector_mode" \
     > "$LOG_FILE" 2>&1 &
   pid=$!
   PIDS+=("$pid")
-  echo "  → Job $job_id PID: $pid"
+  echo "  → Job $job_id PID: $pid, Log: $LOG_FILE"
   
   # 稍微错开发，避免同时抢资源
   sleep 3
 done
 
-echo "All jobs launched. Use 'ps | grep train_rnn_updated.py' 查看运行状态。"
+echo ""
+echo "============================================================"
+echo "All jobs launched!"
+echo "============================================================"
+echo "Monitor with: ps aux | grep train_rnn_updated.py"
+echo "Check logs: ls -lart logs_hparam/"
+echo "View log: tail -f logs_hparam/job*.log"
+echo ""
 
 # 若希望脚本等待所有任务完成，取消注释以下三行
 # for pid in "${PIDS[@]}"; do
