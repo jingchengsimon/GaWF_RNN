@@ -13,6 +13,11 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
+# Acceleration settings
+torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.fastest = True
+torch.backends.cudnn.allow_tf32 = True
 
 # ==================== Dataset Class ====================
 class MC_RNN_Dataset(Dataset):
@@ -131,7 +136,7 @@ class RNNConv(nn.Module):
 
 # ==================== Training Function ====================
 def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, lr=0.001, 
-                  batch_size=256):
+                  batch_size=256, rnn_diag_lambda=1e-4):
     """
     简化的训练函数 - 匹配原始 notebook
     """
@@ -170,9 +175,12 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             loss_pos = criterion_pos(outputs_pos, labels_pos)
 
         rnn_hh = mdl.rnn.weight_hh_l0
-        rnn_hh_diag = torch.diagonal(rnn_hh).abs().sum()
-        
-        loss = (loss_weights[0] * loss_char) + (loss_weights[1] * loss_pos) + rnn_hh_diag
+        # rnn_hh_diag = torch.diagonal(rnn_hh).abs().sum()
+        # loss = (loss_weights[0] * loss_char) + (loss_weights[1] * loss_pos) + rnn_hh_diag
+
+        rnn_hh_diag = torch.diagonal(rnn_hh).abs().mean()   # ✅ mean 更稳定
+        loss = (loss_weights[0] * loss_char) + (loss_weights[1] * loss_pos) + rnn_diag_lambda * rnn_hh_diag
+
         return loss
 
     def evaluate(mdl, data_loader):
@@ -182,7 +190,13 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         with torch.no_grad():
             for batch in data_loader:
                 inputs, labels = batch
-                labels = labels.to(device)
+                # labels = labels.to(device)
+
+                # Acceleration settings
+                inputs = inputs.to(device, non_blocking=True)
+                labels = labels.to(device, non_blocking=True)
+
+                # Original method: standard training
                 out_char, out_pos = mdl(inputs)
                 total_acc_char += (torch.argmax(out_char, dim=2) == labels[:, :, 0].long()).float().mean().item()
                 
@@ -200,8 +214,27 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         return acc_char, metric_pos
 
     # Data loaders
-    train_dl = DataLoader(train_data, batch_size=batch_size, shuffle=True)
-    val_dl = DataLoader(val_data, batch_size=batch_size, shuffle=False)
+    # train_dl = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    # val_dl = DataLoader(val_data, batch_size=batch_size, shuffle=False)
+
+    # Acceleration settings
+    pin = str(device).startswith("cuda")
+    train_dl = DataLoader(
+        train_data,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=4,                 # 视机器调：4/8 常见
+        pin_memory=pin,
+        persistent_workers=True,
+    )
+    val_dl = DataLoader(
+        val_data,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=4,
+        pin_memory=pin,
+        persistent_workers=True,
+    )
     
     print(f"\nTraining Configuration:")
     print(f"  Batch size: {batch_size}")
@@ -225,12 +258,18 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         
         for batch in train_dl:
             inputs, labels = batch
-            labels = labels.to(device)
+            # labels = labels.to(device)
+
+            # Acceleration settings
+            inputs = inputs.to(device, non_blocking=True)
+            labels = labels.to(device, non_blocking=True)
             
             optim.zero_grad()
             out_char, out_pos = mdl(inputs)
             loss = loss_fn(out_char, out_pos, labels)
             loss.backward()
+            # Gradient clipping (standard training)
+            torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
             optim.step()
             
             epoch_train_acc += (torch.argmax(out_char, dim=2) == labels[:, :, 0].long()).float().mean().item()

@@ -18,6 +18,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
+torch.set_num_threads(4) 
 # ==================== Acceleration Training Modules (Optional) ====================
 # These modules are only used when use_acceleration=True
 # By default (use_acceleration=False), they are not imported to keep the code clean
@@ -789,8 +790,8 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             # Because GaWFRNNConv uses feedback mechanism, batch_size changes cause prev_feedback dimension mismatch
             if device == 'cuda' and not isinstance(mdl, GaWFRNNConv):
                 print("Automatically finding optimal batch_size...")
-                # batch_size = _find_optimal_batch_size(mdl, train_data, device=device, start_batch_size=32)
-                batch_size = 256 # fixed for reproducibility
+                batch_size = _find_optimal_batch_size(mdl, train_data, device=device, start_batch_size=32)
+                # batch_size = 256 # fixed for reproducibility
                 print(f"Using batch_size = {batch_size}")
             elif isinstance(mdl, GaWFRNNConv):
                 print(f"Detected GaWFRNNConv model, skipping batch_size search, using default batch_size = {batch_size}")
@@ -815,9 +816,9 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 # Pure Linux or Windows: use original settings
                 # This ensures original behavior is maintained when running on Linux servers
                 if psutil_module is not None:
-                    num_workers = min(4, psutil_module.cpu_count(logical=False))
+                    num_workers = min(2, psutil_module.cpu_count(logical=False))
                 else:
-                    num_workers = min(4, os.cpu_count() or 1)
+                    num_workers = min(2, os.cpu_count() or 1)
                 env_name = 'Linux' if os.name == 'posix' else 'Windows'
                 print(f"{env_name} environment: num_workers={num_workers}, batch_size={batch_size} (using optimal settings without limitation)")
             
@@ -942,11 +943,13 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         # Keep regularization consistent with original (if model doesn't have mdl.rnn, need corresponding modification)
         if hasattr(mdl, 'rnn') and mdl.rnn is not None:
             rnn_hh = mdl.rnn.weight_hh_l0
-            rnn_hh_diag = torch.diagonal(rnn_hh).abs().sum()
+            # rnn_hh_diag = torch.diagonal(rnn_hh).abs().sum()
+            rnn_hh_diag = torch.diagonal(rnn_hh).abs().mean()   # ✅ mean 更稳定
         else:
             rnn_hh_diag = torch.tensor(0.0, device=out_char.device)
         
-        loss = (loss_weights[0] * loss_char) + (loss_weights[1] * loss_pos) + rnn_hh_diag
+        # loss = (loss_weights[0] * loss_char) + (loss_weights[1] * loss_pos) + rnn_hh_diag
+        loss = (loss_weights[0] * loss_char) + (loss_weights[1] * loss_pos) + rnn_diag_lambda * rnn_hh_diag
         return loss
 
     def evaluate(mdl, data_loader):
@@ -1545,12 +1548,12 @@ def load_raw_data(stim_train_path: str, label_train_path: str,
                   stim_val_path: str, label_val_path: str):
     """Load raw numpy and label data from disk."""
     print("\nLoading data...")
-    stims_train = np.load(stim_train_path, allow_pickle=True)
+    stims_train = np.load(stim_train_path, allow_pickle=True, mmap_mode="r") # "r" for read-only memory mapping
     print(f"  ✓ Loaded training stimuli: {stims_train.shape}")
     lbls_train = pd.read_csv(label_train_path, sep="\t", index_col=0)
     print(f"  ✓ Loaded training labels: {lbls_train.shape}")
 
-    stims_val = np.load(stim_val_path, allow_pickle=True)
+    stims_val = np.load(stim_val_path, allow_pickle=True, mmap_mode="r") # "r" for read-only memory mapping
     print(f"  ✓ Loaded validation stimuli: {stims_val.shape}")
     lbls_val = pd.read_csv(label_val_path, sep="\t", index_col=0)
     print(f"  ✓ Loaded validation labels: {lbls_val.shape}")
@@ -1616,7 +1619,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--model_types",
         type=str,
         nargs="+",
-        default=["lstm"],
+        default=["rnn"],
         choices=["rnn", "lstm", "gru", "gawf"],
         help='Model types to train (default: ["lstm"])',
     )
@@ -1636,7 +1639,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--result_suffix",
         type=str,
-        default="",
+        default="default_sector", # ""
         help="Suffix to append to result file names for distinguishing different training runs (default: empty string)",
     )
     parser.add_argument(
@@ -1662,14 +1665,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--weight_decays",
         type=float,
         nargs="+",
-        default=[1e-4],
+        default=[0], #[1e-4],
         help="Weight decay values to search over (default: [1e-4])",
     )
     parser.add_argument(
         "--dropout_rates",
         type=float,
         nargs="+",
-        default=[0.3],
+        default=[0], #[0.3],
         help="Dropout rates to search over for model creation (default: [0.3])",
     )
     return parser

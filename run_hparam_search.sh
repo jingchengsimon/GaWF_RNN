@@ -68,7 +68,7 @@ HIDDEN_SIZES=(128 256)       # 你要扫的 hidden size
 
 # 定义搜索范围
 LRS=(0.001) #(0.0008 0.001 0.0012)        # learning rates
-WDS=(0.0001) #(0.00008 0.0001 0.00012)     # weight decays
+WDS=(0) #(0.00008 0.0001 0.00012)     # weight decays
 DROPS=(0) #(0.25 0.3 0.35)            # dropout rates
 
 # 默认值（用于固定其他参数，仅在分段搜索时使用）
