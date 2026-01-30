@@ -1677,8 +1677,6 @@ if __name__ == "__main__":
             use_modification=use_modification,
             weight_decay=weight_decay,
             dropout_rate=dropout_rate,
-            early_stopping_patience=15,
-            min_delta=0.001,
             rnn_diag_lambda=1e-4,
         )
 

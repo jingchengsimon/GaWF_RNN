@@ -218,7 +218,18 @@ fi
 # 遍历所有组合
 for combo in "${COMBINATIONS[@]}"; do
   # 解析组合参数（包含 stage_label）
-  IFS=',' read -r model_type hidden_size lr wd drop stage_label <<< "$combo"
+  # 注意：使用 (subshell) 避免修改全局 IFS
+  (
+    IFS=',' read -r model_type hidden_size lr wd drop stage_label <<< "$combo"
+  )
+  
+  # 恢复并重新解析（正确方式）
+  model_type=$(echo "$combo" | cut -d',' -f1)
+  hidden_size=$(echo "$combo" | cut -d',' -f2)
+  lr=$(echo "$combo" | cut -d',' -f3)
+  wd=$(echo "$combo" | cut -d',' -f4)
+  drop=$(echo "$combo" | cut -d',' -f5)
+  stage_label=$(echo "$combo" | cut -d',' -f6)
   
   # 轮询分配 GPU
   gpu_idx=$(( (job_id % ${#GPUS[@]}) + 1 ))
@@ -253,18 +264,20 @@ for combo in "${COMBINATIONS[@]}"; do
   done
   
   # 重要：通过 bash -c 执行，确保后台进程继承 conda 环境
-  CUDA_VISIBLE_DEVICES=$gpu nohup bash -c "source /G/anaconda3/etc/profile.d/conda.sh && \
-conda activate aim3_rnn && \
-python train_rnn_updated.py \
-    --model_types '$model_type' \
-    --hidden_sizes '$hidden_size' \
-    --lrs '$lr' \
-    --weight_decays '$wd' \
-    --dropout_rates '$drop' \
-    --num_epochs '$NUM_EPOCHS' \
-    --result_suffix '$RESULT_SUFFIX' \
-    --use_sector_mode" \
-    > "$LOG_FILE" 2>&1 &
+  # 注意：使用双引号确保变量被展开
+  CUDA_VISIBLE_DEVICES=$gpu nohup bash -c "
+    source /G/anaconda3/etc/profile.d/conda.sh
+    conda activate aim3_rnn
+    python train_rnn_updated.py \
+      --model_types $model_type \
+      --hidden_sizes $hidden_size \
+      --lrs $lr \
+      --weight_decays $wd \
+      --dropout_rates $drop \
+      --num_epochs $NUM_EPOCHS \
+      --result_suffix $RESULT_SUFFIX \
+      --use_sector_mode
+  " > "$LOG_FILE" 2>&1 &
   pid=$!
   PIDS+=("$pid")
   echo "  → Job $job_id PID: $pid, Log: $LOG_FILE"
