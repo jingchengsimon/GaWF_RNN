@@ -25,6 +25,14 @@ echo ""
 NUM_EPOCHS=200
 RESULT_SUFFIX="default_sector"
 
+# 运行模式
+DRY_RUN=false   # 可通过命令行参数 --dry-run 启用（仅打印，不实际launch）
+# 解析简单的命令行开关
+if [ "$1" = "--dry-run" ]; then
+  DRY_RUN=true
+  echo "DRY_RUN mode enabled: will not launch jobs, only print planned allocations"
+fi
+
 # 超参搜索表（逐个调优策略）
 MODEL_TYPES=("rnn")          # 或加上 "rnn" / "lstm" / "gru"
 HIDDEN_SIZES=(128 256)       # 你要扫的 hidden size
@@ -58,6 +66,26 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 job_id=0
 PIDS=()
+
+# 清理函数：在脚本退出或被中断时终止后台任务并清理共享内存
+cleanup() {
+  echo "Cleaning up: killing child jobs..."
+  if [ ${#PIDS[@]} -gt 0 ]; then
+    echo "Killing PIDs: ${PIDS[@]}"
+    kill "${PIDS[@]}" 2>/dev/null || true
+  fi
+  # 额外保证：杀死本脚本的所有子进程
+  pkill -P $$ 2>/dev/null || true
+  # 清除 IPC 共享内存段（如果有 ipcs/ipcrm 工具）
+  if command -v ipcs >/dev/null 2>&1; then
+    echo "Removing IPC shared memory segments owned by $(whoami)"
+    ipcs -m | awk -v user="$(whoami)" '$3==user {print $2}' | xargs -r -n1 ipcrm -m || true
+  fi
+  echo "Cleanup done."
+}
+
+# 在接收到 EXIT/INT/TERM 时调用 cleanup
+trap 'cleanup; exit' EXIT INT TERM
 
 get_gpu_running_jobs() {
   local gpu_id="$1"
@@ -172,10 +200,10 @@ for combo in "${COMBINATIONS[@]}"; do
   
   echo "Launching job $job_id on GPU $gpu [$stage_label]: model=$model_type, h=$hidden_size, lr=$lr, wd=$wd, drop=$drop"
   
-  # 验证 GPU 变量不为空
+  # 验证 GPU 变量不为空；若为空则回退到第一个 GPU 并打印警告
   if [ -z "$gpu" ]; then
-    echo "ERROR: GPU variable is empty! Check GPUS array indexing."
-    continue
+    echo "Warning: gpu empty; defaulting to ${GPUS[0]}"
+    gpu="${GPUS[0]}"
   fi
   
   # 控制并发数量：当前 GPU 上任务数达到上限则等待
@@ -186,27 +214,32 @@ for combo in "${COMBINATIONS[@]}"; do
     fi
     sleep 10
   done
-  
-  # 重要：通过 bash -c 执行，确保后台进程继承 conda 环境
-  # 注意：使用双引号确保变量被展开
-  CUDA_VISIBLE_DEVICES=$gpu nohup bash -c "
-    source /G/anaconda3/etc/profile.d/conda.sh
-    conda activate aim3_rnn
-    python train_rnn_updated.py \
-      --model_types $model_type \
-      --hidden_sizes $hidden_size \
-      --lrs $lr \
-      --weight_decays $wd \
-      --dropout_rates $drop \
-      --num_epochs $NUM_EPOCHS \
-      --result_suffix $RESULT_SUFFIX \
-      --use_sector_mode \
-      --seed ${seed} \
-      --use_acceleration True
-  " > "$LOG_FILE" 2>&1 &
-  pid=$!
-  PIDS+=("$pid")
-  echo "  → Job $job_id PID: $pid, Log: $LOG_FILE"
+
+  # 如果是 dry-run，只打印将要执行的命令，不实际launch
+  if [ "$DRY_RUN" = "true" ]; then
+    echo "[DRY-RUN] Would launch on GPU $gpu: python train_rnn_updated.py --model_types $model_type --hidden_sizes $hidden_size --lrs $lr --weight_decays $wd --dropout_rates $drop --num_epochs $NUM_EPOCHS --result_suffix $RESULT_SUFFIX --seed ${seed} --use_acceleration True > $LOG_FILE 2>&1"
+  else
+    # 重要：通过 bash -c 执行，确保后台进程继承 conda 环境
+    # 注意：使用双引号确保变量被展开
+    CUDA_VISIBLE_DEVICES=$gpu nohup bash -c "
+      source /G/anaconda3/etc/profile.d/conda.sh
+      conda activate aim3_rnn
+      python train_rnn_updated.py \
+        --model_types $model_type \
+        --hidden_sizes $hidden_size \
+        --lrs $lr \
+        --weight_decays $wd \
+        --dropout_rates $drop \
+        --num_epochs $NUM_EPOCHS \
+        --result_suffix $RESULT_SUFFIX \
+        --use_sector_mode \
+        --seed ${seed} \
+        --use_acceleration True
+    " > "$LOG_FILE" 2>&1 &
+    pid=$!
+    PIDS+=("$pid")
+    echo "  → Job $job_id PID: $pid, Log: $LOG_FILE"
+  fi
   
   # 稍微错开发，避免同时抢资源
   sleep 3
@@ -216,6 +249,17 @@ echo ""
 echo "============================================================"
 echo "All jobs launched!"
 echo "============================================================"
+if [ "$DRY_RUN" = "true" ]; then
+  echo "Note: DRY_RUN enabled; no jobs were actually launched."
+else
+  if [ ${#PIDS[@]} -gt 0 ]; then
+    echo "Launched PIDs: ${PIDS[@]}"
+    echo "To kill all launched jobs: pkill -P $$   # or use 'kill ${PIDS[@]}'"
+  else
+    echo "No PIDs recorded. Either no jobs launched or they finished quickly."
+  fi
+fi
+
 echo "Monitor with: ps aux | grep train_rnn_updated.py"
 echo "Check logs: ls -lart logs_hparam/"
 echo "View log: tail -f logs_hparam/job*.log"
