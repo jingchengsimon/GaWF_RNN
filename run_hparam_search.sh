@@ -1,3 +1,4 @@
+#!/bin/zsh
 # 切到脚本所在目录，确保相对路径正确
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR" || exit 1
