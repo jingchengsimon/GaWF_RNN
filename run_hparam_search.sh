@@ -154,8 +154,8 @@ for combo in "${COMBINATIONS[@]}"; do
   # 如果 seed_field 为空，默认使用 1
   seed=${seed_field:-1}
   
-  # 轮询分配 GPU
-  gpu_idx=$(( (job_id % ${#GPUS[@]}) + 1 ))
+  # 轮询分配 GPU（修正为 0-based 索引，避免越界）
+  gpu_idx=$(( job_id % ${#GPUS[@]} ))
   gpu="${GPUS[$gpu_idx]}"
   
   job_id=$((job_id + 1))
