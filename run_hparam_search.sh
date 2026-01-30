@@ -1,51 +1,3 @@
-#!/bin/zsh
-# 或 #!/bin/bash 也可以
-
-# ============================================================
-# 超参数搜索脚本 (支持两种搜索策略)
-# ============================================================
-#
-# 【策略 1】全组合搜索 (Grid Search)
-#   - 设置 USE_GRID_SEARCH=true
-#   - 测试所有 LRS × WDS × DROPS 的组合
-#   - 适合：全面探索超参数空间
-#   - 实验数：|LRS| × |WDS| × |DROPS| × |MODEL_TYPES| × |HIDDEN_SIZES|
-#   - 示例：3个lr × 3个wd × 3个drop = 27种组合/模型
-#
-# 【策略 2】分段搜索 (Sequential Tuning)
-#   - 设置 USE_GRID_SEARCH=false
-#   - Stage 1: 调优 lr (固定 wd, drop)
-#   - Stage 2: 调优 wd (固定 lr, drop)
-#   - Stage 3: 调优 drop (固定 lr, wd)
-#   - 适合：快速找到较优配置
-#   - 实验数：(|LRS| + |WDS| + |DROPS|) × |MODEL_TYPES| × |HIDDEN_SIZES|
-#   - 示例：3个lr + 3个wd + 3个drop = 9种组合/模型
-#
-# 使用示例：
-#
-# 【快速测试单一配置】
-#   LRS=(0.001)
-#   WDS=(0.0001)
-#   DROPS=(0.3)
-#   USE_GRID_SEARCH=false
-#   → 结果：只训练 2 次 (h128, h256)，不重复
-#
-# 【分段搜索】
-#   LRS=(0.0008 0.001 0.0012)
-#   WDS=(0.00008 0.0001 0.00012)
-#   DROPS=(0.25 0.3 0.35)
-#   USE_GRID_SEARCH=false
-#   → 结果：9 × 2 = 18 次训练
-#
-# 【全组合搜索】
-#   LRS=(0.0008 0.001 0.0012)
-#   WDS=(0.00008 0.0001 0.00012)
-#   DROPS=(0.25 0.3 0.35)
-#   USE_GRID_SEARCH=true
-#   → 结果：27 × 2 = 54 次训练
-#
-# ============================================================
-
 # 切到脚本所在目录，确保相对路径正确
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR" || exit 1
@@ -87,21 +39,12 @@ DEFAULT_WD=0.0001
 DEFAULT_DROP=0.3
 
 # ============================================================
-# 超参数搜索策略选择
+# 搜索模式说明
 # ============================================================
-# USE_GRID_SEARCH=true:  全组合搜索 (Grid Search)
-#   - 生成 LRS × WDS × DROPS 的全部组合
-#   - 适合全面探索超参数空间
-#   - 实验数量：|LRS| × |WDS| × |DROPS| × |MODEL_TYPES| × |HIDDEN_SIZES|
-#
-# USE_GRID_SEARCH=false: 分段搜索 (Sequential Tuning)
-#   - Stage 1: 只调 lr，固定 wd 和 drop
-#   - Stage 2: 只调 wd，固定 lr 和 drop
-#   - Stage 3: 只调 drop，固定 lr 和 wd
-#   - 适合快速找到较优配置
-#   - 实验数量：(|LRS| + |WDS| + |DROPS|) × |MODEL_TYPES| × |HIDDEN_SIZES|
+# 本脚本采用分阶段小规模搜索（Stage A → Stage B → Stage C），默认只运行Stage A（WD sweep）。
+# 如需扩大搜索，可修改 WD_GRID / DROPOUT_GRID_STAGEB / LR_GRID_STAGEC 变量并重启脚本。
 # ============================================================
-USE_GRID_SEARCH=true  # 改为 true 启用全组合搜索
+# （注）旧的 USE_GRID_SEARCH 参数已弃用，使用分阶段逻辑替代。
 
 # 每张 GPU 最多同时跑几个进程（并行时建议 1-2）
 MAX_JOBS_PER_GPU=1
@@ -126,110 +69,90 @@ get_gpu_running_jobs() {
 }
 
 # ============================================================
-# 生成超参数组合
+# 分阶段小规模超参数搜索（按顺序执行 Stage A → Stage B → Stage C）
+# 设计原则：先保守微调正则化（WD），再加入Dropout，最后微调LR；默认只运行Stage A（小规模）
 # ============================================================
 
 COMBINATIONS=()
 
-if [ "$USE_GRID_SEARCH" = true ]; then
-  # ========== 全组合搜索模式 ==========
-  echo "=== 全组合搜索 (Grid Search) ==="
-  echo "搜索空间: LRS × WDS × DROPS"
-  echo "  LRS: ${LRS[@]}"
-  echo "  WDS: ${WDS[@]}"
-  echo "  DROPS: ${DROPS[@]}"
-  echo ""
-  
-  # 检查是否所有数组长度都为1（避免重复）
-  if [ ${#LRS[@]} -eq 1 ] && [ ${#WDS[@]} -eq 1 ] && [ ${#DROPS[@]} -eq 1 ]; then
-    echo "检测到所有超参数数组长度为1，只生成一次组合（避免重复）"
-    echo ""
-    for model_type in "${MODEL_TYPES[@]}"; do
-      for hidden_size in "${HIDDEN_SIZES[@]}"; do
-        lr="${LRS[1]}"
-        wd="${WDS[1]}"
-        drop="${DROPS[1]}"
-        COMBINATIONS+=("$model_type,$hidden_size,$lr,$wd,$drop,default")
-        echo "添加: model=$model_type, h=$hidden_size, lr=$lr, wd=$wd, drop=$drop"
-      done
-    done
-  else
-    # 正常的全组合搜索
-    for model_type in "${MODEL_TYPES[@]}"; do
-      for hidden_size in "${HIDDEN_SIZES[@]}"; do
-        for lr in "${LRS[@]}"; do
-          for wd in "${WDS[@]}"; do
-            for drop in "${DROPS[@]}"; do
-              COMBINATIONS+=("$model_type,$hidden_size,$lr,$wd,$drop,grid")
-              echo "添加: model=$model_type, h=$hidden_size, lr=$lr, wd=$wd, drop=$drop"
-            done
-          done
-        done
-      done
-    done
-  fi
-  
-  echo ""
-  echo "总共 ${#COMBINATIONS[@]} 个超参数组合 (全组合搜索)"
-  expected_count=$((${#MODEL_TYPES[@]} * ${#HIDDEN_SIZES[@]} * ${#LRS[@]} * ${#WDS[@]} * ${#DROPS[@]}))
-  echo "预计实验数: ${#MODEL_TYPES[@]} models × ${#HIDDEN_SIZES[@]} hidden_sizes × ${#LRS[@]} lrs × ${#WDS[@]} wds × ${#DROPS[@]} drops = $expected_count"
-  echo ""
-  
-else
-  # ========== 分段搜索模式 ==========
-  echo "=== 分段搜索 (Sequential Tuning) ==="
-  echo "Stage 1: 调优 learning rate (固定 wd=$DEFAULT_WD, drop=$DEFAULT_DROP)"
-  echo "Stage 2: 调优 weight decay (固定 lr=$DEFAULT_LR, drop=$DEFAULT_DROP)"
-  echo "Stage 3: 调优 dropout (固定 lr=$DEFAULT_LR, wd=$DEFAULT_WD)"
-  echo ""
-  
-  for model_type in "${MODEL_TYPES[@]}"; do
-    for hidden_size in "${HIDDEN_SIZES[@]}"; do
-      # Stage 1: 只调 lr，固定 wd 和 drop
-      echo "Stage 1 - Model: $model_type, Hidden: $hidden_size"
-      for lr in "${LRS[@]}"; do
-        COMBINATIONS+=("$model_type,$hidden_size,$lr,$DEFAULT_WD,$DEFAULT_DROP,stage1_lr${lr}")
-        echo "  添加: lr=$lr, wd=$DEFAULT_WD, drop=$DEFAULT_DROP"
-      done
-      
-      # Stage 2: 只调 wd，固定 lr 和 drop
-      echo "Stage 2 - Model: $model_type, Hidden: $hidden_size"
-      for wd in "${WDS[@]}"; do
-        COMBINATIONS+=("$model_type,$hidden_size,$DEFAULT_LR,$wd,$DEFAULT_DROP,stage2_wd${wd}")
-        echo "  添加: lr=$DEFAULT_LR, wd=$wd, drop=$DEFAULT_DROP"
-      done
-      
-      # Stage 3: 只调 drop，固定 lr 和 wd
-      echo "Stage 3 - Model: $model_type, Hidden: $hidden_size"
-      for drop in "${DROPS[@]}"; do
-        COMBINATIONS+=("$model_type,$hidden_size,$DEFAULT_LR,$DEFAULT_WD,$drop,stage3_drop${drop}")
-        echo "  添加: lr=$DEFAULT_LR, wd=$DEFAULT_WD, drop=$drop"
+# --- 小规模试验配置（可按需扩展）
+WD_GRID=(0 1e-6 1e-5 1e-4)             # Stage A: weight decay 网格（从弱到强）
+DROPOUT_GRID_STAGEB=()                # Stage B: dropout 网格（默认空，表示不运行Stage B）
+LR_GRID_STAGEC=()                     # Stage C: lr 网格（默认空，表示不运行Stage C）
+SEEDS=(42)                             # 每个配置的随机种子（小规模先用单一seed）
+
+# 说明给用户
+echo "=== 分阶段小规模超参数搜索 ==="
+echo "Stage A (WD sweep): ${WD_GRID[@]}"
+echo "Stage B (Dropout): ${DROPOUT_GRID_STAGEB[@]:-<disabled>}"
+echo "Stage C (LR): ${LR_GRID_STAGEC[@]:-<disabled>}"
+echo "Seeds: ${SEEDS[@]}"
+echo "Models: ${MODEL_TYPES[@]} | Hidden sizes: ${HIDDEN_SIZES[@]}"
+echo ""
+
+# Stage A: weight decay sweep (dropout fixed 0, lr = DEFAULT_LR)
+for model_type in "${MODEL_TYPES[@]}"; do
+  for hidden_size in "${HIDDEN_SIZES[@]}"; do
+    for wd in "${WD_GRID[@]}"; do
+      for seed in "${SEEDS[@]}"; do
+        COMBINATIONS+=("$model_type,$hidden_size,$DEFAULT_LR,$wd,0,stageA_wd${wd}_s${seed},${seed}")
+        echo "StageA add: model=$model_type h=$hidden_size wd=$wd seed=$seed"
       done
     done
   done
-  
-  echo ""
-  echo "总共 ${#COMBINATIONS[@]} 个超参数组合 (分段搜索)"
-  expected_count=$((${#MODEL_TYPES[@]} * ${#HIDDEN_SIZES[@]} * (${#LRS[@]} + ${#WDS[@]} + ${#DROPS[@]})))
-  echo "预计实验数: ${#MODEL_TYPES[@]} models × ${#HIDDEN_SIZES[@]} hidden_sizes × (${#LRS[@]} + ${#WDS[@]} + ${#DROPS[@]}) params = $expected_count"
-  echo ""
-fi
+done
+
+# Stage B: dropout sweep (if DROPOUT_GRID_STAGEB not empty)
+for model_type in "${MODEL_TYPES[@]}"; do
+  for hidden_size in "${HIDDEN_SIZES[@]}"; do
+    for wd in "${WD_GRID[@]}"; do
+      for drop in "${DROPOUT_GRID_STAGEB[@]}"; do
+        for seed in "${SEEDS[@]}"; do
+          COMBINATIONS+=("$model_type,$hidden_size,$DEFAULT_LR,$wd,$drop,stageB_wd${wd}_do${drop}_s${seed},${seed}")
+          echo "StageB add: model=$model_type h=$hidden_size wd=$wd drop=$drop seed=$seed"
+        done
+      done
+    done
+  done
+done
+
+# Stage C: lr sweep (if LR_GRID_STAGEC not empty)
+for model_type in "${MODEL_TYPES[@]}"; do
+  for hidden_size in "${HIDDEN_SIZES[@]}"; do
+    for lr in "${LR_GRID_STAGEC[@]}"; do
+      for wd in "${WD_GRID[@]}"; do
+        for seed in "${SEEDS[@]}"; do
+          COMBINATIONS+=("$model_type,$hidden_size,$lr,$wd,0,stageC_lr${lr}_wd${wd}_s${seed},${seed}")
+          echo "StageC add: model=$model_type h=$hidden_size lr=$lr wd=$wd seed=$seed"
+        done
+      done
+    done
+  done
+done
+
+echo ""
+echo "总共 ${#COMBINATIONS[@]} 个超参数组合 (分阶段小规模搜索)"
+echo ""
+
 
 # 遍历所有组合
 for combo in "${COMBINATIONS[@]}"; do
-  # 解析组合参数（包含 stage_label）
-  # 注意：使用 (subshell) 避免修改全局 IFS
+  # 解析组合参数（包含 stage_label 和 seed）
+  # 使用 subshell 读取，避免修改全局 IFS
   (
-    IFS=',' read -r model_type hidden_size lr wd drop stage_label <<< "$combo"
+    IFS=',' read -r model_type hidden_size lr wd drop stage_label seed_field <<< "$combo"
   )
-  
-  # 恢复并重新解析（正确方式）
+
+  # 恢复并重新解析为防止特殊字符问题
   model_type=$(echo "$combo" | cut -d',' -f1)
   hidden_size=$(echo "$combo" | cut -d',' -f2)
   lr=$(echo "$combo" | cut -d',' -f3)
   wd=$(echo "$combo" | cut -d',' -f4)
   drop=$(echo "$combo" | cut -d',' -f5)
   stage_label=$(echo "$combo" | cut -d',' -f6)
+  seed_field=$(echo "$combo" | cut -d',' -f7)
+  # 如果 seed_field 为空，默认使用 1
+  seed=${seed_field:-1}
   
   # 轮询分配 GPU
   gpu_idx=$(( (job_id % ${#GPUS[@]}) + 1 ))
@@ -239,11 +162,11 @@ for combo in "${COMBINATIONS[@]}"; do
   
   # 构造日志文件名（根据搜索模式调整）
   if [ "$stage_label" = "default" ] || [ "$stage_label" = "grid" ]; then
-    # 全组合模式：使用完整超参数作为文件名
-    LOG_FILE="$LOG_DIR/job${job_id}_${model_type}_h${hidden_size}_lr${lr}_wd${wd}_do${drop}.log"
+    # 全组合模式：使用完整超参数作为文件名（包含 seed）
+    LOG_FILE="$LOG_DIR/job${job_id}_${model_type}_h${hidden_size}_lr${lr}_wd${wd}_do${drop}_s${seed}.log"
   else
-    # 分段模式：使用 stage 信息
-    LOG_FILE="$LOG_DIR/job${job_id}_${model_type}_h${hidden_size}_${stage_label}.log"
+    # 分段模式：使用 stage 信息（包含 seed）
+    LOG_FILE="$LOG_DIR/job${job_id}_${model_type}_h${hidden_size}_${stage_label}_s${seed}.log"
   fi
   
   echo "Launching job $job_id on GPU $gpu [$stage_label]: model=$model_type, h=$hidden_size, lr=$lr, wd=$wd, drop=$drop"
@@ -276,7 +199,9 @@ for combo in "${COMBINATIONS[@]}"; do
       --dropout_rates $drop \
       --num_epochs $NUM_EPOCHS \
       --result_suffix $RESULT_SUFFIX \
-      --use_sector_mode
+      --use_sector_mode \
+      --seed ${seed} \
+      --use_acceleration True
   " > "$LOG_FILE" 2>&1 &
   pid=$!
   PIDS+=("$pid")
@@ -295,7 +220,4 @@ echo "Check logs: ls -lart logs_hparam/"
 echo "View log: tail -f logs_hparam/job*.log"
 echo ""
 
-# 若希望脚本等待所有任务完成，取消注释以下三行
-# for pid in "${PIDS[@]}"; do
-#   wait "$pid"
-# done
+
