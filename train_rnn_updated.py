@@ -102,9 +102,10 @@ def _get_gpu_memory_usage():
     """Get current GPU memory usage (only used in acceleration mode)"""
     if not torch.cuda.is_available():
         return 0.0
-    allocated = torch.cuda.memory_allocated() / 1024**3  # GB
-    reserved = torch.cuda.memory_reserved() / 1024**3    # GB
-    total = torch.cuda.get_device_properties(0).total_memory / 1024**3  # GB
+    dev = torch.cuda.current_device()
+    allocated = torch.cuda.memory_allocated(dev) / 1024**3
+    reserved = torch.cuda.memory_reserved(dev) / 1024**3
+    total = torch.cuda.get_device_properties(dev).total_memory / 1024**3
     return (reserved / total) * 100.0 if total > 0 else 0.0
 
 def _find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=32, max_batch_size=256, 
@@ -618,7 +619,7 @@ class GaWFRNNConv(nn.Module):
 # ==================== Training Function ====================
 def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, lr=0.001, 
                   use_acceleration=False, use_modification=False, 
-                  weight_decay=None, dropout_rate=None, rnn_diag_lambda=1e-4):
+                  weight_decay=None, dropout_rate=None, rnn_diag_lambda=1e-4, use_tqdm=True):
     """
     Train model, supports sector mode and coordinate mode
     
@@ -859,7 +860,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         loss = (loss_weights[0] * loss_char) + (loss_weights[1] * loss_pos) + rnn_diag_lambda * rnn_hh_diag
         return loss
 
-    def evaluate(mdl, data_loader):
+    def evaluate(mdl, data_loader, use_tqdm):
         mdl.eval()
         total_acc_char = 0
         total_metric_pos = 0  # sector mode: accuracy; coordinate mode: MSE
@@ -869,15 +870,6 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         total_frames_exact = 0
         
         # Use tqdm for validation progress bar
-        # Disable tqdm in non-interactive terminals or when TERM is not set to avoid display issues
-        # Check both isatty(), TERM environment variable, and DISABLE_TQDM env var for better compatibility
-        # Also check if we're in a remote SSH session that might not support tqdm properly
-        disable_tqdm_env = os.environ.get('DISABLE_TQDM', '').lower() in ['1', 'true', 'yes']
-        term_check = os.environ.get('TERM', '').lower() not in ['', 'dumb']
-        # More conservative: disable tqdm by default in remote environments unless explicitly enabled
-        # Set ENABLE_TQDM=1 to force enable tqdm
-        enable_tqdm_env = os.environ.get('ENABLE_TQDM', '').lower() in ['1', 'true', 'yes']
-        use_tqdm = enable_tqdm_env or (not disable_tqdm_env and sys.stdout.isatty() and term_check)
         val_pbar = tqdm(data_loader, desc="[Val]", ncols=100, leave=False, unit="batch", disable=not use_tqdm)
         
         with torch.no_grad():
@@ -1022,8 +1014,9 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     effective_batch_size = batch_size * accel_config.grad_accum_steps
     print(f"  Effective batch size (with grad accum): {effective_batch_size}")
     print(f"  Number of batches per epoch: {len(train_dl)}")
-    print(f"  predict_all_chars mode: {predict_all_chars}")
     print(f"  use_sector mode: {use_sector}")
+    print(f"  predict_all_chars mode: {predict_all_chars}")
+    print(f"  use acceleration mode: {use_acceleration}")
     if use_acceleration:
         print(f"  Workers: {num_workers}, Pin Memory: {pin_memory and num_workers > 0}")
         print(f"  DataLoader Prefetch: {accel_config.dataloader_prefetch_factor}")
@@ -1033,26 +1026,38 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     train_metric_pos = np.zeros(num_epochs)  # sector mode: accuracy; coordinate mode: MSE
     val_metric_pos = np.zeros(num_epochs)
 
-    # Signal handler for graceful shutdown to prevent semaphore leaks
-    def cleanup_dataloaders(signum, frame):
-        """Clean up DataLoader workers when receiving termination signal"""
-        if use_acceleration and num_workers > 0:
-            print("\nReceived termination signal, cleaning up DataLoader workers...")
-            try:
-                if 'train_dl' in locals():
-                    train_dl._iterator = None
-                if 'val_dl' in locals():
-                    val_dl._iterator = None
-                import gc
-                gc.collect()
-            except:
-                pass
-        sys.exit(0)
+    # # Signal handler for graceful shutdown to prevent semaphore leaks
+    # def cleanup_dataloaders(signum, frame):
+    #     """Clean up DataLoader workers when receiving termination signal"""
+    #     if use_acceleration and num_workers > 0:
+    #         print("\nReceived termination signal, cleaning up DataLoader workers...")
+    #         try:
+    #             if 'train_dl' in locals():
+    #                 train_dl._iterator = None
+    #             if 'val_dl' in locals():
+    #                 val_dl._iterator = None
+    #             import gc
+    #             gc.collect()
+    #         except:
+    #             pass
+    #     sys.exit(0)
     
-    # Register signal handlers for graceful cleanup (only when using multiprocessing)
+    # # Register signal handlers for graceful cleanup (only when using multiprocessing)
+    # if use_acceleration and num_workers > 0:
+    #     signal.signal(signal.SIGTERM, cleanup_dataloaders)
+    #     signal.signal(signal.SIGINT, cleanup_dataloaders)
+
+    _STOP_REQUESTED = False
+
+    def _request_stop(signum, frame):
+        global _STOP_REQUESTED
+        _STOP_REQUESTED = True
+        # 不做任何 DataLoader 操作！不 sys.exit！
+        print(f"\n[signal] got {signum}, will stop after current step...", flush=True)
+
     if use_acceleration and num_workers > 0:
-        signal.signal(signal.SIGTERM, cleanup_dataloaders)
-        signal.signal(signal.SIGINT, cleanup_dataloaders)
+        signal.signal(signal.SIGTERM, _request_stop)
+        signal.signal(signal.SIGINT, _request_stop)
 
     try:
         for epoch in range(num_epochs):
@@ -1065,23 +1070,19 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             epoch_train_frames_eval = 0
             num_batches = 0
             
-            print(f"Epoch {epoch + 1}/{num_epochs}: Starting training...")
+            if use_tqdm:
+                print(f"Epoch {epoch + 1}/{num_epochs}: Starting training...", flush=True)
             
             # Use tqdm for progress bar
-            # Disable tqdm in non-interactive terminals or when TERM is not set to avoid display issues
-            # Check both isatty(), TERM environment variable, and DISABLE_TQDM env var for better compatibility
-            # Also check if we're in a remote SSH session that might not support tqdm properly
-            disable_tqdm_env = os.environ.get('DISABLE_TQDM', '').lower() in ['1', 'true', 'yes']
-            term_check = os.environ.get('TERM', '').lower() not in ['', 'dumb']
-            # More conservative: disable tqdm by default in remote environments unless explicitly enabled
-            # Set ENABLE_TQDM=1 to force enable tqdm
-            enable_tqdm_env = os.environ.get('ENABLE_TQDM', '').lower() in ['1', 'true', 'yes']
-            use_tqdm = enable_tqdm_env or (not disable_tqdm_env and sys.stdout.isatty() and term_check)
             train_pbar = tqdm(enumerate(train_dl), total=len(train_dl), 
                              desc=f"Epoch {epoch + 1}/{num_epochs} [Train]",
                              ncols=100, leave=False, disable=not use_tqdm)
             
             for batch_idx, batch in train_pbar:
+
+                if _STOP_REQUESTED:
+                    raise KeyboardInterrupt
+
                 inputs, labels = batch
                 
                 # Reset feedback at start of each batch (if GaWFRNNConv)
@@ -1270,7 +1271,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
 
             # Training completed, now validate
             with torch.no_grad():
-                val_acc_char[epoch], val_metric_pos[epoch] = evaluate(mdl, val_dl)
+                val_acc_char[epoch], val_metric_pos[epoch] = evaluate(mdl, val_dl, use_tqdm)
                 # Format validation output based on mode (ensure predict_all_chars is checked first)
                 if predict_all_chars:
                     # All-chars mode: only show character accuracy, no position
@@ -1279,7 +1280,8 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                     val_str = f" Validation (char, sector): ({val_acc_char[epoch]:.2f}%, {val_metric_pos[epoch]:.2f}%)"
                 else:
                     val_str = f" Validation (char, pos): ({val_acc_char[epoch]:.2f}%, {val_metric_pos[epoch]:.2f} pix^2)"
-                print(train_str, val_str)
+                print(train_str + val_str, flush=True)
+
     
     except (KeyboardInterrupt, SystemExit):
         # Handle interruption gracefully
@@ -1505,24 +1507,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Number of training epochs (default: 200)",
     )
     parser.add_argument(
-        "--result_suffix",
-        type=str,
-        default="default_sector", # ""
-        help="Suffix to append to result file names for distinguishing different training runs (default: empty string)",
-    )
-    parser.add_argument(
-        "--use_sector_mode",
-        action="store_true",
-        default=False,
-        help="Use sector mode (3x3 grid, 9 sectors) instead of coordinate mode (default: False)",
-    )
-    parser.add_argument(
-        "--predict_all_chars",
-        action="store_true",
-        default=False,
-        help="Predict all characters (fg+bg) per frame instead of only foreground character (default: False)",
-    )
-    parser.add_argument(
         "--lrs",
         type=float,
         nargs="+",
@@ -1543,6 +1527,36 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=[0], #[0.3],
         help="Dropout rates to search over for model creation (default: [0.3])",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 42)",
+    )
+    parser.add_argument(
+        "--use_acceleration",
+        action="store_true",
+        default=False,
+        help="Enable acceleration features for training (default: False)",
+    )
+    parser.add_argument(
+        "--use_sector_mode",
+        action="store_true",
+        default=False,
+        help="Use sector mode (3x3 grid, 9 sectors) instead of coordinate mode (default: False)",
+    )
+    parser.add_argument(
+        "--predict_all_chars",
+        action="store_true",
+        default=False,
+        help="Predict all characters (fg+bg) per frame instead of only foreground character (default: False)",
+    )
+    parser.add_argument(
+        "--result_suffix",
+        type=str,
+        default="default_sector", # ""
+        help="Suffix to append to result file names for distinguishing different training runs (default: empty string)",
+    )
     return parser
 
 
@@ -1550,6 +1564,18 @@ if __name__ == "__main__":
     # Parse command line arguments
     parser = build_arg_parser()
     args = parser.parse_args()
+
+    if torch.cuda.is_available():
+        device = "cuda:0"   # 可见设备中的 0（由 CUDA_VISIBLE_DEVICES 决定映射到物理哪张卡）
+    else:
+        device = "cpu"
+
+    disable_tqdm_env = os.environ.get('DISABLE_TQDM', '').lower() in ['1', 'true', 'yes']
+    enable_tqdm_env  = os.environ.get('ENABLE_TQDM', '').lower() in ['1', 'true', 'yes']
+    term_ok = os.environ.get('TERM', '').lower() not in ['', 'dumb']
+    use_tqdm = enable_tqdm_env or (
+        not disable_tqdm_env and sys.stdout.isatty() and term_ok
+    )
     
     # Data path configuration
     base_path = get_base_path()
@@ -1561,7 +1587,7 @@ if __name__ == "__main__":
     # Dataset configuration
     use_sector_mode = args.use_sector_mode
     predict_all_chars = args.predict_all_chars
-    use_acceleration = True  # keep current default behaviour
+    use_acceleration = args.use_acceleration
     max_chars = 10
 
     train_ds, val_ds, num_pos = create_datasets(
@@ -1678,6 +1704,7 @@ if __name__ == "__main__":
             weight_decay=weight_decay,
             dropout_rate=dropout_rate,
             rnn_diag_lambda=1e-4,
+            use_tqdm=use_tqdm,
         )
 
         # Save training results

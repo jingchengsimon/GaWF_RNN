@@ -1,4 +1,8 @@
 #!/bin/zsh
+
+# 启用数组支持
+setopt KSH_ARRAYS
+
 # 切到脚本所在目录，确保相对路径正确
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR" || exit 1
@@ -21,9 +25,7 @@ mkdir -p "$LOG_DIR"
 echo "Log directory: $LOG_DIR"
 echo ""
 
-# 基本固定参数（按需修改）
-NUM_EPOCHS=200
-RESULT_SUFFIX="default_sector"
+
 
 # 运行模式
 DRY_RUN=false   # 可通过命令行参数 --dry-run 启用（仅打印，不实际launch）
@@ -33,25 +35,11 @@ if [ "$1" = "--dry-run" ]; then
   echo "DRY_RUN mode enabled: will not launch jobs, only print planned allocations"
 fi
 
-# 超参搜索表（逐个调优策略）
-MODEL_TYPES=("rnn")          # 或加上 "rnn" / "lstm" / "gru"
-HIDDEN_SIZES=(128 256)       # 你要扫的 hidden size
-
-# 定义搜索范围
-LRS=(0.001) #(0.0008 0.001 0.0012)        # learning rates
-WDS=(0) #(0.00008 0.0001 0.00012)     # weight decays
-DROPS=(0) #(0.25 0.3 0.35)            # dropout rates
-
-# 默认值（用于固定其他参数，仅在分段搜索时使用）
-DEFAULT_LR=0.001
-DEFAULT_WD=0.0001
-DEFAULT_DROP=0.3
-
 # ============================================================
 # 搜索模式说明
 # ============================================================
 # 本脚本采用分阶段小规模搜索（Stage A → Stage B → Stage C），默认只运行Stage A（WD sweep）。
-# 如需扩大搜索，可修改 WD_GRID / DROPOUT_GRID_STAGEB / LR_GRID_STAGEC 变量并重启脚本。
+# 如需扩大搜索，可修改 WD_GRID / DO_GRID / LR_GRID 变量并重启脚本。
 # ============================================================
 # （注）旧的 USE_GRID_SEARCH 参数已弃用，使用分阶段逻辑替代。
 
@@ -62,7 +50,7 @@ MAX_JOBS_PER_GPU=1
 GPUS=(0 1)   # 多卡示例: (0 1 2 3)
 
 # 防止碎片化的可选环境变量（若不需要可注释）
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export PYTORCH_ALLOC_CONF=expandable_segments:True
 
 job_id=0
 PIDS=()
@@ -89,10 +77,10 @@ trap 'cleanup; exit' EXIT INT TERM
 
 get_gpu_running_jobs() {
   local gpu_id="$1"
-  if command -v nvidia-smi > /dev/null 2>&1; then
-    nvidia-smi --query-compute-apps=pid --format=csv,noheader -i "$gpu_id" 2>/dev/null | wc -l | tr -d ' '
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    nvidia-smi --query-compute-apps=pid --format=csv,noheader -i "$gpu_id" 2>/dev/null \
+      | awk 'NF{print $1}' | wc -l | tr -d ' '
   else
-    # fallback: count all training processes
     pgrep -f "train_rnn_updated.py" | wc -l | tr -d ' '
   fi
 }
@@ -104,56 +92,41 @@ get_gpu_running_jobs() {
 
 COMBINATIONS=()
 
+# 基本固定参数（按需修改）
+NUM_EPOCHS=200
+RESULT_SUFFIX="lr_search_sector"
+
+# 超参搜索表（逐个调优策略）
+MODEL_TYPES=("rnn")          # 或加上 "rnn" / "lstm" / "gru"
+HIDDEN_SIZES=(256)       # 你要扫的 hidden size
+
+# 默认值（用于固定其他参数）
+DEFAULT_LR=1e-3
+DEFAULT_WD=0 
+DEFAULT_DROP=0 
+
 # --- 小规模试验配置（可按需扩展）
-WD_GRID=(0 1e-6 1e-5 1e-4)             # Stage A: weight decay 网格（从弱到强）
-DROPOUT_GRID_STAGEB=()                # Stage B: dropout 网格（默认空，表示不运行Stage B）
-LR_GRID_STAGEC=()                     # Stage C: lr 网格（默认空，表示不运行Stage C）
-SEEDS=(42)                             # 每个配置的随机种子（小规模先用单一seed）
+LR_GRID=(1e-4 1e-5)    # 学习率搜索范围          
+WD_GRID=()      
+DO_GRID=()               
+SEEDS=(42)                  # 每个配置的随机种子（小规模先用单一seed）
 
 # 说明给用户
 echo "=== 分阶段小规模超参数搜索 ==="
-echo "Stage A (WD sweep): ${WD_GRID[@]}"
-echo "Stage B (Dropout): ${DROPOUT_GRID_STAGEB[@]:-<disabled>}"
-echo "Stage C (LR): ${LR_GRID_STAGEC[@]:-<disabled>}"
+echo "Stage A (LR): ${LR_GRID[@]}"
+echo "Stage B (WD sweep): ${WD_GRID[@]:-<disabled>}"
+echo "Stage C (DO): ${DO_GRID[@]:-<disabled>}"
 echo "Seeds: ${SEEDS[@]}"
 echo "Models: ${MODEL_TYPES[@]} | Hidden sizes: ${HIDDEN_SIZES[@]}"
 echo ""
 
-# Stage A: weight decay sweep (dropout fixed 0, lr = DEFAULT_LR)
+# Stage A: learning rate sweep
 for model_type in "${MODEL_TYPES[@]}"; do
   for hidden_size in "${HIDDEN_SIZES[@]}"; do
-    for wd in "${WD_GRID[@]}"; do
+    for lr in "${LR_GRID[@]}"; do
       for seed in "${SEEDS[@]}"; do
-        COMBINATIONS+=("$model_type,$hidden_size,$DEFAULT_LR,$wd,0,stageA_wd${wd}_s${seed},${seed}")
-        echo "StageA add: model=$model_type h=$hidden_size wd=$wd seed=$seed"
-      done
-    done
-  done
-done
-
-# Stage B: dropout sweep (if DROPOUT_GRID_STAGEB not empty)
-for model_type in "${MODEL_TYPES[@]}"; do
-  for hidden_size in "${HIDDEN_SIZES[@]}"; do
-    for wd in "${WD_GRID[@]}"; do
-      for drop in "${DROPOUT_GRID_STAGEB[@]}"; do
-        for seed in "${SEEDS[@]}"; do
-          COMBINATIONS+=("$model_type,$hidden_size,$DEFAULT_LR,$wd,$drop,stageB_wd${wd}_do${drop}_s${seed},${seed}")
-          echo "StageB add: model=$model_type h=$hidden_size wd=$wd drop=$drop seed=$seed"
-        done
-      done
-    done
-  done
-done
-
-# Stage C: lr sweep (if LR_GRID_STAGEC not empty)
-for model_type in "${MODEL_TYPES[@]}"; do
-  for hidden_size in "${HIDDEN_SIZES[@]}"; do
-    for lr in "${LR_GRID_STAGEC[@]}"; do
-      for wd in "${WD_GRID[@]}"; do
-        for seed in "${SEEDS[@]}"; do
-          COMBINATIONS+=("$model_type,$hidden_size,$lr,$wd,0,stageC_lr${lr}_wd${wd}_s${seed},${seed}")
-          echo "StageC add: model=$model_type h=$hidden_size lr=$lr wd=$wd seed=$seed"
-        done
+        COMBINATIONS+=("$model_type,$hidden_size,$lr,$DEFAULT_WD,$DEFAULT_DROP,stageA_lr${lr},${seed}")
+        echo "StageA add: model=$model_type h=$hidden_size lr=$lr seed=$seed"
       done
     done
   done
@@ -215,29 +188,34 @@ for combo in "${COMBINATIONS[@]}"; do
     sleep 10
   done
 
+  # 在这里打印 launch 信息（关键）
+  echo "[LAUNCH] job=$job_id gpu=$gpu CUDA_VISIBLE_DEVICES=$gpu"
+
   # 如果是 dry-run，只打印将要执行的命令，不实际launch
   if [ "$DRY_RUN" = "true" ]; then
     echo "[DRY-RUN] Would launch on GPU $gpu: python train_rnn_updated.py --model_types $model_type --hidden_sizes $hidden_size --lrs $lr --weight_decays $wd --dropout_rates $drop --num_epochs $NUM_EPOCHS --result_suffix $RESULT_SUFFIX --seed ${seed} --use_acceleration True > $LOG_FILE 2>&1"
   else
-    # 重要：通过 bash -c 执行，确保后台进程继承 conda 环境
-    # 注意：使用双引号确保变量被展开
-    CUDA_VISIBLE_DEVICES=$gpu nohup bash -c "
+    (
+      export CUDA_VISIBLE_DEVICES="$gpu"
+
       source /G/anaconda3/etc/profile.d/conda.sh
       conda activate aim3_rnn
-      python train_rnn_updated.py \
-        --model_types $model_type \
-        --hidden_sizes $hidden_size \
-        --lrs $lr \
-        --weight_decays $wd \
-        --dropout_rates $drop \
-        --num_epochs $NUM_EPOCHS \
-        --result_suffix $RESULT_SUFFIX \
+
+      exec python -u train_rnn_updated.py \
+        --model_types "$model_type" \
+        --hidden_sizes "$hidden_size" \
+        --num_epochs "$NUM_EPOCHS" \
+        --lrs "$lr" \
+        --weight_decays "$wd" \
+        --dropout_rates "$drop" \
+        --seed "$seed" \
+        --use_acceleration \
         --use_sector_mode \
-        --seed ${seed} \
-        --use_acceleration True
-    " > "$LOG_FILE" 2>&1 &
+        --result_suffix "$RESULT_SUFFIX" 
+    ) > "$LOG_FILE" 2>&1 &
     pid=$!
     PIDS+=("$pid")
+
     echo "  → Job $job_id PID: $pid, Log: $LOG_FILE"
   fi
   
