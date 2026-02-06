@@ -11,6 +11,8 @@ Initial code was produced with Gemini AI. """
 import os
 import cv2
 import numpy as np
+import numpy.lib.format as npfmt
+
 import torchvision
 import csv
 from dataclasses import dataclass, field
@@ -198,7 +200,15 @@ def generate_stimulus_video(config: StimulusConfig, mnist_data: dict):
     total_frames = config.duration_seconds * config.fps
     mean_switch_interval_frames = config.mean_switch_interval_seconds * config.fps
     frame_dims = (config.height, config.width)
-    npy_data = np.zeros((total_frames, config.height, config.width), dtype=np.uint8)
+
+    # npy_data = np.zeros((total_frames, config.height, config.width), dtype=np.uint8)
+    # 在磁盘上创建一个 .npy 文件并用 memmap 映射；不会一次性占用内存
+    npy_data = npfmt.open_memmap(
+        npy_path,
+        mode="w+",
+        dtype=np.uint8,
+        shape=(total_frames, config.height, config.width),
+)
 
     # --- Initial State Setup ---
     fg_speed = np.random.choice(config.fg_speeds)
@@ -233,7 +243,11 @@ def generate_stimulus_video(config: StimulusConfig, mnist_data: dict):
                 fg_switch_flag = 1  # Set flag to 1 for this frame
                 fg_speed = np.random.choice(config.fg_speeds)
                 fg_label, fg_img = get_random_digit(mnist_data)
-                current_direction = fg_char.vel / np.linalg.norm(fg_char.vel)
+                if np.linalg.norm(fg_char.vel) == 0:
+                    current_direction = np.array([1.0, 0.0])  # Default direction if velocity is zero
+                else:
+                    current_direction = fg_char.vel / np.linalg.norm(fg_char.vel)
+
                 fg_char.vel = current_direction * fg_speed
                 fg_char.pos = np.random.rand(2) * [config.width - 28, config.height - 28] + 14
                 fg_char.label = fg_label
@@ -285,7 +299,7 @@ def generate_stimulus_video(config: StimulusConfig, mnist_data: dict):
         # --- Write to Video File ---
         video_writer.write(cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR))
     
-    np.save(npy_path, npy_data)
+    # np.save(npy_path, npy_data)
 
     # --- Cleanup ---
     video_writer.release()
@@ -299,16 +313,16 @@ def main():
     config = StimulusConfig(
         width=96,
         height=96,
-        duration_seconds=14400,
+        duration_seconds=28800, # 8 hours
         fps=24,
-        fg_speeds=[1.0, 2.0, 4.0],
-        bg_char_counts=[1, 2, 4],
-        bg_mean_speeds=[1.0, 2.0, 4.0],
+        fg_speeds=[1,0, 2.0, 3.0, 4.0, 6.0, 8.0], #[1.0, 2.0, 4.0],
+        bg_char_counts=[1, 2, 4, 8, 12], #[1, 2, 4],
+        bg_mean_speeds=[1.0, 2.0, 4.0, 6.0, 8.0], #[1.0, 2.0, 4.0],
         mean_switch_interval_seconds=1.0,
         output_dir=os.path.join('..', 'stimuli'),
         mnist_sample_start=0,
         mnist_sample_end=40000,
-        suffix="reg-train"
+        suffix="reg-train-cplx"
     )
     os.makedirs(config.output_dir, exist_ok=True)
     mnist_data = load_mnist_data(config)
@@ -320,7 +334,7 @@ def main():
     config.mnist_sample_start = 40000
     config.mnist_sample_end = 50000
     config.duration_seconds = 2400
-    config.suffix = "reg-validation"
+    config.suffix = "reg-validation-cplx"
     mnist_data = load_mnist_data(config)
     print("MNIST data loaded.")
     generate_stimulus_video(config, mnist_data)
@@ -330,132 +344,10 @@ def main():
     config.mnist_sample_start = 50000
     config.mnist_sample_end = 60000
     config.duration_seconds = 2400
-    config.suffix = "reg-test"
+    config.suffix = "reg-test-cplx"
     mnist_data = load_mnist_data(config)
     print("MNIST data loaded.")
     generate_stimulus_video(config, mnist_data)
-
-
-    ## No background character
-    # # Generate training data
-    # config = StimulusConfig(
-    #     width=96,
-    #     height=96,
-    #     duration_seconds=14400,
-    #     fps=24,
-    #     fg_speeds=[1.0, 2.0, 4.0],
-    #     bg_char_counts=[0],  # [2, 4, 6],
-    #     bg_mean_speeds=[1.0, 2.0, 4.0],
-    #     mean_switch_interval_seconds=1.0,
-    #     output_dir=os.path.join('..', 'stimuli'),
-    #     mnist_sample_start=0,
-    #     mnist_sample_end=40000,
-    #     suffix="easy-train"
-    # )
-    # os.makedirs(config.output_dir, exist_ok=True)
-    # mnist_data = load_mnist_data(config)
-    # print("MNIST data loaded.")
-    # generate_stimulus_video(config, mnist_data)
-
-
-    # # Generate validation data
-    # config.mnist_sample_start = 40000
-    # config.mnist_sample_end = 50000
-    # config.duration_seconds = 2400
-    # config.suffix = "easy-validation"
-    # mnist_data = load_mnist_data(config)
-    # print("MNIST data loaded.")
-    # generate_stimulus_video(config, mnist_data)
-
-
-    # # Generate test data
-    # config.mnist_sample_start = 50000
-    # config.mnist_sample_end = 60000
-    # config.duration_seconds = 2400
-    # config.suffix = "easy-test"
-    # mnist_data = load_mnist_data(config)
-    # print("MNIST data loaded.")
-    # generate_stimulus_video(config, mnist_data)
-
-# Generate training data
-    # config = StimulusConfig(
-    #     width=96,
-    #     height=96,
-    #     duration_seconds=14400,
-    #     fps=24,
-    #     fg_speeds=[1.0, 2.0, 4.0],
-    #     bg_char_counts=[1],
-    #     bg_mean_speeds=[1.0, 2.0, 4.0],
-    #     mean_switch_interval_seconds=1.0,
-    #     output_dir=os.path.join('..', 'stimuli'),
-    #     mnist_sample_start=0,
-    #     mnist_sample_end=40000,
-    #     suffix="1bg-train"
-    # )
-    # os.makedirs(config.output_dir, exist_ok=True)
-    # mnist_data = load_mnist_data(config)
-    # print("MNIST data loaded.")
-    # generate_stimulus_video(config, mnist_data)
-
-
-    # # Generate validation data
-    # config.mnist_sample_start = 40000
-    # config.mnist_sample_end = 50000
-    # config.duration_seconds = 2400
-    # config.suffix = "1bg-validation"
-    # mnist_data = load_mnist_data(config)
-    # print("MNIST data loaded.")
-    # generate_stimulus_video(config, mnist_data)
-
-
-    # # Generate test data
-    # config.mnist_sample_start = 50000
-    # config.mnist_sample_end = 60000
-    # config.duration_seconds = 2400
-    # config.suffix = "1bg-test"
-    # mnist_data = load_mnist_data(config)
-    # print("MNIST data loaded.")
-    # generate_stimulus_video(config, mnist_data)
-
-    ## Generate movies with 1 background and 1 foreground, at just one easy speed
-    # config = StimulusConfig(
-    #     width=96,
-    #     height=96,
-    #     duration_seconds=14400,
-    #     fps=24,
-    #     fg_speeds=[1.0],
-    #     bg_char_counts=[1],
-    #     bg_mean_speeds=[1.0],
-    #     mean_switch_interval_seconds=1.0,
-    #     output_dir=os.path.join('..', 'stimuli'),
-    #     mnist_sample_start=0,
-    #     mnist_sample_end=40000,
-    #     suffix="1bg1s-train"
-    # )
-    # os.makedirs(config.output_dir, exist_ok=True)
-    # mnist_data = load_mnist_data(config)
-    # print("MNIST data loaded.")
-    # generate_stimulus_video(config, mnist_data)
-
-
-    # # Generate validation data
-    # config.mnist_sample_start = 40000
-    # config.mnist_sample_end = 50000
-    # config.duration_seconds = 2400
-    # config.suffix = "1bg1s-validation"
-    # mnist_data = load_mnist_data(config)
-    # print("MNIST data loaded.")
-    # generate_stimulus_video(config, mnist_data)
-
-
-    # # Generate test data
-    # config.mnist_sample_start = 50000
-    # config.mnist_sample_end = 60000
-    # config.duration_seconds = 2400
-    # config.suffix = "1bg1s-test"
-    # mnist_data = load_mnist_data(config)
-    # print("MNIST data loaded.")
-    # generate_stimulus_video(config, mnist_data)
 
 if __name__ == "__main__":
     main()

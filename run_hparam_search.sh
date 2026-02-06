@@ -106,7 +106,7 @@ DEFAULT_WD=0
 DEFAULT_DROP=0 
 
 # --- 小规模试验配置（可按需扩展）
-LR_GRID=(1e-4 1e-5)    # 学习率搜索范围          
+LR_GRID=(1e-3 1e-4)    # 学习率搜索范围          
 WD_GRID=()      
 DO_GRID=()               
 SEEDS=(42)                  # 每个配置的随机种子（小规模先用单一seed）
@@ -125,8 +125,8 @@ for model_type in "${MODEL_TYPES[@]}"; do
   for hidden_size in "${HIDDEN_SIZES[@]}"; do
     for lr in "${LR_GRID[@]}"; do
       for seed in "${SEEDS[@]}"; do
-        COMBINATIONS+=("$model_type,$hidden_size,$lr,$DEFAULT_WD,$DEFAULT_DROP,stageA_lr${lr},${seed}")
-        echo "StageA add: model=$model_type h=$hidden_size lr=$lr seed=$seed"
+        COMBINATIONS+=("$model_type,$hidden_size,$lr,$DEFAULT_WD,$DEFAULT_DROP,stageA_40h_lr${lr},${seed}")
+        echo "StageA 40h add: model=$model_type h=$hidden_size lr=$lr seed=$seed"
       done
     done
   done

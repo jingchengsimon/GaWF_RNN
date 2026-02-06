@@ -8,6 +8,7 @@ import sys
 import signal
 import argparse
 import pickle
+import random
 from collections import Counter
 from itertools import product
 import numpy as np
@@ -20,6 +21,21 @@ from tqdm import tqdm
 
 torch.set_num_threads(4)
 
+
+def set_seed(seed: int):
+    """Set random seed for reproducibility (Python, NumPy, PyTorch, CUDA)."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    # Optional: full reproducibility at cost of speed (disable if training is too slow)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+# Set CUDA_VISIBLE_DEVICES to use GPU 1
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 # ==================== Acceleration Configuration ====================
 class AccelerationConfig:
@@ -392,13 +408,14 @@ class GaWFRNNConv(nn.Module):
     1. Use classifier output as feedback to RNN input
     2. Feedback is transformed by U @ diag(concat) @ V, then Hadamard product with RNN weights
     """
-    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3):
+    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256):
         super(GaWFRNNConv, self).__init__()
         self.device = device
         self.num_classes = num_classes
         self.num_pos = num_pos
         self.dropout_rate = dropout_rate
-        
+        self.hidden_size = hidden_size
+
         # CNN encoder (same as RNNConv)
         self.conv1 = nn.Conv2d(2, 32, kernel_size=kernel_size, padding='same')
         self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
@@ -406,10 +423,10 @@ class GaWFRNNConv(nn.Module):
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
         self.MP2 = nn.MaxPool2d(kernel_size=4, stride=4)
         self.LNorm2 = nn.LayerNorm([64, 12, 12])
-        
+
         # RNN parameters
         input_size = 64 * 12 * 12  # 9216
-        hidden_size = 256
+        hidden_size = self.hidden_size
         
         # Create RNN (but not using built-in, manually implement to support feedback)
         self.rnn = nn.RNN(input_size=input_size, hidden_size=hidden_size,
@@ -443,6 +460,11 @@ class GaWFRNNConv(nn.Module):
         self.register_buffer('prev_feedback', None)
         
         self.to(self.device)
+
+    def set_feedback_frozen(self, freeze: bool):
+        """Freeze or unfreeze feedback-related parameters (U, V). When frozen, feedback path does not receive gradients."""
+        for p in (self.U, self.V):
+            p.requires_grad = not freeze
 
     def encoder(self, x):
         x = self.conv1(x)
@@ -570,8 +592,9 @@ class GaWFRNNConv(nn.Module):
         """
         Args:
             x: Input sequence (B, T, C, H, W)
-            use_feedback: Whether to use feedback mechanism
-            reset_feedback: Whether to reset feedback (for new sequence start, e.g., new epoch or new batch)
+            use_feedback: Single switch for the feedback path. When False, RNN runs as standard RNN (no feedback).
+                         In training this is set from the same nofb/fb_start_epoch control (see network_train).
+            reset_feedback: When True (e.g. new batch), do not use prev_feedback for this forward even if use_feedback=True.
         """
         x = x.to(self.device)
 
@@ -586,17 +609,15 @@ class GaWFRNNConv(nn.Module):
         # reshape back to batches of stacks of frames and flatten each image
         x = x.view(batch_size, frame_num, -1)
 
-        # Determine whether to use feedback
+        # Single control: use_feedback (driven by nofb/fb_start_epoch in training)
         if use_feedback:
-            # If reset_feedback is True, or prev_feedback is None (first forward)
             if reset_feedback or self.prev_feedback is None:
-                # First forward: don't use feedback
                 feedback = None
             else:
-                # Use previous forward's saved classifier output as feedback
                 feedback = self.prev_feedback  # (B, T, feedback_dim)
         else:
             feedback = None
+            self.prev_feedback = None  # keep state consistent when feedback is off
         
         # appl RNN
         x = self.middle(x, feedback=feedback)
@@ -604,25 +625,21 @@ class GaWFRNNConv(nn.Module):
         # apply classification heads
         char_out, pos_out = self.classifier(x)
         
-        # If using feedback, save current output as feedback for next time
         if use_feedback:
-            # Concatenate two classifier outputs
-            # char_out: (B, T, num_classes)
-            # pos_out: (B, T, num_pos)
-            # prev_feedback: (B, T, num_classes + num_pos)
-            # Use .detach() to break gradient connection, avoid computation graph issues
             self.prev_feedback = torch.cat([char_out, pos_out], dim=-1).detach()  # (B, T, feedback_dim)
+        # when use_feedback=False we do not update prev_feedback (already cleared above)
             
         return char_out, pos_out
 
 
 # ==================== Training Function ====================
-def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, lr=0.001, 
-                  use_acceleration=False, use_modification=False, 
-                  weight_decay=None, dropout_rate=None, rnn_diag_lambda=1e-4, use_tqdm=True):
+def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, lr=0.001,
+                  use_acceleration=False, use_modification=False,
+                  weight_decay=None, dropout_rate=None, rnn_diag_lambda=1e-4, use_tqdm=True,
+                  nofb=False, fb_start_epoch=999999, seed=42):
     """
     Train model, supports sector mode and coordinate mode
-    
+
     Args:
         mdl: Model
         train_data: Training dataset (MC_RNN_Dataset)
@@ -633,7 +650,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                      - coordinate mode default: [1, 0.001]
         lr: Learning rate
         use_acceleration: Whether to use acceleration training (default False)
-                         - True: Enable mixed precision training (AMP), automatic batch_size optimization, 
+                         - True: Enable mixed precision training (AMP), automatic batch_size optimization,
                                  gradient accumulation for larger effective batch size, DataLoader optimization, etc.
                          - False: Use original training method, does not affect existing logic
                          - Features enabled when True: AMP (float16), gradient accumulation, memory optimization,
@@ -652,6 +669,10 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                      - If use_modification=True and specified: use custom value
         rnn_diag_lambda: Regularization coefficient for RNN hidden-to-hidden diagonal weight regularization, default 1e-4
                         This adds L1 penalty on the diagonal elements of RNN hidden weight matrix to improve stability
+        nofb: GaWFRNN only. If True, feedback is off initially; U,V frozen until fb_start_epoch (default: False).
+               Omit nofb -> full feedback. nofb only -> no feedback entire run. nofb + fb_start_epoch=N -> feedback on from epoch N.
+        fb_start_epoch: GaWFRNN with nofb: 0-based epoch at which to turn on feedback and unfreeze U,V. Default 999999 = never turn on (default: 999999)
+        seed: Random seed for DataLoader shuffle and worker RNG (default: 42). Ensures reproducible batch order and worker randomness.
     """
     # Get use_sector and predict_all_chars information from dataset
     use_sector = train_data.use_sector
@@ -725,9 +746,9 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             # Set num_workers for Ubuntu environment (may be overridden by batch_size search)
             if num_workers == 0:  # Only set if not already set
                 if psutil_module is not None:
-                    num_workers = min(2, psutil_module.cpu_count(logical=False))  # Conservative default
+                    num_workers = min(4, psutil_module.cpu_count(logical=False))  # Conservative default
                 else:
-                    num_workers = min(2, os.cpu_count() or 1)
+                    num_workers = min(4, os.cpu_count() or 1)
             print(f"Ubuntu environment: num_workers={num_workers}, batch_size={batch_size}")
             
             # Enable pin_memory (GPU only)
@@ -860,7 +881,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         loss = (loss_weights[0] * loss_char) + (loss_weights[1] * loss_pos) + rnn_diag_lambda * rnn_hh_diag
         return loss
 
-    def evaluate(mdl, data_loader, use_tqdm):
+    def evaluate(mdl, data_loader, use_tqdm, use_feedback=None):
         mdl.eval()
         total_acc_char = 0
         total_metric_pos = 0  # sector mode: accuracy; coordinate mode: MSE
@@ -891,9 +912,15 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 # Select whether to use mixed precision based on acceleration mode
                 if use_acceleration and scaler is not None and autocast_fn is not None:
                     with autocast_fn('cuda'):
-                        out_char, out_pos = mdl(inputs)
+                        if use_feedback is not None:
+                            out_char, out_pos = mdl(inputs, use_feedback=use_feedback)
+                        else:
+                            out_char, out_pos = mdl(inputs)
                 else:
-                    out_char, out_pos = mdl(inputs)
+                    if use_feedback is not None:
+                        out_char, out_pos = mdl(inputs, use_feedback=use_feedback)
+                    else:
+                        out_char, out_pos = mdl(inputs)
                 
                 if predict_all_chars:
                     # New mode: evaluate all characters prediction
@@ -972,38 +999,49 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         return acc_char, metric_pos
 
     # data loader (select different configurations based on acceleration mode)
+    # Reproducibility: generator fixes shuffle order; worker_init_fn fixes per-worker RNG when num_workers > 0
+    train_generator = torch.Generator().manual_seed(seed)
+
+    def _worker_init_fn(worker_id):
+        np.random.seed(seed + worker_id)
+        torch.manual_seed(seed + worker_id)
+
     if use_acceleration:
         # Memory-optimized DataLoader configuration
         # - num_workers: CPU parallelism (careful not to overallocate)
         # - pin_memory: Faster CPU-GPU transfer (only if num_workers > 0)
         # - persistent_workers: Reuse worker processes to avoid overhead
         # - prefetch_factor: How many batches to prefetch (reduce if memory tight)
-        # Note: Do NOT use num_workers with mmap_mode='r' (memory mapped data) 
+        # Note: Do NOT use num_workers with mmap_mode='r' (memory mapped data)
         # as it causes memory duplication across processes
-        
         train_dl = DataLoader(
-            train_data, 
-            batch_size=batch_size, 
+            train_data,
+            batch_size=batch_size,
             shuffle=True,
             num_workers=num_workers,
             pin_memory=pin_memory and num_workers > 0,  # Only pin if using workers
             persistent_workers=num_workers > 0,
             prefetch_factor=accel_config.dataloader_prefetch_factor if num_workers > 0 else 2,
-            drop_last=True  # Drop last incomplete batch to avoid small batch issues
+            drop_last=True,  # Drop last incomplete batch to avoid small batch issues
+            generator=train_generator,
+            worker_init_fn=_worker_init_fn if num_workers > 0 else None,
         )
         val_dl = DataLoader(
-            val_data, 
-            batch_size=batch_size, 
+            val_data,
+            batch_size=batch_size,
             shuffle=False,
             num_workers=num_workers,
             pin_memory=pin_memory and num_workers > 0,
             persistent_workers=num_workers > 0,
             prefetch_factor=accel_config.dataloader_prefetch_factor if num_workers > 0 else 2,
-            drop_last=False  # Keep last incomplete batch for validation
+            drop_last=False,  # Keep last incomplete batch for validation
+            worker_init_fn=_worker_init_fn if num_workers > 0 else None,
         )
     else:
         # Original method: simple configuration (no workers to avoid memory overhead)
-        train_dl = DataLoader(train_data, batch_size=32, shuffle=True, num_workers=0)
+        train_dl = DataLoader(
+            train_data, batch_size=32, shuffle=True, num_workers=0, generator=train_generator
+        )
         val_dl = DataLoader(val_data, batch_size=32, shuffle=False, num_workers=0)
     
     # Print dataset and batch information
@@ -1059,9 +1097,24 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         signal.signal(signal.SIGTERM, _request_stop)
         signal.signal(signal.SIGINT, _request_stop)
 
+    # GaWFRNN: single nofb-based control for feedback. This value is passed to forward(use_feedback=...) and
+    # governs both whether the feedback path is used and (when nofb) whether U,V are frozen.
+    def _use_feedback_this_epoch(epoch):
+        if not isinstance(mdl, GaWFRNNConv):
+            return None  # not used
+        if not nofb:
+            return True  # default: always feedback
+        return epoch >= fb_start_epoch
+
     try:
         for epoch in range(num_epochs):
             mdl.train()
+            use_feedback_this_epoch = _use_feedback_this_epoch(epoch)
+            if isinstance(mdl, GaWFRNNConv):
+                if nofb:
+                    mdl.set_feedback_frozen(use_feedback_this_epoch is False)  # freeze when epoch < fb_start_epoch
+                if use_tqdm and nofb and (epoch == 0 or epoch == fb_start_epoch):
+                    print(f"GaWFRNN (nofb): epoch {epoch} use_feedback={use_feedback_this_epoch}", flush=True)
             
             # Training loop
             epoch_train_acc_char = 0.0
@@ -1107,7 +1160,10 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 # Select whether to use mixed precision training based on acceleration mode
                 if use_acceleration and scaler is not None and autocast_fn is not None:
                     with autocast_fn('cuda'):
-                        out_char, out_pos = mdl(inputs)
+                        if use_feedback_this_epoch is not None:
+                            out_char, out_pos = mdl(inputs, use_feedback=use_feedback_this_epoch)
+                        else:
+                            out_char, out_pos = mdl(inputs)
                         loss = loss_fn(out_char, out_pos, labels)
                         loss = loss * loss_scale  # Scale loss for accumulation
                     
@@ -1121,7 +1177,10 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                     current_loss = loss.item() / loss_scale  # Unscale for logging
                 else:
                     # Original method: standard training
-                    out_char, out_pos = mdl(inputs)
+                    if use_feedback_this_epoch is not None:
+                        out_char, out_pos = mdl(inputs, use_feedback=use_feedback_this_epoch)
+                    else:
+                        out_char, out_pos = mdl(inputs)
                     loss = loss_fn(out_char, out_pos, labels)
                     loss = loss * loss_scale  # Scale loss for accumulation
                     loss.backward()
@@ -1132,11 +1191,9 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                         optim.step()
                     current_loss = loss.item() / loss_scale  # Unscale for logging
                 
-                # Calculate training metrics
+                # Calculate training metrics every epoch (loss is still computed every batch for backpropagation)
                 if predict_all_chars:
-                    # All-chars mode: use greedy matching to compute accuracy
-                    # Optimize: only compute accuracy every N batches to speed up training
-                    # Changed from every 10 batches to every 50 batches for better performance
+                    # All-chars mode: use greedy matching to compute accuracy (sample batches for speed)
                     if batch_idx % 50 == 0 or batch_idx == len(train_dl) - 1:
                         batch_size, frame_num = labels.shape[:2]
                         # Scheme B (exact multiset / frame match) stats for this eval pass
@@ -1192,7 +1249,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                     # For batches we skip, don't add anything (will be averaged correctly later)
                     # No position metric in all-chars mode
                 else:
-                    # Original mode: single char + position
+                    # Original mode: single char + position (compute metrics every epoch)
                     # Character accuracy (same for both modes)
                     epoch_train_acc_char += (torch.argmax(out_char, dim=2) == labels[:, :, 0].long()).float().mean().item()
                     
@@ -1241,7 +1298,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 if use_acceleration and batch_idx % 100 == 0 and device == 'cuda':
                     torch.cuda.empty_cache()
             
-            # Calculate epoch average metrics
+            # Calculate epoch average metrics (every epoch)
             if predict_all_chars:
                 # Scheme B: epoch_train_acc_char = total exact-matched frames
                 # epoch_train_frames_eval = total evaluated frames (denominator)
@@ -1253,7 +1310,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             else:
                 train_acc_char[epoch] = (epoch_train_acc_char / num_batches) * 100
                 train_metric_pos[epoch] = epoch_train_metric_pos / num_batches  # MSE (pixel squared)
-            
+
             # Format output string
             gpu_info = ""
             if use_acceleration and show_gpu_usage and device == 'cuda' and torch.cuda.is_available():
@@ -1269,18 +1326,17 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             else:
                 train_str = f"Epoch {epoch + 1}/{num_epochs} - Train (char, pos): ({train_acc_char[epoch]:.2f}%, {train_metric_pos[epoch]:.2f} pix^2){gpu_info}"
 
-            # Training completed, now validate
+            # Training completed, now validate (every epoch)
             with torch.no_grad():
-                val_acc_char[epoch], val_metric_pos[epoch] = evaluate(mdl, val_dl, use_tqdm)
-                # Format validation output based on mode (ensure predict_all_chars is checked first)
-                if predict_all_chars:
-                    # All-chars mode: only show character accuracy, no position
-                    val_str = f" Validation (all chars acc): {val_acc_char[epoch]:.2f}%"
-                elif use_sector:
-                    val_str = f" Validation (char, sector): ({val_acc_char[epoch]:.2f}%, {val_metric_pos[epoch]:.2f}%)"
-                else:
-                    val_str = f" Validation (char, pos): ({val_acc_char[epoch]:.2f}%, {val_metric_pos[epoch]:.2f} pix^2)"
-                print(train_str + val_str, flush=True)
+                val_acc_char[epoch], val_metric_pos[epoch] = evaluate(mdl, val_dl, use_tqdm, use_feedback=use_feedback_this_epoch)
+            # Format validation output based on mode (ensure predict_all_chars is checked first)
+            if predict_all_chars:
+                val_str = f" Validation (all chars acc): {val_acc_char[epoch]:.2f}%"
+            elif use_sector:
+                val_str = f" Validation (char, sector): ({val_acc_char[epoch]:.2f}%, {val_metric_pos[epoch]:.2f}%)"
+            else:
+                val_str = f" Validation (char, pos): ({val_acc_char[epoch]:.2f}%, {val_metric_pos[epoch]:.2f} pix^2)"
+            print(train_str + val_str, flush=True)
 
     
     except (KeyboardInterrupt, SystemExit):
@@ -1390,12 +1446,29 @@ def get_base_path() -> str:
     return base_path
 
 
-def prepare_data_paths(base_path: str):
-    """Construct and validate stimulus / label file paths."""
-    stim_train_path = os.path.join(base_path, "stimulus_reg-train.npy")
-    label_train_path = os.path.join(base_path, "stimulus_reg-train.tsv")
-    stim_val_path = os.path.join(base_path, "stimulus_reg-validation.npy")
-    label_val_path = os.path.join(base_path, "stimulus_reg-validation.tsv")
+def prepare_data_paths(base_path: str, data_suffix: str = ""):
+    """Construct and validate stimulus / label file paths.
+
+    Args:
+        base_path: Base directory containing stimulus/label files.
+        data_suffix: Optional suffix appended to base filenames.
+            - Default \"\"  -> use filenames without any suffix, e.g. 'stimulus_reg-train.npy'
+            - Non-empty (e.g. \"cplx\", \"40h\") -> a leading hyphen is added automatically,
+              resulting in filenames like 'stimulus_reg-train-cplx.npy'.
+    """
+    # Normalize suffix: ensure a single leading hyphen when non-empty
+    if data_suffix:
+        if not data_suffix.startswith("-"):
+            suffix = f"-{data_suffix}"
+        else:
+            suffix = data_suffix
+    else:
+        suffix = ""
+
+    stim_train_path = os.path.join(base_path, f"stimulus_reg-train{suffix}.npy")
+    label_train_path = os.path.join(base_path, f"stimulus_reg-train{suffix}.tsv")
+    stim_val_path = os.path.join(base_path, f"stimulus_reg-validation{suffix}.npy")
+    label_val_path = os.path.join(base_path, f"stimulus_reg-validation{suffix}.tsv")
 
     print("Checking data paths...")
     print(f"Base path: {base_path}")
@@ -1415,16 +1488,28 @@ def prepare_data_paths(base_path: str):
 
 
 def load_raw_data(stim_train_path: str, label_train_path: str,
-                  stim_val_path: str, label_val_path: str):
-    """Load raw numpy and label data from disk."""
+                  stim_val_path: str, label_val_path: str,
+                  use_mmap: bool = False):
+    """Load raw numpy and label data from disk.
+
+    Args:
+        use_mmap: If True, load stimuli with mmap_mode='r' (memory-mapped, use num_workers=0).
+                  If False, load as ndarray in memory so DataLoader can use num_workers > 0.
+    """
     print("\nLoading data...")
-    stims_train = np.load(stim_train_path, allow_pickle=True, mmap_mode="r") # "r" for read-only memory mapping
-    print(f"  ✓ Loaded training stimuli: {stims_train.shape}")
+    if use_mmap:
+        stims_train = np.load(stim_train_path, allow_pickle=True, mmap_mode="r")
+        stims_val = np.load(stim_val_path, allow_pickle=True, mmap_mode="r")
+        print(f"  ✓ Loaded training stimuli (mmap): {stims_train.shape}")
+        print(f"  ✓ Loaded validation stimuli (mmap): {stims_val.shape}")
+    else:
+        stims_train = np.load(stim_train_path, allow_pickle=True)
+        stims_val = np.load(stim_val_path, allow_pickle=True)
+        print(f"  ✓ Loaded training stimuli (ndarray): {stims_train.shape}")
+        print(f"  ✓ Loaded validation stimuli (ndarray): {stims_val.shape}")
+
     lbls_train = pd.read_csv(label_train_path, sep="\t", index_col=0)
     print(f"  ✓ Loaded training labels: {lbls_train.shape}")
-
-    stims_val = np.load(stim_val_path, allow_pickle=True, mmap_mode="r") # "r" for read-only memory mapping
-    print(f"  ✓ Loaded validation stimuli: {stims_val.shape}")
     lbls_val = pd.read_csv(label_val_path, sep="\t", index_col=0)
     print(f"  ✓ Loaded validation labels: {lbls_val.shape}")
 
@@ -1504,7 +1589,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--num_epochs",
         type=int,
         default=200,
-        help="Number of training epochs (default: 200)",
+        help="Number of training epochs (default: 100)",
     )
     parser.add_argument(
         "--lrs",
@@ -1552,11 +1637,39 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Predict all characters (fg+bg) per frame instead of only foreground character (default: False)",
     )
     parser.add_argument(
+        "--use_mmap",
+        action="store_true",
+        default=False,
+        help="Load stimuli with memory mapping (mmap_mode='r'). If not set, load as ndarray in memory so num_workers can be used (default: False)",
+    )
+    parser.add_argument(
+        "--nofb",
+        action="store_true",
+        default=False,
+        help="GaWFRNN only: disable feedback. Behavior: (1) Omit --nofb -> full feedback throughout. "
+             "(2) Use --nofb only -> no feedback throughout. (3) Use --nofb and --fb_start_epoch N -> no feedback until epoch N, then feedback on (default: False)",
+    )
+    parser.add_argument(
+        "--fb_start_epoch",
+        type=int,
+        default=999999,
+        help="GaWFRNN with --nofb: 0-based epoch at which to turn on feedback and unfreeze U,V. Only meaningful with --nofb; default 999999 means never turn on (default: 999999)",
+    )
+    parser.add_argument(
+        "--data_suffix",
+        type=str,
+        default="",
+        help="Suffix appended to stimulus_reg-* file names. "
+             "Example: 'cplx' -> 'stimulus_reg-train-cplx.npy'. "
+             "Default: empty string (no suffix).",
+    )
+    parser.add_argument(
         "--result_suffix",
         type=str,
-        default="default_sector", # ""
+        default="sector", # ""
         help="Suffix to append to result file names for distinguishing different training runs (default: empty string)",
     )
+
     return parser
 
 
@@ -1564,6 +1677,10 @@ if __name__ == "__main__":
     # Parse command line arguments
     parser = build_arg_parser()
     args = parser.parse_args()
+
+    # Set global random seed for reproducibility (torch, numpy, random)
+    set_seed(args.seed)
+    print(f"Random seed set to: {args.seed}")
 
     if torch.cuda.is_available():
         device = "cuda:0"   # 可见设备中的 0（由 CUDA_VISIBLE_DEVICES 决定映射到物理哪张卡）
@@ -1579,9 +1696,12 @@ if __name__ == "__main__":
     
     # Data path configuration
     base_path = get_base_path()
-    stim_train_path, label_train_path, stim_val_path, label_val_path = prepare_data_paths(base_path)
+    stim_train_path, label_train_path, stim_val_path, label_val_path = prepare_data_paths(
+        base_path, data_suffix=args.data_suffix
+    )
     stims_train, lbls_train, stims_val, lbls_val = load_raw_data(
         stim_train_path, label_train_path, stim_val_path, label_val_path,
+        use_mmap=args.use_mmap,
     )
 
     # Dataset configuration
@@ -1705,6 +1825,9 @@ if __name__ == "__main__":
             dropout_rate=dropout_rate,
             rnn_diag_lambda=1e-4,
             use_tqdm=use_tqdm,
+            nofb=args.nofb,
+            fb_start_epoch=args.fb_start_epoch,
+            seed=args.seed,
         )
 
         # Save training results
@@ -1712,9 +1835,17 @@ if __name__ == "__main__":
         mode_suffix = "allchars" if predict_all_chars else ("sector" if use_sector_mode else "coord")
         acc_suffix = "_acc" if use_acceleration else ""
         hp_suffix = f"_lr{lr}_wd{weight_decay}_do{dropout_rate}"
+        # nofb/fb_start_epoch in result path: nofb only -> _nofb; nofb + fb_start_epoch -> _fb{N} only
+        if args.nofb:
+            if args.fb_start_epoch >= 999999:
+                fb_path_suffix = "_nofb"
+            else:
+                fb_path_suffix = f"_fb{args.fb_start_epoch}"
+        else:
+            fb_path_suffix = ""
         results_path = os.path.join(
             results_dir,
-            f"{model_type}_{mode_suffix}{acc_suffix}_h{hidden_size}{hp_suffix}",
+            f"{model_type}_{mode_suffix}{acc_suffix}_h{hidden_size}{hp_suffix}{fb_path_suffix}",
         )
 
         save_results(results, results_path)
