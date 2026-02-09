@@ -7,195 +7,36 @@ import gc
 import sys
 import signal
 import argparse
-import pickle
-import random
 from collections import Counter
 from functools import partial
 from itertools import product
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
+# Import helper and acceleration utilities
+from utils.train_helpers import (
+    save_results,
+    get_base_path,
+    prepare_data_paths,
+    load_raw_data,
+    create_datasets,
+    set_seed,
+    get_gpu_memory_usage,
+    find_optimal_batch_size,
+    worker_init_fn,
+    get_model_classes,
+)
+from utils.train_acceleration import AccelerationConfig, init_acceleration_modules
+
 torch.set_num_threads(4)
 
 
-def set_seed(seed: int):
-    """Set random seed for reproducibility (Python, NumPy, PyTorch, CUDA)."""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-    # Optional: full reproducibility at cost of speed (disable if training is too slow)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
 # Set CUDA_VISIBLE_DEVICES to use GPU 1
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-
-# ==================== Acceleration Configuration ====================
-class AccelerationConfig:
-    """
-    Encapsulated acceleration module configuration for optimized training.
-    Supports AMP, gradient accumulation, memory management, and DataLoader optimization.
-    Can be enabled/disabled to isolate performance impact.
-    """
-    def __init__(self, use_acceleration=False, enable_amp=True, enable_dataloader_opt=True, 
-                 enable_batch_auto=True, enable_gradient_scale=True, enable_grad_accum=False,
-                 grad_accum_steps=4, enable_memory_opt=True, dataloader_prefetch_factor=2):
-        """
-        Args:
-            use_acceleration: Master switch for all acceleration features
-            enable_amp: Enable automatic mixed precision (AMP) for float16 computation
-            enable_dataloader_opt: Enable multi-worker DataLoader optimization
-            enable_batch_auto: Enable automatic batch size optimization
-            enable_gradient_scale: Enable gradient scaling (used with AMP)
-            enable_grad_accum: Enable gradient accumulation for effective larger batch size
-            grad_accum_steps: Number of accumulation steps (effective_batch = batch_size * grad_accum_steps)
-            enable_memory_opt: Enable memory optimization (cache clearing, gradient checkpointing prep)
-            dataloader_prefetch_factor: Prefetch factor for DataLoader (reduces 2 if memory tight)
-        """
-        self.use_acceleration = use_acceleration
-        self.enable_amp = use_acceleration and enable_amp
-        self.enable_dataloader_opt = use_acceleration and enable_dataloader_opt
-        self.enable_batch_auto = use_acceleration and enable_batch_auto
-        self.enable_gradient_scale = use_acceleration and enable_gradient_scale
-        self.enable_grad_accum = use_acceleration and enable_grad_accum
-        self.grad_accum_steps = grad_accum_steps if self.enable_grad_accum else 1
-        self.enable_memory_opt = use_acceleration and enable_memory_opt
-        self.dataloader_prefetch_factor = dataloader_prefetch_factor if use_acceleration else 2
-        
-        # If use_acceleration=False, all sub-features are disabled
-        if not use_acceleration:
-            self.enable_amp = False
-            self.enable_dataloader_opt = False
-            self.enable_batch_auto = False
-            self.enable_gradient_scale = False
-            self.enable_grad_accum = False
-            self.grad_accum_steps = 1
-            self.enable_memory_opt = False
-            self.dataloader_prefetch_factor = 2
-    
-    def summary(self):
-        """Print acceleration configuration summary."""
-        print("\n" + "="*60)
-        print("Acceleration Configuration:")
-        print(f"  Master switch (use_acceleration): {self.use_acceleration}")
-        if self.use_acceleration:
-            print(f"  - AMP (Automatic Mixed Precision): {self.enable_amp}")
-            print(f"  - DataLoader Optimization: {self.enable_dataloader_opt}")
-            print(f"  - Batch Size Auto Optimization: {self.enable_batch_auto}")
-            print(f"  - Gradient Scaling: {self.enable_gradient_scale}")
-            print(f"  - Gradient Accumulation: {self.enable_grad_accum} (steps={self.grad_accum_steps})")
-            print(f"  - Memory Optimization: {self.enable_memory_opt}")
-            print(f"  - DataLoader Prefetch Factor: {self.dataloader_prefetch_factor}")
-        else:
-            print("  All acceleration features disabled")
-        print("="*60 + "\n")
-
-
-# ==================== Acceleration Training Modules (Optional) ====================
-# These modules are only used when acceleration is enabled
-# By default (use_acceleration=False), they are not imported to keep the code clean
-
-def _init_acceleration_modules():
-    """Initialize acceleration training related modules (imported only when needed)"""
-    try:
-        from torch.amp import autocast, GradScaler
-        try:
-            import psutil
-        except ImportError:
-            psutil = None
-        return autocast, GradScaler, psutil
-    except ImportError:
-        return None, None, None
-
-def _get_gpu_memory_usage():
-    """Get current GPU memory usage (only used in acceleration mode)"""
-    if not torch.cuda.is_available():
-        return 0.0
-    dev = torch.cuda.current_device()
-    allocated = torch.cuda.memory_allocated(dev) / 1024**3
-    reserved = torch.cuda.memory_reserved(dev) / 1024**3
-    total = torch.cuda.get_device_properties(dev).total_memory / 1024**3
-    return (reserved / total) * 100.0 if total > 0 else 0.0
-
-def _find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=32, max_batch_size=256, 
-                              enable_grad_accum=False, grad_accum_steps=4):
-    """
-    Automatically find optimal batch_size (only used in acceleration mode)
-    Uses smaller batch_size with gradient accumulation to save memory while maintaining effective batch size.
-    
-    Args:
-        model: Model
-        train_data: Training dataset
-        device: Device
-        start_batch_size: Starting batch_size
-        max_batch_size: Maximum batch_size
-        enable_grad_accum: Whether to enable gradient accumulation
-        grad_accum_steps: Gradient accumulation steps
-    
-    Returns:
-        Optimal batch_size, and adjusted num_workers if memory is tight
-    """
-    if device == 'cpu':
-        return start_batch_size, 0
-    
-    model.eval()
-    optimal_batch_size = start_batch_size
-    num_workers_adjusted = 0  # Conservative: start with no workers
-    
-    # Test different batch sizes
-    test_sizes = [start_batch_size, 64, 128, 256] if not enable_grad_accum else [start_batch_size, 32, 16, 8]
-    
-    for batch_size in test_sizes:
-        if batch_size > max_batch_size:
-            break
-        
-        try:
-            torch.cuda.empty_cache()
-            test_loader = DataLoader(train_data, batch_size=batch_size, shuffle=False, num_workers=0)
-            test_batch = next(iter(test_loader))
-            inputs, labels = test_batch
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-            
-            with torch.no_grad():
-                _ = model(inputs)
-            
-            memory_usage = _get_gpu_memory_usage()
-            
-            if memory_usage < 70.0:  # Conservative threshold to avoid OOM
-                optimal_batch_size = batch_size
-                num_workers_adjusted = 2 if enable_grad_accum else 4  # Allow more workers with grad accum
-                print(f"Testing batch_size={batch_size}: GPU memory usage {memory_usage:.1f}%, usable (num_workers will be {num_workers_adjusted})")
-            else:
-                print(f"Testing batch_size={batch_size}: GPU memory usage {memory_usage:.1f}%, exceeds limit")
-                break
-                
-        except RuntimeError as e:
-            if "out of memory" in str(e):
-                print(f"batch_size={batch_size} caused OOM, using batch_size={optimal_batch_size}")
-                torch.cuda.empty_cache()
-                break
-            else:
-                raise e
-        finally:
-            # Explicit cleanup of test_loader to prevent resource leaks
-            if 'test_loader' in locals():
-                del test_loader
-                import gc
-                gc.collect()
-    
-    torch.cuda.empty_cache()
-    model.train()
-    return optimal_batch_size, num_workers_adjusted
-
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 # ==================== Dataset Class ====================
 class MC_RNN_Dataset(Dataset):
@@ -518,6 +359,7 @@ class GaWFRNNConv(BaseConvSequenceModel):
                 gated_weights = []
                 for b in range(batch_size):
                     # Build diagonal matrix: diag(fb_t[b])
+                    fb_t = fb_t.clamp(-10, 10) 
                     diag_matrix = torch.diag(fb_t[b])  # (feedback_dim, feedback_dim)
                     
                     # U @ diag @ V: (hidden_size, combined_weight_size)
@@ -732,11 +574,29 @@ class DendriticLayer(nn.Module):
         return x
 
 
+class RMSNorm(nn.Module):
+    """
+    Root Mean Square Layer Normalization (RMSNorm).
+    More stable than LayerNorm, especially for large hidden sizes.
+    Formula: x_norm = x / sqrt(mean(x^2) + eps) * scale
+    """
+    def __init__(self, dim, eps=1e-6):
+        super(RMSNorm, self).__init__()
+        self.eps = eps
+        self.scale = nn.Parameter(torch.ones(dim))
+
+    def forward(self, x):
+        # x: (B, ..., dim)
+        norm = x.norm(dim=-1, keepdim=True) / (x.shape[-1] ** 0.5)
+        return self.scale * x / (norm + self.eps)
+
+
 class DendriticANN(nn.Module):
     """
     dANN (model type 1, opt-aligned) for flat input: (B, input_dim) -> (B, hidden_size).
-    Stack of DendriticLayers (dend linear, soma fixed sum + LeakyReLU) plus out_proj / LayerNorm / Dropout.
-    No ReLU after LayerNorm to avoid representation collapse (negative pre-ReLU drift -> zero output).
+    Stack of DendriticLayers (dend linear, soma fixed sum + LeakyReLU) plus out_proj / Norm / Dropout.
+    No ReLU after normalization to avoid representation collapse (negative pre-ReLU drift -> zero output).
+    For h=512: uses RMSNorm (more stable than LayerNorm) and conservative out_proj initialization.
     """
     def __init__(self, input_dim, hidden_size, num_layers=2, num_dends=32, num_soma=256, dropout=0.5):
         super(DendriticANN, self).__init__()
@@ -747,16 +607,40 @@ class DendriticANN(nn.Module):
             in_dim = num_soma
         self.layers = nn.ModuleList(layers)
         self.out_proj = nn.Linear(num_soma, hidden_size)
-        self.lnorm = nn.LayerNorm(hidden_size)
+        # Use RMSNorm for h>=512 (more numerically stable), LayerNorm otherwise
+        if hidden_size >= 512:
+            self.norm = RMSNorm(hidden_size, eps=1e-5)
+        else:
+            self.norm = nn.LayerNorm(hidden_size, eps=1e-5)
         self.dropout = nn.Dropout(dropout)
+        self.hidden_size = hidden_size
+        
+        # Initialize out_proj with smaller scale for stability (especially h=512)
+        # Use Xavier uniform with smaller gain to prevent large activations
+        init_gain = 0.5 if hidden_size >= 512 else 1.0
+        nn.init.xavier_uniform_(self.out_proj.weight, gain=init_gain)
+        if self.out_proj.bias is not None:
+            nn.init.constant_(self.out_proj.bias, 0.0)
 
     def forward(self, x):
         # x: (B, input_dim)
         for layer in self.layers:
             x = layer(x)
+            # Check for NaN/Inf after each layer (especially important for h=512)
+            if self.hidden_size >= 512:
+                if torch.isnan(x).any() or torch.isinf(x).any():
+                    print(f"Warning: NaN/Inf detected in DendriticLayer output, replacing with zeros")
+                    x = torch.where(torch.isnan(x) | torch.isinf(x), torch.zeros_like(x), x)
         x = self.out_proj(x)
-        x = self.lnorm(x)
+        x = self.norm(x)
         # No ReLU here: avoids collapse when pre-ReLU activations drift negative (wd=0, etc.)
+        # For h=512: clip extreme values before dropout to prevent numerical instability
+        if self.hidden_size >= 512:
+            x = torch.clamp(x, min=-10.0, max=10.0)
+            # Final NaN/Inf check
+            if torch.isnan(x).any() or torch.isinf(x).any():
+                print(f"Warning: NaN/Inf detected after normalization, replacing with zeros")
+                x = torch.where(torch.isnan(x) | torch.isinf(x), torch.zeros_like(x), x)
         x = self.dropout(x)
         return x  # (B, hidden_size)
 
@@ -811,24 +695,10 @@ class FeedForwardConv(BaseMergeConvModel):
         return x
 
 
-# ==================== Utility Functions for Training ====================
-def _worker_init_fn(worker_id, seed):
-    """Worker initialization function for DataLoader workers.
-    This function must be at module level to be picklable for multiprocessing.
-    
-    Args:
-        worker_id: Worker process ID
-        seed: Base random seed
-    """
-    np.random.seed(seed + worker_id)
-    torch.manual_seed(seed + worker_id)
-
-
 # ==================== Training Function ====================
 def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, lr=0.001,
-                  use_acceleration=False, use_modification=False,
-                  weight_decay=None, dropout_rate=None, rnn_diag_lambda=1e-4, use_tqdm=True,
-                  nofb=False, fb_start_epoch=999999, seed=42):
+                  use_acceleration=False, weight_decay=None, dropout_rate=None, rnn_diag_lambda=1e-4, 
+                  use_tqdm=True, nofb=False, fb_start_epoch=999999, seed=42):
     """
     Train model, supports sector mode and coordinate mode
 
@@ -847,18 +717,8 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                          - False: Use original training method, does not affect existing logic
                          - Features enabled when True: AMP (float16), gradient accumulation, memory optimization,
                            multi-worker DataLoader with prefetch, CPU-GPU pinned memory
-        use_modification: Whether to use modification settings (weight_decay, dropout_rate)
-                         - True: Use modification settings (default: weight_decay=1e-4, dropout_rate=0.3)
-                         - False: Disable all modifications (weight_decay=0.0, dropout_rate=0.0)
-                         - If True, you can still override with custom weight_decay, dropout_rate values
         weight_decay: L2 regularization coefficient (weight decay)
-                     - If use_modification=False: ignored, set to 0.0
-                     - If use_modification=True and None: default 1e-4
-                     - If use_modification=True and specified: use custom value
         dropout_rate: Dropout rate (note: this is only for reference, actual dropout is set when creating the model)
-                     - If use_modification=False: ignored, set to 0.0
-                     - If use_modification=True and None: default 0.3
-                     - If use_modification=True and specified: use custom value
         rnn_diag_lambda: Regularization coefficient for RNN hidden-to-hidden diagonal weight regularization, default 1e-4
                         This adds L1 penalty on the diagonal elements of RNN hidden weight matrix to improve stability
         nofb: GaWFRNN only. If True, feedback is off initially; U,V frozen until fb_start_epoch (default: False).
@@ -880,20 +740,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             loss_weights = [1, 1]  # sector mode: character and sector loss weights equal
         else:
             loss_weights = [1, 0.001]  # coordinate mode: position loss weight smaller (MSE usually has larger values)
-    
-    # Handle modification settings: weight_decay, dropout_rate
-    if use_modification:
-        # If use_modification=True, use provided values or defaults
-        if weight_decay is None:
-            weight_decay = 1e-4  # Default weight decay
-        if dropout_rate is None:
-            dropout_rate = 0.3  # Default dropout rate (for reference, actual dropout is set in model)
-        print(f"Modification settings enabled: weight_decay={weight_decay}, dropout_rate={dropout_rate}")
-    else:
-        # If use_modification=False, force disable all modifications
-        weight_decay = 0.0
-        dropout_rate = 0.0
-        print("Modification settings disabled: weight_decay=0.0, dropout_rate=0.0")
+
     
     # Place parameters according to model's internal device (can be 'cuda' or 'cpu')
     device = mdl.device
@@ -915,30 +762,26 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     
     if use_acceleration:
         print("Enabling acceleration training...")
-        autocast_fn, GradScaler_cls, psutil_module = _init_acceleration_modules()
+        autocast_fn, GradScaler_cls, psutil_module = init_acceleration_modules()
         
         if autocast_fn is None or GradScaler_cls is None:
             print("Warning: Unable to import acceleration training modules, will use standard training")
             use_acceleration = False
         else:
-            # Automatically find optimal batch_size (Ubuntu only)
-            # Note: GaWFRNNConv model skips batch_size search, uses default value 32
-            # Because GaWFRNNConv uses feedback mechanism, batch_size changes cause prev_feedback dimension mismatch
+            # Batch size and num_workers: other models get both from find_optimal_batch_size;
+            # GaWFRNNConv skips batch_size search (feedback dimension depends on batch_size) and sets num_workers here.
             if device == 'cuda' and not isinstance(mdl, GaWFRNNConv):
                 print("Automatically finding optimal batch_size (with gradient accumulation support)...")
-                batch_size, num_workers = _find_optimal_batch_size(
+                batch_size, num_workers = find_optimal_batch_size(
                     mdl, train_data, device=device, start_batch_size=32,
-                    enable_grad_accum=accel_config.enable_grad_accum, 
-                    grad_accum_steps=accel_config.grad_accum_steps
+                    enable_grad_accum=accel_config.enable_grad_accum,
+                    grad_accum_steps=accel_config.grad_accum_steps,
                 )
                 print(f"Using batch_size = {batch_size}, suggested num_workers = {num_workers}")
             elif isinstance(mdl, GaWFRNNConv):
                 print(f"Detected GaWFRNNConv model, skipping batch_size search, using default batch_size = {batch_size}")
-            
-            # Set num_workers for Ubuntu environment (may be overridden by batch_size search)
-            if num_workers == 0:  # Only set if not already set
                 if psutil_module is not None:
-                    num_workers = min(4, psutil_module.cpu_count(logical=False))  # Conservative default
+                    num_workers = min(4, psutil_module.cpu_count(logical=False))
                 else:
                     num_workers = min(4, os.cpu_count() or 1)
             print(f"Ubuntu environment: num_workers={num_workers}, batch_size={batch_size}")
@@ -954,12 +797,19 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                       f"pin_memory={pin_memory}, mixed precision training=enabled")
     # ========== Acceleration Module Initialization End ==========
     
-    # Create worker_init_fn using functools.partial to bind seed (needed for multiprocessing pickle)
+    # Create worker_init_fn using functools.partial to bind seed 
     # This must be defined after num_workers is determined
-    worker_init_fn = partial(_worker_init_fn, seed=seed) if num_workers > 0 else None
+    worker_init_fn_param = partial(worker_init_fn, seed=seed) if num_workers > 0 else None
     
     # Add weight decay (L2 regularization) to prevent overfitting
-    optim = torch.optim.Adam(mdl.parameters(), lr=lr, weight_decay=weight_decay)
+    # For h>=512 models (especially dANN), use larger eps for Adam to prevent numerical instability
+    # Default eps=1e-8 can be too small when variance estimates become very small
+    if hasattr(mdl, 'hidden_size') and mdl.hidden_size >= 512:
+        optim = torch.optim.Adam(mdl.parameters(), lr=lr, weight_decay=weight_decay, eps=1e-6)
+    elif hasattr(mdl, 'dann') and hasattr(mdl.dann, 'hidden_size') and mdl.dann.hidden_size >= 512:
+        optim = torch.optim.Adam(mdl.parameters(), lr=lr, weight_decay=weight_decay, eps=1e-6)
+    else:
+        optim = torch.optim.Adam(mdl.parameters(), lr=lr, weight_decay=weight_decay)
     criterion_char = nn.CrossEntropyLoss()
     
     # Select position loss function based on use_sector
@@ -1218,7 +1068,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             prefetch_factor=accel_config.dataloader_prefetch_factor if num_workers > 0 else 2,
             drop_last=True,  # Drop last incomplete batch to avoid small batch issues
             generator=train_generator,
-            worker_init_fn=worker_init_fn,
+            worker_init_fn=worker_init_fn_param,
         )
         val_dl = DataLoader(
             val_data,
@@ -1229,7 +1079,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             persistent_workers=num_workers > 0,
             prefetch_factor=accel_config.dataloader_prefetch_factor if num_workers > 0 else 2,
             drop_last=False,  # Keep last incomplete batch for validation
-            worker_init_fn=worker_init_fn,
+            worker_init_fn=worker_init_fn_param,
         )
     else:
         # Original method: simple configuration (no workers to avoid memory overhead)
@@ -1257,27 +1107,6 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     val_acc_char = np.zeros(num_epochs)
     train_metric_pos = np.zeros(num_epochs)  # sector mode: accuracy; coordinate mode: MSE
     val_metric_pos = np.zeros(num_epochs)
-
-    # # Signal handler for graceful shutdown to prevent semaphore leaks
-    # def cleanup_dataloaders(signum, frame):
-    #     """Clean up DataLoader workers when receiving termination signal"""
-    #     if use_acceleration and num_workers > 0:
-    #         print("\nReceived termination signal, cleaning up DataLoader workers...")
-    #         try:
-    #             if 'train_dl' in locals():
-    #                 train_dl._iterator = None
-    #             if 'val_dl' in locals():
-    #                 val_dl._iterator = None
-    #             import gc
-    #             gc.collect()
-    #         except:
-    #             pass
-    #     sys.exit(0)
-    
-    # # Register signal handlers for graceful cleanup (only when using multiprocessing)
-    # if use_acceleration and num_workers > 0:
-    #     signal.signal(signal.SIGTERM, cleanup_dataloaders)
-    #     signal.signal(signal.SIGINT, cleanup_dataloaders)
 
     _STOP_REQUESTED = False
 
@@ -1359,13 +1188,23 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                         else:
                             out_char, out_pos = mdl(inputs)
                         loss = loss_fn(out_char, out_pos, labels)
+                        # Check for NaN/Inf in loss (especially important for h=512)
+                        if torch.isnan(loss) or torch.isinf(loss):
+                            print(f"Warning: Skipping batch {batch_idx} due to NaN/Inf loss")
+                            continue
                         loss = loss * loss_scale  # Scale loss for accumulation
                     
                     scaler.scale(loss).backward()
                     # Optimizer step and scaling update only at accumulation boundary
                     if (batch_idx + 1) % accel_config.grad_accum_steps == 0:
                         scaler.unscale_(optim)
-                        torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
+                        # Check for NaN/Inf in gradients before clipping (especially important for h=512)
+                        grad_norm = torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
+                        if torch.isnan(grad_norm) or torch.isinf(grad_norm) or grad_norm > 100.0:
+                            print(f"Warning: Skipping batch {batch_idx} due to abnormal gradient norm: {grad_norm.item():.2f}")
+                            scaler.update()  # Update scaler even on skip to prevent overflow
+                            optim.zero_grad()
+                            continue
                         scaler.step(optim)
                         scaler.update()
                     current_loss = loss.item() / loss_scale  # Unscale for logging
@@ -1376,12 +1215,21 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                     else:
                         out_char, out_pos = mdl(inputs)
                     loss = loss_fn(out_char, out_pos, labels)
+                    # Check for NaN/Inf in loss (especially important for h=512)
+                    if torch.isnan(loss) or torch.isinf(loss):
+                        print(f"Warning: Skipping batch {batch_idx} due to NaN/Inf loss")
+                        continue
                     loss = loss * loss_scale  # Scale loss for accumulation
                     loss.backward()
                     
                     # Optimizer step only at accumulation boundary
                     if (batch_idx + 1) % accel_config.grad_accum_steps == 0:
-                        torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
+                        # Check for NaN/Inf in gradients before clipping (especially important for h=512)
+                        grad_norm = torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
+                        if torch.isnan(grad_norm) or torch.isinf(grad_norm) or grad_norm > 100.0:
+                            print(f"Warning: Skipping batch {batch_idx} due to abnormal gradient norm: {grad_norm.item():.2f}")
+                            optim.zero_grad()
+                            continue
                         optim.step()
                     current_loss = loss.item() / loss_scale  # Unscale for logging
                 
@@ -1508,7 +1356,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             # Format output string
             gpu_info = ""
             if use_acceleration and show_gpu_usage and device == 'cuda' and torch.cuda.is_available():
-                gpu_mem = _get_gpu_memory_usage()
+                gpu_mem = get_gpu_memory_usage()
                 gpu_info = f" | GPU memory: {gpu_mem:.1f}%"
             
             # Format output based on mode (ensure predict_all_chars is checked first)
@@ -1586,183 +1434,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         }
 
 
-# ==================== Utility Functions ====================
-def save_results(results, filepath):
-    """
-    Save training results to local file
-    
-    Args:
-        results: Training results dictionary
-        filepath: Save path (e.g., 'results_rnn' or 'results/rnn_sector')
-                  If directory doesn't exist, it will be created
-    """
-    import os
-    # Extract directory and filename
-    directory = os.path.dirname(filepath)
-    if directory and not os.path.exists(directory):
-        os.makedirs(directory, exist_ok=True)
-        print(f"Created directory: {directory}")
-    
-    # Create save dictionary (does not include model, because model is too large)
-    results_path = filepath + '.pkl'
-    save_dict = {}
-    for key, value in results.items():
-        if key != "model":
-            save_dict[key] = value
-    
-    # Save model state dict (can be saved separately if needed)
-    model_path = results_path.replace('.pkl', '_model.pth')
-    if "model" in results:
-        # Check if model has fcpos (position prediction layer)
-        # In predict_all_chars mode, fcpos is None
-        if hasattr(results["model"], 'fcpos') and results["model"].fcpos is not None:
-            saved_num_pos = results["model"].fcpos.out_features
-            print(f"Model has position prediction layer (num_pos={saved_num_pos})")
-        elif hasattr(results["model"], 'predict_all_chars') and results["model"].predict_all_chars:
-            print("Model is in predict_all_chars mode (no position prediction)")
-        else:
-            print("Model does not have position prediction layer")
-        torch.save(results["model"].state_dict(), model_path)
-        print(f"Model state dict saved to: {model_path}")
-    
-    # Save other results
-    with open(results_path, 'wb') as f:
-        pickle.dump(save_dict, f)
-    print(f"Results saved to: {results_path}")
-
-
-# ==================== Main Training Code ====================
-
-def get_base_path() -> str:
-    """Get the base stimulus path (Ubuntu/Linux only)."""
-    base_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli"
-    print(f"Using base path: {base_path}")
-    return base_path
-
-
-def prepare_data_paths(base_path: str, data_suffix: str = ""):
-    """Construct and validate stimulus / label file paths.
-
-    Args:
-        base_path: Base directory containing stimulus/label files.
-        data_suffix: Optional suffix appended to base filenames.
-            - Default \"\"  -> use filenames without any suffix, e.g. 'stimulus_reg-train.npy'
-            - Non-empty (e.g. \"cplx\", \"40h\") -> a leading hyphen is added automatically,
-              resulting in filenames like 'stimulus_reg-train-cplx.npy'.
-    """
-    # Normalize suffix: ensure a single leading hyphen when non-empty
-    if data_suffix:
-        if not data_suffix.startswith("-"):
-            suffix = f"-{data_suffix}"
-        else:
-            suffix = data_suffix
-    else:
-        suffix = ""
-
-    stim_train_path = os.path.join(base_path, f"stimulus_reg-train{suffix}.npy")
-    label_train_path = os.path.join(base_path, f"stimulus_reg-train{suffix}.tsv")
-    stim_val_path = os.path.join(base_path, f"stimulus_reg-validation{suffix}.npy")
-    label_val_path = os.path.join(base_path, f"stimulus_reg-validation{suffix}.tsv")
-
-    print("Checking data paths...")
-    print(f"Base path: {base_path}")
-    for path_name, path in [
-        ("train stim", stim_train_path),
-        ("train label", label_train_path),
-        ("val stim", stim_val_path),
-        ("val label", label_val_path),
-    ]:
-        if not os.path.exists(path):
-            print(f"ERROR: {path_name} path does not exist: {path}")
-            raise FileNotFoundError(f"Data file not found: {path}")
-        else:
-            print(f"  ✓ {path_name}: {path}")
-
-    return stim_train_path, label_train_path, stim_val_path, label_val_path
-
-
-def load_raw_data(stim_train_path: str, label_train_path: str,
-                  stim_val_path: str, label_val_path: str,
-                  use_mmap: bool = False):
-    """Load raw numpy and label data from disk.
-
-    Args:
-        use_mmap: If True, load stimuli with mmap_mode='r' (memory-mapped, use num_workers=0).
-                  If False, load as ndarray in memory so DataLoader can use num_workers > 0.
-    """
-    print("\nLoading data...")
-    if use_mmap:
-        stims_train = np.load(stim_train_path, allow_pickle=True, mmap_mode="r")
-        stims_val = np.load(stim_val_path, allow_pickle=True, mmap_mode="r")
-        print(f"  ✓ Loaded training stimuli (mmap): {stims_train.shape}")
-        print(f"  ✓ Loaded validation stimuli (mmap): {stims_val.shape}")
-    else:
-        stims_train = np.load(stim_train_path, allow_pickle=True)
-        stims_val = np.load(stim_val_path, allow_pickle=True)
-        print(f"  ✓ Loaded training stimuli (ndarray): {stims_train.shape}")
-        print(f"  ✓ Loaded validation stimuli (ndarray): {stims_val.shape}")
-
-    lbls_train = pd.read_csv(label_train_path, sep="\t", index_col=0)
-    print(f"  ✓ Loaded training labels: {lbls_train.shape}")
-    lbls_val = pd.read_csv(label_val_path, sep="\t", index_col=0)
-    print(f"  ✓ Loaded validation labels: {lbls_val.shape}")
-
-    return stims_train, lbls_train, stims_val, lbls_val
-
-
-def create_datasets(stims_train, lbls_train, stims_val, lbls_val,
-                    use_sector_mode: bool, predict_all_chars: bool,
-                    max_chars: int = 10):
-    """Create training / validation datasets and return dataset objects and num_pos."""
-    print("Creating datasets...")
-
-    if predict_all_chars:
-        train_ds = MC_RNN_Dataset(
-            stims_train, lbls_train, use_sector=False,
-            predict_all_chars=True, max_chars=max_chars,
-        )
-        val_ds = MC_RNN_Dataset(
-            stims_val, lbls_val, use_sector=False,
-            predict_all_chars=True, max_chars=max_chars,
-        )
-        num_pos = 0
-        print(f"Using all-chars mode: predict all characters (fg+bg) per frame, max_chars={max_chars}")
-    elif use_sector_mode:
-        num_pos = 9
-        train_ds = MC_RNN_Dataset(
-            stims_train, lbls_train, use_sector=True, num_sectors=num_pos,
-            predict_all_chars=False,
-        )
-        val_ds = MC_RNN_Dataset(
-            stims_val, lbls_val, use_sector=True, num_sectors=num_pos,
-            predict_all_chars=False,
-        )
-        print("Using sector mode (3x3 grid, 9 sectors)")
-    else:
-        num_pos = 2
-        train_ds = MC_RNN_Dataset(
-            stims_train, lbls_train, use_sector=False, predict_all_chars=False,
-        )
-        val_ds = MC_RNN_Dataset(
-            stims_val, lbls_val, use_sector=False, predict_all_chars=False,
-        )
-        print("Using coordinate mode (directly predict x, y coordinates)")
-
-    return train_ds, val_ds, num_pos
-
-
-def get_model_classes():
-    """Return mapping from model type name to model class."""
-    return {
-        "rnn": RNNConv,
-        "lstm": LSTMConv,
-        "gru": GRUConv,
-        "gawf": GaWFRNNConv,
-        "ffn": FeedForwardConv,
-        "dann": DendriticANNConv,
-    }
-
-
+# ==================== Parse Arguments ====================
 def build_arg_parser() -> argparse.ArgumentParser:
     """Build the argument parser for command line options."""
     parser = argparse.ArgumentParser(description="Train RNN models for sector classification")
@@ -1907,17 +1579,22 @@ if __name__ == "__main__":
     max_chars = 10
 
     train_ds, val_ds, num_pos = create_datasets(
-        stims_train,
-        lbls_train,
-        stims_val,
-        lbls_val,
-        use_sector_mode=use_sector_mode,
-        predict_all_chars=predict_all_chars,
-        max_chars=max_chars,
+        stims_train, lbls_train, stims_val, lbls_val,
+        use_sector_mode=args.use_sector_mode,
+        predict_all_chars=args.predict_all_chars,
+        max_chars=args.max_chars if args.predict_all_chars else 10,
+        dataset_class=MC_RNN_Dataset,
     )
 
     # Model class mapping table
-    model_classes = get_model_classes()
+    model_classes = get_model_classes(
+        RNNConv,
+        LSTMConv,
+        GRUConv,
+        GaWFRNNConv,
+        FeedForwardConv,
+        DendriticANNConv,
+    )
 
     # Training configuration (from command line arguments)
     model_types = args.model_types
@@ -1936,9 +1613,6 @@ if __name__ == "__main__":
     experiment_configs = list(
         product(model_types, hidden_sizes, lrs, weight_decays, dropout_rates)
     )
-
-    # Modification settings: always enabled for this script
-    use_modification = True
 
     # Training loop over all hyperparameter combinations
     total_experiments = len(experiment_configs)
@@ -2017,7 +1691,6 @@ if __name__ == "__main__":
             num_epochs=args.num_epochs,
             lr=lr,
             use_acceleration=use_acceleration,
-            use_modification=use_modification,
             weight_decay=weight_decay,
             dropout_rate=dropout_rate,
             rnn_diag_lambda=1e-4,

@@ -47,7 +47,7 @@ fi
 MAX_JOBS_PER_GPU=1
 
 # 如果有多张卡，在这里列出可用 GPU
-GPUS=(0 1)   # 多卡示例: (0 1 2 3)
+GPUS=(0)   # 多卡示例: (0 1 2 3)
 
 # 防止碎片化的可选环境变量（若不需要可注释）
 export PYTORCH_ALLOC_CONF=expandable_segments:True

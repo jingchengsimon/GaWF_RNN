@@ -1,4 +1,6 @@
 __pycache__/
+*.pyc
+
 results/
 stimuli/
 mimo_pack.egg-info/
