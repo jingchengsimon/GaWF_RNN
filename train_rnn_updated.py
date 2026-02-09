@@ -10,6 +10,7 @@ import argparse
 import pickle
 import random
 from collections import Counter
+from functools import partial
 from itertools import product
 import numpy as np
 import pandas as pd
@@ -35,7 +36,7 @@ def set_seed(seed: int):
     torch.backends.cudnn.benchmark = False
 
 # Set CUDA_VISIBLE_DEVICES to use GPU 1
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 # ==================== Acceleration Configuration ====================
 class AccelerationConfig:
@@ -306,26 +307,31 @@ class MC_RNN_Dataset(Dataset):
 
 
 # ==================== Model Classes ====================
-class BaseRNNConv(nn.Module):
-    """Base class for CNN-RNN models supporting different RNN types"""
-    
-    def __init__(self, num_classes, num_pos, rnn_class=nn.RNN, kernel_size=3, device='cuda', 
-                 dropout_rate=0.3, hidden_size=256, max_chars=10, predict_all_chars=False):
-        super(BaseRNNConv, self).__init__()
+# Note: self.training is provided by nn.Module. It is True when model.train() is called
+# and False when model.eval(). Used by F.dropout* so dropout is applied only during training.
+
+
+class BaseConvSequenceModel(nn.Module):
+    """
+    Shared encoder (CNN), classifier (fcchar/fcpos), and forward for Conv sequence models
+    that use the same pipeline: (B,T,C,H,W) -> encoder -> (B,T,hidden) -> middle -> classifier.
+    Subclasses must implement middle(x) and may add extra layers in __init__.
+    """
+    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3,
+                 hidden_size=256, max_chars=10, predict_all_chars=False):
+        super(BaseConvSequenceModel, self).__init__()
         self.device = device
         self.dropout_rate = dropout_rate
         self.max_chars = max_chars
         self.predict_all_chars = predict_all_chars
+        # Shared encoder
         self.conv1 = nn.Conv2d(2, 32, kernel_size=kernel_size, padding='same')
         self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.LNorm1 = nn.LayerNorm([32, 48, 48])
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
         self.MP2 = nn.MaxPool2d(kernel_size=4, stride=4)
         self.LNorm2 = nn.LayerNorm([64, 12, 12])
-        self.rnn = rnn_class(input_size=64 * 12 * 12, hidden_size=hidden_size,
-                             num_layers=1, batch_first=True)
-        self.LNormRNN = nn.LayerNorm(hidden_size)
-        
+        # Shared classifier
         if predict_all_chars:
             self.fcchars = nn.Linear(hidden_size, max_chars * num_classes)
             self.fcpos = None
@@ -340,19 +346,11 @@ class BaseRNNConv(nn.Module):
         x = self.LNorm1(x)
         x = F.relu(x)
         x = F.dropout2d(x, p=self.dropout_rate, training=self.training)
-        
         x = self.conv2(x)
         x = self.MP2(x)
         x = self.LNorm2(x)
         x = F.relu(x)
         x = F.dropout2d(x, p=self.dropout_rate, training=self.training)
-        return x
-
-    def middle(self, x):
-        x = self.rnn(x)[0]
-        x = self.LNormRNN(x)
-        x = F.relu(x)
-        x = F.dropout(x, p=0.5, training=self.training)
         return x
 
     def classifier(self, x):
@@ -365,6 +363,9 @@ class BaseRNNConv(nn.Module):
         else:
             return self.fcchar(x), self.fcpos(x)
 
+    def middle(self, x):
+        raise NotImplementedError("Subclass must implement middle(x)")
+
     def forward(self, x):
         x = x.to(self.device)
         batch_size, frame_num, channels, height, width = x.size()
@@ -374,6 +375,27 @@ class BaseRNNConv(nn.Module):
         x = self.middle(x)
         char_out, pos_out = self.classifier(x)
         return char_out, pos_out
+
+
+class BaseRNNConv(BaseConvSequenceModel):
+    """Base class for CNN-RNN models supporting different RNN types. Middle = RNN + LayerNorm + ReLU + Dropout."""
+    def __init__(self, num_classes, num_pos, rnn_class=nn.RNN, kernel_size=3, device='cuda',
+                 dropout_rate=0.3, hidden_size=256, max_chars=10, predict_all_chars=False):
+        super(BaseRNNConv, self).__init__(
+            num_classes, num_pos, kernel_size=kernel_size, device=device,
+            dropout_rate=dropout_rate, hidden_size=hidden_size,
+            max_chars=max_chars, predict_all_chars=predict_all_chars,
+        )
+        self.rnn = rnn_class(input_size=64 * 12 * 12, hidden_size=hidden_size,
+                             num_layers=1, batch_first=True)
+        self.LNormRNN = nn.LayerNorm(hidden_size)
+
+    def middle(self, x):
+        x = self.rnn(x)[0]
+        x = self.LNormRNN(x)
+        x = F.relu(x)
+        x = F.dropout(x, p=0.5, training=self.training)
+        return x
 
 
 class RNNConv(BaseRNNConv):
@@ -400,85 +422,49 @@ class LSTMConv(BaseRNNConv):
                                        max_chars=max_chars, predict_all_chars=predict_all_chars)
 
 
-class GaWFRNNConv(nn.Module):
+class GaWFRNNConv(BaseConvSequenceModel):
     """
-    GaWF (Gated with Feedback) RNN Model
-    
+    GaWF (Gated with Feedback) RNN Model.
+    Encoder and classifier from BaseConvSequenceModel. Forward overridden for feedback.
     Main improvements:
     1. Use classifier output as feedback to RNN input
     2. Feedback is transformed by U @ diag(concat) @ V, then Hadamard product with RNN weights
     """
     def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256):
-        super(GaWFRNNConv, self).__init__()
-        self.device = device
+        super(GaWFRNNConv, self).__init__(
+            num_classes, num_pos, kernel_size=kernel_size, device=device,
+            dropout_rate=dropout_rate, hidden_size=hidden_size,
+            max_chars=10, predict_all_chars=False,
+        )
         self.num_classes = num_classes
         self.num_pos = num_pos
-        self.dropout_rate = dropout_rate
         self.hidden_size = hidden_size
-
-        # CNN encoder (same as RNNConv)
-        self.conv1 = nn.Conv2d(2, 32, kernel_size=kernel_size, padding='same')
-        self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.LNorm1 = nn.LayerNorm([32, 48, 48])
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.MP2 = nn.MaxPool2d(kernel_size=4, stride=4)
-        self.LNorm2 = nn.LayerNorm([64, 12, 12])
-
-        # RNN parameters
         input_size = 64 * 12 * 12  # 9216
-        hidden_size = self.hidden_size
-        
-        # Create RNN (but not using built-in, manually implement to support feedback)
         self.rnn = nn.RNN(input_size=input_size, hidden_size=hidden_size,
                           num_layers=1, batch_first=True)
-        
         # Feedback transformation matrices
         # Dimension after concatenating classifier outputs
-        feedback_dim = num_classes + num_pos  # e.g., 10 + 9 = 19
-        
+        feedback_dim = num_classes + num_pos
         # RNN weight matrix shapes
         # weight_ih: (hidden_size, input_size) = (256, 9216)
         # weight_hh: (hidden_size, hidden_size) = (256, 256)
         # Concatenated shape: (256, 9216 + 256) = (256, 9472)
-        combined_weight_size = input_size + hidden_size  # 9472
-        
+        combined_weight_size = input_size + hidden_size
         # U: (hidden_size, feedback_dim) = (256, 19)
         # V: (feedback_dim, combined_weight_size) = (19, 9472)
         # diag(concat): (feedback_dim, feedback_dim) = (19, 19)
         # U @ diag @ V: (256, 19) @ (19, 19) @ (19, 9472) = (256, 9472)
         self.U = nn.Parameter(torch.randn(hidden_size, feedback_dim) * 0.01)
         self.V = nn.Parameter(torch.randn(feedback_dim, combined_weight_size) * 0.01)
-        
-        # LayerNorm and Dropout
         self.LNormRNN = nn.LayerNorm(hidden_size)
-        
-        # Classifier heads
-        self.fcchar = nn.Linear(hidden_size, num_classes)
-        self.fcpos = nn.Linear(hidden_size, num_pos)
-        
-        # Store previous forward's classifier output as feedback for next time
         self.register_buffer('prev_feedback', None)
-        
-        self.to(self.device)
 
     def set_feedback_frozen(self, freeze: bool):
         """Freeze or unfreeze feedback-related parameters (U, V). When frozen, feedback path does not receive gradients."""
         for p in (self.U, self.V):
             p.requires_grad = not freeze
 
-    def encoder(self, x):
-        x = self.conv1(x)
-        x = self.MP1(x)
-        x = self.LNorm1(x)
-        x = F.relu(x)
-        x = F.dropout2d(x, p=self.dropout_rate, training=self.training)
-        
-        x = self.conv2(x)
-        x = self.MP2(x)
-        x = self.LNorm2(x)
-        x = F.relu(x)
-        x = F.dropout2d(x, p=self.dropout_rate, training=self.training)
-        return x
+    # encoder and classifier inherited from BaseConvSequenceModel (same implementation)
 
     def middle(self, x, feedback=None):
         """
@@ -537,8 +523,9 @@ class GaWFRNNConv(nn.Module):
                     # U @ diag @ V: (hidden_size, combined_weight_size)
                     transformed = self.U @ diag_matrix @ self.V  # (hidden_size, combined_weight_size)
                     
-                    # Apply sigmoid
-                    transformed = torch.sigmoid(transformed)  # (hidden_size, combined_weight_size)
+                    # Temperature scaling: keep sigmoid in non-saturated region (tau > 1 softens the gate)
+                    tau = 2.0
+                    transformed = torch.sigmoid(transformed / tau)  # (hidden_size, combined_weight_size)
                     
                     # Hadamard product: transformed * combined_weight
                     gated_weight = transformed * combined_weight  # (hidden_size, combined_weight_size)
@@ -585,8 +572,7 @@ class GaWFRNNConv(nn.Module):
         x = F.dropout(x, p=0.5, training=self.training)
         return x
 
-    def classifier(self, x):
-        return self.fcchar(x), self.fcpos(x)
+    # classifier inherited from BaseConvSequenceModel (same implementation)
 
     def forward(self, x, use_feedback=True, reset_feedback=False):
         """
@@ -630,6 +616,212 @@ class GaWFRNNConv(nn.Module):
         # when use_feedback=False we do not update prev_feedback (already cleared above)
             
         return char_out, pos_out
+
+
+# ==================== Base for merge-frame ANN models (FFN / dANN) ====================
+# Shared: (B, T, C, H, W) -> merge (B, T*C, H, W) -> encoder -> flatten -> middle -> classifier -> expand to (B, T, ...).
+# Subclasses implement middle(x) only.
+
+class BaseMergeConvModel(nn.Module):
+    """
+    Base for models that adapt ANN to RNN data format by merging frame_num and channels.
+    Merges (B, T, C, H, W) -> (B, T*C, H, W); output expanded to (B, T, num_classes) etc.
+    Subclasses must implement middle(x) where x is (B, 64*12*12).
+    """
+    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3,
+                 hidden_size=256, max_chars=10, predict_all_chars=False):
+        super(BaseMergeConvModel, self).__init__()
+        self.device = device
+        self.dropout_rate = dropout_rate
+        self.max_chars = max_chars
+        self.predict_all_chars = predict_all_chars
+        self._input_channels = None
+        self.conv1 = None
+        self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.LNorm1 = None
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.MP2 = nn.MaxPool2d(kernel_size=4, stride=4)
+        self.LNorm2 = nn.LayerNorm([64, 12, 12])
+        if predict_all_chars:
+            self.fcchars = nn.Linear(hidden_size, max_chars * num_classes)
+            self.fcpos = None
+        else:
+            self.fcchar = nn.Linear(hidden_size, num_classes)
+            self.fcpos = nn.Linear(hidden_size, num_pos)
+        self.to(self.device)
+
+    def _ensure_conv1(self, input_channels):
+        if self.conv1 is None or self._input_channels != input_channels:
+            self._input_channels = input_channels
+            self.conv1 = nn.Conv2d(input_channels, 32, kernel_size=3, padding='same').to(self.device)
+            self.LNorm1 = nn.LayerNorm([32, 48, 48]).to(self.device)
+
+    def encoder(self, x):
+        input_channels = x.size(1)
+        self._ensure_conv1(input_channels)
+        x = self.conv1(x)
+        x = self.MP1(x)
+        x = self.LNorm1(x)
+        x = F.relu(x)
+        x = F.dropout2d(x, p=self.dropout_rate, training=self.training)
+        x = self.conv2(x)
+        x = self.MP2(x)
+        x = self.LNorm2(x)
+        x = F.relu(x)
+        x = F.dropout2d(x, p=self.dropout_rate, training=self.training)
+        return x
+
+    def classifier(self, x):
+        if self.predict_all_chars:
+            chars_out = self.fcchars(x)
+            batch_size = chars_out.shape[0]
+            num_classes = chars_out.shape[-1] // self.max_chars
+            chars_out = chars_out.view(batch_size, self.max_chars, num_classes)
+            return chars_out, None
+        else:
+            return self.fcchar(x), self.fcpos(x)
+
+    def middle(self, x):
+        raise NotImplementedError("Subclass must implement middle(x)")
+
+    def forward(self, x):
+        x = x.to(self.device)
+        batch_size, frame_num, channels, height, width = x.size()
+        x = x.view(batch_size, frame_num * channels, height, width)
+        x = self.encoder(x)
+        x = x.view(batch_size, -1)
+        x = self.middle(x)
+        char_out, pos_out = self.classifier(x)
+        if self.predict_all_chars:
+            char_out = char_out.unsqueeze(1).expand(-1, frame_num, -1, -1).contiguous()
+        else:
+            char_out = char_out.unsqueeze(1).expand(-1, frame_num, -1).contiguous()
+            pos_out = pos_out.unsqueeze(1).expand(-1, frame_num, -1).contiguous()
+        return char_out, pos_out
+
+
+# ==================== Dendritic ANN (dANN) with Global RFs ====================
+# Aligned with opt.py get_model(): model type 1 (dend_ann_global_rfs).
+# - Dend: linear only (no nonlinearity on dendrite outputs).
+# - Soma: fixed aggregation (non-learnable), i.e. sum over dendrites per soma; then LeakyReLU on soma (match opt).
+
+class DendriticLayer(nn.Module):
+    """
+    Single dendritic layer aligned with opt.py.
+    - Dendrite segment: one linear (input_dim -> num_soma * num_dends), no activation on dend outputs.
+    - Soma segment: fixed aggregation (non-learnable) via registered buffer of ones; then LeakyReLU(0.1) on soma output.
+    """
+    def __init__(self, input_dim, num_dends, num_soma, dropout=0.0):
+        super(DendriticLayer, self).__init__()
+        self.num_dends = num_dends
+        self.num_soma = num_soma
+        # Dendrite: single linear, no nonlinearity on dend outputs
+        self.fc = nn.Linear(input_dim, num_soma * num_dends)
+        self.dropout = nn.Dropout(dropout)
+        # Soma: non-learnable aggregation (fixed weights = 1). Buffer is not in parameters().
+        self.register_buffer("soma_agg", torch.ones(num_soma, num_dends))
+
+    def forward(self, x):
+        # x: (B, input_dim)
+        x = self.dropout(x)
+        # Dend: linear only (no ReLU on dendrite outputs)
+        x = self.fc(x)  # (B, num_soma * num_dends)
+        x = x.view(x.size(0), self.num_soma, self.num_dends)
+        # Soma: fixed weighted sum (soma_agg is non-learnable buffer), then LeakyReLU (opt relu_slope=0.1)
+        x = F.leaky_relu((x * self.soma_agg).sum(dim=2), negative_slope=0.1)  # (B, num_soma)
+        return x
+
+
+class DendriticANN(nn.Module):
+    """
+    dANN (model type 1, opt-aligned) for flat input: (B, input_dim) -> (B, hidden_size).
+    Stack of DendriticLayers (dend linear, soma fixed sum + LeakyReLU) plus out_proj / LayerNorm / Dropout.
+    No ReLU after LayerNorm to avoid representation collapse (negative pre-ReLU drift -> zero output).
+    """
+    def __init__(self, input_dim, hidden_size, num_layers=2, num_dends=32, num_soma=256, dropout=0.5):
+        super(DendriticANN, self).__init__()
+        layers = []
+        in_dim = input_dim
+        for i in range(num_layers):
+            layers.append(DendriticLayer(in_dim, num_dends, num_soma, dropout=dropout))
+            in_dim = num_soma
+        self.layers = nn.ModuleList(layers)
+        self.out_proj = nn.Linear(num_soma, hidden_size)
+        self.lnorm = nn.LayerNorm(hidden_size)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        # x: (B, input_dim)
+        for layer in self.layers:
+            x = layer(x)
+        x = self.out_proj(x)
+        x = self.lnorm(x)
+        # No ReLU here: avoids collapse when pre-ReLU activations drift negative (wd=0, etc.)
+        x = self.dropout(x)
+        return x  # (B, hidden_size)
+
+
+class DendriticANNConv(BaseMergeConvModel):
+    """
+    Dendritic ANN (dANN) with global RFs, aligned with opt.py get_model() (model type 1).
+    Encoder and classifier from BaseMergeConvModel. Middle: dANN (dend linear, soma non-learnable).
+    """
+    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
+                 max_chars=10, predict_all_chars=False,
+                 num_layers=2, num_dends=32, num_soma=256):
+        super(DendriticANNConv, self).__init__(
+            num_classes, num_pos, kernel_size=kernel_size, device=device,
+            dropout_rate=dropout_rate, hidden_size=hidden_size,
+            max_chars=max_chars, predict_all_chars=predict_all_chars,
+        )
+        self.dann = DendriticANN(
+            input_dim=64 * 12 * 12,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            num_dends=num_dends,
+            num_soma=num_soma,
+            dropout=0, # turn off dropout 
+        )
+
+    def middle(self, x):
+        return self.dann(x)
+
+
+class FeedForwardConv(BaseMergeConvModel):
+    """
+    FeedForward model, adapted to RNN data format (using frame_num as input_channels).
+    Encoder and classifier from BaseMergeConvModel. Middle: single FC layer.
+    FFN-exclusive: hidden_size for FC layer (default 512 when RNN default 256 is passed).
+    """
+    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
+                 max_chars=10, predict_all_chars=False):
+        ffn_hidden_size = 512 if hidden_size == 256 else hidden_size
+        super(FeedForwardConv, self).__init__(
+            num_classes, num_pos, kernel_size=kernel_size, device=device,
+            dropout_rate=dropout_rate, hidden_size=ffn_hidden_size,
+            max_chars=max_chars, predict_all_chars=predict_all_chars,
+        )
+        self.fc1 = nn.Linear(64 * 12 * 12, ffn_hidden_size)
+        self.dropout = nn.Dropout(0.5)
+
+    def middle(self, x):
+        x = self.fc1(x)
+        x = F.relu(x)
+        x = self.dropout(x)
+        return x
+
+
+# ==================== Utility Functions for Training ====================
+def _worker_init_fn(worker_id, seed):
+    """Worker initialization function for DataLoader workers.
+    This function must be at module level to be picklable for multiprocessing.
+    
+    Args:
+        worker_id: Worker process ID
+        seed: Base random seed
+    """
+    np.random.seed(seed + worker_id)
+    torch.manual_seed(seed + worker_id)
 
 
 # ==================== Training Function ====================
@@ -762,6 +954,10 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                       f"pin_memory={pin_memory}, mixed precision training=enabled")
     # ========== Acceleration Module Initialization End ==========
     
+    # Create worker_init_fn using functools.partial to bind seed (needed for multiprocessing pickle)
+    # This must be defined after num_workers is determined
+    worker_init_fn = partial(_worker_init_fn, seed=seed) if num_workers > 0 else None
+    
     # Add weight decay (L2 regularization) to prevent overfitting
     optim = torch.optim.Adam(mdl.parameters(), lr=lr, weight_decay=weight_decay)
     criterion_char = nn.CrossEntropyLoss()
@@ -854,14 +1050,16 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             # Original mode: single char + position
             # Character loss (same for both modes)
             labels_char = labels[:, :, 0].long().view(-1)
-            outputs_char = out_char.view(-1, out_char.shape[-1])  # (B*T, num_classes)
+            # Use reshape instead of view to handle non-contiguous tensors (e.g., from FFN expand)
+            outputs_char = out_char.reshape(-1, out_char.shape[-1])  # (B*T, num_classes)
             loss_char = criterion_char(outputs_char, labels_char)
             
             # Position loss (different methods based on use_sector)
             if use_sector:
                 # sector mode: classification loss
                 labels_pos = labels[:, :, 1].long().view(-1)
-                outputs_pos = out_pos.view(-1, out_pos.shape[-1])  # (B*T, num_sectors)
+                # Use reshape instead of view to handle non-contiguous tensors (e.g., from FFN expand)
+                outputs_pos = out_pos.reshape(-1, out_pos.shape[-1])  # (B*T, num_sectors)
                 loss_pos = criterion_pos(outputs_pos, labels_pos)
             else:
                 # coordinate mode: regression loss (MSE)
@@ -1002,10 +1200,6 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     # Reproducibility: generator fixes shuffle order; worker_init_fn fixes per-worker RNG when num_workers > 0
     train_generator = torch.Generator().manual_seed(seed)
 
-    def _worker_init_fn(worker_id):
-        np.random.seed(seed + worker_id)
-        torch.manual_seed(seed + worker_id)
-
     if use_acceleration:
         # Memory-optimized DataLoader configuration
         # - num_workers: CPU parallelism (careful not to overallocate)
@@ -1024,7 +1218,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             prefetch_factor=accel_config.dataloader_prefetch_factor if num_workers > 0 else 2,
             drop_last=True,  # Drop last incomplete batch to avoid small batch issues
             generator=train_generator,
-            worker_init_fn=_worker_init_fn if num_workers > 0 else None,
+            worker_init_fn=worker_init_fn,
         )
         val_dl = DataLoader(
             val_data,
@@ -1035,7 +1229,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             persistent_workers=num_workers > 0,
             prefetch_factor=accel_config.dataloader_prefetch_factor if num_workers > 0 else 2,
             drop_last=False,  # Keep last incomplete batch for validation
-            worker_init_fn=_worker_init_fn if num_workers > 0 else None,
+            worker_init_fn=worker_init_fn,
         )
     else:
         # Original method: simple configuration (no workers to avoid memory overhead)
@@ -1564,6 +1758,8 @@ def get_model_classes():
         "lstm": LSTMConv,
         "gru": GRUConv,
         "gawf": GaWFRNNConv,
+        "ffn": FeedForwardConv,
+        "dann": DendriticANNConv,
     }
 
 
@@ -1575,8 +1771,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=str,
         nargs="+",
         default=["rnn"],
-        choices=["rnn", "lstm", "gru", "gawf"],
-        help='Model types to train (default: ["lstm"])',
+        choices=["rnn", "lstm", "gru", "gawf", "ffn", "dann"],
+        help='Model types to train (default: ["rnn"])',
     )
     parser.add_argument(
         "--hidden_sizes",
@@ -1778,6 +1974,7 @@ if __name__ == "__main__":
             if model_type == "gawf":
                 print("Warning: GaWFRNNConv does not support predict_all_chars mode, skipping...")
                 continue
+       
             mdl = ModelClass(
                 num_classes=10,
                 num_pos=0,
