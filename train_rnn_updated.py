@@ -79,73 +79,59 @@ class MC_RNN_Dataset(Dataset):
         end_idx = start_idx + self.frame_num
 
         # Stack frames to create a multichannel image
-        for i in range(-(self.chan_num-1), 1):
-            if i == -(self.chan_num-1):
+        for i in range(-(self.chan_num - 1), 1):
+            if i == -(self.chan_num - 1):
                 stacked_frames = np.expand_dims(self.data[(start_idx + i):(end_idx + i)], axis=1)
             else:
-                stacked_frames = np.concatenate((stacked_frames,
-                                                 np.expand_dims(self.data[(start_idx + i):(end_idx + i)],
-                                                                axis=1)), axis=1)
+                stacked_frames = np.concatenate(
+                    (stacked_frames, np.expand_dims(self.data[(start_idx + i):(end_idx + i)], axis=1)),
+                    axis=1
+                )
         stacked_frames = stacked_frames.astype(np.float32)
 
         if self.predict_all_chars:
-            # New mode: predict all characters (fg + bg)
-            # Process each frame to extract all characters
             all_chars_per_frame = []
             for frame_idx in range(start_idx, end_idx):
-                # Get fg char
                 fg_char_id = int(self.fg_char_ids[frame_idx])
-                
-                # Get bg chars from comma-separated string
+
                 bg_chars_str = str(self.bg_char_ids_str[frame_idx])
                 if bg_chars_str and bg_chars_str != 'nan':
                     bg_char_ids = [int(x) for x in bg_chars_str.split(',') if x.strip()]
                 else:
                     bg_char_ids = []
-                
-                # Combine fg and bg chars
+
                 all_chars = [fg_char_id] + bg_char_ids
-                
-                # Pad to max_chars with -1 (no character)
                 padded_chars = all_chars[:self.max_chars] + [-1] * max(0, self.max_chars - len(all_chars))
                 all_chars_per_frame.append(padded_chars)
-            
-            # Convert to numpy array: (frame_num, max_chars)
+
             labels = np.array(all_chars_per_frame, dtype=np.int64)
         else:
-            # Original mode: only predict fg char
             labels = self.labels[start_idx:end_idx].copy()
 
             if self.use_sector:
-                # Use image width and height to map (x, y) to a grid_size x grid_size grid,
-                # obtaining sector id 0-(num_sectors-1) (e.g., num_sectors=9 -> 3x3 grid)
                 height = self.data.shape[-2]
                 width = self.data.shape[-1]
 
-                # Derive grid_size for each dimension from num_sectors (assuming num_sectors is a perfect square, e.g., 9, 16)
                 grid_size = int(np.sqrt(self.num_sectors))
                 if grid_size * grid_size != self.num_sectors:
-                    raise ValueError(f"num_sectors={self.num_sectors} is not a perfect square, cannot form grid_size x grid_size grid")
+                    raise ValueError(
+                        f"num_sectors={self.num_sectors} is not a perfect square, cannot form grid_size x grid_size grid"
+                    )
 
                 x = labels[:, 1].astype(np.float32)
                 y = labels[:, 2].astype(np.float32)
 
-                # Normalize coordinates to [0, grid_size) then round, using (width-1)/(height-1) to avoid out-of-bounds
                 col = (x / max(width - 1, 1) * grid_size).astype(np.int64)
                 row = (y / max(height - 1, 1) * grid_size).astype(np.int64)
 
-                # Prevent out-of-bounds due to numerical or boundary issues
                 col = np.clip(col, 0, grid_size - 1)
                 row = np.clip(row, 0, grid_size - 1)
 
-                # Encode sector id in row-major order: row * grid_size + col, range 0-(num_sectors-1)
                 sector = row * grid_size + col
-
-                # New label: [char_id, sector_id]
                 labels = np.stack([labels[:, 0].astype(np.int64), sector], axis=1)
 
-        return stacked_frames, labels
-
+        # 关键：返回 idx，供 feedback table 使用
+        return stacked_frames, labels, idx
 
 # ==================== Model Classes ====================
 # Note: self.training is provided by nn.Module. It is True when model.train() is called
@@ -327,6 +313,11 @@ class GaWFRNNConv(BaseConvSequenceModel):
         hidden_size = self.rnn.hidden_size
         
         if feedback is not None:
+
+            if feedback.dim() == 2:
+                # feedback from table is (B, fb_dim); broadcast to all timesteps
+                feedback = feedback.unsqueeze(1).expand(-1, seq_len, -1)
+
             # Get RNN weights
             weight_ih = self.rnn.weight_ih_l0  # (hidden_size, input_size)
             weight_hh = self.rnn.weight_hh_l0  # (hidden_size, hidden_size)
@@ -334,76 +325,111 @@ class GaWFRNNConv(BaseConvSequenceModel):
             bias_hh = self.rnn.bias_hh_l0 if self.rnn.bias_hh_l0 is not None else None
             
             # Process each time step
-            outputs = []
+            # outputs = []
+            outputs = torch.empty(batch_size, seq_len, hidden_size, device=x.device, dtype=x.dtype)
             h = torch.zeros(batch_size, hidden_size, device=x.device)  # (B, hidden_size)
             
-            # Concatenate RNN input weight matrix and recurrent weight matrix (compute once)
-            combined_weight = torch.cat([weight_ih, weight_hh], dim=1)  # (hidden_size, input_size + hidden_size)
+            # # Concatenate RNN input weight matrix and recurrent weight matrix (compute once)
+            # combined_weight = torch.cat([weight_ih, weight_hh], dim=1)  # (hidden_size, input_size + hidden_size)
             
             for t in range(seq_len):
                 # Current time step input and feedback
                 x_t = x[:, t, :]  # (B, input_size)
-                fb_t = feedback[:, t, :]  # (B, feedback_dim)
+                fb_t_clamped = feedback[:, t, :].clamp(-10, 10)  # (B, feedback_dim)
                 
-                # Feedback transformation: U @ diag(fb_t) @ V, then sigmoid
-                # fb_t: (B, feedback_dim)
-                # For each sample b, compute U @ diag(fb_t[b]) @ V
-                # Equivalent to: U @ (fb_t[b] * I) @ V, where I is identity matrix
-                # Can be written as: U @ (fb_t[b].unsqueeze(1) * V), but this is incorrect
-                # Correct way: For diag(fb_t[b]), fb_t[b] serves as diagonal elements
-                # U @ diag(fb_t[b]) @ V = U @ (torch.diag(fb_t[b])) @ V
-                # Can be vectorized: use batch matrix multiplication
+                # Feedback transformation: U @ diag(fb_t_clamped) @ V, then sigmoid
+                # fb_t_clamped: (B, feedback_dim)
+                # For each sample b, compute U @ diag(fb_t_clamped[b]) @ V
+                # Equivalent to: U @ (fb_t_clamped[b] * I) @ V, where I is identity matrix
+                # Can be written as: U @ (fb_t_clamped[b].unsqueeze(1) * V)
                 
-                # Method: Build diagonal matrix for each sample separately and compute (current implementation)
-                # But can use more efficient vectorization
-                gated_weights = []
-                for b in range(batch_size):
-                    # Build diagonal matrix: diag(fb_t[b])
-                    fb_t = fb_t.clamp(-10, 10) 
-                    diag_matrix = torch.diag(fb_t[b])  # (feedback_dim, feedback_dim)
+                # gated_weights, h_t_list = [], []
+                # for b in range(batch_size):
+                #     transformed = self.U @ (fb_t_clamped[b].unsqueeze(1) * self.V)
+
+                #     tau = 2.0
+                #     transformed = torch.sigmoid(transformed / tau)  # (hidden_size, combined_weight_size)
                     
-                    # U @ diag @ V: (hidden_size, combined_weight_size)
-                    transformed = self.U @ diag_matrix @ self.V  # (hidden_size, combined_weight_size)
-                    
-                    # Temperature scaling: keep sigmoid in non-saturated region (tau > 1 softens the gate)
-                    tau = 2.0
-                    transformed = torch.sigmoid(transformed / tau)  # (hidden_size, combined_weight_size)
-                    
-                    # Hadamard product: transformed * combined_weight
-                    gated_weight = transformed * combined_weight  # (hidden_size, combined_weight_size)
-                    gated_weights.append(gated_weight)
+                #     # Hadamard product: transformed * combined_weight
+                #     gated_weight = transformed * combined_weight  # (hidden_size, combined_weight_size)
+                #     gated_weights.append(gated_weight)
                 
-                # Stack gated weights: (B, hidden_size, combined_weight_size)
-                gated_weights = torch.stack(gated_weights, dim=0)  # (B, hidden_size, combined_weight_size)
+                # # Stack gated weights: (B, hidden_size, combined_weight_size)
+                # gated_weights = torch.stack(gated_weights, dim=0)  # (B, hidden_size, combined_weight_size)
                 
-                # Separate back into weight_ih and weight_hh parts
-                gated_weight_ih = gated_weights[:, :, :input_size]  # (B, hidden_size, input_size)
-                gated_weight_hh = gated_weights[:, :, input_size:]  # (B, hidden_size, hidden_size)
+                # # Separate back into weight_ih and weight_hh parts
+                # gated_weight_ih = gated_weights[:, :, :input_size]  # (B, hidden_size, input_size)
+                # gated_weight_hh = gated_weights[:, :, input_size:]  # (B, hidden_size, hidden_size)
                 
-                # Compute RNN output using gated weights
-                # Compute for each sample separately
-                h_t_list = []
-                for b in range(batch_size):
-                    # Input to hidden: (1, hidden_size)
-                    ih = F.linear(x_t[b:b+1], gated_weight_ih[b], bias_ih)  # (1, hidden_size)
-                    # Hidden to hidden: (1, hidden_size)
-                    hh = F.linear(h[b:b+1], gated_weight_hh[b], bias_hh)  # (1, hidden_size)
-                    # Combine and apply activation
-                    h_t = torch.tanh(ih + hh)  # (1, hidden_size)
-                    h_t_list.append(h_t)
+                # # Compute RNN output using gated weights
+                # # Compute for each sample separately  
+                # for b in range(batch_size):
+                #     # Input to hidden: (1, hidden_size)
+                #     ih = F.linear(x_t[b:b+1], gated_weight_ih[b], bias_ih)  # (1, hidden_size)
+                #     # Hidden to hidden: (1, hidden_size)
+                #     hh = F.linear(h[b:b+1], gated_weight_hh[b], bias_hh)  # (1, hidden_size)
+                #     # Combine and apply activation
+                #     h_t = torch.tanh(ih + hh)  # (1, hidden_size)
+                #     h_t_list.append(h_t)
                 
-                # Stack: (B, hidden_size)
-                h_t = torch.cat(h_t_list, dim=0)  # (B, hidden_size)
+                # # Stack: (B, hidden_size)
+                # h_t = torch.cat(h_t_list, dim=0)  # (B, hidden_size)
+
+                # ===== [GAWF_BMM] batched gate + batched RNN update (no b-loop) =====
+
+                # Ensure float32 for stability if you want (optional but recommended with AMP):
+                # fb_t_clamped = fb_t_clamped.to(torch.float32)
+
+                # Split V into input-part and hidden-part to avoid building full (B, hidden, combined) explicitly
+                V_ih = self.V[:, :input_size]        # (feedback_dim, input_size)
+                V_hh = self.V[:, input_size:]        # (feedback_dim, hidden_size)
+
+                # Prepare scaled V per sample: (B, feedback_dim, K) where K is input_size or hidden_size
+                # diag(fb) @ V == fb[:,None] * V  (row-wise scale of V)
+                tmp_ih = fb_t_clamped.unsqueeze(2) * V_ih.unsqueeze(0)   # (B, feedback_dim, input_size)
+                tmp_hh = fb_t_clamped.unsqueeze(2) * V_hh.unsqueeze(0)   # (B, feedback_dim, hidden_size)
+
+                # U @ tmp => (B, hidden_size, K)
+                # U: (hidden_size, feedback_dim)
+                trans_ih = torch.matmul(self.U, tmp_ih)  # (B, hidden_size, input_size)
+                trans_hh = torch.matmul(self.U, tmp_hh)  # (B, hidden_size, hidden_size)
+
+                tau = 2.0
+                gate_ih = torch.sigmoid(trans_ih / tau)  # (B, hidden_size, input_size)
+                gate_hh = torch.sigmoid(trans_hh / tau)  # (B, hidden_size, hidden_size)
+
+                # Apply gate to base weights (broadcast base weights to batch)
+                # weight_ih: (hidden_size, input_size) -> (B, hidden_size, input_size)
+                # weight_hh: (hidden_size, hidden_size) -> (B, hidden_size, hidden_size)
+                gated_weight_ih = gate_ih * weight_ih.unsqueeze(0)  # (B, hidden_size, input_size)
+                gated_weight_hh = gate_hh * weight_hh.unsqueeze(0)  # (B, hidden_size, hidden_size)
+
+                # Batched linear:
+                # ih[b] = x_t[b] @ gated_weight_ih[b]^T + bias_ih
+                # Use bmm: (B, 1, input) x (B, input, hidden) -> (B, 1, hidden)
+                ih = torch.bmm(x_t.unsqueeze(1), gated_weight_ih.transpose(1, 2)).squeeze(1)  # (B, hidden_size)
+                hh = torch.bmm(h.unsqueeze(1), gated_weight_hh.transpose(1, 2)).squeeze(1)    # (B, hidden_size)
+
+                if bias_ih is not None:
+                    ih = ih + bias_ih.unsqueeze(0)
+                if bias_hh is not None:
+                    hh = hh + bias_hh.unsqueeze(0)
+
+                h_t = torch.tanh(ih + hh)  # (B, hidden_size)
+                # ===== [GAWF_BMM] end =====
                 
                 # LayerNorm and ReLU
                 gated_output = self.LNormRNN(h_t)  # (B, hidden_size)
                 gated_output = F.relu(gated_output)  # (B, hidden_size)
                 
-                outputs.append(gated_output)
+                # outputs.append(gated_output)
+                outputs[:, t, :] = gated_output
                 h = gated_output  # Update hidden state
             
             # Stack outputs: (B, T, hidden_size)
-            x = torch.stack(outputs, dim=1)  # (B, T, hidden_size)
+            # x = torch.stack(outputs, dim=1)  # (B, T, hidden_size)
+            x = outputs
+
         else:
             # When no feedback, use standard RNN
             x, _ = self.rnn(x)
@@ -421,8 +447,9 @@ class GaWFRNNConv(BaseConvSequenceModel):
         Args:
             x: Input sequence (B, T, C, H, W)
             use_feedback: Single switch for the feedback path. When False, RNN runs as standard RNN (no feedback).
-                         In training this is set from the same nofb/fb_start_epoch control (see network_train).
-            reset_feedback: When True (e.g. new batch), do not use prev_feedback for this forward even if use_feedback=True.
+                        In training this is set from the same nofb/fb_start_epoch control (see network_train).
+            reset_feedback: When True, do not use prev_feedback for this forward even if use_feedback=True.
+                            (Useful for size-change / batch-size probing / eval isolation)
         """
         x = x.to(self.device)
 
@@ -433,30 +460,34 @@ class GaWFRNNConv(BaseConvSequenceModel):
 
         # apply CNN encoder
         x = self.encoder(x)
-        
+
         # reshape back to batches of stacks of frames and flatten each image
         x = x.view(batch_size, frame_num, -1)
 
-        # Single control: use_feedback (driven by nofb/fb_start_epoch in training)
+        # -------- feedback selection --------
         if use_feedback:
             if reset_feedback or self.prev_feedback is None:
                 feedback = None
             else:
-                feedback = self.prev_feedback  # (B, T, feedback_dim)
+                # After FB_LAST_ONLY change, prev_feedback is (B, fb_dim) (NOT (B,T,fb_dim))
+                feedback = self.prev_feedback.to(dtype=torch.float32)
         else:
             feedback = None
             self.prev_feedback = None  # keep state consistent when feedback is off
-        
-        # appl RNN
+
+        # apply RNN / gated update
         x = self.middle(x, feedback=feedback)
 
         # apply classification heads
         char_out, pos_out = self.classifier(x)
-        
+
+        # -------- store feedback: ONLY last timestep to avoid (B,T,fb_dim) blow-up --------
         if use_feedback:
-            self.prev_feedback = torch.cat([char_out, pos_out], dim=-1).detach()  # (B, T, feedback_dim)
-        # when use_feedback=False we do not update prev_feedback (already cleared above)
-            
+            with torch.no_grad():
+                fb_full = torch.cat([char_out, pos_out], dim=-1)  # (B, T, fb_dim)
+                fb_last = fb_full[:, -1, :]  # (B, fb_dim)
+                self.prev_feedback = fb_last.detach()
+
         return char_out, pos_out
 
 
@@ -770,22 +801,14 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         else:
             # Batch size and num_workers: other models get both from find_optimal_batch_size;
             # GaWFRNNConv skips batch_size search (feedback dimension depends on batch_size) and sets num_workers here.
-            if device == 'cuda' and not isinstance(mdl, GaWFRNNConv):
-                print("Automatically finding optimal batch_size (with gradient accumulation support)...")
-                batch_size, num_workers = find_optimal_batch_size(
-                    mdl, train_data, device=device, start_batch_size=32,
-                    enable_grad_accum=accel_config.enable_grad_accum,
-                    grad_accum_steps=accel_config.grad_accum_steps,
-                )
-                print(f"Using batch_size = {batch_size}, suggested num_workers = {num_workers}")
-            elif isinstance(mdl, GaWFRNNConv):
-                print(f"Detected GaWFRNNConv model, skipping batch_size search, using default batch_size = {batch_size}")
-                if psutil_module is not None:
-                    num_workers = min(4, psutil_module.cpu_count(logical=False))
-                else:
-                    num_workers = min(4, os.cpu_count() or 1)
-            print(f"Ubuntu environment: num_workers={num_workers}, batch_size={batch_size}")
-            
+            print("Automatically finding optimal batch_size (with gradient accumulation support)...")
+            batch_size, num_workers = find_optimal_batch_size(
+                mdl, train_data, device=device, start_batch_size=32,
+                enable_grad_accum=accel_config.enable_grad_accum,
+                grad_accum_steps=accel_config.grad_accum_steps,
+            )
+            print(f"Using batch_size = {batch_size}, suggested num_workers = {num_workers}")
+        
             # Enable pin_memory (GPU only)
             pin_memory = False
             show_gpu_usage = True
@@ -929,121 +952,136 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         loss = (loss_weights[0] * loss_char) + (loss_weights[1] * loss_pos) + rnn_diag_lambda * rnn_hh_diag
         return loss
 
-    def evaluate(mdl, data_loader, use_tqdm, use_feedback=None):
-        mdl.eval()
-        total_acc_char = 0
-        total_metric_pos = 0  # sector mode: accuracy; coordinate mode: MSE
-        total_frames = 0
-        # all-chars exact-match stats (scheme B): Counter(pred)==Counter(gt) per frame
-        total_frames_eval = 0
+    def evaluate(mdl, data_loader, use_tqdm=True, use_feedback=None, feedback_table=None, update_feedback_table=False):
+        """
+        Args:
+            mdl: model
+            data_loader: DataLoader
+            use_feedback: None or bool (GaWFRNNConv 控制)
+            feedback_table: torch.Tensor on CPU, shape (len(dataset), fb_dim) or None
+            update_feedback_table: whether to write new feedback_table from this pass
+        Returns:
+            (acc_char, metric_pos) as original
+            If update_feedback_table=True, also returns new_feedback_table (CPU) as third return
+        """
+        device = mdl.device
+        predict_all_chars = getattr(data_loader.dataset, "predict_all_chars", False)
+        use_sector = getattr(data_loader.dataset, "use_sector", False)
+
+        total_acc_char = 0.0
+        total_metric_pos = 0.0
+
+        # all-chars scheme B bookkeeping (keep exactly as your original logic style)
         total_frames_exact = 0
-        
-        # Use tqdm for validation progress bar
-        val_pbar = tqdm(data_loader, desc="[Val]", ncols=100, leave=False, unit="batch", disable=not use_tqdm)
-        
+        total_frames_eval = 0
+
+        new_table = None  # will lazy-init if needed
+
+        pbar = tqdm(enumerate(data_loader), total=len(data_loader),
+                    desc="Validation", ncols=100, leave=False, disable=not use_tqdm)
+
+        mdl.eval()
         with torch.no_grad():
-            for batch in val_pbar:
-                inputs, labels = batch
-                
-                # Reset feedback at start of each batch (if GaWFRNNConv)
-                # This ensures feedback's batch_size and seq_len match current batch
-                if hasattr(mdl, 'prev_feedback'):
-                    mdl.prev_feedback = None
-                
-                # Select data transfer method based on acceleration mode
-                if use_acceleration and pin_memory:
-                    inputs = inputs.to(device, non_blocking=True)
-                    labels = labels.to(device, non_blocking=True)
+            for batch_idx, batch in pbar:
+                # 支持两种 batch 格式：旧版 (inputs, labels) / 新版 (inputs, labels, idx)
+                if isinstance(batch, (list, tuple)) and len(batch) == 3:
+                    inputs, labels, sample_idx = batch
+                    # sample_idx is on CPU (collated by DataLoader)
                 else:
-                    labels = labels.to(device)
-                
-                # Select whether to use mixed precision based on acceleration mode
-                if use_acceleration and scaler is not None and autocast_fn is not None:
-                    with autocast_fn('cuda'):
-                        if use_feedback is not None:
-                            out_char, out_pos = mdl(inputs, use_feedback=use_feedback)
-                        else:
-                            out_char, out_pos = mdl(inputs)
-                else:
-                    if use_feedback is not None:
-                        out_char, out_pos = mdl(inputs, use_feedback=use_feedback)
+                    inputs, labels = batch
+                    sample_idx = None
+
+                inputs = inputs.to(device)
+                labels = labels.to(device)
+
+                # ------- 方案 A：用 idx table 喂给 GaWFRNNConv -------
+                if hasattr(mdl, "prev_feedback"):
+                    if (use_feedback is True) and (feedback_table is not None) and (sample_idx is not None):
+                        fb = feedback_table[sample_idx].to(device=device, dtype=torch.float32)
+                        mdl.prev_feedback = fb  # (B, fb_dim)
                     else:
-                        out_char, out_pos = mdl(inputs)
-                
+                        mdl.prev_feedback = None
+
+                # forward
+                if use_feedback is not None:
+                    out_char, out_pos = mdl(inputs, use_feedback=use_feedback, reset_feedback=False)
+                else:
+                    out_char, out_pos = mdl(inputs)
+
+                # ------- 可选：写回 feedback_table（一般你训练才需要；这里按你要求也支持） -------
+                if update_feedback_table and (use_feedback is True) and (sample_idx is not None):
+                    # feedback 来源：char_out (+ pos_out)
+                    if out_pos is None:
+                        fb_full = out_char.detach()
+                    else:
+                        fb_full = torch.cat([out_char, out_pos], dim=-1).detach()
+
+                    # 只存最后一个时间步，避免 table 太大
+                    if fb_full.dim() == 3:
+                        fb_last = fb_full[:, -1, :]  # (B, fb_dim)
+                    else:
+                        fb_last = fb_full  # (B, fb_dim)
+
+                    if new_table is None:
+                        fb_dim = fb_last.shape[-1]
+                        new_table = torch.zeros(len(data_loader.dataset), fb_dim, dtype=torch.float32)
+
+                    new_table[sample_idx] = fb_last.to("cpu", dtype=torch.float32)
+
+                # ------- metrics（保持你原来的统计方式）-------
                 if predict_all_chars:
-                    # New mode: evaluate all characters prediction
-                    # out_char: (B, T, max_chars, num_classes)
-                    # labels: (B, T, max_chars)
+                    # 这里沿用你原 evaluate 的 scheme B：exact multiset/frame match
                     batch_size, frame_num = labels.shape[:2]
-                    total_frames += batch_size * frame_num
-                    
-                    # Vectorized: compute softmax for all frames at once
                     pred_probs = F.softmax(out_char, dim=-1)  # (B, T, max_chars, num_classes)
-                    
-                    # For each frame, match predictions to true chars and compute accuracy
+
                     for b in range(batch_size):
                         for t in range(frame_num):
                             true_chars = labels[b, t]  # (max_chars,)
                             valid_mask = true_chars >= 0
                             valid_true_chars = true_chars[valid_mask]
-                            
                             if len(valid_true_chars) == 0:
                                 continue
+
                             total_frames_eval += 1
-                            
                             frame_probs = pred_probs[b, t]  # (max_chars, num_classes)
-                            frame_logits = out_char[b, t]  # (max_chars, num_classes)
-                            
-                            # Greedy matching to build predicted chars list (same strategy as notebook)
-                            used_mask = torch.zeros(max_chars, dtype=torch.bool, device=out_char.device)
+                            frame_logits = out_char[b, t]   # (max_chars, num_classes)
+
+                            used_mask = torch.zeros(frame_logits.shape[0], dtype=torch.bool, device=out_char.device)
                             matched_pred_chars = []
 
                             for true_char_id in valid_true_chars:
-                                # Get probabilities for this GT char over all slots, mask used slots
                                 char_probs = frame_probs[:, int(true_char_id)]
                                 char_probs = char_probs.masked_fill(used_mask, -1.0)
-
-                                # Find best matching slot
                                 best_pred_idx = torch.argmax(char_probs).item()
-
-                                # Predicted char at this slot
                                 pred_char = torch.argmax(frame_logits[best_pred_idx]).item()
                                 matched_pred_chars.append(pred_char)
-
-                                # Mark slot as used
                                 used_mask[best_pred_idx] = True
 
-                            # Exact multiset/frame match using Counter, same as notebook logic
-                            gt_chars = [int(c.item()) if isinstance(c, torch.Tensor) else int(c) for c in valid_true_chars]
-                            pred_counter = Counter(matched_pred_chars)
-                            gt_counter = Counter(gt_chars)
-                            if pred_counter == gt_counter:
+                            gt_chars = [int(c.item()) for c in valid_true_chars]
+                            if Counter(matched_pred_chars) == Counter(gt_chars):
                                 total_frames_exact += 1
+
                 else:
-                    # Original mode: single char + position
-                    # char accuracy (same for both modes)
                     total_acc_char += (torch.argmax(out_char, dim=2) == labels[:, :, 0].long()).float().mean().item()
-                    
-                    # Position-related metrics (different methods based on use_sector)
                     if use_sector:
-                        # sector mode: calculate accuracy
                         total_metric_pos += (torch.argmax(out_pos, dim=2) == labels[:, :, 1].long()).float().mean().item()
                     else:
-                        # coordinate mode: calculate MSE
-                        labels_pos = labels[:, :, 1:].float()  # (B, T, 2)
+                        labels_pos = labels[:, :, 1:].float()
                         total_metric_pos += F.mse_loss(out_pos, labels_pos, reduction='mean').item()
-        
-        # Return results
+
+        # finalize
         if predict_all_chars:
-            # Scheme B: exact frame match rate (always in [0, 100])
             acc_char = (total_frames_exact / total_frames_eval) * 100 if total_frames_eval > 0 else 0.0
-            metric_pos = 0.0  # No position metric in all-chars mode
+            metric_pos = 0.0
         else:
             acc_char = total_acc_char * 100 / len(data_loader)
             if use_sector:
-                metric_pos = total_metric_pos * 100 / len(data_loader)  # accuracy (percentage)
+                metric_pos = total_metric_pos * 100 / len(data_loader)
             else:
-                metric_pos = total_metric_pos / len(data_loader)  # MSE (pixel squared)
+                metric_pos = total_metric_pos / len(data_loader)
+
+        if update_feedback_table:
+            return acc_char, metric_pos, new_table
         return acc_char, metric_pos
 
     # data loader (select different configurations based on acceleration mode)
@@ -1058,29 +1096,62 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         # - prefetch_factor: How many batches to prefetch (reduce if memory tight)
         # Note: Do NOT use num_workers with mmap_mode='r' (memory mapped data)
         # as it causes memory duplication across processes
-        train_dl = DataLoader(
-            train_data,
+        # train_dl = DataLoader(
+        #     train_data,
+        #     batch_size=batch_size,
+        #     shuffle=True,
+        #     num_workers=num_workers,
+        #     pin_memory=pin_memory and num_workers > 0,  # Only pin if using workers
+        #     persistent_workers=num_workers > 0,
+        #     prefetch_factor=accel_config.dataloader_prefetch_factor if num_workers > 0 else 2,
+        #     drop_last=True,  # Drop last incomplete batch to avoid small batch issues
+        #     generator=train_generator,
+        #     worker_init_fn=worker_init_fn_param,
+        # )
+        # 
+        # val_dl = DataLoader(
+        #     val_data,
+        #     batch_size=batch_size,
+        #     shuffle=False,
+        #     num_workers=num_workers,
+        #     pin_memory=pin_memory and num_workers > 0,
+        #     persistent_workers=num_workers > 0,
+        #     prefetch_factor=accel_config.dataloader_prefetch_factor if num_workers > 0 else 2,
+        #     drop_last=False,  # Keep last incomplete batch for validation
+        #     worker_init_fn=worker_init_fn_param,
+        # )
+
+        train_dl_kwargs = dict(
+            dataset=train_data,
             batch_size=batch_size,
             shuffle=True,
             num_workers=num_workers,
-            pin_memory=pin_memory and num_workers > 0,  # Only pin if using workers
-            persistent_workers=num_workers > 0,
-            prefetch_factor=accel_config.dataloader_prefetch_factor if num_workers > 0 else 2,
-            drop_last=True,  # Drop last incomplete batch to avoid small batch issues
+            pin_memory=pin_memory and num_workers > 0,
+            persistent_workers=(num_workers > 0),
+            drop_last=True,  # keep constant batch size
             generator=train_generator,
             worker_init_fn=worker_init_fn_param,
         )
-        val_dl = DataLoader(
-            val_data,
+
+        val_dl_kwargs = dict(
+            dataset=val_data,
             batch_size=batch_size,
             shuffle=False,
             num_workers=num_workers,
             pin_memory=pin_memory and num_workers > 0,
-            persistent_workers=num_workers > 0,
-            prefetch_factor=accel_config.dataloader_prefetch_factor if num_workers > 0 else 2,
-            drop_last=False,  # Keep last incomplete batch for validation
+            persistent_workers=(num_workers > 0),
+            drop_last=False,
             worker_init_fn=worker_init_fn_param,
         )
+
+        # Only set prefetch_factor when using multiprocessing workers
+        if num_workers > 0:
+            train_dl_kwargs["prefetch_factor"] = accel_config.dataloader_prefetch_factor
+            val_dl_kwargs["prefetch_factor"] = accel_config.dataloader_prefetch_factor
+
+        train_dl = DataLoader(**train_dl_kwargs)    
+        val_dl = DataLoader(**val_dl_kwargs)
+
     else:
         # Original method: simple configuration (no workers to avoid memory overhead)
         train_dl = DataLoader(
@@ -1130,9 +1201,11 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         return epoch >= fb_start_epoch
 
     try:
+        prev_epoch_feedback_table = None  # CPU tensor: (len(train_data), fb_dim)
         for epoch in range(num_epochs):
             mdl.train()
             use_feedback_this_epoch = _use_feedback_this_epoch(epoch)
+            new_epoch_feedback_table = None  # will be lazily initialized (CPU) when first fb is produced
             if isinstance(mdl, GaWFRNNConv):
                 if nofb:
                     mdl.set_feedback_frozen(use_feedback_this_epoch is False)  # freeze when epoch < fb_start_epoch
@@ -1159,12 +1232,21 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 if _STOP_REQUESTED:
                     raise KeyboardInterrupt
 
-                inputs, labels = batch
-                
-                # Reset feedback at start of each batch (if GaWFRNNConv)
-                # This ensures feedback's batch_size and seq_len match current batch
-                if hasattr(mdl, 'prev_feedback'):
-                    mdl.prev_feedback = None
+                # New batch format: (inputs, labels, idx)
+                if isinstance(batch, (list, tuple)) and len(batch) == 3:
+                    inputs, labels, sample_idx = batch
+                else:
+                    # backward compatibility (shouldn't happen after dataset change)
+                    inputs, labels = batch
+                    sample_idx = None
+
+                # ===== Scheme A: set mdl.prev_feedback by sample_idx from previous epoch table =====
+                if hasattr(mdl, "prev_feedback"):
+                    if (use_feedback_this_epoch is True) and (prev_epoch_feedback_table is not None) and (sample_idx is not None):
+                        fb = prev_epoch_feedback_table[sample_idx].to(device=device, dtype=torch.float32)
+                        mdl.prev_feedback = fb  # (B, fb_dim)
+                    else:
+                        mdl.prev_feedback = None
                 
                 # Select data transfer method based on acceleration mode
                 if use_acceleration and pin_memory:
@@ -1184,55 +1266,132 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 if use_acceleration and scaler is not None and autocast_fn is not None:
                     with autocast_fn('cuda'):
                         if use_feedback_this_epoch is not None:
-                            out_char, out_pos = mdl(inputs, use_feedback=use_feedback_this_epoch)
+                            out_char, out_pos = mdl(inputs, use_feedback=use_feedback_this_epoch, reset_feedback=False)
                         else:
                             out_char, out_pos = mdl(inputs)
+
+                        if (use_feedback_this_epoch is True) and (sample_idx is not None):
+                            if out_pos is None:
+                                fb_full = out_char.detach()
+                            else:
+                                fb_full = torch.cat([out_char, out_pos], dim=-1).detach()
+
+                            # 只存最后一个 timestep
+                            fb_last = fb_full[:, -1, :] if fb_full.dim() == 3 else fb_full  # (B, fb_dim)
+
+                            if new_epoch_feedback_table is None:
+                                fb_dim = fb_last.shape[-1]
+                                new_epoch_feedback_table = torch.zeros(len(train_data), fb_dim, dtype=torch.float32)
+
+                            new_epoch_feedback_table[sample_idx] = fb_last.to("cpu", dtype=torch.float32)
+
                         loss = loss_fn(out_char, out_pos, labels)
-                        # Check for NaN/Inf in loss (especially important for h=512)
-                        if torch.isnan(loss) or torch.isinf(loss):
-                            print(f"Warning: Skipping batch {batch_idx} due to NaN/Inf loss")
-                            continue
                         loss = loss * loss_scale  # Scale loss for accumulation
-                    
+
                     scaler.scale(loss).backward()
-                    # Optimizer step and scaling update only at accumulation boundary
+
+                    # # Optimizer step and scaling update only at accumulation boundary
+                    # if (batch_idx + 1) % accel_config.grad_accum_steps == 0:
+                    #     scaler.unscale_(optim)
+                    #     # Check for NaN/Inf in gradients before clipping (especially important for h=512)
+                    #     grad_norm = torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
+                    #     if torch.isnan(grad_norm) or torch.isinf(grad_norm) or grad_norm > 100.0:
+                    #         print(f"Warning: Skipping batch {batch_idx} due to abnormal gradient norm: {grad_norm.item():.2f}")
+                    #         scaler.update()  # Update scaler even on skip to prevent overflow
+                    #         optim.zero_grad()
+                    #         continue
+                    #     scaler.step(optim)
+                    #     scaler.update()
+                    
+                    # Optimizer step and scaler update only at accumulation boundary
                     if (batch_idx + 1) % accel_config.grad_accum_steps == 0:
+                        # Unscale grads for correct clipping / finite checks
                         scaler.unscale_(optim)
-                        # Check for NaN/Inf in gradients before clipping (especially important for h=512)
-                        grad_norm = torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
-                        if torch.isnan(grad_norm) or torch.isinf(grad_norm) or grad_norm > 100.0:
-                            print(f"Warning: Skipping batch {batch_idx} due to abnormal gradient norm: {grad_norm.item():.2f}")
-                            scaler.update()  # Update scaler even on skip to prevent overflow
-                            optim.zero_grad()
+
+                        # [GRAD_FINITE_GUARD] detect any non-finite grad early
+                        found_nonfinite = False
+                        for p in mdl.parameters():
+                            if p.grad is not None and not torch.isfinite(p.grad).all():
+                                found_nonfinite = True
+                                break
+
+                        if found_nonfinite:
+                            print(f"Warning: Skipping batch {batch_idx} due to non-finite gradients (after unscale)")
+                            print("Non-finite batch sample_idx head:", sample_idx[:16].tolist())
+                            for name, p in mdl.named_parameters():
+                                if p.grad is not None and not torch.isfinite(p.grad).all():
+                                    print("First non-finite grad:", name, "maxabs:", p.grad.abs().max().item())
+                                    break
+
+                            optim.zero_grad(set_to_none=True)
+                            scaler.update()  # still update scaler so it can reduce scale if needed
                             continue
+
+                        # [GRAD_VALUE_CLIP] clip extreme individual grad entries (helps rare spikes)
+                        torch.nn.utils.clip_grad_value_(mdl.parameters(), clip_value=1.0)
+
+                        # [GRAD_NORM_CLIP] then clip global norm
+                        grad_norm = torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=1.0)
+
                         scaler.step(optim)
                         scaler.update()
-                    current_loss = loss.item() / loss_scale  # Unscale for logging
+                        optim.zero_grad(set_to_none=True)
+
+                    current_loss = loss.item() #/ loss_scale  # Unscale for logging
                 else:
                     # Original method: standard training
                     if use_feedback_this_epoch is not None:
-                        out_char, out_pos = mdl(inputs, use_feedback=use_feedback_this_epoch)
+                            out_char, out_pos = mdl(inputs, use_feedback=use_feedback_this_epoch, reset_feedback=False)
                     else:
                         out_char, out_pos = mdl(inputs)
+
+                    if (use_feedback_this_epoch is True) and (sample_idx is not None):
+                        if out_pos is None:
+                            fb_full = out_char.detach()
+                        else:
+                            fb_full = torch.cat([out_char, out_pos], dim=-1).detach()
+
+                        # 只存最后一个 timestep
+                        fb_last = fb_full[:, -1, :] if fb_full.dim() == 3 else fb_full  # (B, fb_dim)
+
+                        if new_epoch_feedback_table is None:
+                            fb_dim = fb_last.shape[-1]
+                            new_epoch_feedback_table = torch.zeros(len(train_data), fb_dim, dtype=torch.float32)
+
+                        new_epoch_feedback_table[sample_idx] = fb_last.to("cpu", dtype=torch.float32)
+
                     loss = loss_fn(out_char, out_pos, labels)
-                    # Check for NaN/Inf in loss (especially important for h=512)
-                    if torch.isnan(loss) or torch.isinf(loss):
-                        print(f"Warning: Skipping batch {batch_idx} due to NaN/Inf loss")
-                        continue
                     loss = loss * loss_scale  # Scale loss for accumulation
                     loss.backward()
                     
+                    # # Optimizer step only at accumulation boundary
+                    # if (batch_idx + 1) % accel_config.grad_accum_steps == 0:
+                    #     # Check for NaN/Inf in gradients before clipping (especially important for h=512)
+                    #     grad_norm = torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
+                    #     if torch.isnan(grad_norm) or torch.isinf(grad_norm) or grad_norm > 100.0:
+                    #         print(f"Warning: Skipping batch {batch_idx} due to abnormal gradient norm: {grad_norm.item():.2f}")
+                    #         optim.zero_grad()
+                    #         continue
+                    #     optim.step()
+                        
                     # Optimizer step only at accumulation boundary
                     if (batch_idx + 1) % accel_config.grad_accum_steps == 0:
-                        # Check for NaN/Inf in gradients before clipping (especially important for h=512)
-                        grad_norm = torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
-                        if torch.isnan(grad_norm) or torch.isinf(grad_norm) or grad_norm > 100.0:
-                            print(f"Warning: Skipping batch {batch_idx} due to abnormal gradient norm: {grad_norm.item():.2f}")
-                            optim.zero_grad()
+                        # [GRAD_VALUE_CLIP] clip individual gradient values first (helps rare spikes)
+                        torch.nn.utils.clip_grad_value_(mdl.parameters(), clip_value=1.0)
+
+                        # [GRAD_NORM_CLIP] then clip global norm
+                        grad_norm = torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=1.0)
+
+                        if not torch.isfinite(grad_norm):
+                            print(f"Warning: Skipping batch {batch_idx} due to abnormal gradient norm: {grad_norm}")
+                            optim.zero_grad(set_to_none=True)
                             continue
+
                         optim.step()
-                    current_loss = loss.item() / loss_scale  # Unscale for logging
-                
+                        optim.zero_grad(set_to_none=True)
+
+                    current_loss = loss.item() #/ loss_scale  # Unscale for logging
+
                 # Calculate training metrics every epoch (loss is still computed every batch for backpropagation)
                 if predict_all_chars:
                     # All-chars mode: use greedy matching to compute accuracy (sample batches for speed)
@@ -1367,6 +1526,9 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 train_str = f"Epoch {epoch + 1}/{num_epochs} - Train (char, sector): ({train_acc_char[epoch]:.2f}%, {train_metric_pos[epoch]:.2f}%){gpu_info}"
             else:
                 train_str = f"Epoch {epoch + 1}/{num_epochs} - Train (char, pos): ({train_acc_char[epoch]:.2f}%, {train_metric_pos[epoch]:.2f} pix^2){gpu_info}"
+
+            if use_feedback_this_epoch is True and new_epoch_feedback_table is not None:
+                prev_epoch_feedback_table = new_epoch_feedback_table
 
             # Training completed, now validate (every epoch)
             with torch.no_grad():
@@ -1676,6 +1838,12 @@ if __name__ == "__main__":
                 f"(num_pos={num_pos}, dropout_rate={dropout_rate}, "
                 f"hidden_size={hidden_size})"
             )
+
+        # [COMPILE] compile model for speed (PyTorch 2.x)
+        try:
+            mdl = torch.compile(mdl)  # 可选：torch.compile(mdl, mode="max-autotune")
+        except Exception as e:
+            print(f"[COMPILE] torch.compile failed, fallback to eager: {e}")
 
         # Train model
         print("Starting training...")

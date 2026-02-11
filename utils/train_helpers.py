@@ -224,59 +224,56 @@ def get_gpu_memory_usage():
     return (reserved / total) * 100.0 if total > 0 else 0.0
 
 
-def find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=32, max_batch_size=256, 
-                              enable_grad_accum=False, grad_accum_steps=4):
-    """
-    Automatically find optimal batch_size (only used in acceleration mode)
-    Uses smaller batch_size with gradient accumulation to save memory while maintaining effective batch size.
-    
-    Args:
-        model: Model
-        train_data: Training dataset
-        device: Device
-        start_batch_size: Starting batch_size
-        max_batch_size: Maximum batch_size
-        enable_grad_accum: Whether to enable gradient accumulation
-        grad_accum_steps: Gradient accumulation steps
-    
-    Returns:
-        Optimal batch_size, and adjusted num_workers if memory is tight
-    """
+def find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=32, max_batch_size=256,
+                            enable_grad_accum=False, grad_accum_steps=4):
     if device == 'cpu':
         return start_batch_size, 0
-    
+
     model.eval()
     optimal_batch_size = start_batch_size
-    num_workers_adjusted = 0  # Conservative: start with no workers
-    
-    # Test different batch sizes
-    test_sizes = [start_batch_size, 64, 128, 256] if not enable_grad_accum else [start_batch_size, 32, 16, 8]
-    
+    num_workers_adjusted = 0
+
+    test_sizes = [start_batch_size, 64] if not enable_grad_accum else [start_batch_size, 32, 16, 8]
+
     for batch_size in test_sizes:
         if batch_size > max_batch_size:
             break
-        
+
         try:
             torch.cuda.empty_cache()
             test_loader = DataLoader(train_data, batch_size=batch_size, shuffle=False, num_workers=0)
             test_batch = next(iter(test_loader))
-            inputs, labels = test_batch
+
+            # Support (inputs, labels) or (inputs, labels, idx)
+            if isinstance(test_batch, (list, tuple)) and len(test_batch) == 3:
+                inputs, labels, _ = test_batch
+            else:
+                inputs, labels = test_batch
+
             inputs = inputs.to(device)
             labels = labels.to(device)
-            
+
+            # IMPORTANT: clear GaWFRNN state between different batch sizes
+            if hasattr(model, "prev_feedback"):
+                model.prev_feedback = None
+
             with torch.no_grad():
-                _ = model(inputs)
-            
+                # If model supports reset_feedback, use it; otherwise fallback
+                try:
+                    _ = model(inputs, use_feedback=True, reset_feedback=True)
+                except TypeError:
+                    _ = model(inputs)
+
             memory_usage = get_gpu_memory_usage()
-            
-            if memory_usage < 70.0:  # Conservative threshold to avoid OOM
+
+            if memory_usage < 70.0:
                 optimal_batch_size = batch_size
-                num_workers_adjusted = 2 if enable_grad_accum else 4  # Allow more workers with grad accum
+                num_workers_adjusted = 2 if enable_grad_accum else 4
                 print(f"Testing batch_size={batch_size}: GPU memory usage {memory_usage:.1f}%, usable (num_workers will be {num_workers_adjusted})")
             else:
                 print(f"Testing batch_size={batch_size}: GPU memory usage {memory_usage:.1f}%, exceeds limit")
                 break
-                
+
         except RuntimeError as e:
             if "out of memory" in str(e):
                 print(f"batch_size={batch_size} caused OOM, using batch_size={optimal_batch_size}")
@@ -285,14 +282,11 @@ def find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=3
             else:
                 raise e
         finally:
-            # Explicit cleanup of test_loader to prevent resource leaks
             if 'test_loader' in locals():
                 del test_loader
                 import gc
                 gc.collect()
-    
-    torch.cuda.empty_cache()
-    model.train()
+
     return optimal_batch_size, num_workers_adjusted
 
 
