@@ -155,9 +155,9 @@ class BaseConvSequenceModel(nn.Module):
         self.conv1 = nn.Conv2d(2, 32, kernel_size=kernel_size, padding='same')
         self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.LNorm1 = nn.LayerNorm([32, 48, 48])
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.MP2 = nn.MaxPool2d(kernel_size=4, stride=4)
-        self.LNorm2 = nn.LayerNorm([64, 12, 12])
+        self.conv2 = nn.Conv2d(32, 32, kernel_size=3, padding=1)
+        self.MP2 = nn.MaxPool2d(kernel_size=8, stride=8)
+        self.LNorm2 = nn.LayerNorm([32, 6, 6])
         # Shared classifier
         if predict_all_chars:
             self.fcchars = nn.Linear(hidden_size, max_chars * num_classes)
@@ -213,7 +213,7 @@ class BaseRNNConv(BaseConvSequenceModel):
             dropout_rate=dropout_rate, hidden_size=hidden_size,
             max_chars=max_chars, predict_all_chars=predict_all_chars,
         )
-        self.rnn = rnn_class(input_size=64 * 12 * 12, hidden_size=hidden_size,
+        self.rnn = rnn_class(input_size=32 * 6 * 6, hidden_size=hidden_size,
                              num_layers=1, batch_first=True)
         self.LNormRNN = nn.LayerNorm(hidden_size)
 
@@ -266,16 +266,16 @@ class GaWFRNNConv(BaseConvSequenceModel):
         self.num_classes = num_classes
         self.num_pos = num_pos
         self.hidden_size = hidden_size
-        input_size = 64 * 12 * 12  # 9216
+        input_size = 32 * 6 * 6  # 1152
         self.rnn = nn.RNN(input_size=input_size, hidden_size=hidden_size,
                           num_layers=1, batch_first=True)
         # Feedback transformation matrices
         # Dimension after concatenating classifier outputs
         feedback_dim = num_classes + num_pos
         # RNN weight matrix shapes
-        # weight_ih: (hidden_size, input_size) = (256, 9216)
+        # weight_ih: (hidden_size, input_size) = (256, 1152)
         # weight_hh: (hidden_size, hidden_size) = (256, 256)
-        # Concatenated shape: (256, 9216 + 256) = (256, 9472)
+        # Concatenated shape: (256, 1152 + 256) = (256, 9472)
         combined_weight_size = input_size + hidden_size
         # U: (hidden_size, feedback_dim) = (256, 19)
         # V: (feedback_dim, combined_weight_size) = (19, 9472)
@@ -512,9 +512,9 @@ class BaseMergeConvModel(nn.Module):
         self.conv1 = None
         self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.LNorm1 = None
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.MP2 = nn.MaxPool2d(kernel_size=4, stride=4)
-        self.LNorm2 = nn.LayerNorm([64, 12, 12])
+        self.conv2 = nn.Conv2d(32, 32, kernel_size=3, padding=1)
+        self.MP2 = nn.MaxPool2d(kernel_size=8, stride=8)
+        self.LNorm2 = nn.LayerNorm([32, 6, 6])
         if predict_all_chars:
             self.fcchars = nn.Linear(hidden_size, max_chars * num_classes)
             self.fcpos = None
@@ -690,7 +690,7 @@ class DendriticANNConv(BaseMergeConvModel):
             max_chars=max_chars, predict_all_chars=predict_all_chars,
         )
         self.dann = DendriticANN(
-            input_dim=64 * 12 * 12,
+            input_dim=32 * 6 * 6,
             hidden_size=hidden_size,
             num_layers=num_layers,
             num_dends=num_dends,
@@ -716,7 +716,7 @@ class FeedForwardConv(BaseMergeConvModel):
             dropout_rate=dropout_rate, hidden_size=ffn_hidden_size,
             max_chars=max_chars, predict_all_chars=predict_all_chars,
         )
-        self.fc1 = nn.Linear(64 * 12 * 12, ffn_hidden_size)
+        self.fc1 = nn.Linear(32 * 6 * 6, ffn_hidden_size)
         self.dropout = nn.Dropout(0.5)
 
     def middle(self, x):
