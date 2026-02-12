@@ -7,14 +7,12 @@ import gc
 import sys
 import signal
 import argparse
-from collections import Counter
-from functools import partial
 from itertools import product
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from tqdm import tqdm
 
 # Import helper and acceleration utilities
@@ -26,17 +24,50 @@ from utils.train_helpers import (
     create_datasets,
     set_seed,
     get_gpu_memory_usage,
-    find_optimal_batch_size,
-    worker_init_fn,
     get_model_classes,
 )
-from utils.train_acceleration import AccelerationConfig, init_acceleration_modules
+from utils.train_acceleration import (
+    AccelerationConfig,
+    setup_acceleration,
+    build_loaders,
+    run_forward_with_feedback,
+    TrainStepper,
+)
+from utils.train_predict_all_chars import (
+    build_loss_fn_all_chars,
+    AllCharsMetricsMode,
+)
+from utils.train_sector import (
+    get_loss_weights,
+    get_criterion_pos,
+    build_loss_fn_single,
+    SingleCharMetricsMode,
+)
+
+
+def _create_metrics_mode(predict_all_chars, use_sector, max_chars=None, device=None):
+    """Single factory: returns the metrics mode for train/eval so no if-else on predict_all_chars in loops."""
+    if predict_all_chars:
+        return AllCharsMetricsMode(max_chars, device)
+    return SingleCharMetricsMode(use_sector)
 
 torch.set_num_threads(4)
 
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
-# Set CUDA_VISIBLE_DEVICES to use GPU 1
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+
+def _cnn_feature_map_config(feature_size):
+    """
+    Return (out_channels, out_h, out_w, mp2_kernel, mp2_stride) for the CNN encoder output.
+    - large: (64, 12, 12), MP2(4, 4) so 48/4=12
+    - small: (32, 6, 6), MP2(8, 8) so 48/8=6
+    """
+    if feature_size == "large":
+        return 64, 12, 12, 4, 4
+    if feature_size == "small":
+        return 32, 6, 6, 8, 8
+    raise ValueError(f"cnn_feature_size must be 'large' or 'small', got {feature_size!r}")
+
 
 # ==================== Dataset Class ====================
 class MC_RNN_Dataset(Dataset):
@@ -136,28 +167,29 @@ class MC_RNN_Dataset(Dataset):
 # ==================== Model Classes ====================
 # Note: self.training is provided by nn.Module. It is True when model.train() is called
 # and False when model.eval(). Used by F.dropout* so dropout is applied only during training.
-
-
 class BaseConvSequenceModel(nn.Module):
     """
     Shared encoder (CNN), classifier (fcchar/fcpos), and forward for Conv sequence models
     that use the same pipeline: (B,T,C,H,W) -> encoder -> (B,T,hidden) -> middle -> classifier.
     Subclasses must implement middle(x) and may add extra layers in __init__.
+    cnn_feature_size: 'large' -> encoder output (64, 12, 12); 'small' -> (32, 6, 6).
     """
     def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3,
-                 hidden_size=256, max_chars=10, predict_all_chars=False):
+                 hidden_size=256, max_chars=10, predict_all_chars=False, cnn_feature_size='large'):
         super(BaseConvSequenceModel, self).__init__()
         self.device = device
         self.dropout_rate = dropout_rate
         self.max_chars = max_chars
         self.predict_all_chars = predict_all_chars
+        out_ch, out_h, out_w, mp2_k, mp2_s = _cnn_feature_map_config(cnn_feature_size)
+        self.encoder_flatten_size = out_ch * out_h * out_w
         # Shared encoder
         self.conv1 = nn.Conv2d(2, 32, kernel_size=kernel_size, padding='same')
         self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.LNorm1 = nn.LayerNorm([32, 48, 48])
-        self.conv2 = nn.Conv2d(32, 32, kernel_size=3, padding=1)
-        self.MP2 = nn.MaxPool2d(kernel_size=8, stride=8)
-        self.LNorm2 = nn.LayerNorm([32, 6, 6])
+        self.conv2 = nn.Conv2d(32, out_ch, kernel_size=3, padding=1)
+        self.MP2 = nn.MaxPool2d(kernel_size=mp2_k, stride=mp2_s)
+        self.LNorm2 = nn.LayerNorm([out_ch, out_h, out_w])
         # Shared classifier
         if predict_all_chars:
             self.fcchars = nn.Linear(hidden_size, max_chars * num_classes)
@@ -207,13 +239,14 @@ class BaseConvSequenceModel(nn.Module):
 class BaseRNNConv(BaseConvSequenceModel):
     """Base class for CNN-RNN models supporting different RNN types. Middle = RNN + LayerNorm + ReLU + Dropout."""
     def __init__(self, num_classes, num_pos, rnn_class=nn.RNN, kernel_size=3, device='cuda',
-                 dropout_rate=0.3, hidden_size=256, max_chars=10, predict_all_chars=False):
+                 dropout_rate=0.3, hidden_size=256, max_chars=10, predict_all_chars=False, cnn_feature_size='large'):
         super(BaseRNNConv, self).__init__(
             num_classes, num_pos, kernel_size=kernel_size, device=device,
             dropout_rate=dropout_rate, hidden_size=hidden_size,
             max_chars=max_chars, predict_all_chars=predict_all_chars,
+            cnn_feature_size=cnn_feature_size,
         )
-        self.rnn = rnn_class(input_size=32 * 6 * 6, hidden_size=hidden_size,
+        self.rnn = rnn_class(input_size=self.encoder_flatten_size, hidden_size=hidden_size,
                              num_layers=1, batch_first=True)
         self.LNormRNN = nn.LayerNorm(hidden_size)
 
@@ -226,27 +259,30 @@ class BaseRNNConv(BaseConvSequenceModel):
 
 
 class RNNConv(BaseRNNConv):
-    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256, 
-                 max_chars=10, predict_all_chars=False):
+    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
+                 max_chars=10, predict_all_chars=False, cnn_feature_size='large'):
         super(RNNConv, self).__init__(num_classes, num_pos, rnn_class=nn.RNN, kernel_size=kernel_size,
                                       device=device, dropout_rate=dropout_rate, hidden_size=hidden_size,
-                                      max_chars=max_chars, predict_all_chars=predict_all_chars)
+                                      max_chars=max_chars, predict_all_chars=predict_all_chars,
+                                      cnn_feature_size=cnn_feature_size)
 
 
 class GRUConv(BaseRNNConv):
     def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
-                 max_chars=10, predict_all_chars=False):
+                 max_chars=10, predict_all_chars=False, cnn_feature_size='large'):
         super(GRUConv, self).__init__(num_classes, num_pos, rnn_class=nn.GRU, kernel_size=kernel_size,
                                       device=device, dropout_rate=dropout_rate, hidden_size=hidden_size,
-                                      max_chars=max_chars, predict_all_chars=predict_all_chars)
+                                      max_chars=max_chars, predict_all_chars=predict_all_chars,
+                                      cnn_feature_size=cnn_feature_size)
 
 
 class LSTMConv(BaseRNNConv):
     def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
-                 max_chars=10, predict_all_chars=False):
+                 max_chars=10, predict_all_chars=False, cnn_feature_size='large'):
         super(LSTMConv, self).__init__(num_classes, num_pos, rnn_class=nn.LSTM, kernel_size=kernel_size,
                                        device=device, dropout_rate=dropout_rate, hidden_size=hidden_size,
-                                       max_chars=max_chars, predict_all_chars=predict_all_chars)
+                                       max_chars=max_chars, predict_all_chars=predict_all_chars,
+                                       cnn_feature_size=cnn_feature_size)
 
 
 class GaWFRNNConv(BaseConvSequenceModel):
@@ -257,16 +293,18 @@ class GaWFRNNConv(BaseConvSequenceModel):
     1. Use classifier output as feedback to RNN input
     2. Feedback is transformed by U @ diag(concat) @ V, then Hadamard product with RNN weights
     """
-    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256):
+    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
+                 cnn_feature_size='large'):
         super(GaWFRNNConv, self).__init__(
             num_classes, num_pos, kernel_size=kernel_size, device=device,
             dropout_rate=dropout_rate, hidden_size=hidden_size,
             max_chars=10, predict_all_chars=False,
+            cnn_feature_size=cnn_feature_size,
         )
         self.num_classes = num_classes
         self.num_pos = num_pos
         self.hidden_size = hidden_size
-        input_size = 32 * 6 * 6  # 1152
+        input_size = self.encoder_flatten_size
         self.rnn = nn.RNN(input_size=input_size, hidden_size=hidden_size,
                           num_layers=1, batch_first=True)
         # Feedback transformation matrices
@@ -494,15 +532,15 @@ class GaWFRNNConv(BaseConvSequenceModel):
 # ==================== Base for merge-frame ANN models (FFN / dANN) ====================
 # Shared: (B, T, C, H, W) -> merge (B, T*C, H, W) -> encoder -> flatten -> middle -> classifier -> expand to (B, T, ...).
 # Subclasses implement middle(x) only.
-
 class BaseMergeConvModel(nn.Module):
     """
     Base for models that adapt ANN to RNN data format by merging frame_num and channels.
     Merges (B, T, C, H, W) -> (B, T*C, H, W); output expanded to (B, T, num_classes) etc.
-    Subclasses must implement middle(x) where x is (B, 64*12*12).
+    Subclasses must implement middle(x) where x is (B, encoder_flatten_size).
+    cnn_feature_size: 'large' -> (64, 12, 12); 'small' -> (32, 6, 6).
     """
     def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3,
-                 hidden_size=256, max_chars=10, predict_all_chars=False):
+                 hidden_size=256, max_chars=10, predict_all_chars=False, cnn_feature_size='large'):
         super(BaseMergeConvModel, self).__init__()
         self.device = device
         self.dropout_rate = dropout_rate
@@ -512,9 +550,11 @@ class BaseMergeConvModel(nn.Module):
         self.conv1 = None
         self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.LNorm1 = None
-        self.conv2 = nn.Conv2d(32, 32, kernel_size=3, padding=1)
-        self.MP2 = nn.MaxPool2d(kernel_size=8, stride=8)
-        self.LNorm2 = nn.LayerNorm([32, 6, 6])
+        out_ch, out_h, out_w, mp2_k, mp2_s = _cnn_feature_map_config(cnn_feature_size)
+        self.encoder_flatten_size = out_ch * out_h * out_w
+        self.conv2 = nn.Conv2d(32, out_ch, kernel_size=3, padding=1)
+        self.MP2 = nn.MaxPool2d(kernel_size=mp2_k, stride=mp2_s)
+        self.LNorm2 = nn.LayerNorm([out_ch, out_h, out_w])
         if predict_all_chars:
             self.fcchars = nn.Linear(hidden_size, max_chars * num_classes)
             self.fcpos = None
@@ -577,7 +617,6 @@ class BaseMergeConvModel(nn.Module):
 # Aligned with opt.py get_model(): model type 1 (dend_ann_global_rfs).
 # - Dend: linear only (no nonlinearity on dendrite outputs).
 # - Soma: fixed aggregation (non-learnable), i.e. sum over dendrites per soma; then LeakyReLU on soma (match opt).
-
 class DendriticLayer(nn.Module):
     """
     Single dendritic layer aligned with opt.py.
@@ -683,14 +722,15 @@ class DendriticANNConv(BaseMergeConvModel):
     """
     def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
                  max_chars=10, predict_all_chars=False,
-                 num_layers=2, num_dends=32, num_soma=256):
+                 num_layers=2, num_dends=32, num_soma=256, cnn_feature_size='large'):
         super(DendriticANNConv, self).__init__(
             num_classes, num_pos, kernel_size=kernel_size, device=device,
             dropout_rate=dropout_rate, hidden_size=hidden_size,
             max_chars=max_chars, predict_all_chars=predict_all_chars,
+            cnn_feature_size=cnn_feature_size,
         )
         self.dann = DendriticANN(
-            input_dim=32 * 6 * 6,
+            input_dim=self.encoder_flatten_size,
             hidden_size=hidden_size,
             num_layers=num_layers,
             num_dends=num_dends,
@@ -709,14 +749,15 @@ class FeedForwardConv(BaseMergeConvModel):
     FFN-exclusive: hidden_size for FC layer (default 512 when RNN default 256 is passed).
     """
     def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
-                 max_chars=10, predict_all_chars=False):
+                 max_chars=10, predict_all_chars=False, cnn_feature_size='large'):
         ffn_hidden_size = 512 if hidden_size == 256 else hidden_size
         super(FeedForwardConv, self).__init__(
             num_classes, num_pos, kernel_size=kernel_size, device=device,
             dropout_rate=dropout_rate, hidden_size=ffn_hidden_size,
             max_chars=max_chars, predict_all_chars=predict_all_chars,
+            cnn_feature_size=cnn_feature_size,
         )
-        self.fc1 = nn.Linear(32 * 6 * 6, ffn_hidden_size)
+        self.fc1 = nn.Linear(self.encoder_flatten_size, ffn_hidden_size)
         self.dropout = nn.Dropout(0.5)
 
     def middle(self, x):
@@ -728,102 +769,35 @@ class FeedForwardConv(BaseMergeConvModel):
 
 # ==================== Training Function ====================
 def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, lr=0.001,
-                  use_acceleration=False, weight_decay=None, dropout_rate=None, rnn_diag_lambda=1e-4, 
+                  use_acceleration=False, weight_decay=None, dropout_rate=None, rnn_diag_lambda=1e-4,
                   use_tqdm=True, nofb=False, fb_start_epoch=999999, seed=42):
     """
-    Train model, supports sector mode and coordinate mode
-
-    Args:
-        mdl: Model
-        train_data: Training dataset (MC_RNN_Dataset)
-        val_data: Validation dataset (MC_RNN_Dataset)
-        num_epochs: Number of training epochs
-        loss_weights: [character loss weight, position loss weight], if None, automatically set based on use_sector
-                     - sector mode default: [1, 1]
-                     - coordinate mode default: [1, 0.001]
-        lr: Learning rate
-        use_acceleration: Whether to use acceleration training (default False)
-                         - True: Enable mixed precision training (AMP), automatic batch_size optimization,
-                                 gradient accumulation for larger effective batch size, DataLoader optimization, etc.
-                         - False: Use original training method, does not affect existing logic
-                         - Features enabled when True: AMP (float16), gradient accumulation, memory optimization,
-                           multi-worker DataLoader with prefetch, CPU-GPU pinned memory
-        weight_decay: L2 regularization coefficient (weight decay)
-        dropout_rate: Dropout rate (note: this is only for reference, actual dropout is set when creating the model)
-        rnn_diag_lambda: Regularization coefficient for RNN hidden-to-hidden diagonal weight regularization, default 1e-4
-                        This adds L1 penalty on the diagonal elements of RNN hidden weight matrix to improve stability
-        nofb: GaWFRNN only. If True, feedback is off initially; U,V frozen until fb_start_epoch (default: False).
-               Omit nofb -> full feedback. nofb only -> no feedback entire run. nofb + fb_start_epoch=N -> feedback on from epoch N.
-        fb_start_epoch: GaWFRNN with nofb: 0-based epoch at which to turn on feedback and unfreeze U,V. Default 999999 = never turn on (default: 999999)
-        seed: Random seed for DataLoader shuffle and worker RNG (default: 42). Ensures reproducible batch order and worker randomness.
+    Train model, supports sector mode and coordinate mode.
+    Acceleration is config-driven; training loop is single-path (no AMP branches).
     """
-    # Get use_sector and predict_all_chars information from dataset
     use_sector = train_data.use_sector
     predict_all_chars = train_data.predict_all_chars
     max_chars = train_data.max_chars if predict_all_chars else None
-    
-    # Set default loss_weights based on mode
-    if loss_weights is None:
-        if predict_all_chars:
-            # All-chars mode: only predict character identity, no position prediction
-            loss_weights = [1, 0]  # Only character loss, no position loss
-        elif use_sector:
-            loss_weights = [1, 1]  # sector mode: character and sector loss weights equal
-        else:
-            loss_weights = [1, 0.001]  # coordinate mode: position loss weight smaller (MSE usually has larger values)
 
-    
-    # Place parameters according to model's internal device (can be 'cuda' or 'cpu')
+    if loss_weights is None:
+        loss_weights = get_loss_weights(predict_all_chars, use_sector)
+
     device = mdl.device
     mdl.to(device)
-    
-    # ========== Acceleration Configuration ==========
+
     accel_config = AccelerationConfig(use_acceleration=use_acceleration)
     accel_config.summary()
-    
-    # ========== Acceleration Training Module Initialization (only used when acceleration is enabled) ==========
-    autocast_fn = None
-    GradScaler_cls = None
-    scaler = None
-    psutil_module = None
-    batch_size = 32  # Default batch_size
-    num_workers = 0   # Default single process
-    pin_memory = False  # Default not using pin_memory
-    show_gpu_usage = False  # Default not showing GPU usage
-    
-    if use_acceleration:
-        print("Enabling acceleration training...")
-        autocast_fn, GradScaler_cls, psutil_module = init_acceleration_modules()
-        
-        if autocast_fn is None or GradScaler_cls is None:
-            print("Warning: Unable to import acceleration training modules, will use standard training")
-            use_acceleration = False
-        else:
-            # Batch size and num_workers: other models get both from find_optimal_batch_size;
-            # GaWFRNNConv skips batch_size search (feedback dimension depends on batch_size) and sets num_workers here.
-            print("Automatically finding optimal batch_size (with gradient accumulation support)...")
-            batch_size, num_workers = find_optimal_batch_size(
-                mdl, train_data, device=device, start_batch_size=32,
-                enable_grad_accum=accel_config.enable_grad_accum,
-                grad_accum_steps=accel_config.grad_accum_steps,
-            )
-            print(f"Using batch_size = {batch_size}, suggested num_workers = {num_workers}")
-        
-            # Enable pin_memory (GPU only)
-            pin_memory = False
-            show_gpu_usage = True
-            
-            # Initialize mixed precision training scaler
-            if device == 'cuda':
-                scaler = GradScaler_cls('cuda')
-                print(f"Acceleration settings: batch_size={batch_size}, num_workers={num_workers}, "
-                      f"pin_memory={pin_memory}, mixed precision training=enabled")
-    # ========== Acceleration Module Initialization End ==========
-    
-    # Create worker_init_fn using functools.partial to bind seed 
-    # This must be defined after num_workers is determined
-    worker_init_fn_param = partial(worker_init_fn, seed=seed) if num_workers > 0 else None
-    
+
+    metrics_mode = _create_metrics_mode(predict_all_chars, use_sector, max_chars, device)
+
+    (autocast_fn, scaler, batch_size, num_workers, pin_memory) = setup_acceleration(
+        accel_config, mdl, train_data, device, is_gawf=isinstance(mdl, GaWFRNNConv)
+    )
+
+    train_dl, val_dl = build_loaders(
+        train_data, val_data, batch_size, num_workers, pin_memory, accel_config, seed
+    )
+
     # Add weight decay (L2 regularization) to prevent overfitting
     # For h>=512 models (especially dANN), use larger eps for Adam to prevent numerical instability
     # Default eps=1e-8 can be too small when variance estimates become very small
@@ -834,148 +808,34 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     else:
         optim = torch.optim.Adam(mdl.parameters(), lr=lr, weight_decay=weight_decay)
     criterion_char = nn.CrossEntropyLoss()
-    
-    # Select position loss function based on use_sector
-    if use_sector:
-        criterion_pos = nn.CrossEntropyLoss()  # sector classification
-    else:
-        criterion_pos = nn.MSELoss()  # coordinate regression
-    
-    def loss_fn(out_char, out_pos, labels):
-        if predict_all_chars:
-            # New mode: predict all characters (fg + bg)
-            # out_char: (B, T, max_chars, num_classes)
-            # labels: (B, T, max_chars) - each position is char_id or -1 (no char)
-            batch_size, frame_num, max_chars_pred, num_classes = out_char.shape
-            
-            # Vectorized: compute softmax for all frames at once
-            pred_probs = F.softmax(out_char, dim=-1)  # (B, T, max_chars, num_classes)
-            
-            total_loss = 0.0
-            total_valid_chars = 0
-            
-            # Process each frame independently (still need loop for greedy matching logic)
-            # But use vectorized operations within each frame
-            for b in range(batch_size):
-                for t in range(frame_num):
-                    # Get true characters for this frame (remove padding -1)
-                    true_chars = labels[b, t]  # (max_chars,)
-                    valid_mask = true_chars >= 0  # (max_chars,)
-                    valid_true_chars = true_chars[valid_mask]  # (num_valid_chars,)
-                    
-                    if len(valid_true_chars) == 0:
-                        continue  # Skip frames with no characters
-                    
-                    # Get predictions for this frame (already computed softmax)
-                    frame_probs = pred_probs[b, t]  # (max_chars, num_classes)
-                    frame_logits = out_char[b, t]  # (max_chars, num_classes)
-                    
-                    # Vectorized greedy matching: use torch operations instead of Python loops
-                    num_valid = len(valid_true_chars)
-                    
-                    # Create mask for used slots (vectorized)
-                    used_mask = torch.zeros(max_chars, dtype=torch.bool, device=out_char.device)
-                    
-                    # Pre-allocate arrays for matched pairs
-                    matched_pred_indices = []
-                    matched_true_chars = []
-                    
-                    # Greedy matching: process each true char
-                    for i, true_char_id in enumerate(valid_true_chars):
-                        # Vectorized: get probabilities for this char across all slots
-                        char_probs = frame_probs[:, true_char_id]  # (max_chars,)
-                        
-                        # Vectorized: mask out already used slots
-                        char_probs = char_probs.masked_fill(used_mask, -1.0)
-                        
-                        # Find best matching slot (vectorized)
-                        best_pred_idx = torch.argmax(char_probs).item()
-                        
-                        # Store matched pair
-                        matched_pred_indices.append(best_pred_idx)
-                        matched_true_chars.append(true_char_id)
-                        
-                        # Update used mask (vectorized)
-                        used_mask[best_pred_idx] = True
-                    
-                    # Vectorized loss computation: batch all matched pairs
-                    if len(matched_pred_indices) > 0:
-                        # Convert to tensors for vectorized operations
-                        matched_pred_indices_tensor = torch.tensor(matched_pred_indices, device=out_char.device)
-                        matched_true_chars_tensor = torch.tensor(matched_true_chars, dtype=torch.long, device=out_char.device)
-                        
-                        # Gather matched logits: (num_matched, num_classes)
-                        matched_logits = frame_logits[matched_pred_indices_tensor]  # (num_matched, num_classes)
-                        
-                        # Compute loss for all matched pairs at once (vectorized)
-                        batch_loss = criterion_char(matched_logits, matched_true_chars_tensor)
-                        total_loss += batch_loss
-                        total_valid_chars += len(matched_pred_indices)
-            
-            if total_valid_chars == 0:
-                loss_char = torch.tensor(0.0, device=out_char.device)
-            else:
-                loss_char = total_loss / total_valid_chars
-            
-            # No position loss in all-chars mode
-            loss_pos = torch.tensor(0.0, device=out_char.device)
-        else:
-            # Original mode: single char + position
-            # Character loss (same for both modes)
-            labels_char = labels[:, :, 0].long().view(-1)
-            # Use reshape instead of view to handle non-contiguous tensors (e.g., from FFN expand)
-            outputs_char = out_char.reshape(-1, out_char.shape[-1])  # (B*T, num_classes)
-            loss_char = criterion_char(outputs_char, labels_char)
-            
-            # Position loss (different methods based on use_sector)
-            if use_sector:
-                # sector mode: classification loss
-                labels_pos = labels[:, :, 1].long().view(-1)
-                # Use reshape instead of view to handle non-contiguous tensors (e.g., from FFN expand)
-                outputs_pos = out_pos.reshape(-1, out_pos.shape[-1])  # (B*T, num_sectors)
-                loss_pos = criterion_pos(outputs_pos, labels_pos)
-            else:
-                # coordinate mode: regression loss (MSE)
-                labels_pos = labels[:, :, 1:].float()  # (B, T, 2) -> [x, y]
-                outputs_pos = out_pos  # (B, T, 2) -> [x, y]
-                loss_pos = criterion_pos(outputs_pos, labels_pos)
+    criterion_pos = get_criterion_pos(use_sector) if not predict_all_chars else None
 
-        # Keep regularization consistent with original (if model doesn't have mdl.rnn, need corresponding modification)
-        if hasattr(mdl, 'rnn') and mdl.rnn is not None:
-            rnn_hh = mdl.rnn.weight_hh_l0
-            # rnn_hh_diag = torch.diagonal(rnn_hh).abs().sum()
-            rnn_hh_diag = torch.diagonal(rnn_hh).abs().mean()   # ✅ mean 更稳定
-        else:
-            rnn_hh_diag = torch.tensor(0.0, device=out_char.device)
-        
-        # loss = (loss_weights[0] * loss_char) + (loss_weights[1] * loss_pos) + rnn_hh_diag
-        loss = (loss_weights[0] * loss_char) + (loss_weights[1] * loss_pos) + rnn_diag_lambda * rnn_hh_diag
-        return loss
+    if predict_all_chars:
+        loss_fn = build_loss_fn_all_chars(mdl, criterion_char, max_chars, device, loss_weights, rnn_diag_lambda)
+    else:
+        loss_fn = build_loss_fn_single(mdl, criterion_char, criterion_pos, use_sector, loss_weights, rnn_diag_lambda, device)
 
     def evaluate(mdl, data_loader, use_tqdm=True, use_feedback=None, feedback_table=None, update_feedback_table=False):
         """
         Args:
             mdl: model
             data_loader: DataLoader
-            use_feedback: None or bool (GaWFRNNConv 控制)
+            use_feedback: None or bool (GaWFRNNConv)
             feedback_table: torch.Tensor on CPU, shape (len(dataset), fb_dim) or None
             update_feedback_table: whether to write new feedback_table from this pass
         Returns:
-            (acc_char, metric_pos) as original
-            If update_feedback_table=True, also returns new_feedback_table (CPU) as third return
+            (acc_char, metric_pos); if update_feedback_table=True, (acc_char, metric_pos, new_table).
         """
         device = mdl.device
-        predict_all_chars = getattr(data_loader.dataset, "predict_all_chars", False)
-        use_sector = getattr(data_loader.dataset, "use_sector", False)
-
-        total_acc_char = 0.0
-        total_metric_pos = 0.0
-
-        # all-chars scheme B bookkeeping (keep exactly as your original logic style)
-        total_frames_exact = 0
-        total_frames_eval = 0
-
-        new_table = None  # will lazy-init if needed
+        ds = data_loader.dataset
+        eval_mode = _create_metrics_mode(
+            getattr(ds, "predict_all_chars", False),
+            getattr(ds, "use_sector", False),
+            getattr(ds, "max_chars", 10),
+            device,
+        )
+        acc = eval_mode.init_eval()
+        new_table = None
 
         pbar = tqdm(enumerate(data_loader), total=len(data_loader),
                     desc="Validation", ncols=100, leave=False, disable=not use_tqdm)
@@ -983,10 +843,8 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         mdl.eval()
         with torch.no_grad():
             for batch_idx, batch in pbar:
-                # 支持两种 batch 格式：旧版 (inputs, labels) / 新版 (inputs, labels, idx)
                 if isinstance(batch, (list, tuple)) and len(batch) == 3:
                     inputs, labels, sample_idx = batch
-                    # sample_idx is on CPU (collated by DataLoader)
                 else:
                     inputs, labels = batch
                     sample_idx = None
@@ -994,186 +852,42 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 inputs = inputs.to(device)
                 labels = labels.to(device)
 
-                # ------- 方案 A：用 idx table 喂给 GaWFRNNConv -------
-                if hasattr(mdl, "prev_feedback"):
-                    if (use_feedback is True) and (feedback_table is not None) and (sample_idx is not None):
-                        fb = feedback_table[sample_idx].to(device=device, dtype=torch.float32)
-                        mdl.prev_feedback = fb  # (B, fb_dim)
-                    else:
-                        mdl.prev_feedback = None
+                out_char, out_pos = run_forward_with_feedback(
+                    mdl, inputs, device,
+                    use_feedback=use_feedback,
+                    feedback_table=feedback_table,
+                    sample_idx=sample_idx,
+                )
 
-                # forward
-                if use_feedback is not None:
-                    out_char, out_pos = mdl(inputs, use_feedback=use_feedback, reset_feedback=False)
-                else:
-                    out_char, out_pos = mdl(inputs)
-
-                # ------- 可选：写回 feedback_table（一般你训练才需要；这里按你要求也支持） -------
                 if update_feedback_table and (use_feedback is True) and (sample_idx is not None):
-                    # feedback 来源：char_out (+ pos_out)
-                    if out_pos is None:
-                        fb_full = out_char.detach()
-                    else:
-                        fb_full = torch.cat([out_char, out_pos], dim=-1).detach()
-
-                    # 只存最后一个时间步，避免 table 太大
-                    if fb_full.dim() == 3:
-                        fb_last = fb_full[:, -1, :]  # (B, fb_dim)
-                    else:
-                        fb_last = fb_full  # (B, fb_dim)
-
+                    fb_full = out_char.detach() if out_pos is None else torch.cat([out_char, out_pos], dim=-1).detach()
+                    fb_last = fb_full[:, -1, :] if fb_full.dim() == 3 else fb_full
                     if new_table is None:
-                        fb_dim = fb_last.shape[-1]
-                        new_table = torch.zeros(len(data_loader.dataset), fb_dim, dtype=torch.float32)
-
+                        new_table = torch.zeros(len(ds), fb_last.shape[-1], dtype=torch.float32)
                     new_table[sample_idx] = fb_last.to("cpu", dtype=torch.float32)
 
-                # ------- metrics（保持你原来的统计方式）-------
-                if predict_all_chars:
-                    # 这里沿用你原 evaluate 的 scheme B：exact multiset/frame match
-                    batch_size, frame_num = labels.shape[:2]
-                    pred_probs = F.softmax(out_char, dim=-1)  # (B, T, max_chars, num_classes)
+                acc = eval_mode.update_eval_batch(acc, out_char, labels, out_pos)
 
-                    for b in range(batch_size):
-                        for t in range(frame_num):
-                            true_chars = labels[b, t]  # (max_chars,)
-                            valid_mask = true_chars >= 0
-                            valid_true_chars = true_chars[valid_mask]
-                            if len(valid_true_chars) == 0:
-                                continue
-
-                            total_frames_eval += 1
-                            frame_probs = pred_probs[b, t]  # (max_chars, num_classes)
-                            frame_logits = out_char[b, t]   # (max_chars, num_classes)
-
-                            used_mask = torch.zeros(frame_logits.shape[0], dtype=torch.bool, device=out_char.device)
-                            matched_pred_chars = []
-
-                            for true_char_id in valid_true_chars:
-                                char_probs = frame_probs[:, int(true_char_id)]
-                                char_probs = char_probs.masked_fill(used_mask, -1.0)
-                                best_pred_idx = torch.argmax(char_probs).item()
-                                pred_char = torch.argmax(frame_logits[best_pred_idx]).item()
-                                matched_pred_chars.append(pred_char)
-                                used_mask[best_pred_idx] = True
-
-                            gt_chars = [int(c.item()) for c in valid_true_chars]
-                            if Counter(matched_pred_chars) == Counter(gt_chars):
-                                total_frames_exact += 1
-
-                else:
-                    total_acc_char += (torch.argmax(out_char, dim=2) == labels[:, :, 0].long()).float().mean().item()
-                    if use_sector:
-                        total_metric_pos += (torch.argmax(out_pos, dim=2) == labels[:, :, 1].long()).float().mean().item()
-                    else:
-                        labels_pos = labels[:, :, 1:].float()
-                        total_metric_pos += F.mse_loss(out_pos, labels_pos, reduction='mean').item()
-
-        # finalize
-        if predict_all_chars:
-            acc_char = (total_frames_exact / total_frames_eval) * 100 if total_frames_eval > 0 else 0.0
-            metric_pos = 0.0
-        else:
-            acc_char = total_acc_char * 100 / len(data_loader)
-            if use_sector:
-                metric_pos = total_metric_pos * 100 / len(data_loader)
-            else:
-                metric_pos = total_metric_pos / len(data_loader)
+        acc_char, metric_pos = eval_mode.finalize_eval(acc, len(data_loader))
 
         if update_feedback_table:
             return acc_char, metric_pos, new_table
         return acc_char, metric_pos
 
-    # data loader (select different configurations based on acceleration mode)
-    # Reproducibility: generator fixes shuffle order; worker_init_fn fixes per-worker RNG when num_workers > 0
-    train_generator = torch.Generator().manual_seed(seed)
-
-    if use_acceleration:
-        # Memory-optimized DataLoader configuration
-        # - num_workers: CPU parallelism (careful not to overallocate)
-        # - pin_memory: Faster CPU-GPU transfer (only if num_workers > 0)
-        # - persistent_workers: Reuse worker processes to avoid overhead
-        # - prefetch_factor: How many batches to prefetch (reduce if memory tight)
-        # Note: Do NOT use num_workers with mmap_mode='r' (memory mapped data)
-        # as it causes memory duplication across processes
-        # train_dl = DataLoader(
-        #     train_data,
-        #     batch_size=batch_size,
-        #     shuffle=True,
-        #     num_workers=num_workers,
-        #     pin_memory=pin_memory and num_workers > 0,  # Only pin if using workers
-        #     persistent_workers=num_workers > 0,
-        #     prefetch_factor=accel_config.dataloader_prefetch_factor if num_workers > 0 else 2,
-        #     drop_last=True,  # Drop last incomplete batch to avoid small batch issues
-        #     generator=train_generator,
-        #     worker_init_fn=worker_init_fn_param,
-        # )
-        # 
-        # val_dl = DataLoader(
-        #     val_data,
-        #     batch_size=batch_size,
-        #     shuffle=False,
-        #     num_workers=num_workers,
-        #     pin_memory=pin_memory and num_workers > 0,
-        #     persistent_workers=num_workers > 0,
-        #     prefetch_factor=accel_config.dataloader_prefetch_factor if num_workers > 0 else 2,
-        #     drop_last=False,  # Keep last incomplete batch for validation
-        #     worker_init_fn=worker_init_fn_param,
-        # )
-
-        train_dl_kwargs = dict(
-            dataset=train_data,
-            batch_size=batch_size,
-            shuffle=True,
-            num_workers=num_workers,
-            pin_memory=pin_memory and num_workers > 0,
-            persistent_workers=(num_workers > 0),
-            drop_last=True,  # keep constant batch size
-            generator=train_generator,
-            worker_init_fn=worker_init_fn_param,
-        )
-
-        val_dl_kwargs = dict(
-            dataset=val_data,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=num_workers,
-            pin_memory=pin_memory and num_workers > 0,
-            persistent_workers=(num_workers > 0),
-            drop_last=False,
-            worker_init_fn=worker_init_fn_param,
-        )
-
-        # Only set prefetch_factor when using multiprocessing workers
-        if num_workers > 0:
-            train_dl_kwargs["prefetch_factor"] = accel_config.dataloader_prefetch_factor
-            val_dl_kwargs["prefetch_factor"] = accel_config.dataloader_prefetch_factor
-
-        train_dl = DataLoader(**train_dl_kwargs)    
-        val_dl = DataLoader(**val_dl_kwargs)
-
-    else:
-        # Original method: simple configuration (no workers to avoid memory overhead)
-        train_dl = DataLoader(
-            train_data, batch_size=32, shuffle=True, num_workers=0, generator=train_generator
-        )
-        val_dl = DataLoader(val_data, batch_size=32, shuffle=False, num_workers=0)
-    
     # Print dataset and batch information
     print(f"\nDataset Information:")
     print(f"  Training dataset size: {len(train_data)} samples")
     print(f"  Validation dataset size: {len(val_data)} samples")
     print(f"  Batch size per step: {batch_size}")
-    effective_batch_size = batch_size * accel_config.grad_accum_steps
-    print(f"  Effective batch size (with grad accum): {effective_batch_size}")
+    print(f"  Effective batch size (with grad accum): {batch_size * accel_config.grad_accum_steps}")
     print(f"  Number of batches per epoch: {len(train_dl)}")
-    print(f"  use_sector mode: {use_sector}")
-    print(f"  predict_all_chars mode: {predict_all_chars}")
-    print(f"  use acceleration mode: {use_acceleration}")
-    if use_acceleration:
-        print(f"  Workers: {num_workers}, Pin Memory: {pin_memory and num_workers > 0}")
-        print(f"  DataLoader Prefetch: {accel_config.dataloader_prefetch_factor}")
+    print(f"  use_sector: {use_sector}, predict_all_chars: {predict_all_chars}")
+    print(f"  acceleration: {accel_config.use_acceleration}, workers: {num_workers}, pin_memory: {pin_memory and num_workers > 0}")
+    if num_workers > 0:
+        print(f"  DataLoader prefetch_factor: {accel_config.dataloader_prefetch_factor}")
     print()
+
+    stepper = TrainStepper(mdl, optim, loss_fn, accel_config, device, scaler, autocast_fn, pin_memory)
     train_acc_char = np.zeros(num_epochs)
     val_acc_char = np.zeros(num_epochs)
     train_metric_pos = np.zeros(num_epochs)  # sector mode: accuracy; coordinate mode: MSE
@@ -1187,7 +901,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         # 不做任何 DataLoader 操作！不 sys.exit！
         print(f"\n[signal] got {signum}, will stop after current step...", flush=True)
 
-    if use_acceleration and num_workers > 0:
+    if num_workers > 0:
         signal.signal(signal.SIGTERM, _request_stop)
         signal.signal(signal.SIGINT, _request_stop)
 
@@ -1212,13 +926,9 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 if use_tqdm and nofb and (epoch == 0 or epoch == fb_start_epoch):
                     print(f"GaWFRNN (nofb): epoch {epoch} use_feedback={use_feedback_this_epoch}", flush=True)
             
-            # Training loop
-            epoch_train_acc_char = 0.0
-            epoch_train_metric_pos = 0.0
-            # all-chars exact-match denominator (scheme B): number of evaluated frames (GT has >=1 char)
-            epoch_train_frames_eval = 0
+            epoch_acc = metrics_mode.init_epoch_train()
             num_batches = 0
-            
+
             if use_tqdm:
                 print(f"Epoch {epoch + 1}/{num_epochs}: Starting training...", flush=True)
             
@@ -1232,324 +942,70 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 if _STOP_REQUESTED:
                     raise KeyboardInterrupt
 
-                # New batch format: (inputs, labels, idx)
+                current_loss, out_char, out_pos, feedback_update = stepper.step(
+                    batch, batch_idx, use_feedback_this_epoch, prev_epoch_feedback_table
+                )
+
+                if feedback_update is not None:
+                    sample_idx, fb_last = feedback_update
+                    if new_epoch_feedback_table is None:
+                        new_epoch_feedback_table = torch.zeros(len(train_data), fb_last.shape[-1], dtype=torch.float32)
+                    new_epoch_feedback_table[sample_idx] = fb_last
+
+                # Get labels for metrics (same batch format as in stepper)
                 if isinstance(batch, (list, tuple)) and len(batch) == 3:
-                    inputs, labels, sample_idx = batch
+                    _, labels, _ = batch
                 else:
-                    # backward compatibility (shouldn't happen after dataset change)
-                    inputs, labels = batch
-                    sample_idx = None
+                    _, labels = batch
 
-                # ===== Scheme A: set mdl.prev_feedback by sample_idx from previous epoch table =====
-                if hasattr(mdl, "prev_feedback"):
-                    if (use_feedback_this_epoch is True) and (prev_epoch_feedback_table is not None) and (sample_idx is not None):
-                        fb = prev_epoch_feedback_table[sample_idx].to(device=device, dtype=torch.float32)
-                        mdl.prev_feedback = fb  # (B, fb_dim)
-                    else:
-                        mdl.prev_feedback = None
-                
-                # Select data transfer method based on acceleration mode
-                if use_acceleration and pin_memory:
-                    inputs = inputs.to(device, non_blocking=True)
-                    labels = labels.to(device, non_blocking=True)
-                else:
-                    labels = labels.to(device)
-                
-                # Gradient accumulation: zero_grad only at the first step of accumulation
-                if batch_idx % accel_config.grad_accum_steps == 0:
-                    optim.zero_grad()
-                
-                # Normalize loss by accumulation steps for proper gradient scaling
-                loss_scale = 1.0 / accel_config.grad_accum_steps
-                
-                # Select whether to use mixed precision training based on acceleration mode
-                if use_acceleration and scaler is not None and autocast_fn is not None:
-                    with autocast_fn('cuda'):
-                        if use_feedback_this_epoch is not None:
-                            out_char, out_pos = mdl(inputs, use_feedback=use_feedback_this_epoch, reset_feedback=False)
-                        else:
-                            out_char, out_pos = mdl(inputs)
+                labels = labels.to(device)
 
-                        if (use_feedback_this_epoch is True) and (sample_idx is not None):
-                            if out_pos is None:
-                                fb_full = out_char.detach()
-                            else:
-                                fb_full = torch.cat([out_char, out_pos], dim=-1).detach()
+                epoch_acc = metrics_mode.update_train_batch(
+                    epoch_acc, out_char, labels, batch_idx, len(train_dl), out_pos
+                )
 
-                            # 只存最后一个 timestep
-                            fb_last = fb_full[:, -1, :] if fb_full.dim() == 3 else fb_full  # (B, fb_dim)
-
-                            if new_epoch_feedback_table is None:
-                                fb_dim = fb_last.shape[-1]
-                                new_epoch_feedback_table = torch.zeros(len(train_data), fb_dim, dtype=torch.float32)
-
-                            new_epoch_feedback_table[sample_idx] = fb_last.to("cpu", dtype=torch.float32)
-
-                        loss = loss_fn(out_char, out_pos, labels)
-                        loss = loss * loss_scale  # Scale loss for accumulation
-
-                    scaler.scale(loss).backward()
-
-                    # # Optimizer step and scaling update only at accumulation boundary
-                    # if (batch_idx + 1) % accel_config.grad_accum_steps == 0:
-                    #     scaler.unscale_(optim)
-                    #     # Check for NaN/Inf in gradients before clipping (especially important for h=512)
-                    #     grad_norm = torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
-                    #     if torch.isnan(grad_norm) or torch.isinf(grad_norm) or grad_norm > 100.0:
-                    #         print(f"Warning: Skipping batch {batch_idx} due to abnormal gradient norm: {grad_norm.item():.2f}")
-                    #         scaler.update()  # Update scaler even on skip to prevent overflow
-                    #         optim.zero_grad()
-                    #         continue
-                    #     scaler.step(optim)
-                    #     scaler.update()
-                    
-                    # Optimizer step and scaler update only at accumulation boundary
-                    if (batch_idx + 1) % accel_config.grad_accum_steps == 0:
-                        # Unscale grads for correct clipping / finite checks
-                        scaler.unscale_(optim)
-
-                        # [GRAD_FINITE_GUARD] detect any non-finite grad early
-                        found_nonfinite = False
-                        for p in mdl.parameters():
-                            if p.grad is not None and not torch.isfinite(p.grad).all():
-                                found_nonfinite = True
-                                break
-
-                        if found_nonfinite:
-                            print(f"Warning: Skipping batch {batch_idx} due to non-finite gradients (after unscale)")
-                            print("Non-finite batch sample_idx head:", sample_idx[:16].tolist())
-                            for name, p in mdl.named_parameters():
-                                if p.grad is not None and not torch.isfinite(p.grad).all():
-                                    print("First non-finite grad:", name, "maxabs:", p.grad.abs().max().item())
-                                    break
-
-                            optim.zero_grad(set_to_none=True)
-                            scaler.update()  # still update scaler so it can reduce scale if needed
-                            continue
-
-                        # [GRAD_VALUE_CLIP] clip extreme individual grad entries (helps rare spikes)
-                        torch.nn.utils.clip_grad_value_(mdl.parameters(), clip_value=1.0)
-
-                        # [GRAD_NORM_CLIP] then clip global norm
-                        grad_norm = torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=1.0)
-
-                        scaler.step(optim)
-                        scaler.update()
-                        optim.zero_grad(set_to_none=True)
-
-                    current_loss = loss.item() #/ loss_scale  # Unscale for logging
-                else:
-                    # Original method: standard training
-                    if use_feedback_this_epoch is not None:
-                            out_char, out_pos = mdl(inputs, use_feedback=use_feedback_this_epoch, reset_feedback=False)
-                    else:
-                        out_char, out_pos = mdl(inputs)
-
-                    if (use_feedback_this_epoch is True) and (sample_idx is not None):
-                        if out_pos is None:
-                            fb_full = out_char.detach()
-                        else:
-                            fb_full = torch.cat([out_char, out_pos], dim=-1).detach()
-
-                        # 只存最后一个 timestep
-                        fb_last = fb_full[:, -1, :] if fb_full.dim() == 3 else fb_full  # (B, fb_dim)
-
-                        if new_epoch_feedback_table is None:
-                            fb_dim = fb_last.shape[-1]
-                            new_epoch_feedback_table = torch.zeros(len(train_data), fb_dim, dtype=torch.float32)
-
-                        new_epoch_feedback_table[sample_idx] = fb_last.to("cpu", dtype=torch.float32)
-
-                    loss = loss_fn(out_char, out_pos, labels)
-                    loss = loss * loss_scale  # Scale loss for accumulation
-                    loss.backward()
-                    
-                    # # Optimizer step only at accumulation boundary
-                    # if (batch_idx + 1) % accel_config.grad_accum_steps == 0:
-                    #     # Check for NaN/Inf in gradients before clipping (especially important for h=512)
-                    #     grad_norm = torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=2.0)
-                    #     if torch.isnan(grad_norm) or torch.isinf(grad_norm) or grad_norm > 100.0:
-                    #         print(f"Warning: Skipping batch {batch_idx} due to abnormal gradient norm: {grad_norm.item():.2f}")
-                    #         optim.zero_grad()
-                    #         continue
-                    #     optim.step()
-                        
-                    # Optimizer step only at accumulation boundary
-                    if (batch_idx + 1) % accel_config.grad_accum_steps == 0:
-                        # [GRAD_VALUE_CLIP] clip individual gradient values first (helps rare spikes)
-                        torch.nn.utils.clip_grad_value_(mdl.parameters(), clip_value=1.0)
-
-                        # [GRAD_NORM_CLIP] then clip global norm
-                        grad_norm = torch.nn.utils.clip_grad_norm_(mdl.parameters(), max_norm=1.0)
-
-                        if not torch.isfinite(grad_norm):
-                            print(f"Warning: Skipping batch {batch_idx} due to abnormal gradient norm: {grad_norm}")
-                            optim.zero_grad(set_to_none=True)
-                            continue
-
-                        optim.step()
-                        optim.zero_grad(set_to_none=True)
-
-                    current_loss = loss.item() #/ loss_scale  # Unscale for logging
-
-                # Calculate training metrics every epoch (loss is still computed every batch for backpropagation)
-                if predict_all_chars:
-                    # All-chars mode: use greedy matching to compute accuracy (sample batches for speed)
-                    if batch_idx % 50 == 0 or batch_idx == len(train_dl) - 1:
-                        batch_size, frame_num = labels.shape[:2]
-                        # Scheme B (exact multiset / frame match) stats for this eval pass
-                        batch_exact = 0
-                        batch_frames_eval = 0
-                        
-                        # Vectorized: compute softmax for all frames at once
-                        pred_probs = F.softmax(out_char, dim=-1)  # (B, T, max_chars, num_classes)
-                        
-                        for b in range(batch_size):
-                            for t in range(frame_num):
-                                true_chars = labels[b, t]  # (max_chars,)
-                                valid_mask = true_chars >= 0
-                                valid_true_chars = true_chars[valid_mask]
-                                
-                                if len(valid_true_chars) == 0:
-                                    continue
-                                batch_frames_eval += 1
-                                
-                                frame_probs = pred_probs[b, t]  # (max_chars, num_classes)
-                                frame_logits = out_char[b, t]  # (max_chars, num_classes)
-                                
-                                # Greedy matching to build predicted chars list (same strategy as notebook)
-                                used_mask = torch.zeros(max_chars, dtype=torch.bool, device=out_char.device)
-                                matched_pred_chars = []
-
-                                for true_char_id in valid_true_chars:
-                                    # Get probabilities for this GT char over all slots, mask used slots
-                                    char_probs = frame_probs[:, int(true_char_id)]
-                                    char_probs = char_probs.masked_fill(used_mask, -1.0)
-
-                                    # Find best matching slot
-                                    best_pred_idx = torch.argmax(char_probs).item()
-
-                                    # Predicted char at this slot
-                                    pred_char = torch.argmax(frame_logits[best_pred_idx]).item()
-                                    matched_pred_chars.append(pred_char)
-
-                                    # Mark slot as used
-                                    used_mask[best_pred_idx] = True
-
-                                # Exact multiset/frame match using Counter, same as notebook logic
-                                gt_chars = [int(c.item()) if isinstance(c, torch.Tensor) else int(c) for c in valid_true_chars]
-                                pred_counter = Counter(matched_pred_chars)
-                                gt_counter = Counter(gt_chars)
-                                if pred_counter == gt_counter:
-                                    batch_exact += 1
-
-                        # Accumulate epoch-level exact-match counts (denominator is real evaluated frames)
-                        if batch_frames_eval > 0:
-                            epoch_train_acc_char += batch_exact
-                            epoch_train_frames_eval += batch_frames_eval
-                    # For batches we skip, don't add anything (will be averaged correctly later)
-                    # No position metric in all-chars mode
-                else:
-                    # Original mode: single char + position (compute metrics every epoch)
-                    # Character accuracy (same for both modes)
-                    epoch_train_acc_char += (torch.argmax(out_char, dim=2) == labels[:, :, 0].long()).float().mean().item()
-                    
-                    # Position-related metrics (different methods based on use_sector)
-                    if use_sector:
-                        # sector mode: calculate accuracy
-                        epoch_train_metric_pos += (torch.argmax(out_pos, dim=2) == labels[:, :, 1].long()).float().mean().item()
-                    else:
-                        # coordinate mode: calculate MSE
-                        labels_pos = labels[:, :, 1:].float()  # (B, T, 2)
-                        epoch_train_metric_pos += F.mse_loss(out_pos, labels_pos, reduction='mean').item()
-                
                 num_batches += 1
                 
                 # Memory optimization: periodically clear GPU cache and unused memory
-                if use_acceleration and accel_config.enable_memory_opt:
-                    if batch_idx % 50 == 0 and device == 'cuda':
+                if accel_config.enable_memory_opt and batch_idx % 50 == 0 and device == 'cuda':
                         torch.cuda.empty_cache()  # Clear GPU cache
                         torch.cuda.synchronize()  # Ensure all GPU operations complete
                 
-                # Update progress bar (every 10 batches to avoid too frequent updates)
                 if batch_idx % 10 == 0:
-                    if predict_all_chars:
-                        # All-chars mode: only show loss
-                        train_pbar.set_postfix({'loss': f'{current_loss:.4f}'})
-                    else:
-                        # Original mode: show loss and pos info
-                        # Calculate current batch pos metric for display
-                        if use_sector:
-                            # sector mode: calculate accuracy for current batch
-                            batch_pos_acc = (torch.argmax(out_pos, dim=2) == labels[:, :, 1].long()).float().mean().item() * 100
-                            train_pbar.set_postfix({
-                                'loss': f'{current_loss:.4f}',
-                                'pos_acc': f'{batch_pos_acc:.2f}%'
-                            })
-                        else:
-                            # coordinate mode: calculate MSE for current batch
-                            labels_pos = labels[:, :, 1:].float()  # (B, T, 2)
-                            batch_pos_mse = F.mse_loss(out_pos, labels_pos, reduction='mean').item()
-                            train_pbar.set_postfix({
-                                'loss': f'{current_loss:.4f}',
-                                'pos_mse': f'{batch_pos_mse:.2f}'
-                            })
-                
-                # Acceleration mode: periodically clear GPU cache
-                if use_acceleration and batch_idx % 100 == 0 and device == 'cuda':
-                    torch.cuda.empty_cache()
+                    train_pbar.set_postfix(metrics_mode.postfix_for_pbar(
+                        current_loss, out_char, out_pos, labels
+                    ))
             
-            # Calculate epoch average metrics (every epoch)
-            if predict_all_chars:
-                # Scheme B: epoch_train_acc_char = total exact-matched frames
-                # epoch_train_frames_eval = total evaluated frames (denominator)
-                train_acc_char[epoch] = (epoch_train_acc_char / epoch_train_frames_eval) * 100 if epoch_train_frames_eval > 0 else 0.0
-                train_metric_pos[epoch] = 0.0  # No position metric in all-chars mode
-            elif use_sector:
-                train_acc_char[epoch] = (epoch_train_acc_char / num_batches) * 100
-                train_metric_pos[epoch] = (epoch_train_metric_pos / num_batches) * 100  # accuracy (percentage)
-            else:
-                train_acc_char[epoch] = (epoch_train_acc_char / num_batches) * 100
-                train_metric_pos[epoch] = epoch_train_metric_pos / num_batches  # MSE (pixel squared)
+            train_acc_char[epoch], train_metric_pos[epoch] = metrics_mode.finalize_train_epoch(
+                epoch_acc, num_batches
+            )
 
-            # Format output string
             gpu_info = ""
-            if use_acceleration and show_gpu_usage and device == 'cuda' and torch.cuda.is_available():
+            if accel_config.use_acceleration and device == 'cuda' and torch.cuda.is_available():
                 gpu_mem = get_gpu_memory_usage()
                 gpu_info = f" | GPU memory: {gpu_mem:.1f}%"
-            
-            # Format output based on mode (ensure predict_all_chars is checked first)
-            if predict_all_chars:
-                # All-chars mode: only show character accuracy, no position
-                train_str = f"Epoch {epoch + 1}/{num_epochs} - Train (all chars acc): {train_acc_char[epoch]:.2f}%{gpu_info}"
-            elif use_sector:
-                train_str = f"Epoch {epoch + 1}/{num_epochs} - Train (char, sector): ({train_acc_char[epoch]:.2f}%, {train_metric_pos[epoch]:.2f}%){gpu_info}"
-            else:
-                train_str = f"Epoch {epoch + 1}/{num_epochs} - Train (char, pos): ({train_acc_char[epoch]:.2f}%, {train_metric_pos[epoch]:.2f} pix^2){gpu_info}"
+
+            train_str = metrics_mode.format_train_str(
+                epoch, num_epochs, train_acc_char[epoch], train_metric_pos[epoch], gpu_info
+            )
 
             if use_feedback_this_epoch is True and new_epoch_feedback_table is not None:
                 prev_epoch_feedback_table = new_epoch_feedback_table
 
-            # Training completed, now validate (every epoch)
             with torch.no_grad():
-                val_acc_char[epoch], val_metric_pos[epoch] = evaluate(mdl, val_dl, use_tqdm, use_feedback=use_feedback_this_epoch)
-            # Format validation output based on mode (ensure predict_all_chars is checked first)
-            if predict_all_chars:
-                val_str = f" Validation (all chars acc): {val_acc_char[epoch]:.2f}%"
-            elif use_sector:
-                val_str = f" Validation (char, sector): ({val_acc_char[epoch]:.2f}%, {val_metric_pos[epoch]:.2f}%)"
-            else:
-                val_str = f" Validation (char, pos): ({val_acc_char[epoch]:.2f}%, {val_metric_pos[epoch]:.2f} pix^2)"
+                val_acc_char[epoch], val_metric_pos[epoch] = evaluate(
+                    mdl, val_dl, use_tqdm, use_feedback=use_feedback_this_epoch
+                )
+            val_str = metrics_mode.format_val_str(val_acc_char[epoch], val_metric_pos[epoch])
             print(train_str + val_str, flush=True)
-
-    
+  
     except (KeyboardInterrupt, SystemExit):
         # Handle interruption gracefully
         print("\nTraining interrupted, cleaning up resources...")
     finally:
         # Explicit resource cleanup for DataLoader to prevent semaphore leaks
         # This is critical when using persistent_workers=True with multiprocessing
-        if use_acceleration and num_workers > 0:
+        if num_workers > 0:
             try:
                 # Shutdown DataLoader workers properly to prevent semaphore leaks
                 if 'train_dl' in locals():
@@ -1568,32 +1024,15 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     # If early stopping triggered, only return actual trained epochs (epoch starts from 0, so actually trained epoch+1 epochs)
     actual_epochs = epoch + 1
     
-    # Return different key names based on mode, only return actual trained epochs
-    if predict_all_chars:
-        return {
-            "train_acc_char": train_acc_char[:actual_epochs],
-            "val_acc_char": val_acc_char[:actual_epochs],
-            "model": mdl.to("cpu"),
-            "actual_epochs": actual_epochs  # save actual trained epochs
-        }
-    elif use_sector:
-        return {
-            "train_acc_char": train_acc_char[:actual_epochs],
-            "val_acc_char": val_acc_char[:actual_epochs],
-            "train_acc_pos": train_metric_pos[:actual_epochs],  # sector accuracy
-            "val_acc_pos": val_metric_pos[:actual_epochs],      # sector accuracy
-            "model": mdl.to("cpu"),
-            "actual_epochs": actual_epochs  # save actual trained epochs
-        }
-    else:
-        return {
-            "train_acc_char": train_acc_char[:actual_epochs],
-            "val_acc_char": val_acc_char[:actual_epochs],
-            "train_err_pos": train_metric_pos[:actual_epochs],  # coordinate MSE
-            "val_err_pos": val_metric_pos[:actual_epochs],      # coordinate MSE
-            "model": mdl.to("cpu"),
-            "actual_epochs": actual_epochs  # save actual trained epochs
-        }
+    base = {
+        "train_acc_char": train_acc_char[:actual_epochs],
+        "val_acc_char": val_acc_char[:actual_epochs],
+        "model": mdl.to("cpu"),
+        "actual_epochs": actual_epochs,
+    }
+    return metrics_mode.add_pos_to_result_dict(
+        base, train_metric_pos, val_metric_pos, actual_epochs
+    )
 
 
 # ==================== Parse Arguments ====================
@@ -1618,7 +1057,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--num_epochs",
         type=int,
-        default=200,
+        default=100,
         help="Number of training epochs (default: 100)",
     )
     parser.add_argument(
@@ -1698,6 +1137,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default="sector", # ""
         help="Suffix to append to result file names for distinguishing different training runs (default: empty string)",
+    )
+    parser.add_argument(
+        "--cnn_feature_size",
+        type=str,
+        default="large",
+        choices=["large", "small"],
+        help="CNN encoder output feature map size: 'large' -> (64, 12, 12), 'small' -> (32, 6, 6). Default: large.",
     )
 
     return parser
@@ -1819,24 +1265,27 @@ if __name__ == "__main__":
                 hidden_size=hidden_size,
                 max_chars=max_chars,
                 predict_all_chars=True,
+                cnn_feature_size=args.cnn_feature_size,
             )
             print(
                 f"Created {model_type.upper()} model "
                 f"(predict_all_chars=True, max_chars={max_chars}, "
-                f"dropout_rate={dropout_rate}, hidden_size={hidden_size})"
+                f"dropout_rate={dropout_rate}, hidden_size={hidden_size}, cnn_feature_size={args.cnn_feature_size})"
             )
         else:
-            mdl = ModelClass(
+            mdl_kwargs = dict(
                 num_classes=10,
                 num_pos=num_pos,
                 kernel_size=5,
                 dropout_rate=dropout_rate,
                 hidden_size=hidden_size,
+                cnn_feature_size=args.cnn_feature_size,
             )
+            mdl = ModelClass(**mdl_kwargs)
             print(
                 f"Created {model_type.upper()} model "
                 f"(num_pos={num_pos}, dropout_rate={dropout_rate}, "
-                f"hidden_size={hidden_size})"
+                f"hidden_size={hidden_size}, cnn_feature_size={args.cnn_feature_size})"
             )
 
         # [COMPILE] compile model for speed (PyTorch 2.x)
