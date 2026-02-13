@@ -53,7 +53,7 @@ def _create_metrics_mode(predict_all_chars, use_sector, max_chars=None, device=N
 
 torch.set_num_threads(4)
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 
 def _cnn_feature_map_config(feature_size):
@@ -72,7 +72,7 @@ def _cnn_feature_map_config(feature_size):
 # ==================== Dataset Class ====================
 class MC_RNN_Dataset(Dataset):
     def __init__(self, data, labels, frame_num=32, chan_num=2, use_sector=False, num_sectors=9, 
-                 max_chars=10, predict_all_chars=False):
+                 max_chars=15, predict_all_chars=False):
         """
         Args:
             data (np.ndarray): Array of shape (num_samples, num_frames, height, width)
@@ -175,7 +175,7 @@ class BaseConvSequenceModel(nn.Module):
     cnn_feature_size: 'large' -> encoder output (64, 12, 12); 'small' -> (32, 6, 6).
     """
     def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3,
-                 hidden_size=256, max_chars=10, predict_all_chars=False, cnn_feature_size='large'):
+                 hidden_size=256, max_chars=15, predict_all_chars=False, cnn_feature_size='large'):
         super(BaseConvSequenceModel, self).__init__()
         self.device = device
         self.dropout_rate = dropout_rate
@@ -239,7 +239,7 @@ class BaseConvSequenceModel(nn.Module):
 class BaseRNNConv(BaseConvSequenceModel):
     """Base class for CNN-RNN models supporting different RNN types. Middle = RNN + LayerNorm + ReLU + Dropout."""
     def __init__(self, num_classes, num_pos, rnn_class=nn.RNN, kernel_size=3, device='cuda',
-                 dropout_rate=0.3, hidden_size=256, max_chars=10, predict_all_chars=False, cnn_feature_size='large'):
+                 dropout_rate=0.3, hidden_size=256, max_chars=15, predict_all_chars=False, cnn_feature_size='large'):
         super(BaseRNNConv, self).__init__(
             num_classes, num_pos, kernel_size=kernel_size, device=device,
             dropout_rate=dropout_rate, hidden_size=hidden_size,
@@ -260,7 +260,7 @@ class BaseRNNConv(BaseConvSequenceModel):
 
 class RNNConv(BaseRNNConv):
     def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
-                 max_chars=10, predict_all_chars=False, cnn_feature_size='large'):
+                 max_chars=15, predict_all_chars=False, cnn_feature_size='large'):
         super(RNNConv, self).__init__(num_classes, num_pos, rnn_class=nn.RNN, kernel_size=kernel_size,
                                       device=device, dropout_rate=dropout_rate, hidden_size=hidden_size,
                                       max_chars=max_chars, predict_all_chars=predict_all_chars,
@@ -269,7 +269,7 @@ class RNNConv(BaseRNNConv):
 
 class GRUConv(BaseRNNConv):
     def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
-                 max_chars=10, predict_all_chars=False, cnn_feature_size='large'):
+                 max_chars=15, predict_all_chars=False, cnn_feature_size='large'):
         super(GRUConv, self).__init__(num_classes, num_pos, rnn_class=nn.GRU, kernel_size=kernel_size,
                                       device=device, dropout_rate=dropout_rate, hidden_size=hidden_size,
                                       max_chars=max_chars, predict_all_chars=predict_all_chars,
@@ -278,7 +278,7 @@ class GRUConv(BaseRNNConv):
 
 class LSTMConv(BaseRNNConv):
     def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
-                 max_chars=10, predict_all_chars=False, cnn_feature_size='large'):
+                 max_chars=15, predict_all_chars=False, cnn_feature_size='large'):
         super(LSTMConv, self).__init__(num_classes, num_pos, rnn_class=nn.LSTM, kernel_size=kernel_size,
                                        device=device, dropout_rate=dropout_rate, hidden_size=hidden_size,
                                        max_chars=max_chars, predict_all_chars=predict_all_chars,
@@ -294,11 +294,11 @@ class GaWFRNNConv(BaseConvSequenceModel):
     2. Feedback is transformed by U @ diag(concat) @ V, then Hadamard product with RNN weights
     """
     def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
-                 cnn_feature_size='large'):
+                 max_chars=15, predict_all_chars=False, cnn_feature_size='large'):
         super(GaWFRNNConv, self).__init__(
             num_classes, num_pos, kernel_size=kernel_size, device=device,
             dropout_rate=dropout_rate, hidden_size=hidden_size,
-            max_chars=10, predict_all_chars=False,
+            max_chars=15, predict_all_chars=False,
             cnn_feature_size=cnn_feature_size,
         )
         self.num_classes = num_classes
@@ -540,7 +540,7 @@ class BaseMergeConvModel(nn.Module):
     cnn_feature_size: 'large' -> (64, 12, 12); 'small' -> (32, 6, 6).
     """
     def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3,
-                 hidden_size=256, max_chars=10, predict_all_chars=False, cnn_feature_size='large'):
+                 hidden_size=256, max_chars=15, predict_all_chars=False, cnn_feature_size='large'):
         super(BaseMergeConvModel, self).__init__()
         self.device = device
         self.dropout_rate = dropout_rate
@@ -721,7 +721,7 @@ class DendriticANNConv(BaseMergeConvModel):
     Encoder and classifier from BaseMergeConvModel. Middle: dANN (dend linear, soma non-learnable).
     """
     def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
-                 max_chars=10, predict_all_chars=False,
+                 max_chars=15, predict_all_chars=False,
                  num_layers=2, num_dends=32, num_soma=256, cnn_feature_size='large'):
         super(DendriticANNConv, self).__init__(
             num_classes, num_pos, kernel_size=kernel_size, device=device,
@@ -749,7 +749,7 @@ class FeedForwardConv(BaseMergeConvModel):
     FFN-exclusive: hidden_size for FC layer (default 512 when RNN default 256 is passed).
     """
     def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout_rate=0.3, hidden_size=256,
-                 max_chars=10, predict_all_chars=False, cnn_feature_size='large'):
+                 max_chars=15, predict_all_chars=False, cnn_feature_size='large'):
         ffn_hidden_size = 512 if hidden_size == 256 else hidden_size
         super(FeedForwardConv, self).__init__(
             num_classes, num_pos, kernel_size=kernel_size, device=device,
@@ -770,7 +770,7 @@ class FeedForwardConv(BaseMergeConvModel):
 # ==================== Training Function ====================
 def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, lr=0.001,
                   use_acceleration=False, weight_decay=None, dropout_rate=None, rnn_diag_lambda=1e-4,
-                  use_tqdm=True, nofb=False, fb_start_epoch=999999, seed=42):
+                  use_mmap=False, use_tqdm=True, nofb=False, fb_start_epoch=999999, seed=42):
     """
     Train model, supports sector mode and coordinate mode.
     Acceleration is config-driven; training loop is single-path (no AMP branches).
@@ -791,7 +791,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     metrics_mode = _create_metrics_mode(predict_all_chars, use_sector, max_chars, device)
 
     (autocast_fn, scaler, batch_size, num_workers, pin_memory) = setup_acceleration(
-        accel_config, mdl, train_data, device, is_gawf=isinstance(mdl, GaWFRNNConv)
+        accel_config, mdl, train_data, device, is_gawf=isinstance(mdl, GaWFRNNConv), use_mmap=use_mmap
     )
 
     train_dl, val_dl = build_loaders(
@@ -1143,7 +1143,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default="large",
         choices=["large", "small"],
-        help="CNN encoder output feature map size: 'large' -> (64, 12, 12), 'small' -> (32, 6, 6). Default: large.",
+        help="CNN encoder output feature map size: large (64, 12, 12), small (32, 6, 6). Default: large",
     )
 
     return parser
@@ -1184,13 +1184,13 @@ if __name__ == "__main__":
     use_sector_mode = args.use_sector_mode
     predict_all_chars = args.predict_all_chars
     use_acceleration = args.use_acceleration
-    max_chars = 10
+    max_chars = 15 # Num of bg digit in 40h is 12
 
     train_ds, val_ds, num_pos = create_datasets(
         stims_train, lbls_train, stims_val, lbls_val,
         use_sector_mode=args.use_sector_mode,
         predict_all_chars=args.predict_all_chars,
-        max_chars=args.max_chars if args.predict_all_chars else 10,
+        max_chars=max_chars,
         dataset_class=MC_RNN_Dataset,
     )
 
@@ -1210,6 +1210,7 @@ if __name__ == "__main__":
     lrs = args.lrs
     weight_decays = args.weight_decays
     dropout_rates = args.dropout_rates
+    cnn_feature_sizes = args.cnn_feature_size
 
     # Create results directory
     results_dir = f"results/models/{args.result_suffix}"
@@ -1228,11 +1229,9 @@ if __name__ == "__main__":
 
     print(f"\n{'=' * 60}")
     print(f"Starting training loop: {total_experiments} experiments")
-    print(f"Models: {model_types}")
-    print(f"Hidden sizes: {hidden_sizes}")
-    print(f"Learning rates: {lrs}")
-    print(f"Weight decays: {weight_decays}")
-    print(f"Dropout rates: {dropout_rates}")
+    print(f"Models: {model_types}, Hidden sizes: {hidden_sizes}")
+    print(f"Learning rates: {lrs}, Weight decays: {weight_decays}, Dropout rates: {dropout_rates}")
+    print(f"CNN feature sizes: {cnn_feature_sizes}")
     print(f"{'=' * 60}\n")
 
     for model_type, hidden_size, lr, weight_decay, dropout_rate in experiment_configs:
@@ -1252,42 +1251,24 @@ if __name__ == "__main__":
 
         ModelClass = model_classes[model_type]
 
-        if predict_all_chars:
-            if model_type == "gawf":
-                print("Warning: GaWFRNNConv does not support predict_all_chars mode, skipping...")
-                continue
-       
-            mdl = ModelClass(
-                num_classes=10,
-                num_pos=0,
-                kernel_size=5,
-                dropout_rate=dropout_rate,
-                hidden_size=hidden_size,
-                max_chars=max_chars,
-                predict_all_chars=True,
-                cnn_feature_size=args.cnn_feature_size,
-            )
-            print(
-                f"Created {model_type.upper()} model "
-                f"(predict_all_chars=True, max_chars={max_chars}, "
-                f"dropout_rate={dropout_rate}, hidden_size={hidden_size}, cnn_feature_size={args.cnn_feature_size})"
-            )
-        else:
-            mdl_kwargs = dict(
+        num_pos = 0 if predict_all_chars else num_pos
+        mdl = ModelClass(
                 num_classes=10,
                 num_pos=num_pos,
                 kernel_size=5,
                 dropout_rate=dropout_rate,
                 hidden_size=hidden_size,
+                max_chars=max_chars,
+                predict_all_chars=predict_all_chars,
                 cnn_feature_size=args.cnn_feature_size,
             )
-            mdl = ModelClass(**mdl_kwargs)
-            print(
-                f"Created {model_type.upper()} model "
-                f"(num_pos={num_pos}, dropout_rate={dropout_rate}, "
-                f"hidden_size={hidden_size}, cnn_feature_size={args.cnn_feature_size})"
-            )
 
+        print(
+            f"Created {model_type.upper()} model "
+            f"(predict_all_chars=True, max_chars={max_chars}, "
+            f"dropout_rate={dropout_rate}, hidden_size={hidden_size}, cnn_feature_size={args.cnn_feature_size})"
+        )
+       
         # [COMPILE] compile model for speed (PyTorch 2.x)
         try:
             mdl = torch.compile(mdl)  # 可选：torch.compile(mdl, mode="max-autotune")
@@ -1296,10 +1277,8 @@ if __name__ == "__main__":
 
         # Train model
         print("Starting training...")
-        if use_acceleration:
-            print("Acceleration training enabled")
-        else:
-            print("Using standard training method")
+        print("Acceleration training enabled") if use_acceleration else print("Using standard training method")
+        
 
         results = network_train(
             mdl,
@@ -1311,6 +1290,7 @@ if __name__ == "__main__":
             weight_decay=weight_decay,
             dropout_rate=dropout_rate,
             rnn_diag_lambda=1e-4,
+            use_mmap=args.use_mmap,
             use_tqdm=use_tqdm,
             nofb=args.nofb,
             fb_start_epoch=args.fb_start_epoch,
@@ -1322,6 +1302,7 @@ if __name__ == "__main__":
         mode_suffix = "allchars" if predict_all_chars else ("sector" if use_sector_mode else "coord")
         acc_suffix = "_acc" if use_acceleration else ""
         hp_suffix = f"_lr{lr}_wd{weight_decay}_do{dropout_rate}"
+        cnn_feature_size_suffix = "_Lcnn" if args.cnn_feature_size == "large" else "_Scnn"
         # nofb/fb_start_epoch in result path: nofb only -> _nofb; nofb + fb_start_epoch -> _fb{N} only
         if args.nofb:
             if args.fb_start_epoch >= 999999:
@@ -1332,14 +1313,13 @@ if __name__ == "__main__":
             fb_path_suffix = ""
         results_path = os.path.join(
             results_dir,
-            f"{model_type}_{mode_suffix}{acc_suffix}_h{hidden_size}{hp_suffix}{fb_path_suffix}",
+            f"{model_type}_{mode_suffix}{acc_suffix}_h{hidden_size}{hp_suffix}{fb_path_suffix}{cnn_feature_size_suffix}",
         )
 
         save_results(results, results_path)
         print(f"Experiment {experiment_num}/{total_experiments} completed!\n")
 
     print(f"\n{'=' * 60}")
-    print(f"All {total_experiments} experiments completed!")
-    print(f"Results saved to: {results_dir}/")
+    print(f"All {total_experiments} experiments completed! Results saved to: {results_dir}/")
     print(f"{'=' * 60}\n")
 

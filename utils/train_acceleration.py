@@ -7,7 +7,7 @@ from functools import partial
 import torch
 from torch.utils.data import DataLoader
 
-from .train_helpers import worker_init_fn, find_optimal_batch_size
+from .train_helpers import worker_init_fn
 
 
 class AccelerationConfig:
@@ -83,10 +83,11 @@ def init_acceleration_modules():
         return None, None, None
 
 
-def setup_acceleration(accel_config, mdl, train_data, device, is_gawf=False):
+def setup_acceleration(accel_config, mdl, train_data, device, is_gawf=False, use_mmap=False):
     """
     Setup acceleration artifacts from config. No if-else on use_acceleration inside training loop.
     is_gawf: if True, skip batch size search and use batch_size=32, num_workers=2 (caller sets this to avoid circular import).
+    use_mmap: if True, use mmap mode to load data.
     Returns: (autocast_fn, scaler, batch_size, num_workers, pin_memory).
     """
     if not accel_config.use_acceleration:
@@ -102,13 +103,16 @@ def setup_acceleration(accel_config, mdl, train_data, device, is_gawf=False):
         batch_size, num_workers = 256, 0
         print(f"GaWFRNNConv: using batch_size={batch_size}, num_workers={num_workers}")
     else:      
-        batch_size, num_workers = find_optimal_batch_size(
-            mdl, train_data, device=device, start_batch_size=32,
-            enable_grad_accum=accel_config.enable_grad_accum,
-            grad_accum_steps=accel_config.grad_accum_steps,
-        )
+        batch_size, num_workers = 128, 2
+        # batch_size, num_workers = find_optimal_batch_size(
+        #     mdl, train_data, device=device, start_batch_size=32,
+        #     enable_grad_accum=accel_config.enable_grad_accum,
+        #     grad_accum_steps=accel_config.grad_accum_steps,
+        # )
         print(f"Using batch_size={batch_size}, suggested num_workers={num_workers}")
 
+    if use_mmap:
+        num_workers = 0
     pin_memory = False
     scaler = GradScaler_cls("cuda") if device == "cuda" and accel_config.enable_gradient_scale else None
     autocast_fn = (lambda d: autocast_cls(device_type=d)) if accel_config.enable_amp else (lambda _: nullcontext())
