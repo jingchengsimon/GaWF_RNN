@@ -25,6 +25,10 @@ from utils.train_helpers import (
     set_seed,
     get_gpu_memory_usage,
     get_model_classes,
+    setup_logger,
+    log_experiment_config,
+    log_experiment_start,
+    log_dataset_and_batch_info,
 )
 from utils.train_acceleration import (
     AccelerationConfig,
@@ -53,20 +57,33 @@ def _create_metrics_mode(predict_all_chars, use_sector, max_chars=None, device=N
 
 torch.set_num_threads(4)
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 
-def _cnn_feature_map_config(feature_size):
+def _cnn_feature_map_config(feature_size, mp1_out_hw=48):
     """
     Return (out_channels, out_h, out_w, mp2_kernel, mp2_stride) for the CNN encoder output.
     - large: (64, 12, 12), MP2(4, 4) so 48/4=12
     - small: (32, 6, 6), MP2(8, 8) so 48/8=6
     """
     if feature_size == "large":
-        return 64, 12, 12, 4, 4
-    if feature_size == "small":
-        return 32, 6, 6, 8, 8
-    raise ValueError(f"cnn_feature_size must be 'large' or 'small', got {feature_size!r}")
+        out_ch, out_h, out_w = 64, 12, 12
+    elif feature_size == "small":
+        out_ch, out_h, out_w = 16, 3, 3 #32, 6, 6
+    else:
+        raise ValueError(f"cnn_feature_size must be 'large' or 'small', got {feature_size!r}")
+
+    # derive MP2 stride from target spatial size
+    if mp1_out_hw % out_h != 0 or mp1_out_hw % out_w != 0:
+        raise ValueError(
+            f"MP1 output {mp1_out_hw}x{mp1_out_hw} cannot be pooled to "
+            f"{out_h}x{out_w} with integer stride."
+        )
+
+    mp2_k = mp1_out_hw // out_h
+    mp2_s = mp1_out_hw // out_w
+
+    return out_ch, out_h, out_w, mp2_k, mp2_s
 
 
 # ==================== Dataset Class ====================
@@ -770,7 +787,8 @@ class FeedForwardConv(BaseMergeConvModel):
 # ==================== Training Function ====================
 def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, lr=0.001,
                   use_acceleration=False, weight_decay=None, dropout_rate=None, rnn_diag_lambda=1e-4,
-                  use_mmap=False, use_tqdm=True, nofb=False, fb_start_epoch=999999, seed=42):
+                  use_mmap=False, use_tqdm=True, nofb=False, fb_start_epoch=999999, seed=42, logger=None,
+                  cnn_feature_size="large"):
     """
     Train model, supports sector mode and coordinate mode.
     Acceleration is config-driven; training loop is single-path (no AMP branches).
@@ -791,7 +809,10 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     metrics_mode = _create_metrics_mode(predict_all_chars, use_sector, max_chars, device)
 
     (autocast_fn, scaler, batch_size, num_workers, pin_memory) = setup_acceleration(
-        accel_config, mdl, train_data, device, is_gawf=isinstance(mdl, GaWFRNNConv), use_mmap=use_mmap
+        accel_config, mdl, train_data, device,
+        is_gawf=isinstance(mdl, GaWFRNNConv),
+        use_mmap=use_mmap,
+        cnn_feature_size=cnn_feature_size,
     )
 
     train_dl, val_dl = build_loaders(
@@ -801,9 +822,8 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     # Add weight decay (L2 regularization) to prevent overfitting
     # For h>=512 models (especially dANN), use larger eps for Adam to prevent numerical instability
     # Default eps=1e-8 can be too small when variance estimates become very small
+    
     if hasattr(mdl, 'hidden_size') and mdl.hidden_size >= 512:
-        optim = torch.optim.Adam(mdl.parameters(), lr=lr, weight_decay=weight_decay, eps=1e-6)
-    elif hasattr(mdl, 'dann') and hasattr(mdl.dann, 'hidden_size') and mdl.dann.hidden_size >= 512:
         optim = torch.optim.Adam(mdl.parameters(), lr=lr, weight_decay=weight_decay, eps=1e-6)
     else:
         optim = torch.optim.Adam(mdl.parameters(), lr=lr, weight_decay=weight_decay)
@@ -868,30 +888,26 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
 
                 acc = eval_mode.update_eval_batch(acc, out_char, labels, out_pos)
 
-        acc_char, metric_pos = eval_mode.finalize_eval(acc, len(data_loader))
+        result = eval_mode.finalize_eval(acc, len(data_loader))
 
         if update_feedback_table:
-            return acc_char, metric_pos, new_table
-        return acc_char, metric_pos
+            return result[0], result[1], new_table
+        return result
 
-    # Print dataset and batch information
-    print(f"\nDataset Information:")
-    print(f"  Training dataset size: {len(train_data)} samples")
-    print(f"  Validation dataset size: {len(val_data)} samples")
-    print(f"  Batch size per step: {batch_size}")
-    print(f"  Effective batch size (with grad accum): {batch_size * accel_config.grad_accum_steps}")
-    print(f"  Number of batches per epoch: {len(train_dl)}")
-    print(f"  use_sector: {use_sector}, predict_all_chars: {predict_all_chars}")
-    print(f"  acceleration: {accel_config.use_acceleration}, workers: {num_workers}, pin_memory: {pin_memory and num_workers > 0}")
-    if num_workers > 0:
-        print(f"  DataLoader prefetch_factor: {accel_config.dataloader_prefetch_factor}")
-    print()
+    if logger is not None:
+        log_dataset_and_batch_info(
+            logger, train_data, val_data, batch_size, accel_config,
+            train_dl, num_workers, pin_memory, use_sector, predict_all_chars,
+        )
 
     stepper = TrainStepper(mdl, optim, loss_fn, accel_config, device, scaler, autocast_fn, pin_memory)
-    train_acc_char = np.zeros(num_epochs)
-    val_acc_char = np.zeros(num_epochs)
-    train_metric_pos = np.zeros(num_epochs)  # sector mode: accuracy; coordinate mode: MSE
-    val_metric_pos = np.zeros(num_epochs)
+    train_acc_char, val_acc_char = np.zeros(num_epochs), np.zeros(num_epochs)
+    train_metric_pos, val_metric_pos = np.zeros(num_epochs), np.zeros(num_epochs)  # sector: accuracy; coord: MSE
+    # character CE loss (for both sector/coord single-char mode; all-chars keeps default zeros)
+    train_loss_char, val_loss_char = np.zeros(num_epochs), np.zeros(num_epochs)
+    # sector only: position CE loss (like coord saves MSE)
+    train_loss_pos = np.zeros(num_epochs) if use_sector else None
+    val_loss_pos = np.zeros(num_epochs) if use_sector else None
 
     _STOP_REQUESTED = False
 
@@ -968,17 +984,22 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 
                 # Memory optimization: periodically clear GPU cache and unused memory
                 if accel_config.enable_memory_opt and batch_idx % 50 == 0 and device == 'cuda':
-                        torch.cuda.empty_cache()  # Clear GPU cache
-                        torch.cuda.synchronize()  # Ensure all GPU operations complete
-                
+                    torch.cuda.empty_cache()  # Clear GPU cache
+                    torch.cuda.synchronize()  # Ensure all GPU operations complete
+            
                 if batch_idx % 10 == 0:
                     train_pbar.set_postfix(metrics_mode.postfix_for_pbar(
                         current_loss, out_char, out_pos, labels
                     ))
             
-            train_acc_char[epoch], train_metric_pos[epoch] = metrics_mode.finalize_train_epoch(
-                epoch_acc, num_batches
-            )
+            train_result = metrics_mode.finalize_train_epoch(epoch_acc, num_batches)
+            train_acc_char[epoch], train_metric_pos[epoch] = train_result[0], train_result[1]
+            # For SingleCharMetricsMode: (acc_char, metric_pos, loss_pos, loss_char)
+            # For AllCharsMetricsMode: (acc_char, metric_pos)
+            if len(train_result) >= 3 and train_result[2] is not None and train_loss_pos is not None:
+                train_loss_pos[epoch] = train_result[2]
+            if len(train_result) >= 4 and train_result[3] is not None:
+                train_loss_char[epoch] = train_result[3]
 
             gpu_info = ""
             if accel_config.use_acceleration and device == 'cuda' and torch.cuda.is_available():
@@ -993,9 +1014,16 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 prev_epoch_feedback_table = new_epoch_feedback_table
 
             with torch.no_grad():
-                val_acc_char[epoch], val_metric_pos[epoch] = evaluate(
+                val_res = evaluate(
                     mdl, val_dl, use_tqdm, use_feedback=use_feedback_this_epoch
                 )
+                val_acc_char[epoch], val_metric_pos[epoch] = val_res[0], val_res[1]
+                # SingleCharMetricsMode: (acc_char, metric_pos, loss_pos, loss_char)
+                # AllCharsMetricsMode: (acc_char, metric_pos)
+                if len(val_res) >= 3 and val_res[2] is not None and val_loss_pos is not None:
+                    val_loss_pos[epoch] = val_res[2]
+                if len(val_res) >= 4 and val_res[3] is not None:
+                    val_loss_char[epoch] = val_res[3]
             val_str = metrics_mode.format_val_str(val_acc_char[epoch], val_metric_pos[epoch])
             print(train_str + val_str, flush=True)
   
@@ -1031,7 +1059,9 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         "actual_epochs": actual_epochs,
     }
     return metrics_mode.add_pos_to_result_dict(
-        base, train_metric_pos, val_metric_pos, actual_epochs
+        base, train_metric_pos, val_metric_pos, actual_epochs,
+        train_loss_pos=train_loss_pos, val_loss_pos=val_loss_pos,
+        train_loss_char=train_loss_char, val_loss_char=val_loss_char,
     )
 
 
@@ -1057,7 +1087,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--num_epochs",
         type=int,
-        default=100,
+        default=50,
         help="Number of training epochs (default: 100)",
     )
     parser.add_argument(
@@ -1158,10 +1188,7 @@ if __name__ == "__main__":
     set_seed(args.seed)
     print(f"Random seed set to: {args.seed}")
 
-    if torch.cuda.is_available():
-        device = "cuda:0"   # 可见设备中的 0（由 CUDA_VISIBLE_DEVICES 决定映射到物理哪张卡）
-    else:
-        device = "cpu"
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"   # 可见设备中的 0（由 CUDA_VISIBLE_DEVICES 决定映射到物理哪张卡）
 
     disable_tqdm_env = os.environ.get('DISABLE_TQDM', '').lower() in ['1', 'true', 'yes']
     enable_tqdm_env  = os.environ.get('ENABLE_TQDM', '').lower() in ['1', 'true', 'yes']
@@ -1218,6 +1245,10 @@ if __name__ == "__main__":
         os.makedirs(results_dir, exist_ok=True)
         print(f"Created results directory: {results_dir}")
 
+    # Logger: console + optional file under results_dir
+    log_file = os.path.join(results_dir, "train.log")
+    logger = setup_logger("train", log_file=log_file)
+
     # Build hyperparameter combinations: (model_type, hidden_size, lr, weight_decay, dropout_rate)
     experiment_configs = list(
         product(model_types, hidden_sizes, lrs, weight_decays, dropout_rates)
@@ -1227,22 +1258,32 @@ if __name__ == "__main__":
     total_experiments = len(experiment_configs)
     experiment_num = 0
 
-    print(f"\n{'=' * 60}")
-    print(f"Starting training loop: {total_experiments} experiments")
-    print(f"Models: {model_types}, Hidden sizes: {hidden_sizes}")
-    print(f"Learning rates: {lrs}, Weight decays: {weight_decays}, Dropout rates: {dropout_rates}")
-    print(f"CNN feature sizes: {cnn_feature_sizes}")
-    print(f"{'=' * 60}\n")
+    log_experiment_config(
+        logger,
+        total_experiments,
+        model_types,
+        hidden_sizes,
+        lrs,
+        weight_decays,
+        dropout_rates,
+        cnn_feature_sizes,
+    )
 
     for model_type, hidden_size, lr, weight_decay, dropout_rate in experiment_configs:
         experiment_num += 1
-        print(f"\n{'=' * 60}")
-        print(
-            f"Experiment {experiment_num}/{total_experiments}: "
-            f"{model_type.upper()} | hidden_size={hidden_size} | "
-            f"lr={lr} | weight_decay={weight_decay} | dropout={dropout_rate}"
+        log_experiment_start(
+            logger,
+            experiment_num,
+            total_experiments,
+            model_type,
+            hidden_size,
+            lr,
+            weight_decay,
+            dropout_rate,
         )
-        print(f"{'=' * 60}\n")
+
+        if predict_all_chars:
+            num_pos = 0
 
         # Create model
         if model_type not in model_classes:
@@ -1250,8 +1291,6 @@ if __name__ == "__main__":
             continue
 
         ModelClass = model_classes[model_type]
-
-        num_pos = 0 if predict_all_chars else num_pos
         mdl = ModelClass(
                 num_classes=10,
                 num_pos=num_pos,
@@ -1263,21 +1302,20 @@ if __name__ == "__main__":
                 cnn_feature_size=args.cnn_feature_size,
             )
 
-        print(
-            f"Created {model_type.upper()} model "
-            f"(predict_all_chars=True, max_chars={max_chars}, "
-            f"dropout_rate={dropout_rate}, hidden_size={hidden_size}, cnn_feature_size={args.cnn_feature_size})"
+        logger.info(
+            "Created %s model (predict_all_chars=True, max_chars=%s, dropout_rate=%s, hidden_size=%s, cnn_feature_size=%s)",
+            model_type.upper(), max_chars, dropout_rate, hidden_size, args.cnn_feature_size,
         )
        
         # [COMPILE] compile model for speed (PyTorch 2.x)
         try:
             mdl = torch.compile(mdl)  # 可选：torch.compile(mdl, mode="max-autotune")
         except Exception as e:
-            print(f"[COMPILE] torch.compile failed, fallback to eager: {e}")
+            logger.warning("[COMPILE] torch.compile failed, fallback to eager: %s", e)
 
         # Train model
-        print("Starting training...")
-        print("Acceleration training enabled") if use_acceleration else print("Using standard training method")
+        logger.info("Starting training...")
+        logger.info("Acceleration training enabled" if use_acceleration else "Using standard training method")
         
 
         results = network_train(
@@ -1295,6 +1333,8 @@ if __name__ == "__main__":
             nofb=args.nofb,
             fb_start_epoch=args.fb_start_epoch,
             seed=args.seed,
+            logger=logger,
+            cnn_feature_size=args.cnn_feature_size,
         )
 
         # Save training results
@@ -1317,9 +1357,9 @@ if __name__ == "__main__":
         )
 
         save_results(results, results_path)
-        print(f"Experiment {experiment_num}/{total_experiments} completed!\n")
+        logger.info("Experiment %s/%s completed!", experiment_num, total_experiments)
 
-    print(f"\n{'=' * 60}")
-    print(f"All {total_experiments} experiments completed! Results saved to: {results_dir}/")
-    print(f"{'=' * 60}\n")
+    logger.info("=" * 60)
+    logger.info("All %s experiments completed! Results saved to: %s/", total_experiments, results_dir)
+    logger.info("=" * 60)
 

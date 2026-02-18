@@ -102,8 +102,10 @@ def visualize_training_curves(pkl_path, output_path, hparams=None):
     if max_val_char is not None:
         print(f"Val char acc max: {max_val_char:.2f}%")
     
-    # 创建图形
-    fig = plt.figure(figsize=(12, 5))
+    # 创建图形：sector 模式为 2 行（acc 一行 + loss 一行），其余为 1 行 2 列
+    nrows = 2 if is_sector else 1
+    ncols = 2
+    fig = plt.figure(figsize=(12, 5 * nrows))
     
     # 添加总标题显示超参数信息
     if hparams is not None:
@@ -121,8 +123,8 @@ def visualize_training_curves(pkl_path, output_path, hparams=None):
         if title_parts:
             plt.suptitle(' | '.join(title_parts), fontsize=14, fontweight='bold')
     
-    # 左图：字符识别准确率
-    plt.subplot(1, 2, 1)
+    # 第一行左：字符识别准确率
+    plt.subplot(nrows, ncols, 1)
     plt.plot(results["train_acc_char"][:actual_epochs], label="train char acc", linewidth=2)
     plt.plot(results["val_acc_char"][:actual_epochs], label="val char acc", linewidth=2)
     plt.xlabel("Epoch", fontsize=12)
@@ -132,14 +134,14 @@ def visualize_training_curves(pkl_path, output_path, hparams=None):
     plt.legend(fontsize=10)
     plt.grid(alpha=0.3)
     
-    # 右图：位置相关指标
-    plt.subplot(1, 2, 2)
+    # 第一行右：位置相关指标（acc 或 MSE）
+    plt.subplot(nrows, ncols, 2)
     if is_allchars:
         # all-chars 模式：不绘制位置曲线
         plt.axis("off")
         plt.title("No position metrics (all-chars mode)", fontsize=13)
     elif is_sector:
-        # sector 模式：显示准确率
+        # sector 模式：第一行右 = sector 准确率
         if "train_acc_pos" in results and "val_acc_pos" in results:
             plt.plot(results["train_acc_pos"][:actual_epochs], label="train sector acc", linewidth=2)
             plt.plot(results["val_acc_pos"][:actual_epochs], label="val sector acc", linewidth=2)
@@ -174,6 +176,36 @@ def visualize_training_curves(pkl_path, output_path, hparams=None):
                 print(f"Train pos MSE min: {np.nanmin(train_err):.2f} pixel^2")
             if val_err.size > 0:
                 print(f"Val pos MSE min: {np.nanmin(val_err):.2f} pixel^2")
+    
+    # sector 模式：第二行 = char loss（若未保存则占位）+ pos loss
+    if is_sector:
+        # 第二行左：Character loss（当前结果中未保存则显示占位）
+        plt.subplot(nrows, ncols, 3)
+        if "train_loss_char" in results and "val_loss_char" in results:
+            plt.plot(results["train_loss_char"][:actual_epochs], label="train char loss", linewidth=2)
+            plt.plot(results["val_loss_char"][:actual_epochs], label="val char loss", linewidth=2)
+            plt.xlabel("Epoch", fontsize=12)
+            plt.ylabel("Loss", fontsize=12)
+            plt.title("Character loss", fontsize=13)
+            plt.legend(fontsize=10)
+            plt.grid(alpha=0.3)
+        else:
+            plt.axis("off")
+            plt.title("Character loss (not saved)", fontsize=13)
+        
+        # 第二行右：Sector position CE loss
+        plt.subplot(nrows, ncols, 4)
+        if "train_loss_pos" in results and "val_loss_pos" in results:
+            plt.plot(results["train_loss_pos"][:actual_epochs], label="train sector loss", linewidth=2)
+            plt.plot(results["val_loss_pos"][:actual_epochs], label="val sector loss", linewidth=2)
+            plt.xlabel("Epoch", fontsize=12)
+            plt.ylabel("Loss (CE)", fontsize=12)
+            plt.title("Sector position loss", fontsize=13)
+            plt.legend(fontsize=10)
+            plt.grid(alpha=0.3)
+        else:
+            plt.axis("off")
+            plt.title("Sector position loss (not in this run)", fontsize=13)
     
     plt.tight_layout()
     

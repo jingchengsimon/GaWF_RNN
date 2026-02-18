@@ -208,6 +208,8 @@ class AllCharsMetricsMode:
     def postfix_for_pbar(self, current_loss, out_char, out_pos, labels):
         return {"loss": f"{current_loss:.4f}"}
 
-    def add_pos_to_result_dict(self, base, train_metric_pos, val_metric_pos, actual_epochs):
-        """All-chars has no pos keys; return base unchanged."""
+    def add_pos_to_result_dict(self, base, train_metric_pos, val_metric_pos, actual_epochs,
+                                train_loss_pos=None, val_loss_pos=None,
+                                train_loss_char=None, val_loss_char=None):
+        """All-chars has no pos/char-loss keys; return base unchanged."""
         return base

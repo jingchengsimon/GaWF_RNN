@@ -1,8 +1,9 @@
 """
 Helper functions for training script.
 Contains utility functions for data loading, path management, result saving,
-random seed setting, GPU memory management, and model class mapping.
+random seed setting, GPU memory management, model class mapping, and logging.
 """
+import logging
 import os
 import pickle
 import random
@@ -10,6 +11,163 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
+
+# -----------------------------------------------------------------------------
+# Logging: setup_logger, log_experiment_config, log_write (tqdm-safe)
+# -----------------------------------------------------------------------------
+
+BANNER_LEN = 60
+
+
+class _TqdmStreamHandler(logging.StreamHandler):
+    """Console handler that uses tqdm.write when available to avoid breaking progress bars."""
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            try:
+                from tqdm import tqdm
+                tqdm.write(msg)
+            except Exception:
+                self.stream.write(msg + self.terminator)
+                self.flush()
+        except Exception:
+            self.handleError(record)
+
+
+def setup_logger(name="train", level=logging.INFO, log_file=None):
+    """
+    Lightweight logger setup using stdlib logging. Idempotent: repeated calls
+    for the same name do not add duplicate handlers.
+
+    Args:
+        name: Logger name (e.g. "train").
+        level: Log level (default INFO).
+        log_file: If set, also append logs to this file.
+
+    Returns:
+        logging.Logger configured with console (and optional file) output.
+    """
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    # Avoid duplicate handlers: if already configured, return as-is
+    if logger.handlers:
+        return logger
+    fmt = "%(asctime)s | %(levelname)s | %(message)s"
+    datefmt = "%Y-%m-%d %H:%M:%S"
+    formatter = logging.Formatter(fmt, datefmt=datefmt)
+    console = _TqdmStreamHandler()
+    console.setFormatter(formatter)
+    logger.addHandler(console)
+    if log_file:
+        try:
+            fh = logging.FileHandler(log_file, mode="a", encoding="utf-8")
+            fh.setFormatter(formatter)
+            logger.addHandler(fh)
+        except OSError:
+            pass
+    return logger
+
+
+def log_experiment_config(
+    logger,
+    total_experiments,
+    model_types,
+    hidden_sizes,
+    lrs,
+    weight_decays,
+    dropout_rates,
+    cnn_feature_sizes,
+):
+    """
+    Log training loop banner and config summary (same content as original print block).
+    Banner line length is 60. Uses logger.info only (no print).
+    """
+    sep = "=" * BANNER_LEN
+    logger.info(sep)
+    logger.info("Starting training loop: %s experiments", total_experiments)
+    logger.info(
+        "Models: %s | Hidden sizes: %s",
+        model_types,
+        hidden_sizes,
+    )
+    logger.info(
+        "Learning rates: %s | Weight decays: %s | Dropout rates: %s",
+        lrs,
+        weight_decays,
+        dropout_rates,
+    )
+    logger.info("CNN feature sizes: %s", cnn_feature_sizes)
+    logger.info(sep)
+
+
+def log_experiment_start(
+    logger,
+    experiment_num,
+    total_experiments,
+    model_type,
+    hidden_size,
+    lr,
+    weight_decay,
+    dropout_rate,
+):
+    """Log per-experiment banner (one block)."""
+    sep = "=" * BANNER_LEN
+    logger.info(
+        "Experiment %s/%s: %s | hidden_size=%s | lr=%s | weight_decay=%s | dropout=%s",
+        experiment_num,
+        total_experiments,
+        model_type.upper(),
+        hidden_size,
+        lr,
+        weight_decay,
+        dropout_rate,
+    )
+    logger.info(sep)
+
+
+def log_write(logger, msg, level=logging.INFO):
+    """
+    Log message in a tqdm-safe way. When the console handler is TqdmStreamHandler,
+    logger already writes via tqdm.write; use this for explicit log calls from
+    inside tqdm loops. Safe when tqdm is not used (handler falls back to stream.write).
+    """
+    logger.log(level, msg)
+
+
+def log_dataset_and_batch_info(
+    logger,
+    train_data,
+    val_data,
+    batch_size,
+    accel_config,
+    train_dl,
+    num_workers,
+    pin_memory,
+    use_sector,
+    predict_all_chars,
+):
+    """
+    Log dataset and batch information (content lives here so main training code stays minimal).
+    """
+    logger.info("Dataset Information:")
+    logger.info("  Training dataset size: %s samples", len(train_data))
+    logger.info("  Validation dataset size: %s samples", len(val_data))
+    logger.info("  Batch size per step: %s", batch_size)
+    logger.info(
+        "  Effective batch size (with grad accum): %s",
+        batch_size * accel_config.grad_accum_steps,
+    )
+    logger.info("  Number of batches per epoch: %s", len(train_dl))
+    logger.info("  use_sector: %s, predict_all_chars: %s", use_sector, predict_all_chars)
+    logger.info(
+        "  acceleration: %s, workers: %s, pin_memory: %s",
+        accel_config.use_acceleration,
+        num_workers,
+        pin_memory and num_workers > 0,
+    )
+    if num_workers > 0:
+        logger.info("  DataLoader prefetch_factor: %s", accel_config.dataloader_prefetch_factor)
 
 
 def save_results(results, filepath):

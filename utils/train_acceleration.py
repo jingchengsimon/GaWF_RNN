@@ -6,7 +6,6 @@ from contextlib import nullcontext
 from functools import partial
 import torch
 from torch.utils.data import DataLoader
-
 from .train_helpers import worker_init_fn
 
 
@@ -83,11 +82,12 @@ def init_acceleration_modules():
         return None, None, None
 
 
-def setup_acceleration(accel_config, mdl, train_data, device, is_gawf=False, use_mmap=False):
+def setup_acceleration(accel_config, mdl, train_data, device, is_gawf=False, use_mmap=False, cnn_feature_size="large"):
     """
     Setup acceleration artifacts from config. No if-else on use_acceleration inside training loop.
-    is_gawf: if True, skip batch size search and use batch_size=32, num_workers=2 (caller sets this to avoid circular import).
+    is_gawf: if True, skip batch size search (caller sets this to avoid circular import).
     use_mmap: if True, use mmap mode to load data.
+    cnn_feature_size: "large" or "small"; for GaWFRNN, large -> batch_size=32, small -> batch_size=256.
     Returns: (autocast_fn, scaler, batch_size, num_workers, pin_memory).
     """
     if not accel_config.use_acceleration:
@@ -100,8 +100,9 @@ def setup_acceleration(accel_config, mdl, train_data, device, is_gawf=False, use
 
     print("Enabling acceleration training...")
     if is_gawf:
-        batch_size, num_workers = 256, 0
-        print(f"GaWFRNNConv: using batch_size={batch_size}, num_workers={num_workers}")
+        batch_size = 32 if cnn_feature_size == "large" else 256
+        num_workers = 0
+        print(f"GaWFRNNConv: using batch_size={batch_size}, num_workers={num_workers} (cnn_feature_size={cnn_feature_size})")
     else:      
         batch_size, num_workers = 128, 2
         # batch_size, num_workers = find_optimal_batch_size(
@@ -151,8 +152,8 @@ def build_loaders(train_data, val_data, batch_size, num_workers, pin_memory, acc
         train_kw["prefetch_factor"] = accel_config.dataloader_prefetch_factor
         val_kw["prefetch_factor"] = accel_config.dataloader_prefetch_factor
 
-    train_dl = DataLoader(**train_kw)
-    val_dl = DataLoader(**val_kw)
+    train_dl, val_dl = DataLoader(**train_kw), DataLoader(**val_kw)
+    
     return train_dl, val_dl
 
 
