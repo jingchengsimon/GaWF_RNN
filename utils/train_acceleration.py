@@ -2,9 +2,11 @@
 Acceleration-related utilities for training.
 Contains AccelerationConfig, setup_acceleration, build_loaders, run_forward_with_feedback, TrainStepper.
 """
+
+import os
+import torch
 from contextlib import nullcontext
 from functools import partial
-import torch
 from torch.utils.data import DataLoader
 from .train_helpers import worker_init_fn
 
@@ -82,7 +84,7 @@ def init_acceleration_modules():
         return None, None, None
 
 
-def setup_acceleration(accel_config, mdl, train_data, device, is_gawf=False, use_mmap=False, cnn_feature_size="large"):
+def setup_acceleration(accel_config, device, is_gawf=False, use_mmap=False, cnn_feature_size="large"):
     """
     Setup acceleration artifacts from config. No if-else on use_acceleration inside training loop.
     is_gawf: if True, skip batch size search (caller sets this to avoid circular import).
@@ -101,24 +103,16 @@ def setup_acceleration(accel_config, mdl, train_data, device, is_gawf=False, use
     print("Enabling acceleration training...")
     if is_gawf:
         batch_size = 32 if cnn_feature_size == "large" else 256
-        num_workers = 0
-        print(f"GaWFRNNConv: using batch_size={batch_size}, num_workers={num_workers} (cnn_feature_size={cnn_feature_size})")
     else:      
-        batch_size, num_workers = 128, 2
-        # batch_size, num_workers = find_optimal_batch_size(
-        #     mdl, train_data, device=device, start_batch_size=32,
-        #     enable_grad_accum=accel_config.enable_grad_accum,
-        #     grad_accum_steps=accel_config.grad_accum_steps,
-        # )
-        print(f"Using batch_size={batch_size}, suggested num_workers={num_workers}")
+        batch_size = 128
 
-    if use_mmap:
-        num_workers = 0
-    pin_memory = False
+    num_workers = min(4, os.cpu_count() or 1) if not use_mmap else 0
+    pin_memory = True if num_workers > 0 else False
     scaler = GradScaler_cls("cuda") if device == "cuda" and accel_config.enable_gradient_scale else None
     autocast_fn = (lambda d: autocast_cls(device_type=d)) if accel_config.enable_amp else (lambda _: nullcontext())
     if device == "cuda" and scaler is not None:
         print(f"Acceleration: batch_size={batch_size}, num_workers={num_workers}, pin_memory={pin_memory}, AMP=enabled")
+
     return autocast_fn, scaler, batch_size, num_workers, pin_memory
 
 
@@ -157,20 +151,17 @@ def build_loaders(train_data, val_data, batch_size, num_workers, pin_memory, acc
     return train_dl, val_dl
 
 
-def run_forward_with_feedback(mdl, inputs, device, use_feedback=None, feedback_table=None, sample_idx=None):
+def run_forward_with_feedback(mdl, inputs, use_feedback=None):
     """
-    Single forward path for both training and evaluation. Sets prev_feedback from table when needed.
+    Single forward path for both training and evaluation.
+    Stateless: always start with prev_feedback=None and reset_feedback=True so feedback
+    is updated only within the same batch's timestep loop. No cross-batch/epoch table.
     Returns: (out_char, out_pos).
     """
     if hasattr(mdl, "prev_feedback"):
-        if (use_feedback is True) and (feedback_table is not None) and (sample_idx is not None):
-            fb = feedback_table[sample_idx].to(device=device, dtype=torch.float32)
-            mdl.prev_feedback = fb
-        else:
-            mdl.prev_feedback = None
-
+        mdl.prev_feedback = None
     if use_feedback is not None:
-        out_char, out_pos = mdl(inputs, use_feedback=use_feedback, reset_feedback=False)
+        out_char, out_pos = mdl(inputs, use_feedback=use_feedback, reset_feedback=True)
     else:
         out_char, out_pos = mdl(inputs)
     return out_char, out_pos
@@ -192,45 +183,37 @@ class TrainStepper:
         self.autocast_fn = autocast_fn
         self.pin_memory = pin_memory
 
-    def step(self, batch, batch_idx, use_feedback_this_epoch, prev_epoch_feedback_table):
+    def step(self, batch, batch_idx, use_feedback_this_epoch):
         """
         Run one batch: move to device, forward, loss, backward, step at accum boundary.
-        Returns: (current_loss, out_char, out_pos, feedback_update) where feedback_update is
-        (sample_idx, fb_last) to be applied by caller to new_epoch_feedback_table, or None.
+        Returns: (current_loss, out_char, out_pos, labels_device). labels_device is labels
+        already on device to avoid duplicate .to(device) in the training loop.
         """
-        if isinstance(batch, (list, tuple)) and len(batch) == 3:
-            inputs, labels, sample_idx = batch
+        if isinstance(batch, (list, tuple)) and len(batch) >= 2:
+            inputs, labels = batch[0], batch[1]
         else:
-            inputs, labels = batch
-            sample_idx = None
+            inputs, labels = batch, None
 
         if self.pin_memory:
             inputs = inputs.to(self.device, non_blocking=True)
-            labels = labels.to(self.device, non_blocking=True)
+            labels = labels.to(self.device, non_blocking=True) if labels is not None else None
         else:
             inputs = inputs.to(self.device)
-            labels = labels.to(self.device)
+            labels = labels.to(self.device) if labels is not None else None
+
+        labels_device = labels
 
         accum_steps = self.accel_config.grad_accum_steps
         if batch_idx % accum_steps == 0:
             self.optim.zero_grad()
         loss_scale = 1.0 / accum_steps
 
-        feedback_update = None
         with self.autocast_fn("cuda"):
             out_char, out_pos = run_forward_with_feedback(
-                self.mdl, inputs, self.device,
+                self.mdl, inputs,
                 use_feedback=use_feedback_this_epoch,
-                feedback_table=prev_epoch_feedback_table,
-                sample_idx=sample_idx,
             )
-
-            if (use_feedback_this_epoch is True) and (sample_idx is not None):
-                fb_full = out_char.detach() if out_pos is None else torch.cat([out_char, out_pos], dim=-1).detach()
-                fb_last = fb_full[:, -1, :] if fb_full.dim() == 3 else fb_full
-                feedback_update = (sample_idx, fb_last.to("cpu", dtype=torch.float32))
-
-            loss = self.loss_fn(out_char, out_pos, labels) * loss_scale
+            loss = self.loss_fn(out_char, out_pos, labels_device) * loss_scale
 
         if self.scaler is not None:
             self.scaler.scale(loss).backward()
@@ -243,7 +226,7 @@ class TrainStepper:
                 if found_nonfinite:
                     self.optim.zero_grad(set_to_none=True)
                     self.scaler.update()
-                    return loss.detach().item(), out_char.detach(), out_pos.detach() if out_pos is not None else None, feedback_update
+                    return loss.detach().item(), out_char.detach(), out_pos.detach() if out_pos is not None else None, labels_device
                 torch.nn.utils.clip_grad_value_(self.mdl.parameters(), clip_value=1.0)
                 torch.nn.utils.clip_grad_norm_(self.mdl.parameters(), max_norm=1.0)
                 self.scaler.step(self.optim)
@@ -256,8 +239,8 @@ class TrainStepper:
                 grad_norm = torch.nn.utils.clip_grad_norm_(self.mdl.parameters(), max_norm=1.0)
                 if not torch.isfinite(grad_norm):
                     self.optim.zero_grad(set_to_none=True)
-                    return loss.detach().item(), out_char.detach(), out_pos.detach() if out_pos is not None else None, feedback_update
+                    return loss.detach().item(), out_char.detach(), out_pos.detach() if out_pos is not None else None, labels_device
                 self.optim.step()
                 self.optim.zero_grad(set_to_none=True)
 
-        return loss.detach().item(), out_char.detach(), out_pos.detach() if out_pos is not None else None, feedback_update
+        return loss.detach().item(), out_char.detach(), out_pos.detach() if out_pos is not None else None, labels_device

@@ -110,11 +110,20 @@ class MC_RNN_Dataset(Dataset):
         self.predict_all_chars = predict_all_chars
         
         if predict_all_chars:
-            # Store full DataFrame to access bg_char_ids
             self.labels_df = labels
-            # Extract columns we need
             self.fg_char_ids = labels['fg_char_id'].values
-            self.bg_char_ids_str = labels['bg_char_ids'].values
+            # Pre-parse bg_char_ids once in __init__ to avoid repeated split/int in __getitem__
+            raw_bg = labels['bg_char_ids'].values
+            self.bg_char_ids_parsed = []
+            for i in range(len(raw_bg)):
+                s = str(raw_bg[i]) if raw_bg[i] is not None else ""
+                if s and s != "nan" and s.strip():
+                    try:
+                        self.bg_char_ids_parsed.append([int(x) for x in s.split(",") if x.strip()])
+                    except (ValueError, TypeError):
+                        self.bg_char_ids_parsed.append([])
+                else:
+                    self.bg_char_ids_parsed.append([])
         else:
             # Original behavior: only fg char
             self.labels = labels[['fg_char_id', 'fg_char_x', 'fg_char_y']].values
@@ -126,32 +135,28 @@ class MC_RNN_Dataset(Dataset):
         start_idx = (idx * self.frame_num) + self.chan_num
         end_idx = start_idx + self.frame_num
 
-        # Stack frames to create a multichannel image
-        for i in range(-(self.chan_num - 1), 1):
-            if i == -(self.chan_num - 1):
-                stacked_frames = np.expand_dims(self.data[(start_idx + i):(end_idx + i)], axis=1)
-            else:
-                stacked_frames = np.concatenate(
-                    (stacked_frames, np.expand_dims(self.data[(start_idx + i):(end_idx + i)], axis=1)),
-                    axis=1
-                )
-        stacked_frames = stacked_frames.astype(np.float32)
+        # # Stack frames to create a multichannel image
+        # for i in range(-(self.chan_num - 1), 1):
+        #     if i == -(self.chan_num - 1):
+        #         stacked_frames = np.expand_dims(self.data[(start_idx + i):(end_idx + i)], axis=1)
+        #     else:
+        #         stacked_frames = np.concatenate(
+        #             (stacked_frames, np.expand_dims(self.data[(start_idx + i):(end_idx + i)], axis=1)),
+        #             axis=1
+        #         )
+        # stacked_frames = stacked_frames.astype(np.float32)
+
+        frames = [self.data[start_idx+i:end_idx+i] for i in range(-(self.chan_num-1), 1)]
+        stacked_frames = np.stack(frames, axis=1).astype(np.float32, copy=False)
 
         if self.predict_all_chars:
             all_chars_per_frame = []
             for frame_idx in range(start_idx, end_idx):
                 fg_char_id = int(self.fg_char_ids[frame_idx])
-
-                bg_chars_str = str(self.bg_char_ids_str[frame_idx])
-                if bg_chars_str and bg_chars_str != 'nan':
-                    bg_char_ids = [int(x) for x in bg_chars_str.split(',') if x.strip()]
-                else:
-                    bg_char_ids = []
-
+                bg_char_ids = self.bg_char_ids_parsed[frame_idx] if frame_idx < len(self.bg_char_ids_parsed) else []
                 all_chars = [fg_char_id] + bg_char_ids
                 padded_chars = all_chars[:self.max_chars] + [-1] * max(0, self.max_chars - len(all_chars))
                 all_chars_per_frame.append(padded_chars)
-
             labels = np.array(all_chars_per_frame, dtype=np.int64)
         else:
             labels = self.labels[start_idx:end_idx].copy()
@@ -178,8 +183,7 @@ class MC_RNN_Dataset(Dataset):
                 sector = row * grid_size + col
                 labels = np.stack([labels[:, 0].astype(np.int64), sector], axis=1)
 
-        # 关键：返回 idx，供 feedback table 使用
-        return stacked_frames, labels, idx
+        return stacked_frames, labels
 
 # ==================== Model Classes ====================
 # Note: self.training is provided by nn.Module. It is True when model.train() is called
@@ -346,156 +350,37 @@ class GaWFRNNConv(BaseConvSequenceModel):
         for p in (self.U, self.V):
             p.requires_grad = not freeze
 
-    # encoder and classifier inherited from BaseConvSequenceModel (same implementation)
-
-    def middle(self, x, feedback=None):
+    def middle_gawf(self, x_t, h_prev, fb_t):
         """
-        GaWF RNN middle layer with feedback mechanism
-        
-        According to the diagram (Panel A):
-        1. Concatenate Input and Feedback
-        2. Matrix multiplication with weight matrix (standard RNN computation)
-        3. Feedback transformed by U @ diag(concat) @ V, then sigmoid (gating signal)
-        4. Hadamard product of the two results (element-wise multiplication)
-        5. LayerNorm
-        6. ReLU
-        
-        Args:
-            x: Input sequence (B, T, input_size)
-            feedback: Feedback from classifier (B, T, feedback_dim) or None
+        One timestep of the gated RNN with feedback. Used for autoregressive feedback in forward().
+        x_t: (B, input_size), h_prev: (B, hidden_size), fb_t: (B, fb_dim, 1).
+        Returns: gated_output (B, hidden_size), before dropout.
         """
-        batch_size, seq_len, input_size = x.size()
+        input_size = x_t.size(-1)
         hidden_size = self.rnn.hidden_size
-        
-        if feedback is not None:
-
-            if feedback.dim() == 2:
-                # feedback from table is (B, fb_dim); broadcast to all timesteps
-                feedback = feedback.unsqueeze(1).expand(-1, seq_len, -1)
-
-            # Get RNN weights
-            weight_ih = self.rnn.weight_ih_l0  # (hidden_size, input_size)
-            weight_hh = self.rnn.weight_hh_l0  # (hidden_size, hidden_size)
-            bias_ih = self.rnn.bias_ih_l0 if self.rnn.bias_ih_l0 is not None else None
-            bias_hh = self.rnn.bias_hh_l0 if self.rnn.bias_hh_l0 is not None else None
-            
-            # Process each time step
-            # outputs = []
-            outputs = torch.empty(batch_size, seq_len, hidden_size, device=x.device, dtype=x.dtype)
-            h = torch.zeros(batch_size, hidden_size, device=x.device)  # (B, hidden_size)
-            
-            # # Concatenate RNN input weight matrix and recurrent weight matrix (compute once)
-            # combined_weight = torch.cat([weight_ih, weight_hh], dim=1)  # (hidden_size, input_size + hidden_size)
-            
-            for t in range(seq_len):
-                # Current time step input and feedback
-                x_t = x[:, t, :]  # (B, input_size)
-                fb_t_clamped = feedback[:, t, :].clamp(-10, 10)  # (B, feedback_dim)
-                
-                # Feedback transformation: U @ diag(fb_t_clamped) @ V, then sigmoid
-                # fb_t_clamped: (B, feedback_dim)
-                # For each sample b, compute U @ diag(fb_t_clamped[b]) @ V
-                # Equivalent to: U @ (fb_t_clamped[b] * I) @ V, where I is identity matrix
-                # Can be written as: U @ (fb_t_clamped[b].unsqueeze(1) * V)
-                
-                # gated_weights, h_t_list = [], []
-                # for b in range(batch_size):
-                #     transformed = self.U @ (fb_t_clamped[b].unsqueeze(1) * self.V)
-
-                #     tau = 2.0
-                #     transformed = torch.sigmoid(transformed / tau)  # (hidden_size, combined_weight_size)
-                    
-                #     # Hadamard product: transformed * combined_weight
-                #     gated_weight = transformed * combined_weight  # (hidden_size, combined_weight_size)
-                #     gated_weights.append(gated_weight)
-                
-                # # Stack gated weights: (B, hidden_size, combined_weight_size)
-                # gated_weights = torch.stack(gated_weights, dim=0)  # (B, hidden_size, combined_weight_size)
-                
-                # # Separate back into weight_ih and weight_hh parts
-                # gated_weight_ih = gated_weights[:, :, :input_size]  # (B, hidden_size, input_size)
-                # gated_weight_hh = gated_weights[:, :, input_size:]  # (B, hidden_size, hidden_size)
-                
-                # # Compute RNN output using gated weights
-                # # Compute for each sample separately  
-                # for b in range(batch_size):
-                #     # Input to hidden: (1, hidden_size)
-                #     ih = F.linear(x_t[b:b+1], gated_weight_ih[b], bias_ih)  # (1, hidden_size)
-                #     # Hidden to hidden: (1, hidden_size)
-                #     hh = F.linear(h[b:b+1], gated_weight_hh[b], bias_hh)  # (1, hidden_size)
-                #     # Combine and apply activation
-                #     h_t = torch.tanh(ih + hh)  # (1, hidden_size)
-                #     h_t_list.append(h_t)
-                
-                # # Stack: (B, hidden_size)
-                # h_t = torch.cat(h_t_list, dim=0)  # (B, hidden_size)
-
-                # ===== [GAWF_BMM] batched gate + batched RNN update (no b-loop) =====
-
-                # Ensure float32 for stability if you want (optional but recommended with AMP):
-                # fb_t_clamped = fb_t_clamped.to(torch.float32)
-
-                # Split V into input-part and hidden-part to avoid building full (B, hidden, combined) explicitly
-                V_ih = self.V[:, :input_size]        # (feedback_dim, input_size)
-                V_hh = self.V[:, input_size:]        # (feedback_dim, hidden_size)
-
-                # Prepare scaled V per sample: (B, feedback_dim, K) where K is input_size or hidden_size
-                # diag(fb) @ V == fb[:,None] * V  (row-wise scale of V)
-                tmp_ih = fb_t_clamped.unsqueeze(2) * V_ih.unsqueeze(0)   # (B, feedback_dim, input_size)
-                tmp_hh = fb_t_clamped.unsqueeze(2) * V_hh.unsqueeze(0)   # (B, feedback_dim, hidden_size)
-
-                # U @ tmp => (B, hidden_size, K)
-                # U: (hidden_size, feedback_dim)
-                trans_ih = torch.matmul(self.U, tmp_ih)  # (B, hidden_size, input_size)
-                trans_hh = torch.matmul(self.U, tmp_hh)  # (B, hidden_size, hidden_size)
-
-                tau = 2.0
-                gate_ih = torch.sigmoid(trans_ih / tau)  # (B, hidden_size, input_size)
-                gate_hh = torch.sigmoid(trans_hh / tau)  # (B, hidden_size, hidden_size)
-
-                # Apply gate to base weights (broadcast base weights to batch)
-                # weight_ih: (hidden_size, input_size) -> (B, hidden_size, input_size)
-                # weight_hh: (hidden_size, hidden_size) -> (B, hidden_size, hidden_size)
-                gated_weight_ih = gate_ih * weight_ih.unsqueeze(0)  # (B, hidden_size, input_size)
-                gated_weight_hh = gate_hh * weight_hh.unsqueeze(0)  # (B, hidden_size, hidden_size)
-
-                # Batched linear:
-                # ih[b] = x_t[b] @ gated_weight_ih[b]^T + bias_ih
-                # Use bmm: (B, 1, input) x (B, input, hidden) -> (B, 1, hidden)
-                ih = torch.bmm(x_t.unsqueeze(1), gated_weight_ih.transpose(1, 2)).squeeze(1)  # (B, hidden_size)
-                hh = torch.bmm(h.unsqueeze(1), gated_weight_hh.transpose(1, 2)).squeeze(1)    # (B, hidden_size)
-
-                if bias_ih is not None:
-                    ih = ih + bias_ih.unsqueeze(0)
-                if bias_hh is not None:
-                    hh = hh + bias_hh.unsqueeze(0)
-
-                h_t = torch.tanh(ih + hh)  # (B, hidden_size)
-                # ===== [GAWF_BMM] end =====
-                
-                # LayerNorm and ReLU
-                gated_output = self.LNormRNN(h_t)  # (B, hidden_size)
-                gated_output = F.relu(gated_output)  # (B, hidden_size)
-                
-                # outputs.append(gated_output)
-                outputs[:, t, :] = gated_output
-                h = gated_output  # Update hidden state
-            
-            # Stack outputs: (B, T, hidden_size)
-            # x = torch.stack(outputs, dim=1)  # (B, T, hidden_size)
-            x = outputs
-
-        else:
-            # When no feedback, use standard RNN
-            x, _ = self.rnn(x)
-            x = self.LNormRNN(x)
-            x = F.relu(x)
-        
-        # Dropout
-        x = F.dropout(x, p=0.5, training=self.training)
-        return x
-
-    # classifier inherited from BaseConvSequenceModel (same implementation)
+        weight_ih = self.rnn.weight_ih_l0
+        weight_hh = self.rnn.weight_hh_l0
+        bias_ih = self.rnn.bias_ih_l0
+        bias_hh = self.rnn.bias_hh_l0
+        V_ih = self.V[:, :input_size].unsqueeze(0)
+        V_hh = self.V[:, input_size:].unsqueeze(0)
+        trans_ih = torch.matmul(self.U, fb_t * V_ih)
+        trans_hh = torch.matmul(self.U, fb_t * V_hh)
+        tau = 2.0
+        gate_ih = torch.sigmoid(trans_ih / tau)
+        gate_hh = torch.sigmoid(trans_hh / tau)
+        gated_weight_ih = gate_ih * weight_ih.unsqueeze(0)
+        gated_weight_hh = gate_hh * weight_hh.unsqueeze(0)
+        ih = torch.bmm(x_t.unsqueeze(1), gated_weight_ih.transpose(1, 2)).squeeze(1)
+        hh = torch.bmm(h_prev.unsqueeze(1), gated_weight_hh.transpose(1, 2)).squeeze(1)
+        if bias_ih is not None:
+            ih = ih + bias_ih.unsqueeze(0)
+        if bias_hh is not None:
+            hh = hh + bias_hh.unsqueeze(0)
+        h_t = torch.tanh(ih + hh)
+        gated_output = self.LNormRNN(h_t)
+        gated_output = F.relu(gated_output)
+        return gated_output
 
     def forward(self, x, use_feedback=True, reset_feedback=False):
         """
@@ -507,41 +392,48 @@ class GaWFRNNConv(BaseConvSequenceModel):
                             (Useful for size-change / batch-size probing / eval isolation)
         """
         x = x.to(self.device)
-
         batch_size, frame_num, channels, height, width = x.size()
-
-        # resize to process each frame individually
-        x = x.view(batch_size * frame_num, channels, height, width)
-
-        # apply CNN encoder
+        x = x.view(batch_size * frame_num, channels, height, width) # resize to process each frame individually
         x = self.encoder(x)
+        x = x.view(batch_size, frame_num, -1) # reshape back to batches of stacks of frames and flatten each image
 
-        # reshape back to batches of stacks of frames and flatten each image
-        x = x.view(batch_size, frame_num, -1)
-
-        # -------- feedback selection --------
         if use_feedback:
+            # Autoregressive feedback: fb(t+1) = output(t); no (B,T,fb_dim) tensors.
+            fb_dim = self.num_classes + self.num_pos
             if reset_feedback or self.prev_feedback is None:
-                feedback = None
+                fb = torch.zeros(batch_size, fb_dim, device=x.device, dtype=torch.float32)
             else:
-                # After FB_LAST_ONLY change, prev_feedback is (B, fb_dim) (NOT (B,T,fb_dim))
-                feedback = self.prev_feedback.to(dtype=torch.float32)
+                fb = self.prev_feedback.to(device=x.device, dtype=torch.float32)
+
+            hidden_size = self.rnn.hidden_size
+            char_out = torch.empty(batch_size, frame_num, self.num_classes, device=x.device, dtype=x.dtype)
+            pos_out = torch.empty(batch_size, frame_num, self.num_pos, device=x.device, dtype=x.dtype)
+            h = torch.zeros(batch_size, hidden_size, device=x.device, dtype=x.dtype)
+
+            for t in range(frame_num):
+                x_t = x[:, t, :]
+                fb_t = fb.clamp(-10, 10).unsqueeze(2)  # (B, fb_dim, 1)
+                gated_output = self.middle_gawf(x_t, h, fb_t)
+                gated_output = F.dropout(gated_output, p=0.5, training=self.training)
+                char_t, pos_t = self.classifier(gated_output)
+                
+                with torch.no_grad():
+                    fb = torch.cat([char_t, pos_t], dim=-1)
+                h = gated_output
+
+                char_out[:, t, :], pos_out[:, t, :] = char_t, pos_t
+
+            self.prev_feedback = fb.detach()
         else:
-            feedback = None
-            self.prev_feedback = None  # keep state consistent when feedback is off
+            self.prev_feedback = None
 
-        # apply RNN / gated update
-        x = self.middle(x, feedback=feedback)
+            x, _ = self.rnn(x)
+            x = self.LNormRNN(x)
+            x = F.relu(x)
+            x = F.dropout(x, p=0.5, training=self.training) 
 
-        # apply classification heads
-        char_out, pos_out = self.classifier(x)
 
-        # -------- store feedback: ONLY last timestep to avoid (B,T,fb_dim) blow-up --------
-        if use_feedback:
-            with torch.no_grad():
-                fb_full = torch.cat([char_out, pos_out], dim=-1)  # (B, T, fb_dim)
-                fb_last = fb_full[:, -1, :]  # (B, fb_dim)
-                self.prev_feedback = fb_last.detach()
+            char_out, pos_out = self.classifier(x)
 
         return char_out, pos_out
 
@@ -809,7 +701,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     metrics_mode = _create_metrics_mode(predict_all_chars, use_sector, max_chars, device)
 
     (autocast_fn, scaler, batch_size, num_workers, pin_memory) = setup_acceleration(
-        accel_config, mdl, train_data, device,
+        accel_config, device,
         is_gawf=isinstance(mdl, GaWFRNNConv),
         use_mmap=use_mmap,
         cnn_feature_size=cnn_feature_size,
@@ -835,16 +727,14 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     else:
         loss_fn = build_loss_fn_single(mdl, criterion_char, criterion_pos, use_sector, loss_weights, rnn_diag_lambda, device)
 
-    def evaluate(mdl, data_loader, use_tqdm=True, use_feedback=None, feedback_table=None, update_feedback_table=False):
+    def evaluate(mdl, data_loader, use_tqdm=True, use_feedback=None):
         """
         Args:
             mdl: model
             data_loader: DataLoader
-            use_feedback: None or bool (GaWFRNNConv)
-            feedback_table: torch.Tensor on CPU, shape (len(dataset), fb_dim) or None
-            update_feedback_table: whether to write new feedback_table from this pass
+            use_feedback: None or bool (GaWFRNNConv). Feedback is stateless (no table).
         Returns:
-            (acc_char, metric_pos); if update_feedback_table=True, (acc_char, metric_pos, new_table).
+            (acc_char, metric_pos) or (acc_char, metric_pos, loss_pos, loss_char) per metrics_mode.
         """
         device = mdl.device
         ds = data_loader.dataset
@@ -855,7 +745,6 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             device,
         )
         acc = eval_mode.init_eval()
-        new_table = None
 
         pbar = tqdm(enumerate(data_loader), total=len(data_loader),
                     desc="Validation", ncols=100, leave=False, disable=not use_tqdm)
@@ -863,35 +752,21 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         mdl.eval()
         with torch.no_grad():
             for batch_idx, batch in pbar:
-                if isinstance(batch, (list, tuple)) and len(batch) == 3:
-                    inputs, labels, sample_idx = batch
+                if isinstance(batch, (list, tuple)) and len(batch) >= 2:
+                    inputs, labels = batch[0], batch[1]
                 else:
-                    inputs, labels = batch
-                    sample_idx = None
+                    inputs, labels = batch, None
 
                 inputs = inputs.to(device)
-                labels = labels.to(device)
+                labels = labels.to(device) if labels is not None else None
 
                 out_char, out_pos = run_forward_with_feedback(
-                    mdl, inputs, device,
+                    mdl, inputs,
                     use_feedback=use_feedback,
-                    feedback_table=feedback_table,
-                    sample_idx=sample_idx,
                 )
-
-                if update_feedback_table and (use_feedback is True) and (sample_idx is not None):
-                    fb_full = out_char.detach() if out_pos is None else torch.cat([out_char, out_pos], dim=-1).detach()
-                    fb_last = fb_full[:, -1, :] if fb_full.dim() == 3 else fb_full
-                    if new_table is None:
-                        new_table = torch.zeros(len(ds), fb_last.shape[-1], dtype=torch.float32)
-                    new_table[sample_idx] = fb_last.to("cpu", dtype=torch.float32)
-
                 acc = eval_mode.update_eval_batch(acc, out_char, labels, out_pos)
 
         result = eval_mode.finalize_eval(acc, len(data_loader))
-
-        if update_feedback_table:
-            return result[0], result[1], new_table
         return result
 
     if logger is not None:
@@ -930,12 +805,11 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             return True  # default: always feedback
         return epoch >= fb_start_epoch
 
+    val_every = 5  # run full validation only every N epochs
     try:
-        prev_epoch_feedback_table = None  # CPU tensor: (len(train_data), fb_dim)
         for epoch in range(num_epochs):
             mdl.train()
             use_feedback_this_epoch = _use_feedback_this_epoch(epoch)
-            new_epoch_feedback_table = None  # will be lazily initialized (CPU) when first fb is produced
             if isinstance(mdl, GaWFRNNConv):
                 if nofb:
                     mdl.set_feedback_frozen(use_feedback_this_epoch is False)  # freeze when epoch < fb_start_epoch
@@ -948,7 +822,6 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             if use_tqdm:
                 print(f"Epoch {epoch + 1}/{num_epochs}: Starting training...", flush=True)
             
-            # Use tqdm for progress bar
             train_pbar = tqdm(enumerate(train_dl), total=len(train_dl), 
                              desc=f"Epoch {epoch + 1}/{num_epochs} [Train]",
                              ncols=100, leave=False, disable=not use_tqdm)
@@ -958,38 +831,19 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 if _STOP_REQUESTED:
                     raise KeyboardInterrupt
 
-                current_loss, out_char, out_pos, feedback_update = stepper.step(
-                    batch, batch_idx, use_feedback_this_epoch, prev_epoch_feedback_table
+                current_loss, out_char, out_pos, labels_device = stepper.step(
+                    batch, batch_idx, use_feedback_this_epoch
                 )
 
-                if feedback_update is not None:
-                    sample_idx, fb_last = feedback_update
-                    if new_epoch_feedback_table is None:
-                        new_epoch_feedback_table = torch.zeros(len(train_data), fb_last.shape[-1], dtype=torch.float32)
-                    new_epoch_feedback_table[sample_idx] = fb_last
-
-                # Get labels for metrics (same batch format as in stepper)
-                if isinstance(batch, (list, tuple)) and len(batch) == 3:
-                    _, labels, _ = batch
-                else:
-                    _, labels = batch
-
-                labels = labels.to(device)
-
                 epoch_acc = metrics_mode.update_train_batch(
-                    epoch_acc, out_char, labels, batch_idx, len(train_dl), out_pos
+                    epoch_acc, out_char, labels_device, batch_idx, len(train_dl), out_pos
                 )
 
                 num_batches += 1
-                
-                # Memory optimization: periodically clear GPU cache and unused memory
-                if accel_config.enable_memory_opt and batch_idx % 50 == 0 and device == 'cuda':
-                    torch.cuda.empty_cache()  # Clear GPU cache
-                    torch.cuda.synchronize()  # Ensure all GPU operations complete
             
                 if batch_idx % 10 == 0:
                     train_pbar.set_postfix(metrics_mode.postfix_for_pbar(
-                        current_loss, out_char, out_pos, labels
+                        current_loss, out_char, out_pos, labels_device
                     ))
             
             train_result = metrics_mode.finalize_train_epoch(epoch_acc, num_batches)
@@ -1010,21 +864,27 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 epoch, num_epochs, train_acc_char[epoch], train_metric_pos[epoch], gpu_info
             )
 
-            if use_feedback_this_epoch is True and new_epoch_feedback_table is not None:
-                prev_epoch_feedback_table = new_epoch_feedback_table
-
-            with torch.no_grad():
-                val_res = evaluate(
-                    mdl, val_dl, use_tqdm, use_feedback=use_feedback_this_epoch
-                )
-                val_acc_char[epoch], val_metric_pos[epoch] = val_res[0], val_res[1]
-                # SingleCharMetricsMode: (acc_char, metric_pos, loss_pos, loss_char)
-                # AllCharsMetricsMode: (acc_char, metric_pos)
-                if len(val_res) >= 3 and val_res[2] is not None and val_loss_pos is not None:
-                    val_loss_pos[epoch] = val_res[2]
-                if len(val_res) >= 4 and val_res[3] is not None:
-                    val_loss_char[epoch] = val_res[3]
-            val_str = metrics_mode.format_val_str(val_acc_char[epoch], val_metric_pos[epoch])
+            run_val_this_epoch = (epoch % val_every == 0)
+            if run_val_this_epoch:
+                with torch.no_grad():
+                    val_res = evaluate(
+                        mdl, val_dl, use_tqdm, use_feedback=use_feedback_this_epoch
+                    )
+                    val_acc_char[epoch], val_metric_pos[epoch] = val_res[0], val_res[1]
+                    if len(val_res) >= 3 and val_res[2] is not None and val_loss_pos is not None:
+                        val_loss_pos[epoch] = val_res[2]
+                    if len(val_res) >= 4 and val_res[3] is not None:
+                        val_loss_char[epoch] = val_res[3]
+                val_str = metrics_mode.format_val_str(val_acc_char[epoch], val_metric_pos[epoch])
+            else:
+                if epoch > 0:
+                    val_acc_char[epoch] = val_acc_char[epoch - 1]
+                    val_metric_pos[epoch] = val_metric_pos[epoch - 1]
+                    if val_loss_pos is not None:
+                        val_loss_pos[epoch] = val_loss_pos[epoch - 1]
+                    if val_loss_char is not None:
+                        val_loss_char[epoch] = val_loss_char[epoch - 1]
+                val_str = metrics_mode.format_val_str(val_acc_char[epoch], val_metric_pos[epoch])
             print(train_str + val_str, flush=True)
   
     except (KeyboardInterrupt, SystemExit):
@@ -1098,17 +958,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Learning rates to search over (default: [0.001])",
     )
     parser.add_argument(
-        "--weight_decays",
+        "--wds",
         type=float,
         nargs="+",
-        default=[0], #[1e-4],
+        default=[0],  # [1e-4],
         help="Weight decay values to search over (default: [1e-4])",
     )
     parser.add_argument(
-        "--dropout_rates",
+        "--dropouts",
+        dest="dropouts",
         type=float,
         nargs="+",
-        default=[0], #[0.3],
+        default=[0],  # [0.3],
         help="Dropout rates to search over for model creation (default: [0.3])",
     )
     parser.add_argument(
@@ -1188,7 +1049,7 @@ if __name__ == "__main__":
     set_seed(args.seed)
     print(f"Random seed set to: {args.seed}")
 
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"   # 可见设备中的 0（由 CUDA_VISIBLE_DEVICES 决定映射到物理哪张卡）
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"   
 
     disable_tqdm_env = os.environ.get('DISABLE_TQDM', '').lower() in ['1', 'true', 'yes']
     enable_tqdm_env  = os.environ.get('ENABLE_TQDM', '').lower() in ['1', 'true', 'yes']
@@ -1235,8 +1096,8 @@ if __name__ == "__main__":
     model_types = args.model_types
     hidden_sizes = args.hidden_sizes
     lrs = args.lrs
-    weight_decays = args.weight_decays
-    dropout_rates = args.dropout_rates
+    wds = args.wds
+    dropouts = args.dropouts
     cnn_feature_sizes = args.cnn_feature_size
 
     # Create results directory
@@ -1249,9 +1110,9 @@ if __name__ == "__main__":
     log_file = os.path.join(results_dir, "train.log")
     logger = setup_logger("train", log_file=log_file)
 
-    # Build hyperparameter combinations: (model_type, hidden_size, lr, weight_decay, dropout_rate)
+    # Build hyperparameter combinations: (model_type, hidden_size, lr, weight_decay, dropout)
     experiment_configs = list(
-        product(model_types, hidden_sizes, lrs, weight_decays, dropout_rates)
+        product(model_types, hidden_sizes, lrs, wds, dropouts)
     )
 
     # Training loop over all hyperparameter combinations
@@ -1264,8 +1125,8 @@ if __name__ == "__main__":
         model_types,
         hidden_sizes,
         lrs,
-        weight_decays,
-        dropout_rates,
+        wds,
+        dropouts,
         cnn_feature_sizes,
     )
 
