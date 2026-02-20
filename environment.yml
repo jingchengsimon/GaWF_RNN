@@ -1,19 +1,12 @@
-name: rnn_env
+name: aim3_rnn
 channels:
-  - conda-forge
   - defaults
 dependencies:
-  - python
-  - pip
+  - matplotlib
   - numpy
   - pandas
-  - matplotlib
-  - tqdm
+  - pip
+  - python
   - scikit-learn
-  - pip:
-    - notebook
-    - opencv_python
-    - --extra-index-url=https://download.pytorch.org/whl/cu118 # use GPU
-    - torch>=2.0.0
-    - torchvision>=0.15.0
-    - torchaudio>=2.0.0
+  - tqdm
+prefix: /G/anaconda3/envs/aim3_rnn
