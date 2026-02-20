@@ -1,6 +1,16 @@
 """
 Standalone RNN Sector training script
 Used to train RNN models and save results
+
+Device support: CUDA (Linux/NVIDIA), MPS (macOS Apple Silicon), CPU (fallback).
+  - Mac:  --device mps  or  --device auto
+  - Server (NVIDIA):  --device cuda  or  --device auto
+  - CPU only:  --device cpu
+
+Smoke-test (run 1 epoch, minimal config):
+  CUDA:  python train_rnn_updated.py --device cuda --num_epochs 1
+  MPS:   python train_rnn_updated.py --device mps --num_epochs 1
+  CPU:   python train_rnn_updated.py --device cpu --num_epochs 1
 """
 import os
 import gc
@@ -17,6 +27,7 @@ from tqdm import tqdm
 
 # Import helper and acceleration utilities
 from utils.train_helpers import (
+    pick_device,
     save_results,
     get_base_path,
     prepare_data_paths,
@@ -55,9 +66,12 @@ def _create_metrics_mode(predict_all_chars, use_sector, max_chars=None, device=N
         return AllCharsMetricsMode(max_chars, device)
     return SingleCharMetricsMode(use_sector)
 
+
 torch.set_num_threads(4)
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+# Only set CUDA_VISIBLE_DEVICES when CUDA is available (avoid MPS/CPU noise)
+if torch.cuda.is_available():
+    os.environ['CUDA_VISIBLE_DEVICES'] = os.environ.get('CUDA_VISIBLE_DEVICES', '0')
 
 
 def _cnn_feature_map_config(feature_size, mp1_out_hw=48):
@@ -135,17 +149,6 @@ class MC_RNN_Dataset(Dataset):
         start_idx = (idx * self.frame_num) + self.chan_num
         end_idx = start_idx + self.frame_num
 
-        # # Stack frames to create a multichannel image
-        # for i in range(-(self.chan_num - 1), 1):
-        #     if i == -(self.chan_num - 1):
-        #         stacked_frames = np.expand_dims(self.data[(start_idx + i):(end_idx + i)], axis=1)
-        #     else:
-        #         stacked_frames = np.concatenate(
-        #             (stacked_frames, np.expand_dims(self.data[(start_idx + i):(end_idx + i)], axis=1)),
-        #             axis=1
-        #         )
-        # stacked_frames = stacked_frames.astype(np.float32)
-
         frames = [self.data[start_idx+i:end_idx+i] for i in range(-(self.chan_num-1), 1)]
         stacked_frames = np.stack(frames, axis=1).astype(np.float32, copy=False)
 
@@ -160,6 +163,9 @@ class MC_RNN_Dataset(Dataset):
             labels = np.array(all_chars_per_frame, dtype=np.int64)
         else:
             labels = self.labels[start_idx:end_idx].copy()
+            # Coordinate mode: ensure float32 for pos (x,y) and int for char; single tensor -> float32 for MPS (loss uses .long() on col 0)
+            if not self.use_sector:
+                labels = labels.astype(np.float32, copy=False)
 
             if self.use_sector:
                 height = self.data.shape[-2]
@@ -757,8 +763,13 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 else:
                     inputs, labels = batch, None
 
+                if inputs.dtype == torch.float64:
+                    inputs = inputs.float()
                 inputs = inputs.to(device)
-                labels = labels.to(device) if labels is not None else None
+                if labels is not None:
+                    if labels.dtype == torch.float64:
+                        labels = labels.float()
+                    labels = labels.to(device)
 
                 out_char, out_pos = run_forward_with_feedback(
                     mdl, inputs,
@@ -907,7 +918,8 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             except Exception as e:
                 print(f"Warning: Error during DataLoader cleanup: {e}")
 
-    torch.cuda.empty_cache()
+    if device == 'cuda':
+        torch.cuda.empty_cache()
 
     # If early stopping triggered, only return actual trained epochs (epoch starts from 0, so actually trained epoch+1 epochs)
     actual_epochs = epoch + 1
@@ -1042,6 +1054,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         choices=["large", "small"],
         help="CNN encoder output feature map size: large (64, 12, 12), small (32, 6, 6). Default: large",
     )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        choices=["auto", "cuda", "mps", "cpu"],
+        help="Device: auto (cuda > mps > cpu), cuda, mps (Mac Apple Silicon), or cpu. Default: auto",
+    )
 
     return parser
 
@@ -1055,7 +1074,8 @@ if __name__ == "__main__":
     set_seed(args.seed)
     print(f"Random seed set to: {args.seed}")
 
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"   
+    device = pick_device(args.device)
+    print(f"Using device: {device}")
 
     disable_tqdm_env = os.environ.get('DISABLE_TQDM', '').lower() in ['1', 'true', 'yes']
     enable_tqdm_env  = os.environ.get('ENABLE_TQDM', '').lower() in ['1', 'true', 'yes']
@@ -1162,6 +1182,7 @@ if __name__ == "__main__":
                 num_classes=10,
                 num_pos=num_pos,
                 kernel_size=5,
+                device=device,
                 dropout_rate=dropout_rate,
                 hidden_size=hidden_size,
                 max_chars=max_chars,

@@ -171,6 +171,30 @@ def log_dataset_and_batch_info(
         logger.info("  DataLoader prefetch_factor: %s", accel_config.dataloader_prefetch_factor)
 
 
+def pick_device(requested: str) -> str:
+    """
+    Resolve device string: auto -> cuda > mps > cpu; or explicit cuda/mps/cpu.
+    Raises if user requests cuda/mps but it is not available.
+    """
+    if requested == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("--device cuda requested but torch.cuda.is_available() is False")
+        return "cuda"
+    if requested == "mps":
+        if not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
+            raise RuntimeError("--device mps requested but MPS is not available (macOS Apple Silicon required)")
+        return "mps"
+    if requested == "cpu":
+        return "cpu"
+    if requested == "auto":
+        if torch.cuda.is_available():
+            return "cuda"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+        return "cpu"
+    raise ValueError(f"Invalid --device: {requested}. Use one of: auto, cuda, mps, cpu")
+
+
 def save_results(results, filepath):
     """
     Save training results to local file
@@ -378,16 +402,15 @@ def create_datasets(stims_train, lbls_train, stims_val, lbls_val,
 
 
 def set_seed(seed: int):
-    """Set random seed for reproducibility (Python, NumPy, PyTorch, CUDA)."""
+    """Set random seed for reproducibility (Python, NumPy, PyTorch, CUDA when available)."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
-    # Optional: full reproducibility at cost of speed (disable if training is too slow)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
 
 def get_gpu_memory_usage():
@@ -403,8 +426,10 @@ def get_gpu_memory_usage():
 
 def find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=32, max_batch_size=256,
                             enable_grad_accum=False, grad_accum_steps=4):
-    if device == 'cpu':
-        return start_batch_size, 0
+    # GPU memory search only for CUDA; MPS/CPU use default batch size
+    if device != 'cuda':
+        num_workers = 0 if device == 'cpu' else min(4, os.cpu_count() or 1)
+        return start_batch_size, num_workers
 
     model.eval()
     optimal_batch_size = start_batch_size
