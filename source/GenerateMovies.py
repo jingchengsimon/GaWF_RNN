@@ -310,10 +310,11 @@ def generate_stimulus_video(config: StimulusConfig, mnist_data: dict):
 def main():
     """Main function to orchestrate stimulus generation."""
     ## Normal data
+    data_suffix = "20h"
     config = StimulusConfig(
         width=96,
         height=96,
-        duration_seconds=28800, # 8 hours
+        duration_seconds=14400 * 5, # 20 hours
         fps=24,
         fg_speeds=[1,0, 2.0, 3.0, 4.0, 6.0, 8.0], #[1.0, 2.0, 4.0],
         bg_char_counts=[1, 2, 4, 8, 12], #[1, 2, 4],
@@ -322,7 +323,7 @@ def main():
         output_dir=os.path.join('..', 'stimuli'),
         mnist_sample_start=0,
         mnist_sample_end=40000,
-        suffix="reg-train-cplx"
+        suffix="reg-train-" + data_suffix
     )
     os.makedirs(config.output_dir, exist_ok=True)
     mnist_data = load_mnist_data(config)
@@ -334,7 +335,7 @@ def main():
     config.mnist_sample_start = 40000
     config.mnist_sample_end = 50000
     config.duration_seconds = 2400
-    config.suffix = "reg-validation-cplx"
+    config.suffix = "reg-validation-" + data_suffix
     mnist_data = load_mnist_data(config)
     print("MNIST data loaded.")
     generate_stimulus_video(config, mnist_data)
@@ -344,7 +345,7 @@ def main():
     config.mnist_sample_start = 50000
     config.mnist_sample_end = 60000
     config.duration_seconds = 2400
-    config.suffix = "reg-test-cplx"
+    config.suffix = "reg-test-" + data_suffix
     mnist_data = load_mnist_data(config)
     print("MNIST data loaded.")
     generate_stimulus_video(config, mnist_data)
