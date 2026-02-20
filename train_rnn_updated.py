@@ -1016,6 +1016,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="GaWFRNN with --nofb: 0-based epoch at which to turn on feedback and unfreeze U,V. Only meaningful with --nofb; default 999999 means never turn on (default: 999999)",
     )
     parser.add_argument(
+        "--data_dir",
+        type=str,
+        default="",
+        help="Base directory containing stimulus_reg-* files. If not set, uses AIM3_STIMULI_PATH / FAW_RNN_DATA_PATH env, else <repo>/stimuli.",
+    )
+    parser.add_argument(
         "--data_suffix",
         type=str,
         default="",
@@ -1058,8 +1064,8 @@ if __name__ == "__main__":
         not disable_tqdm_env and sys.stdout.isatty() and term_ok
     )
     
-    # Data path configuration
-    base_path = get_base_path()
+    # Data path configuration 
+    base_path = get_base_path(override=args.data_dir or None)
     stim_train_path, label_train_path, stim_val_path, label_val_path = prepare_data_paths(
         base_path, data_suffix=args.data_suffix
     )

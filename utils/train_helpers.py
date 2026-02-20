@@ -5,6 +5,7 @@ random seed setting, GPU memory management, model class mapping, and logging.
 """
 import logging
 import os
+from typing import Optional
 import pickle
 import random
 import numpy as np
@@ -213,10 +214,28 @@ def save_results(results, filepath):
     print(f"Results saved to: {results_path}")
 
 
-def get_base_path() -> str:
-    """Get the base stimulus path (Ubuntu/Linux only)."""
-    base_path = "/G/MIMOlab/Codes/aim3_RNN/stimuli"
-    print(f"Using base path: {base_path}")
+def get_base_path(override: Optional[str] = None) -> str:
+    """Get the base directory for stimulus/label files. Adapts to current environment.
+
+    Resolution order:
+    1. override: if provided (e.g. from --data_dir), use it after expanding user and resolving to absolute path.
+    2. Environment: AIM3_STIMULI_PATH or FAW_RNN_DATA_PATH (first set wins).
+    3. Project-relative: <repo_root>/stimuli, where repo_root is the directory containing the 'utils' package.
+    """
+    if override and override.strip():
+        base_path = os.path.abspath(os.path.expanduser(override.strip()))
+        print(f"Using base path (override): {base_path}")
+        return base_path
+    env_path = os.environ.get("AIM3_STIMULI_PATH") or os.environ.get("FAW_RNN_DATA_PATH")
+    if env_path and env_path.strip():
+        base_path = os.path.abspath(os.path.expanduser(env_path.strip()))
+        print(f"Using base path (env): {base_path}")
+        return base_path
+    # Project-relative: this file is in <repo>/utils/, so repo root is parent of utils
+    _this_dir = os.path.dirname(os.path.abspath(__file__))
+    _repo_root = os.path.dirname(_this_dir)
+    base_path = os.path.join(_repo_root, "stimuli")
+    print(f"Using base path (project-relative): {base_path}")
     return base_path
 
 

@@ -1,3 +1,5 @@
+# Exported from Linux (linux-64). Do NOT use on macOS.
+# On Apple Silicon use: conda env create -f environment_osx_arm64.yml
 name: aim3_rnn
 channels:
   - conda-forge
