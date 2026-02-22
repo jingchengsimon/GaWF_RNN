@@ -70,9 +70,9 @@ def _create_metrics_mode(predict_all_chars, use_sector, max_chars=None, device=N
 torch.set_num_threads(4)
 
 # Only set CUDA_VISIBLE_DEVICES when CUDA is available (avoid MPS/CPU noise)
-if torch.cuda.is_available():
-    os.environ['CUDA_VISIBLE_DEVICES'] = os.environ.get('CUDA_VISIBLE_DEVICES', '0')
-
+# if torch.cuda.is_available():
+    # os.environ['CUDA_VISIBLE_DEVICES'] = os.environ.get('CUDA_VISIBLE_DEVICES', '1')
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 def _cnn_feature_map_config(feature_size, mp1_out_hw=48):
     """
@@ -816,7 +816,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             return True  # default: always feedback
         return epoch >= fb_start_epoch
 
-    val_every = 5  # run full validation only every N epochs
+    val_every = 1 #5  # run full validation only every N epochs
     try:
         for epoch in range(num_epochs):
             mdl.train()
@@ -959,7 +959,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--num_epochs",
         type=int,
-        default=50,
+        default=100,
         help="Number of training epochs (default: 100)",
     )
     parser.add_argument(
@@ -1074,7 +1074,7 @@ if __name__ == "__main__":
     set_seed(args.seed)
     print(f"Random seed set to: {args.seed}")
 
-    device = pick_device(args.device)
+    device = "cuda:0" #pick_device(args.device)
     print(f"Using device: {device}")
 
     disable_tqdm_env = os.environ.get('DISABLE_TQDM', '').lower() in ['1', 'true', 'yes']

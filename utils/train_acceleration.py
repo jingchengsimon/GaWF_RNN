@@ -119,11 +119,19 @@ def setup_acceleration(accel_config, device, is_gawf=False, use_mmap=False, cnn_
 
     print("Enabling acceleration training...")
     if is_gawf:
-        batch_size = 32 if cnn_feature_size == "large" else 256
+        batch_size = 64 if cnn_feature_size == "large" else 256
     else:      
-        batch_size = 128
+        batch_size = 256
 
-    num_workers = min(4, os.cpu_count() or 1) if not use_mmap else 0
+    if not is_gawf:
+        if not use_mmap:
+            num_workers = min(8, os.cpu_count() or 1)
+        else:
+            num_workers = 8
+    else:
+        num_workers = 4
+    # num_workers = min(8, os.cpu_count() or 1) if not is_gawf else 0
+
     pin_memory = (num_workers > 0) and (device == "cuda")  # pin_memory only for CUDA
     scaler = GradScaler_cls("cuda") if device == "cuda" and accel_config.enable_gradient_scale else None
     # AMP only on CUDA; MPS/CPU use full precision (no autocast)
