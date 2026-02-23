@@ -119,7 +119,7 @@ def setup_acceleration(accel_config, device, is_gawf=False, use_mmap=False, cnn_
 
     print("Enabling acceleration training...")
     if is_gawf:
-        batch_size = 64 if cnn_feature_size == "large" else 256
+        batch_size = 256 #64 if cnn_feature_size == "large" else 256
     else:      
         batch_size = 256
 

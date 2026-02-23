@@ -1,0 +1,450 @@
+"""Generates videos of moving MNIST characters with configurable parameters.
+Each video contains one foreground character moving at a constant speed and 
+multiple background characters moving with random walk dynamics. The videos 
+are saved in MP4 format, and a corresponding TSV file logs the positions and 
+identities of the characters in each frame.
+The MNIST dataset is loaded using PyTorch/torchvision to avoid issues with 
+deprecated libraries.
+
+Initial code was produced with Gemini AI.
+
+--- A/C/D switches (minimal-invasive additions) ---
+A: Background uses OU/inertia random walk (smooth). Config: rw_beta, rw_sigma, rw_speed_jitter, rw_min_speed.
+C: Domain randomization on each frame. Config: enable_augment (default True), augment_* params.
+D: Difficulty-biased sampling. Config: difficulty_bias (default True), optional *_weights; else auto "larger=higher".
+"""
+
+import os
+import cv2
+import numpy as np
+import numpy.lib.format as npfmt
+
+import torchvision
+import csv
+from dataclasses import dataclass, field
+from typing import List, Tuple, Optional
+from tqdm import tqdm
+
+# --- Configuration ---
+
+@dataclass
+
+class StimulusConfig:
+    """Holds all configuration parameters for stimulus generation."""
+    # Video Properties
+    width: int = 128
+    height: int = 128
+    duration_seconds: int = 30
+    fps: int = 30
+
+    # Foreground Character Properties
+    fg_speeds: List[float] = field(default_factory=lambda: [1.0, 2.0, 3.0])
+
+    # Background Character Properties
+    bg_char_counts: List[int] = field(default_factory=lambda: [5, 10, 15])
+    bg_mean_speeds: List[float] = field(default_factory=lambda: [0.5, 1.0, 1.5])
+
+    # Switch Event Properties
+    mean_switch_interval_seconds: float = 5.0
+
+    # --- A: OU/inertia random walk (smooth background motion) ---
+    rw_beta: float = 0.25          # inertia: (1-beta)*vel + beta*noise; smaller = smoother
+    rw_sigma: float = 0.6         # noise strength for velocity perturbation
+    rw_speed_jitter: float = 0.15 # target_speed = mean_speed * (1 + N(0, rw_speed_jitter))
+    rw_min_speed: float = 0.2     # minimum speed to avoid stopping
+
+    # --- C: Domain randomization (brightness/contrast, noise, blur) ---
+    enable_augment: bool = True
+    augment_brightness_range: Tuple[float, float] = (0.92, 1.08)
+    augment_contrast_range: Tuple[float, float] = (0.92, 1.08)
+    augment_noise_std: float = 5.0
+    augment_blur_prob: float = 0.2
+    augment_blur_ksize: int = 3
+
+    # --- D: Difficulty-biased sampling (optional weights; None = auto "larger=higher") ---
+    difficulty_bias: bool = True
+    bg_char_count_weights: Optional[List[float]] = None   # e.g. [0.05,0.10,0.15,0.30,0.40]
+    bg_mean_speed_weights: Optional[List[float]] = None
+    fg_speed_weights: Optional[List[float]] = None
+    switch_interval_mixture: Tuple[float, float, float] = (0.8, 0.6, 1.5)  # (prob_short, scale_short, scale_long)
+
+    # Output Settings
+    output_dir: str = "stimulus_output"
+    num_videos: int = 5
+
+    # MNIST sample range (by index, not digit)
+    mnist_sample_start: int = 0
+    mnist_sample_end: int = 60000  # default: all samples
+
+    suffix: str = ""
+
+
+class MovingCharacter:
+    """Represents a single moving MNIST character."""
+    def __init__(self, label: int, image: np.ndarray, pos: np.ndarray, vel: np.ndarray):
+        self.label = label
+        self.image = image
+        self.height, self.width = image.shape
+        # pos is the center of the character
+        self.pos = pos.astype(float)
+        self.vel = vel.astype(float)
+        self.center_x = float(pos[0])
+        self.center_y = float(pos[1])
+
+    def update_position(self, frame_dims: Tuple[int, int]):
+        """Updates the character's position (center) and handles bouncing off edges."""
+        frame_h, frame_w = frame_dims
+        self.pos += self.vel
+
+        # Bounce off horizontal walls (left/right)
+        left = self.pos[0] - self.width / 2
+        right = self.pos[0] + self.width / 2
+        if left < 0:
+            self.pos[0] = self.width / 2
+            self.vel[0] *= -1
+        elif right > frame_w:
+            self.pos[0] = frame_w - self.width / 2
+            self.vel[0] *= -1
+
+        # Bounce off vertical walls (top/bottom)
+        top = self.pos[1] - self.height / 2
+        bottom = self.pos[1] + self.height / 2
+        if top < 0:
+            self.pos[1] = self.height / 2
+            self.vel[1] *= -1
+        elif bottom > frame_h:
+            self.pos[1] = frame_h - self.height / 2
+            self.vel[1] *= -1
+            
+    def update_random_walk(self, frame_dims: Tuple[int, int], mean_speed: float):
+        """OU/inertia random walk: smooth velocity update, then position with bounce.
+        Uses self.rw_params if set (beta, sigma, speed_jitter, min_speed), else defaults."""
+        _def = {"beta": 0.25, "sigma": 0.6, "speed_jitter": 0.15, "min_speed": 0.2}
+        p = getattr(self, "rw_params", None) or _def
+        beta, sigma = p.get("beta", _def["beta"]), p.get("sigma", _def["sigma"])
+        speed_jitter, min_speed = p.get("speed_jitter", _def["speed_jitter"]), p.get("min_speed", _def["min_speed"])
+
+        noise = np.random.randn(2).astype(np.float64) * sigma
+        self.vel = (1.0 - beta) * self.vel + beta * noise
+        n = np.linalg.norm(self.vel)
+        eps = 1e-8
+        if n < eps:
+            angle = np.random.uniform(0, 2 * np.pi)
+            self.vel = np.array([np.cos(angle), np.sin(angle)], dtype=np.float64) * mean_speed
+        else:
+            target_speed = mean_speed * (1.0 + np.random.normal(0, speed_jitter))
+            target_speed = max(target_speed, min_speed)
+            self.vel = (self.vel / n) * target_speed
+        self.update_position(frame_dims)
+
+def load_mnist_data(config=None):
+    """Loads MNIST dataset using PyTorch/torchvision and organizes it by digit. Optionally restricts to a sample index range."""
+    print("Loading MNIST dataset using PyTorch/torchvision...")
+    mnist_dataset = torchvision.datasets.MNIST(
+        root='./mnist_data_pytorch',
+        train=True,
+        download=True
+    )
+    sample_start = config.mnist_sample_start if config is not None and hasattr(config, 'mnist_sample_start') else 0
+    sample_end = config.mnist_sample_end if config is not None and hasattr(config, 'mnist_sample_end') else len(mnist_dataset)
+    sample_end = min(sample_end, len(mnist_dataset))
+    # Select only the specified range
+    selected_images = []
+    selected_labels = []
+    mnist_digits = {i: [] for i in range(10)}
+    for idx in range(sample_start, sample_end):
+        image, label = mnist_dataset[idx]
+        arr = np.array(image)
+        mnist_digits[label].append(arr)
+        selected_images.append(arr)
+        selected_labels.append(label)
+    # Save selected images and labels as numpy arrays
+    np.save(os.path.join(config.output_dir, f'mnist_images_{config.suffix}.npy'), np.stack(selected_images))
+    np.save(os.path.join(config.output_dir, f'mnist_labels_{config.suffix}.npy'), np.array(selected_labels))
+    print(f"MNIST data loaded and processed. Samples used: {sample_start}-{sample_end-1}")
+    return mnist_digits
+
+def get_random_digit(mnist_data: dict, digit: int = None) -> Tuple[int, np.ndarray]:
+    """Selects a random image for a given digit, or a random digit."""
+    if digit is None:
+        digit = np.random.randint(0, 10)
+    
+    images_for_digit = mnist_data[digit]
+    image = images_for_digit[np.random.randint(0, len(images_for_digit))]
+    return digit, image
+
+
+def _default_difficulty_weights(values: List[float]) -> np.ndarray:
+    """Auto weights: larger value => higher weight (power weighting)."""
+    arr = np.asarray(values, dtype=np.float64)
+    if arr.size == 0:
+        return np.ones(1) / 1.0
+    rank = np.arange(1, len(arr) + 1, dtype=np.float64)
+    w = rank ** 1.5
+    return w / w.sum()
+
+
+def _biased_choice(values: list, weights: Optional[List[float]], use_bias: bool = True):
+    """Weighted choice from values. If use_bias False or weights invalid, uniform choice."""
+    if not values:
+        return np.random.choice(values)
+    if not use_bias:
+        return np.random.choice(values)
+    if weights is not None and len(weights) == len(values):
+        w = np.array(weights, dtype=np.float64)
+        w = w / w.sum()
+        return np.random.choice(values, p=w)
+    w = _default_difficulty_weights(values)
+    return np.random.choice(values, p=w)
+
+
+def _sample_switch_interval_scale(mean_frames: float, mixture: Tuple[float, float, float]) -> float:
+    """Mixture: prob_short * scale_short, (1-prob_short) * scale_long. Returns scale in frames."""
+    p_short, s_short, s_long = mixture
+    if np.random.rand() < p_short:
+        return mean_frames * s_short
+    return mean_frames * s_long
+
+def augment_frame(frame: np.ndarray, config: StimulusConfig) -> np.ndarray:
+    """Light domain randomization: brightness/contrast, noise, light blur. Output uint8 [0,255], same shape."""
+    if not getattr(config, "enable_augment", False):
+        return frame
+    out = frame.astype(np.float64)
+    # Brightness/contrast (prob ~0.5)
+    if np.random.rand() < 0.5:
+        lo1, hi1 = config.augment_brightness_range
+        lo2, hi2 = config.augment_contrast_range
+        brightness = np.random.uniform(lo1, hi1)
+        contrast = np.random.uniform(lo2, hi2)
+        out = out * contrast + (brightness - 1.0) * 128.0
+    # Gaussian noise (prob ~0.3)
+    if np.random.rand() < 0.3:
+        std = getattr(config, "augment_noise_std", 5.0)
+        out = out + np.random.randn(*out.shape).astype(np.float64) * std
+    # Light blur (prob from config)
+    if np.random.rand() < getattr(config, "augment_blur_prob", 0.2):
+        k = getattr(config, "augment_blur_ksize", 3)
+        if k >= 3 and k % 2 == 1:
+            out = cv2.GaussianBlur(out.astype(np.float32), (k, k), 0.5)
+            out = out.astype(np.float64)
+    out = np.clip(out, 0, 255).astype(np.uint8)
+    return out
+
+
+def paste_character(frame: np.ndarray, char: MovingCharacter):
+    """Pastes a character's image onto the frame."""
+    h, w = char.image.shape
+    # Calculate top-left corner from center position
+    x = int(round(char.pos[0] - w / 2))
+    y = int(round(char.pos[1] - h / 2))
+
+    y_start, y_end = max(0, y), min(frame.shape[0], y + h)
+    x_start, x_end = max(0, x), min(frame.shape[1], x + w)
+
+    img_y_start = max(0, -y)
+    img_x_start = max(0, -x)
+    img_y_end = h - max(0, (y + h) - frame.shape[0])
+    img_x_end = w - max(0, (x + w) - frame.shape[1])
+
+    char_roi = char.image[img_y_start:img_y_end, img_x_start:img_x_end]
+
+    if char_roi.size == 0:
+        return
+
+    # Update center_x and center_y to the actual center of the pasted region
+    char.center_x = (x_start + x_end) / 2
+    char.center_y = (y_start + y_end) / 2
+
+    frame_roi = frame[y_start:y_end, x_start:x_end]
+    combined = frame_roi.astype(np.uint16) + char_roi.astype(np.uint16)
+    frame[y_start:y_end, x_start:x_end] = np.clip(combined, 0, 255).astype(np.uint8)
+
+
+# --- MODIFIED FUNCTION ---
+def generate_stimulus_video(config: StimulusConfig, mnist_data: dict):
+    """Generates a single video file and its corresponding TSV log."""
+    
+    # --- Initialization ---
+    suffix = config.suffix
+    video_filename = f"stimulus_{suffix}.mp4"
+    tsv_filename = f"stimulus_{suffix}.tsv"
+    video_path = os.path.join(config.output_dir, video_filename)
+    tsv_path = os.path.join(config.output_dir, tsv_filename)
+    npy_path = os.path.join(config.output_dir, f"stimulus_{suffix}.npy")
+
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video_writer = cv2.VideoWriter(video_path, fourcc, config.fps, (config.width, config.height))
+
+    tsv_file = open(tsv_path, 'w', newline='')
+    tsv_writer = csv.writer(tsv_file, delimiter='\t')
+    # Add new columns to the header
+    tsv_writer.writerow([
+        'frame', 'fg_char_id', 'fg_char_x', 'fg_char_y', 
+        'bg_char_ids', 'fg_speed', 'bg_mean_speed',
+        'fg_switch', 'bg_switch'
+    ])
+
+    total_frames = config.duration_seconds * config.fps
+    mean_switch_interval_frames = config.mean_switch_interval_seconds * config.fps
+    frame_dims = (config.height, config.width)
+
+    # npy_data = np.zeros((total_frames, config.height, config.width), dtype=np.uint8)
+    # 在磁盘上创建一个 .npy 文件并用 memmap 映射；不会一次性占用内存
+    npy_data = npfmt.open_memmap(
+        npy_path,
+        mode="w+",
+        dtype=np.uint8,
+        shape=(total_frames, config.height, config.width),
+)
+
+    # --- Initial State Setup ---
+    fg_speed = _biased_choice(config.fg_speeds, config.fg_speed_weights, config.difficulty_bias)
+    angle = np.random.uniform(0, 2 * np.pi)
+    fg_vel = np.array([np.cos(angle), np.sin(angle)]) * fg_speed
+    fg_label, fg_img = get_random_digit(mnist_data)
+    # Center position: ensure the full character fits in the frame
+    fg_pos = np.random.rand(2) * [config.width - 28, config.height - 28] + 14
+    fg_char = MovingCharacter(fg_label, fg_img, fg_pos, fg_vel)
+
+    bg_char_count = _biased_choice(config.bg_char_counts, config.bg_char_count_weights, config.difficulty_bias)
+    bg_mean_speed = _biased_choice(config.bg_mean_speeds, config.bg_mean_speed_weights, config.difficulty_bias)
+    rw_params = {"beta": config.rw_beta, "sigma": config.rw_sigma, "speed_jitter": config.rw_speed_jitter, "min_speed": config.rw_min_speed}
+    background_chars = []
+    for _ in range(bg_char_count):
+        bg_label, bg_img = get_random_digit(mnist_data)
+        bg_pos = np.random.rand(2) * [config.width - 28, config.height - 28] + 14
+        bg_vel = (np.random.rand(2) - 0.5) * 2 * bg_mean_speed
+        ch = MovingCharacter(bg_label, bg_img, bg_pos, bg_vel)
+        ch.rw_params = rw_params
+        background_chars.append(ch)
+
+    scale = _sample_switch_interval_scale(mean_switch_interval_frames, config.switch_interval_mixture) if getattr(config, "difficulty_bias", False) else mean_switch_interval_frames
+    next_switch_frame = int(np.random.exponential(scale=scale))
+
+    # --- Simulation Loop ---
+    for frame_idx in tqdm(range(total_frames), desc=f"Generating Video"):
+        # Initialize switch flags for the current frame
+        fg_switch_flag = 0
+        bg_switch_flag = 0
+
+        # Check for switch event
+        if frame_idx >= next_switch_frame:
+            if np.random.rand() < 0.5:
+                # --- Change Foreground ---
+                fg_switch_flag = 1  # Set flag to 1 for this frame
+                fg_speed = _biased_choice(config.fg_speeds, config.fg_speed_weights, config.difficulty_bias)
+                fg_label, fg_img = get_random_digit(mnist_data)
+                if np.linalg.norm(fg_char.vel) == 0:
+                    current_direction = np.array([1.0, 0.0])  # Default direction if velocity is zero
+                else:
+                    current_direction = fg_char.vel / np.linalg.norm(fg_char.vel)
+
+                fg_char.vel = current_direction * fg_speed
+                fg_char.pos = np.random.rand(2) * [config.width - 28, config.height - 28] + 14
+                fg_char.label = fg_label
+                fg_char.image = fg_img
+            else:
+                # --- Change Background ---
+                bg_switch_flag = 1  # Set flag to 1 for this frame
+                bg_char_count = _biased_choice(config.bg_char_counts, config.bg_char_count_weights, config.difficulty_bias)
+                bg_mean_speed = _biased_choice(config.bg_mean_speeds, config.bg_mean_speed_weights, config.difficulty_bias)
+                background_chars = []
+                for _ in range(bg_char_count):
+                    bg_label, bg_img = get_random_digit(mnist_data)
+                    bg_pos = np.random.rand(2) * [config.width - 28, config.height - 28] + 14
+                    angle = np.random.uniform(0, 2 * np.pi)
+                    bg_vel = np.array([np.cos(angle), np.sin(angle)]) * bg_mean_speed
+                    ch = MovingCharacter(bg_label, bg_img, bg_pos, bg_vel)
+                    ch.rw_params = rw_params
+                    background_chars.append(ch)
+
+            scale = _sample_switch_interval_scale(mean_switch_interval_frames, config.switch_interval_mixture) if getattr(config, "difficulty_bias", False) else mean_switch_interval_frames
+            next_switch_frame = frame_idx + int(np.random.exponential(scale=scale))
+
+        # --- Update Positions ---
+        fg_char.update_position(frame_dims)
+        for char in background_chars:
+            char.update_random_walk(frame_dims, bg_mean_speed)
+
+        # --- Render Frame ---
+        frame = np.zeros(frame_dims, dtype=np.uint8)
+        for char in background_chars:
+            paste_character(frame, char)
+        paste_character(frame, fg_char)
+
+        frame = augment_frame(frame, config)
+
+        npy_data[frame_idx] = frame
+
+        # --- Log Data ---
+        bg_char_id_list = [str(c.label) for c in background_chars]
+        bg_char_ids_str = ",".join(bg_char_id_list)
+        # Write the row with the new switch flags
+        tsv_writer.writerow([
+            frame_idx,
+            fg_char.label,
+            f"{fg_char.center_x:.2f}",
+            f"{fg_char.center_y:.2f}",
+            bg_char_ids_str,
+            f"{np.linalg.norm(fg_char.vel):.2f}",
+            f"{bg_mean_speed:.2f}",
+            fg_switch_flag,
+            bg_switch_flag
+        ])
+
+        # --- Write to Video File ---
+        video_writer.write(cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR))
+    
+    # np.save(npy_path, npy_data)
+
+    # --- Cleanup ---
+    video_writer.release()
+    tsv_file.close()
+    print(f"Successfully generated {video_path}, {tsv_path}, and {npy_path}")
+
+
+def main():
+    """Main function to orchestrate stimulus generation."""
+    ## Normal data
+    data_suffix = "8h-cplx"
+    config = StimulusConfig(
+        width=96,
+        height=96,
+        duration_seconds=14400 * 2, # 8 hours
+        fps=24,
+        fg_speeds=[1,0, 2.0, 3.0, 4.0, 6.0, 8.0], #[1.0, 2.0, 4.0],
+        bg_char_counts=[1, 2, 4, 8, 12], #[1, 2, 4],
+        bg_mean_speeds=[1.0, 2.0, 4.0, 6.0, 8.0], #[1.0, 2.0, 4.0],
+        mean_switch_interval_seconds=1.0,
+        output_dir=os.path.join('..', 'stimuli'),
+        mnist_sample_start=0,
+        mnist_sample_end=40000,
+        suffix="reg-train-" + data_suffix
+    )
+    os.makedirs(config.output_dir, exist_ok=True)
+    mnist_data = load_mnist_data(config)
+    print("MNIST data loaded.")
+    generate_stimulus_video(config, mnist_data)
+
+
+    # Generate validation data
+    config.mnist_sample_start = 40000
+    config.mnist_sample_end = 50000
+    config.duration_seconds = 2400
+    config.suffix = "reg-validation-" + data_suffix
+    mnist_data = load_mnist_data(config)
+    print("MNIST data loaded.")
+    generate_stimulus_video(config, mnist_data)
+
+
+    # Generate test data
+    config.mnist_sample_start = 50000
+    config.mnist_sample_end = 60000
+    config.duration_seconds = 2400
+    config.suffix = "reg-test-" + data_suffix
+    mnist_data = load_mnist_data(config)
+    print("MNIST data loaded.")
+    generate_stimulus_video(config, mnist_data)
+
+if __name__ == "__main__":
+    main()

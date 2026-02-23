@@ -82,8 +82,8 @@ def _cnn_feature_map_config(feature_size, mp1_out_hw=48):
     """
     if feature_size == "large":
         out_ch, out_h, out_w = 64, 12, 12
-    elif feature_size == "small":
-        out_ch, out_h, out_w = 16, 3, 3 #32, 6, 6
+    # elif feature_size == "small":
+    #     out_ch, out_h, out_w = 16, 3, 3 #32, 6, 6
     else:
         raise ValueError(f"cnn_feature_size must be 'large' or 'small', got {feature_size!r}")
 
@@ -209,7 +209,7 @@ class BaseConvSequenceModel(nn.Module):
         self.max_chars = max_chars
         self.predict_all_chars = predict_all_chars
         out_ch, out_h, out_w, mp2_k, mp2_s = _cnn_feature_map_config(cnn_feature_size)
-        self.encoder_flatten_size = out_ch * out_h * out_w
+        # self.encoder_flatten_size = out_ch * out_h * out_w
         # Shared encoder
         self.conv1 = nn.Conv2d(2, 32, kernel_size=kernel_size, padding='same')
         self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
@@ -217,6 +217,23 @@ class BaseConvSequenceModel(nn.Module):
         self.conv2 = nn.Conv2d(32, out_ch, kernel_size=3, padding=1)
         self.MP2 = nn.MaxPool2d(kernel_size=mp2_k, stride=mp2_s)
         self.LNorm2 = nn.LayerNorm([out_ch, out_h, out_w])
+
+        # --- Compression head (方案A): 1x1降通道 + 额外下采样 ---
+        # 1) out_ch -> out_ch_reduced（默认减半；若 out_ch=32 则变 16）
+        # 2) out_h/out_w 再 /2（MaxPool2d(2,2)），因此要求 out_h/out_w 为偶数（你的 large=12/small=6 都满足）
+        out_ch3, out_h3, out_w3 = max(8, out_ch // 2), out_h // 2, out_w // 2
+        out_ch4, out_h4, out_w4 = max(8, out_ch3 // 2), out_h3 // 2, out_w3 // 2
+
+        self.conv3 = nn.Conv2d(out_ch, out_ch3, kernel_size=1)
+        self.MP3 = nn.MaxPool2d(kernel_size=2, stride=2)        
+        self.LNorm3 = nn.LayerNorm([out_ch3, out_h3, out_w3])
+
+        self.conv4 = nn.Conv2d(out_ch3, out_ch4, kernel_size=1)
+        self.MP4 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.LNorm4 = nn.LayerNorm([out_ch4, out_h4, out_w4])
+
+        self.encoder_flatten_size = out_ch4 * out_h4 * out_w4 # 64//4, 12//2, 12//2 = 16, 3, 3
+
         # Shared classifier
         if predict_all_chars:
             self.fcchars = nn.Linear(hidden_size, max_chars * num_classes)
@@ -235,6 +252,12 @@ class BaseConvSequenceModel(nn.Module):
         x = self.conv2(x)
         x = self.MP2(x)
         x = self.LNorm2(x)
+        x = self.conv3(x)
+        x = self.MP3(x)
+        x = self.LNorm3(x)
+        x = self.conv4(x)
+        x = self.MP4(x)
+        x = self.LNorm4(x)
         x = F.relu(x)
         x = F.dropout2d(x, p=self.dropout_rate, training=self.training)
         return x
