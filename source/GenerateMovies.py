@@ -169,8 +169,11 @@ def paste_character(frame: np.ndarray, char: MovingCharacter):
     char.center_y = (y_start + y_end) / 2
 
     frame_roi = frame[y_start:y_end, x_start:x_end]
-    combined = frame_roi.astype(np.uint16) + char_roi.astype(np.uint16)
-    frame[y_start:y_end, x_start:x_end] = np.clip(combined, 0, 255).astype(np.uint8)
+    # combined = frame_roi.astype(np.uint16) + char_roi.astype(np.uint16)
+    # frame[y_start:y_end, x_start:x_end] = np.clip(combined, 0, 255).astype(np.uint8)
+
+    combined = frame_roi.astype(np.float32) + char_roi.astype(np.float32)
+    frame[y_start:y_end, x_start:x_end] = np.clip(combined, 0.0, 255.0).astype(np.float32)
 
 
 # --- MODIFIED FUNCTION ---
@@ -201,14 +204,13 @@ def generate_stimulus_video(config: StimulusConfig, mnist_data: dict):
     mean_switch_interval_frames = config.mean_switch_interval_seconds * config.fps
     frame_dims = (config.height, config.width)
 
-    # npy_data = np.zeros((total_frames, config.height, config.width), dtype=np.uint8)
-    # 在磁盘上创建一个 .npy 文件并用 memmap 映射；不会一次性占用内存
+    # Memmap .npy as float32 for faster loading in training (no dtype conversion).
     npy_data = npfmt.open_memmap(
         npy_path,
         mode="w+",
-        dtype=np.uint8,
+        dtype=np.float32,
         shape=(total_frames, config.height, config.width),
-)
+    )
 
     # --- Initial State Setup ---
     fg_speed = np.random.choice(config.fg_speeds)
@@ -273,7 +275,8 @@ def generate_stimulus_video(config: StimulusConfig, mnist_data: dict):
             char.update_random_walk(frame_dims, bg_mean_speed)
 
         # --- Render Frame ---
-        frame = np.zeros(frame_dims, dtype=np.uint8)
+        # frame = np.zeros(frame_dims, dtype=np.uint8)
+        frame = np.zeros(frame_dims, dtype=np.float32)
         for char in background_chars:
             paste_character(frame, char)
         paste_character(frame, fg_char)
@@ -296,8 +299,8 @@ def generate_stimulus_video(config: StimulusConfig, mnist_data: dict):
             bg_switch_flag
         ])
 
-        # --- Write to Video File ---
-        video_writer.write(cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR))
+        # --- Write to Video File (OpenCV only accepts uint8/uint16) ---
+        video_writer.write(cv2.cvtColor(frame.astype(np.uint8), cv2.COLOR_GRAY2BGR))
     
     # np.save(npy_path, npy_data)
 
@@ -310,11 +313,11 @@ def generate_stimulus_video(config: StimulusConfig, mnist_data: dict):
 def main():
     """Main function to orchestrate stimulus generation."""
     ## Normal data
-    data_suffix = "20h"
+    data_suffix = "40h_float32"
     config = StimulusConfig(
         width=96,
         height=96,
-        duration_seconds=14400 * 5, # 20 hours
+        duration_seconds=14400 * 10, # 40 hours
         fps=24,
         fg_speeds=[1,0, 2.0, 3.0, 4.0, 6.0, 8.0], #[1.0, 2.0, 4.0],
         bg_char_counts=[1, 2, 4, 8, 12], #[1, 2, 4],
