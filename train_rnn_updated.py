@@ -34,7 +34,6 @@ from utils.train_helpers import (
     load_raw_data,
     create_datasets,
     set_seed,
-    get_gpu_memory_usage,
     get_model_classes,
     setup_logger,
     log_experiment_config,
@@ -102,11 +101,11 @@ def _cnn_feature_map_config(feature_size, mp1_out_hw=48):
 
 # ==================== Dataset Class ====================
 class MC_RNN_Dataset(Dataset):
-    def __init__(self, data, labels, frame_num=32, chan_num=2, use_sector=False, num_sectors=9, 
+    def __init__(self, data, labels, frame_num=32, chan_num=2, use_sector=False, num_sectors=9,
                  max_chars=15, predict_all_chars=False):
         """
         Args:
-            data (np.ndarray): Array of shape (num_samples, num_frames, height, width)
+            data (np.ndarray): Array of shape (num_frames_total, height, width); supports float32 for faster loading.
             labels (np.ndarray): DataFrame with columns ['fg_char_id', 'fg_char_x', 'fg_char_y', 'bg_char_ids']
             frame_num (int): Number of frames to stack for input as multichannel image
             chan_num (int): Number of channels in the input images. Each channel is a previous frame.
@@ -122,11 +121,11 @@ class MC_RNN_Dataset(Dataset):
         self.num_sectors = num_sectors
         self.max_chars = max_chars
         self.predict_all_chars = predict_all_chars
-        
+        self.data_dtype = getattr(data, "dtype", np.uint8)
+
         if predict_all_chars:
             self.labels_df = labels
             self.fg_char_ids = labels['fg_char_id'].values
-            # Pre-parse bg_char_ids once in __init__ to avoid repeated split/int in __getitem__
             raw_bg = labels['bg_char_ids'].values
             self.bg_char_ids_parsed = []
             for i in range(len(raw_bg)):
@@ -139,18 +138,66 @@ class MC_RNN_Dataset(Dataset):
                 else:
                     self.bg_char_ids_parsed.append([])
         else:
-            # Original behavior: only fg char
             self.labels = labels[['fg_char_id', 'fg_char_x', 'fg_char_y']].values
+            if use_sector:
+                # Sector precomputation (one-time): full sequence sector labels so __getitem__ only slices.
+                N = self.data.shape[0]
+                height = self.data.shape[-2]
+                width = self.data.shape[-1]
+                grid_size = int(np.sqrt(self.num_sectors))
+                if grid_size * grid_size != self.num_sectors:
+                    raise ValueError(
+                        f"num_sectors={self.num_sectors} is not a perfect square, cannot form grid_size x grid_size grid"
+                    )
+                x = self.labels[:, 1].astype(np.float64)
+                y = self.labels[:, 2].astype(np.float64)
+                col = np.clip((x / max(width - 1, 1)) * grid_size, 0, grid_size - 1).astype(np.int64)
+                row = np.clip((y / max(height - 1, 1)) * grid_size, 0, grid_size - 1).astype(np.int64)
+                sector = row * grid_size + col
+                char_id = self.labels[:, 0].astype(np.int64)
+                self.labels_sector = np.stack([char_id, sector], axis=1).astype(np.int64, copy=False)
+            else:
+                # Coordinate mode: one-time float32 conversion for labels.
+                self.labels_coord = self.labels.astype(np.float32, copy=False)
 
     def __len__(self):
-        return (self.data.shape[0]-self.chan_num) // self.frame_num
+        return (self.data.shape[0] - self.chan_num) // self.frame_num
 
     def __getitem__(self, idx):
         start_idx = (idx * self.frame_num) + self.chan_num
         end_idx = start_idx + self.frame_num
+        T, C = self.frame_num, self.chan_num
 
-        frames = [self.data[start_idx+i:end_idx+i] for i in range(-(self.chan_num-1), 1)]
-        stacked_frames = np.stack(frames, axis=1).astype(np.float32, copy=False)
+        # Frames: stride view (zero-copy when data is contiguous) instead of list + np.stack.
+        block_start = start_idx - (C - 1)
+        block_end = end_idx
+        block = self.data[block_start:block_end]
+        use_strided = (
+            block.shape[0] == T + C - 1
+            and len(block.shape) == 3
+            and block.strides[0] >= 0
+            and block.strides[1] >= 0
+            and block.strides[2] >= 0
+        )
+        if use_strided:
+            s0, s1, s2 = block.strides[0], block.strides[1], block.strides[2]
+            H, W = block.shape[1], block.shape[2]
+            stacked_frames = np.lib.stride_tricks.as_strided(
+                block, shape=(T, C, H, W), strides=(s0, s0, s1, s2)
+            )
+        else:
+            frames = [self.data[start_idx + i : end_idx + i] for i in range(-(C - 1), 1)]
+            stacked_frames = np.stack(frames, axis=1)
+
+        if stacked_frames.dtype != np.float32:
+            stacked_frames = stacked_frames.astype(np.float32, copy=False)
+
+        # When using np.memmap (use_mmap=True), stride views may be backed by
+        # non-writable arrays. Torch's default collate uses torch.as_tensor,
+        # which warns on non-writable NumPy arrays. Make a writable copy only
+        # in that case to avoid the warning while keeping copies minimal.
+        if not stacked_frames.flags.writeable:
+            stacked_frames = np.array(stacked_frames, copy=True)
 
         if self.predict_all_chars:
             all_chars_per_frame = []
@@ -158,38 +205,17 @@ class MC_RNN_Dataset(Dataset):
                 fg_char_id = int(self.fg_char_ids[frame_idx])
                 bg_char_ids = self.bg_char_ids_parsed[frame_idx] if frame_idx < len(self.bg_char_ids_parsed) else []
                 all_chars = [fg_char_id] + bg_char_ids
-                padded_chars = all_chars[:self.max_chars] + [-1] * max(0, self.max_chars - len(all_chars))
+                padded_chars = all_chars[: self.max_chars] + [-1] * max(0, self.max_chars - len(all_chars))
                 all_chars_per_frame.append(padded_chars)
             labels = np.array(all_chars_per_frame, dtype=np.int64)
         else:
-            labels = self.labels[start_idx:end_idx].copy()
-            # Coordinate mode: ensure float32 for pos (x,y) and int for char; single tensor -> float32 for MPS (loss uses .long() on col 0)
-            if not self.use_sector:
-                labels = labels.astype(np.float32, copy=False)
-
             if self.use_sector:
-                height = self.data.shape[-2]
-                width = self.data.shape[-1]
-
-                grid_size = int(np.sqrt(self.num_sectors))
-                if grid_size * grid_size != self.num_sectors:
-                    raise ValueError(
-                        f"num_sectors={self.num_sectors} is not a perfect square, cannot form grid_size x grid_size grid"
-                    )
-
-                x = labels[:, 1].astype(np.float32)
-                y = labels[:, 2].astype(np.float32)
-
-                col = (x / max(width - 1, 1) * grid_size).astype(np.int64)
-                row = (y / max(height - 1, 1) * grid_size).astype(np.int64)
-
-                col = np.clip(col, 0, grid_size - 1)
-                row = np.clip(row, 0, grid_size - 1)
-
-                sector = row * grid_size + col
-                labels = np.stack([labels[:, 0].astype(np.int64), sector], axis=1)
+                labels = self.labels_sector[start_idx:end_idx]
+            else:
+                labels = self.labels_coord[start_idx:end_idx].copy()
 
         return stacked_frames, labels
+
 
 # ==================== Model Classes ====================
 # Note: self.training is provided by nn.Module. It is True when model.train() is called
@@ -209,7 +235,6 @@ class BaseConvSequenceModel(nn.Module):
         self.max_chars = max_chars
         self.predict_all_chars = predict_all_chars
         out_ch, out_h, out_w, mp2_k, mp2_s = _cnn_feature_map_config(cnn_feature_size)
-        # self.encoder_flatten_size = out_ch * out_h * out_w
         # Shared encoder
         self.conv1 = nn.Conv2d(2, 32, kernel_size=kernel_size, padding='same')
         self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
@@ -218,21 +243,14 @@ class BaseConvSequenceModel(nn.Module):
         self.MP2 = nn.MaxPool2d(kernel_size=mp2_k, stride=mp2_s)
         self.LNorm2 = nn.LayerNorm([out_ch, out_h, out_w])
 
-        # --- Compression head (方案A): 1x1降通道 + 额外下采样 ---
-        # 1) out_ch -> out_ch_reduced（默认减半；若 out_ch=32 则变 16）
-        # 2) out_h/out_w 再 /2（MaxPool2d(2,2)），因此要求 out_h/out_w 为偶数（你的 large=12/small=6 都满足）
-        out_ch3, out_h3, out_w3 = max(8, out_ch // 2), out_h // 2, out_w // 2
-        out_ch4, out_h4, out_w4 = max(8, out_ch3 // 2), out_h3 // 2, out_w3 // 2
-
-        self.conv3 = nn.Conv2d(out_ch, out_ch3, kernel_size=1)
-        self.MP3 = nn.MaxPool2d(kernel_size=2, stride=2)        
-        self.LNorm3 = nn.LayerNorm([out_ch3, out_h3, out_w3])
-
-        self.conv4 = nn.Conv2d(out_ch3, out_ch4, kernel_size=1)
-        self.MP4 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.LNorm4 = nn.LayerNorm([out_ch4, out_h4, out_w4])
-
-        self.encoder_flatten_size = out_ch4 * out_h4 * out_w4 # 64//4, 12//2, 12//2 = 16, 3, 3
+        # --- Compression head (方案1): 1x1降通道 + AdaptiveAvgPool ---
+        # 将 out_ch 压缩到 reduced_ch（large: 64 -> 16, small: 32 -> 8），
+        # 再通过自适应平均池化固定到 3x3。
+        reduced_ch = max(8, out_ch // 4)
+        self.conv_reduce = nn.Conv2d(out_ch, reduced_ch, kernel_size=1)
+        self.pool_reduce = nn.AdaptiveAvgPool2d((3, 3))
+        # self.encoder_flatten_size = reduced_ch * 3 * 3
+        self.encoder_flatten_size = out_ch * out_h * out_w
 
         # Shared classifier
         if predict_all_chars:
@@ -252,13 +270,12 @@ class BaseConvSequenceModel(nn.Module):
         x = self.conv2(x)
         x = self.MP2(x)
         x = self.LNorm2(x)
-        x = self.conv3(x)
-        x = self.MP3(x)
-        x = self.LNorm3(x)
-        x = self.conv4(x)
-        x = self.MP4(x)
-        x = self.LNorm4(x)
+
+        # # 新压缩结构：1x1 降通道 + AdaptiveAvgPool 到 3x3
+        # x = self.conv_reduce(x)
         x = F.relu(x)
+        # x = self.pool_reduce(x)
+
         x = F.dropout2d(x, p=self.dropout_rate, training=self.training)
         return x
 
@@ -736,9 +753,22 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         cnn_feature_size=cnn_feature_size,
     )
 
-    train_dl, val_dl = build_loaders(
-        train_data, val_data, batch_size, num_workers, pin_memory, accel_config, seed
-    )
+    is_gawf = isinstance(mdl, GaWFRNNConv)
+    # For GaWF we build two train loaders up front and switch at epoch boundaries
+    # (GaWF feedback-on uses batch=32 + lr scaled by 1/8). Validation loader remains single.
+    if is_gawf:
+        train_dl_256, val_dl = build_loaders(
+            train_data, val_data, 256, num_workers, pin_memory, accel_config, seed
+        )
+        train_dl_32, _ = build_loaders(
+            train_data, val_data, 32, num_workers, pin_memory, accel_config, seed
+        )
+        base_batch_size_for_logging = 256
+    else:
+        train_dl, val_dl = build_loaders(
+            train_data, val_data, batch_size, num_workers, pin_memory, accel_config, seed
+        )
+        base_batch_size_for_logging = batch_size
 
     # Add weight decay (L2 regularization) to prevent overfitting
     # For h>=512 models (especially dANN), use larger eps for Adam to prevent numerical instability
@@ -748,6 +778,8 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         optim = torch.optim.Adam(mdl.parameters(), lr=lr, weight_decay=weight_decay, eps=1e-6)
     else:
         optim = torch.optim.Adam(mdl.parameters(), lr=lr, weight_decay=weight_decay)
+    # Base learning rate used to restore lr when GaWF feedback is off.
+    lr_base = lr
     criterion_char = nn.CrossEntropyLoss()
     criterion_pos = get_criterion_pos(use_sector) if not predict_all_chars else None
 
@@ -805,8 +837,8 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
 
     if logger is not None:
         log_dataset_and_batch_info(
-            logger, train_data, val_data, batch_size, accel_config,
-            train_dl, num_workers, pin_memory, use_sector, predict_all_chars,
+            logger, train_data, val_data, base_batch_size_for_logging, accel_config,
+            train_dl if not is_gawf else train_dl_256, num_workers, pin_memory, use_sector, predict_all_chars,
         )
 
     stepper = TrainStepper(mdl, optim, loss_fn, accel_config, device, scaler, autocast_fn, pin_memory)
@@ -833,7 +865,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     # GaWFRNN: single nofb-based control for feedback. This value is passed to forward(use_feedback=...) and
     # governs both whether the feedback path is used and (when nofb) whether U,V are frozen.
     def _use_feedback_this_epoch(epoch):
-        if not isinstance(mdl, GaWFRNNConv):
+        if not is_gawf:
             return None  # not used
         if not nofb:
             return True  # default: always feedback
@@ -844,7 +876,48 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         for epoch in range(num_epochs):
             mdl.train()
             use_feedback_this_epoch = _use_feedback_this_epoch(epoch)
-            if isinstance(mdl, GaWFRNNConv):
+
+            # Select train DataLoader and learning rate at epoch boundary.
+            # GaWF feedback-on uses batch=32 + lr scaled by 1/8.
+            if is_gawf:
+                if use_feedback_this_epoch:
+                    current_train_dl = train_dl_32
+                    new_lr = lr_base / 8.0
+                else:
+                    current_train_dl = train_dl_256
+                    new_lr = lr_base
+                # No LR scheduler is used in this training loop, so we safely
+                # scale optimizer.param_groups['lr'] at epoch boundaries only.
+                for pg in optim.param_groups:
+                    if pg.get("lr", None) != new_lr:
+                        pg["lr"] = new_lr
+                msg_suffix = f"lr={new_lr:.6g}"
+                if logger is not None:
+                    if use_feedback_this_epoch:
+                        logger.info(
+                            "[Epoch %d] GaWF feedback ON -> batch=32 + lr scaled by 1/8 (%s)",
+                            epoch, msg_suffix,
+                        )
+                    else:
+                        logger.info(
+                            "[Epoch %d] GaWF feedback OFF -> batch=256, lr reset to base (%s)",
+                            epoch, msg_suffix,
+                        )
+                elif use_tqdm:
+                    if use_feedback_this_epoch:
+                        print(
+                            f"[Epoch {epoch}] GaWF feedback ON -> batch=32 + lr scaled by 1/8 ({msg_suffix})",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            f"[Epoch {epoch}] GaWF feedback OFF -> batch=256, lr reset to base ({msg_suffix})",
+                            flush=True,
+                        )
+            else:
+                current_train_dl = train_dl
+
+            if is_gawf:
                 if nofb:
                     mdl.set_feedback_frozen(use_feedback_this_epoch is False)  # freeze when epoch < fb_start_epoch
                 if use_tqdm and nofb and (epoch == 0 or epoch == fb_start_epoch):
@@ -856,7 +929,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             if use_tqdm:
                 print(f"Epoch {epoch + 1}/{num_epochs}: Starting training...", flush=True)
             
-            train_pbar = tqdm(enumerate(train_dl), total=len(train_dl), 
+            train_pbar = tqdm(enumerate(current_train_dl), total=len(current_train_dl),
                              desc=f"Epoch {epoch + 1}/{num_epochs} [Train]",
                              ncols=100, leave=False, disable=not use_tqdm)
             
@@ -870,7 +943,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 )
 
                 epoch_acc = metrics_mode.update_train_batch(
-                    epoch_acc, out_char, labels_device, batch_idx, len(train_dl), out_pos
+                    epoch_acc, out_char, labels_device, batch_idx, len(current_train_dl), out_pos
                 )
 
                 num_batches += 1
@@ -889,13 +962,8 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             if len(train_result) >= 4 and train_result[3] is not None:
                 train_loss_char[epoch] = train_result[3]
 
-            gpu_info = ""
-            if accel_config.use_acceleration and device == 'cuda' and torch.cuda.is_available():
-                gpu_mem = get_gpu_memory_usage()
-                gpu_info = f" | GPU memory: {gpu_mem:.1f}%"
-
             train_str = metrics_mode.format_train_str(
-                epoch, num_epochs, train_acc_char[epoch], train_metric_pos[epoch], gpu_info
+                epoch, num_epochs, train_acc_char[epoch], train_metric_pos[epoch]
             )
 
             run_val_this_epoch = (epoch % val_every == 0)
@@ -925,14 +993,20 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         # Handle interruption gracefully
         print("\nTraining interrupted, cleaning up resources...")
     finally:
-        # Explicit resource cleanup for DataLoader to prevent semaphore leaks
-        # This is critical when using persistent_workers=True with multiprocessing
+        # Explicit resource cleanup for DataLoader so worker processes exit.
+        # Use Ctrl+C (SIGINT) to stop training; kill -9 skips this and can leave workers running.
         if num_workers > 0:
             try:
                 # Shutdown DataLoader workers properly to prevent semaphore leaks
                 if 'train_dl' in locals():
                     train_dl._iterator = None
                     del train_dl
+                if 'train_dl_256' in locals():
+                    train_dl_256._iterator = None
+                    del train_dl_256
+                if 'train_dl_32' in locals():
+                    train_dl_32._iterator = None
+                    del train_dl_32
                 if 'val_dl' in locals():
                     val_dl._iterator = None
                     del val_dl

@@ -127,9 +127,9 @@ def setup_acceleration(accel_config, device, is_gawf=False, use_mmap=False, cnn_
         if not use_mmap:
             num_workers = min(8, os.cpu_count() or 1)
         else:
-            num_workers = 8
+            num_workers = 0
     else:
-        num_workers = 4
+        num_workers = 0
     # num_workers = min(8, os.cpu_count() or 1) if not is_gawf else 0
 
     pin_memory = (num_workers > 0) and (device == "cuda")  # pin_memory only for CUDA
@@ -234,6 +234,7 @@ class TrainStepper:
                 labels = labels.float()
             labels = labels.to(self.device, non_blocking=non_blocking)
         labels_device = labels
+
 
         accum_steps = self.accel_config.grad_accum_steps
         if batch_idx % accum_steps == 0:
