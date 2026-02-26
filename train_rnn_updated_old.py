@@ -1,16 +1,6 @@
 """
 Standalone RNN Sector training script
 Used to train RNN models and save results
-
-Device support: CUDA (Linux/NVIDIA), MPS (macOS Apple Silicon), CPU (fallback).
-  - Mac:  --device mps  or  --device auto
-  - Server (NVIDIA):  --device cuda  or  --device auto
-  - CPU only:  --device cpu
-
-Smoke-test (run 1 epoch, minimal config):
-  CUDA:  python train_rnn_updated.py --device cuda --num_epochs 1
-  MPS:   python train_rnn_updated.py --device mps --num_epochs 1
-  CPU:   python train_rnn_updated.py --device cpu --num_epochs 1
 """
 import os
 import gc
@@ -27,13 +17,13 @@ from tqdm import tqdm
 
 # Import helper and acceleration utilities
 from utils.train_helpers import (
-    pick_device,
     save_results,
     get_base_path,
     prepare_data_paths,
     load_raw_data,
     create_datasets,
     set_seed,
+    get_gpu_memory_usage,
     get_model_classes,
     setup_logger,
     log_experiment_config,
@@ -65,13 +55,10 @@ def _create_metrics_mode(predict_all_chars, use_sector, max_chars=None, device=N
         return AllCharsMetricsMode(max_chars, device)
     return SingleCharMetricsMode(use_sector)
 
-
 torch.set_num_threads(4)
 
-# Only set CUDA_VISIBLE_DEVICES when CUDA is available (avoid MPS/CPU noise)
-# if torch.cuda.is_available():
-    # os.environ['CUDA_VISIBLE_DEVICES'] = os.environ.get('CUDA_VISIBLE_DEVICES', '1')
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+
 
 def _cnn_feature_map_config(feature_size, mp1_out_hw=48):
     """
@@ -81,8 +68,8 @@ def _cnn_feature_map_config(feature_size, mp1_out_hw=48):
     """
     if feature_size == "large":
         out_ch, out_h, out_w = 64, 12, 12
-    # elif feature_size == "small":
-    #     out_ch, out_h, out_w = 16, 3, 3 #32, 6, 6
+    elif feature_size == "small":
+        out_ch, out_h, out_w = 16, 3, 3 #32, 6, 6
     else:
         raise ValueError(f"cnn_feature_size must be 'large' or 'small', got {feature_size!r}")
 
@@ -101,11 +88,11 @@ def _cnn_feature_map_config(feature_size, mp1_out_hw=48):
 
 # ==================== Dataset Class ====================
 class MC_RNN_Dataset(Dataset):
-    def __init__(self, data, labels, frame_num=32, chan_num=2, use_sector=False, num_sectors=9,
+    def __init__(self, data, labels, frame_num=32, chan_num=2, use_sector=False, num_sectors=9, 
                  max_chars=15, predict_all_chars=False):
         """
         Args:
-            data (np.ndarray): Array of shape (num_frames_total, height, width); supports float32 for faster loading.
+            data (np.ndarray): Array of shape (num_samples, num_frames, height, width)
             labels (np.ndarray): DataFrame with columns ['fg_char_id', 'fg_char_x', 'fg_char_y', 'bg_char_ids']
             frame_num (int): Number of frames to stack for input as multichannel image
             chan_num (int): Number of channels in the input images. Each channel is a previous frame.
@@ -121,101 +108,78 @@ class MC_RNN_Dataset(Dataset):
         self.num_sectors = num_sectors
         self.max_chars = max_chars
         self.predict_all_chars = predict_all_chars
-        self.data_dtype = getattr(data, "dtype", np.uint8)
-
+        
         if predict_all_chars:
+            # Store full DataFrame to access bg_char_ids
             self.labels_df = labels
+            # Extract columns we need
             self.fg_char_ids = labels['fg_char_id'].values
-            raw_bg = labels['bg_char_ids'].values
-            self.bg_char_ids_parsed = []
-            for i in range(len(raw_bg)):
-                s = str(raw_bg[i]) if raw_bg[i] is not None else ""
-                if s and s != "nan" and s.strip():
-                    try:
-                        self.bg_char_ids_parsed.append([int(x) for x in s.split(",") if x.strip()])
-                    except (ValueError, TypeError):
-                        self.bg_char_ids_parsed.append([])
-                else:
-                    self.bg_char_ids_parsed.append([])
+            self.bg_char_ids_str = labels['bg_char_ids'].values
         else:
+            # Original behavior: only fg char
             self.labels = labels[['fg_char_id', 'fg_char_x', 'fg_char_y']].values
-            if use_sector:
-                # Sector precomputation (one-time): full sequence sector labels so __getitem__ only slices.
-                N = self.data.shape[0]
-                height = self.data.shape[-2]
-                width = self.data.shape[-1]
-                grid_size = int(np.sqrt(self.num_sectors))
-                if grid_size * grid_size != self.num_sectors:
-                    raise ValueError(
-                        f"num_sectors={self.num_sectors} is not a perfect square, cannot form grid_size x grid_size grid"
-                    )
-                x = self.labels[:, 1].astype(np.float64)
-                y = self.labels[:, 2].astype(np.float64)
-                col = np.clip((x / max(width - 1, 1)) * grid_size, 0, grid_size - 1).astype(np.int64)
-                row = np.clip((y / max(height - 1, 1)) * grid_size, 0, grid_size - 1).astype(np.int64)
-                sector = row * grid_size + col
-                char_id = self.labels[:, 0].astype(np.int64)
-                self.labels_sector = np.stack([char_id, sector], axis=1).astype(np.int64, copy=False)
-            else:
-                # Coordinate mode: one-time float32 conversion for labels.
-                self.labels_coord = self.labels.astype(np.float32, copy=False)
 
     def __len__(self):
-        return (self.data.shape[0] - self.chan_num) // self.frame_num
+        return (self.data.shape[0]-self.chan_num) // self.frame_num
 
     def __getitem__(self, idx):
         start_idx = (idx * self.frame_num) + self.chan_num
         end_idx = start_idx + self.frame_num
-        T, C = self.frame_num, self.chan_num
 
-        # Frames: stride view (zero-copy when data is contiguous) instead of list + np.stack.
-        block_start = start_idx - (C - 1)
-        block_end = end_idx
-        block = self.data[block_start:block_end]
-        use_strided = (
-            block.shape[0] == T + C - 1
-            and len(block.shape) == 3
-            and block.strides[0] >= 0
-            and block.strides[1] >= 0
-            and block.strides[2] >= 0
-        )
-        if use_strided:
-            s0, s1, s2 = block.strides[0], block.strides[1], block.strides[2]
-            H, W = block.shape[1], block.shape[2]
-            stacked_frames = np.lib.stride_tricks.as_strided(
-                block, shape=(T, C, H, W), strides=(s0, s0, s1, s2)
-            )
-        else:
-            frames = [self.data[start_idx + i : end_idx + i] for i in range(-(C - 1), 1)]
-            stacked_frames = np.stack(frames, axis=1)
-
-        if stacked_frames.dtype != np.float32:
-            stacked_frames = stacked_frames.astype(np.float32, copy=False)
-
-        # When using np.memmap (use_mmap=True), stride views may be backed by
-        # non-writable arrays. Torch's default collate uses torch.as_tensor,
-        # which warns on non-writable NumPy arrays. Make a writable copy only
-        # in that case to avoid the warning while keeping copies minimal.
-        if not stacked_frames.flags.writeable:
-            stacked_frames = np.array(stacked_frames, copy=True)
+        # Stack frames to create a multichannel image
+        for i in range(-(self.chan_num - 1), 1):
+            if i == -(self.chan_num - 1):
+                stacked_frames = np.expand_dims(self.data[(start_idx + i):(end_idx + i)], axis=1)
+            else:
+                stacked_frames = np.concatenate(
+                    (stacked_frames, np.expand_dims(self.data[(start_idx + i):(end_idx + i)], axis=1)),
+                    axis=1
+                )
+        stacked_frames = stacked_frames.astype(np.float32)
 
         if self.predict_all_chars:
             all_chars_per_frame = []
             for frame_idx in range(start_idx, end_idx):
                 fg_char_id = int(self.fg_char_ids[frame_idx])
-                bg_char_ids = self.bg_char_ids_parsed[frame_idx] if frame_idx < len(self.bg_char_ids_parsed) else []
+
+                bg_chars_str = str(self.bg_char_ids_str[frame_idx])
+                if bg_chars_str and bg_chars_str != 'nan':
+                    bg_char_ids = [int(x) for x in bg_chars_str.split(',') if x.strip()]
+                else:
+                    bg_char_ids = []
+
                 all_chars = [fg_char_id] + bg_char_ids
-                padded_chars = all_chars[: self.max_chars] + [-1] * max(0, self.max_chars - len(all_chars))
+                padded_chars = all_chars[:self.max_chars] + [-1] * max(0, self.max_chars - len(all_chars))
                 all_chars_per_frame.append(padded_chars)
+
             labels = np.array(all_chars_per_frame, dtype=np.int64)
         else:
+            labels = self.labels[start_idx:end_idx].copy()
+
             if self.use_sector:
-                labels = self.labels_sector[start_idx:end_idx]
-            else:
-                labels = self.labels_coord[start_idx:end_idx].copy()
+                height = self.data.shape[-2]
+                width = self.data.shape[-1]
 
-        return stacked_frames, labels
+                grid_size = int(np.sqrt(self.num_sectors))
+                if grid_size * grid_size != self.num_sectors:
+                    raise ValueError(
+                        f"num_sectors={self.num_sectors} is not a perfect square, cannot form grid_size x grid_size grid"
+                    )
 
+                x = labels[:, 1].astype(np.float32)
+                y = labels[:, 2].astype(np.float32)
+
+                col = (x / max(width - 1, 1) * grid_size).astype(np.int64)
+                row = (y / max(height - 1, 1) * grid_size).astype(np.int64)
+
+                col = np.clip(col, 0, grid_size - 1)
+                row = np.clip(row, 0, grid_size - 1)
+
+                sector = row * grid_size + col
+                labels = np.stack([labels[:, 0].astype(np.int64), sector], axis=1)
+
+        # 关键：返回 idx，供 feedback table 使用
+        return stacked_frames, labels, idx
 
 # ==================== Model Classes ====================
 # Note: self.training is provided by nn.Module. It is True when model.train() is called
@@ -235,6 +199,7 @@ class BaseConvSequenceModel(nn.Module):
         self.max_chars = max_chars
         self.predict_all_chars = predict_all_chars
         out_ch, out_h, out_w, mp2_k, mp2_s = _cnn_feature_map_config(cnn_feature_size)
+        self.encoder_flatten_size = out_ch * out_h * out_w
         # Shared encoder
         self.conv1 = nn.Conv2d(2, 32, kernel_size=kernel_size, padding='same')
         self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
@@ -242,17 +207,6 @@ class BaseConvSequenceModel(nn.Module):
         self.conv2 = nn.Conv2d(32, out_ch, kernel_size=3, padding=1)
         self.MP2 = nn.MaxPool2d(kernel_size=mp2_k, stride=mp2_s)
         self.LNorm2 = nn.LayerNorm([out_ch, out_h, out_w])
-
-        # --- Compression head (方案1): 1x1降通道 + AdaptiveAvgPool ---
-        # 将 out_ch 压缩到 reduced_ch（large: 64 -> 16, small: 32 -> 8），
-        # 再通过自适应平均池化固定到 3x3。
-        reduced_ch = max(8, out_ch // 4)
-        self.conv_reduce = nn.Conv2d(out_ch, reduced_ch, kernel_size=1)
-        self.pool_reduce = nn.AdaptiveAvgPool2d((3, 3))
-
-        # self.encoder_flatten_size = reduced_ch * 3 * 3
-        self.encoder_flatten_size = out_ch * out_h * out_w
-
         # Shared classifier
         if predict_all_chars:
             self.fcchars = nn.Linear(hidden_size, max_chars * num_classes)
@@ -271,12 +225,7 @@ class BaseConvSequenceModel(nn.Module):
         x = self.conv2(x)
         x = self.MP2(x)
         x = self.LNorm2(x)
-
-        # # 新压缩结构：1x1 降通道 + AdaptiveAvgPool 到 3x3
-        # x = self.conv_reduce(x)
         x = F.relu(x)
-        # x = self.pool_reduce(x)
-
         x = F.dropout2d(x, p=self.dropout_rate, training=self.training)
         return x
 
@@ -397,37 +346,156 @@ class GaWFRNNConv(BaseConvSequenceModel):
         for p in (self.U, self.V):
             p.requires_grad = not freeze
 
-    def middle_gawf(self, x_t, h_prev, fb_t):
+    # encoder and classifier inherited from BaseConvSequenceModel (same implementation)
+
+    def middle(self, x, feedback=None):
         """
-        One timestep of the gated RNN with feedback. Used for autoregressive feedback in forward().
-        x_t: (B, input_size), h_prev: (B, hidden_size), fb_t: (B, fb_dim, 1).
-        Returns: gated_output (B, hidden_size), before dropout.
+        GaWF RNN middle layer with feedback mechanism
+        
+        According to the diagram (Panel A):
+        1. Concatenate Input and Feedback
+        2. Matrix multiplication with weight matrix (standard RNN computation)
+        3. Feedback transformed by U @ diag(concat) @ V, then sigmoid (gating signal)
+        4. Hadamard product of the two results (element-wise multiplication)
+        5. LayerNorm
+        6. ReLU
+        
+        Args:
+            x: Input sequence (B, T, input_size)
+            feedback: Feedback from classifier (B, T, feedback_dim) or None
         """
-        input_size = x_t.size(-1)
+        batch_size, seq_len, input_size = x.size()
         hidden_size = self.rnn.hidden_size
-        weight_ih = self.rnn.weight_ih_l0
-        weight_hh = self.rnn.weight_hh_l0
-        bias_ih = self.rnn.bias_ih_l0
-        bias_hh = self.rnn.bias_hh_l0
-        V_ih = self.V[:, :input_size].unsqueeze(0)
-        V_hh = self.V[:, input_size:].unsqueeze(0)
-        trans_ih = torch.matmul(self.U, fb_t * V_ih)
-        trans_hh = torch.matmul(self.U, fb_t * V_hh)
-        tau = 2.0
-        gate_ih = torch.sigmoid(trans_ih / tau)
-        gate_hh = torch.sigmoid(trans_hh / tau)
-        gated_weight_ih = gate_ih * weight_ih.unsqueeze(0)
-        gated_weight_hh = gate_hh * weight_hh.unsqueeze(0)
-        ih = torch.bmm(x_t.unsqueeze(1), gated_weight_ih.transpose(1, 2)).squeeze(1)
-        hh = torch.bmm(h_prev.unsqueeze(1), gated_weight_hh.transpose(1, 2)).squeeze(1)
-        if bias_ih is not None:
-            ih = ih + bias_ih.unsqueeze(0)
-        if bias_hh is not None:
-            hh = hh + bias_hh.unsqueeze(0)
-        h_t = torch.tanh(ih + hh)
-        gated_output = self.LNormRNN(h_t)
-        gated_output = F.relu(gated_output)
-        return gated_output
+        
+        if feedback is not None:
+
+            if feedback.dim() == 2:
+                # feedback from table is (B, fb_dim); broadcast to all timesteps
+                feedback = feedback.unsqueeze(1).expand(-1, seq_len, -1)
+
+            # Get RNN weights
+            weight_ih = self.rnn.weight_ih_l0  # (hidden_size, input_size)
+            weight_hh = self.rnn.weight_hh_l0  # (hidden_size, hidden_size)
+            bias_ih = self.rnn.bias_ih_l0 if self.rnn.bias_ih_l0 is not None else None
+            bias_hh = self.rnn.bias_hh_l0 if self.rnn.bias_hh_l0 is not None else None
+            
+            # Process each time step
+            # outputs = []
+            outputs = torch.empty(batch_size, seq_len, hidden_size, device=x.device, dtype=x.dtype)
+            h = torch.zeros(batch_size, hidden_size, device=x.device)  # (B, hidden_size)
+            
+            # # Concatenate RNN input weight matrix and recurrent weight matrix (compute once)
+            # combined_weight = torch.cat([weight_ih, weight_hh], dim=1)  # (hidden_size, input_size + hidden_size)
+            
+            for t in range(seq_len):
+                # Current time step input and feedback
+                x_t = x[:, t, :]  # (B, input_size)
+                fb_t_clamped = feedback[:, t, :].clamp(-10, 10)  # (B, feedback_dim)
+                
+                # Feedback transformation: U @ diag(fb_t_clamped) @ V, then sigmoid
+                # fb_t_clamped: (B, feedback_dim)
+                # For each sample b, compute U @ diag(fb_t_clamped[b]) @ V
+                # Equivalent to: U @ (fb_t_clamped[b] * I) @ V, where I is identity matrix
+                # Can be written as: U @ (fb_t_clamped[b].unsqueeze(1) * V)
+                
+                # gated_weights, h_t_list = [], []
+                # for b in range(batch_size):
+                #     transformed = self.U @ (fb_t_clamped[b].unsqueeze(1) * self.V)
+
+                #     tau = 2.0
+                #     transformed = torch.sigmoid(transformed / tau)  # (hidden_size, combined_weight_size)
+                    
+                #     # Hadamard product: transformed * combined_weight
+                #     gated_weight = transformed * combined_weight  # (hidden_size, combined_weight_size)
+                #     gated_weights.append(gated_weight)
+                
+                # # Stack gated weights: (B, hidden_size, combined_weight_size)
+                # gated_weights = torch.stack(gated_weights, dim=0)  # (B, hidden_size, combined_weight_size)
+                
+                # # Separate back into weight_ih and weight_hh parts
+                # gated_weight_ih = gated_weights[:, :, :input_size]  # (B, hidden_size, input_size)
+                # gated_weight_hh = gated_weights[:, :, input_size:]  # (B, hidden_size, hidden_size)
+                
+                # # Compute RNN output using gated weights
+                # # Compute for each sample separately  
+                # for b in range(batch_size):
+                #     # Input to hidden: (1, hidden_size)
+                #     ih = F.linear(x_t[b:b+1], gated_weight_ih[b], bias_ih)  # (1, hidden_size)
+                #     # Hidden to hidden: (1, hidden_size)
+                #     hh = F.linear(h[b:b+1], gated_weight_hh[b], bias_hh)  # (1, hidden_size)
+                #     # Combine and apply activation
+                #     h_t = torch.tanh(ih + hh)  # (1, hidden_size)
+                #     h_t_list.append(h_t)
+                
+                # # Stack: (B, hidden_size)
+                # h_t = torch.cat(h_t_list, dim=0)  # (B, hidden_size)
+
+                # ===== [GAWF_BMM] batched gate + batched RNN update (no b-loop) =====
+
+                # Ensure float32 for stability if you want (optional but recommended with AMP):
+                # fb_t_clamped = fb_t_clamped.to(torch.float32)
+
+                # Split V into input-part and hidden-part to avoid building full (B, hidden, combined) explicitly
+                V_ih = self.V[:, :input_size]        # (feedback_dim, input_size)
+                V_hh = self.V[:, input_size:]        # (feedback_dim, hidden_size)
+
+                # Prepare scaled V per sample: (B, feedback_dim, K) where K is input_size or hidden_size
+                # diag(fb) @ V == fb[:,None] * V  (row-wise scale of V)
+                tmp_ih = fb_t_clamped.unsqueeze(2) * V_ih.unsqueeze(0)   # (B, feedback_dim, input_size)
+                tmp_hh = fb_t_clamped.unsqueeze(2) * V_hh.unsqueeze(0)   # (B, feedback_dim, hidden_size)
+
+                # U @ tmp => (B, hidden_size, K)
+                # U: (hidden_size, feedback_dim)
+                trans_ih = torch.matmul(self.U, tmp_ih)  # (B, hidden_size, input_size)
+                trans_hh = torch.matmul(self.U, tmp_hh)  # (B, hidden_size, hidden_size)
+
+                tau = 2.0
+                gate_ih = torch.sigmoid(trans_ih / tau)  # (B, hidden_size, input_size)
+                gate_hh = torch.sigmoid(trans_hh / tau)  # (B, hidden_size, hidden_size)
+
+                # Apply gate to base weights (broadcast base weights to batch)
+                # weight_ih: (hidden_size, input_size) -> (B, hidden_size, input_size)
+                # weight_hh: (hidden_size, hidden_size) -> (B, hidden_size, hidden_size)
+                gated_weight_ih = gate_ih * weight_ih.unsqueeze(0)  # (B, hidden_size, input_size)
+                gated_weight_hh = gate_hh * weight_hh.unsqueeze(0)  # (B, hidden_size, hidden_size)
+
+                # Batched linear:
+                # ih[b] = x_t[b] @ gated_weight_ih[b]^T + bias_ih
+                # Use bmm: (B, 1, input) x (B, input, hidden) -> (B, 1, hidden)
+                ih = torch.bmm(x_t.unsqueeze(1), gated_weight_ih.transpose(1, 2)).squeeze(1)  # (B, hidden_size)
+                hh = torch.bmm(h.unsqueeze(1), gated_weight_hh.transpose(1, 2)).squeeze(1)    # (B, hidden_size)
+
+                if bias_ih is not None:
+                    ih = ih + bias_ih.unsqueeze(0)
+                if bias_hh is not None:
+                    hh = hh + bias_hh.unsqueeze(0)
+
+                h_t = torch.tanh(ih + hh)  # (B, hidden_size)
+                # ===== [GAWF_BMM] end =====
+                
+                # LayerNorm and ReLU
+                gated_output = self.LNormRNN(h_t)  # (B, hidden_size)
+                gated_output = F.relu(gated_output)  # (B, hidden_size)
+                
+                # outputs.append(gated_output)
+                outputs[:, t, :] = gated_output
+                h = gated_output  # Update hidden state
+            
+            # Stack outputs: (B, T, hidden_size)
+            # x = torch.stack(outputs, dim=1)  # (B, T, hidden_size)
+            x = outputs
+
+        else:
+            # When no feedback, use standard RNN
+            x, _ = self.rnn(x)
+            x = self.LNormRNN(x)
+            x = F.relu(x)
+        
+        # Dropout
+        x = F.dropout(x, p=0.5, training=self.training)
+        return x
+
+    # classifier inherited from BaseConvSequenceModel (same implementation)
 
     def forward(self, x, use_feedback=True, reset_feedback=False):
         """
@@ -439,48 +507,41 @@ class GaWFRNNConv(BaseConvSequenceModel):
                             (Useful for size-change / batch-size probing / eval isolation)
         """
         x = x.to(self.device)
+
         batch_size, frame_num, channels, height, width = x.size()
-        x = x.view(batch_size * frame_num, channels, height, width) # resize to process each frame individually
+
+        # resize to process each frame individually
+        x = x.view(batch_size * frame_num, channels, height, width)
+
+        # apply CNN encoder
         x = self.encoder(x)
-        x = x.view(batch_size, frame_num, -1) # reshape back to batches of stacks of frames and flatten each image
 
+        # reshape back to batches of stacks of frames and flatten each image
+        x = x.view(batch_size, frame_num, -1)
+
+        # -------- feedback selection --------
         if use_feedback:
-            # Autoregressive feedback: fb(t+1) = output(t); no (B,T,fb_dim) tensors.
-            fb_dim = self.num_classes + self.num_pos
             if reset_feedback or self.prev_feedback is None:
-                fb = torch.zeros(batch_size, fb_dim, device=x.device, dtype=torch.float32)
+                feedback = None
             else:
-                fb = self.prev_feedback.to(device=x.device, dtype=torch.float32)
-
-            hidden_size = self.rnn.hidden_size
-            char_out = torch.empty(batch_size, frame_num, self.num_classes, device=x.device, dtype=x.dtype)
-            pos_out = torch.empty(batch_size, frame_num, self.num_pos, device=x.device, dtype=x.dtype)
-            h = torch.zeros(batch_size, hidden_size, device=x.device, dtype=x.dtype)
-
-            for t in range(frame_num):
-                x_t = x[:, t, :]
-                fb_t = fb.clamp(-10, 10).unsqueeze(2)  # (B, fb_dim, 1)
-                gated_output = self.middle_gawf(x_t, h, fb_t)
-                gated_output = F.dropout(gated_output, p=0.5, training=self.training)
-                char_t, pos_t = self.classifier(gated_output)
-                
-                with torch.no_grad():
-                    fb = torch.cat([char_t, pos_t], dim=-1)
-                h = gated_output
-
-                char_out[:, t, :], pos_out[:, t, :] = char_t, pos_t
-
-            self.prev_feedback = fb.detach()
+                # After FB_LAST_ONLY change, prev_feedback is (B, fb_dim) (NOT (B,T,fb_dim))
+                feedback = self.prev_feedback.to(dtype=torch.float32)
         else:
-            self.prev_feedback = None
+            feedback = None
+            self.prev_feedback = None  # keep state consistent when feedback is off
 
-            x, _ = self.rnn(x)
-            x = self.LNormRNN(x)
-            x = F.relu(x)
-            x = F.dropout(x, p=0.5, training=self.training) 
+        # apply RNN / gated update
+        x = self.middle(x, feedback=feedback)
 
+        # apply classification heads
+        char_out, pos_out = self.classifier(x)
 
-            char_out, pos_out = self.classifier(x)
+        # -------- store feedback: ONLY last timestep to avoid (B,T,fb_dim) blow-up --------
+        if use_feedback:
+            with torch.no_grad():
+                fb_full = torch.cat([char_out, pos_out], dim=-1)  # (B, T, fb_dim)
+                fb_last = fb_full[:, -1, :]  # (B, fb_dim)
+                self.prev_feedback = fb_last.detach()
 
         return char_out, pos_out
 
@@ -748,28 +809,15 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     metrics_mode = _create_metrics_mode(predict_all_chars, use_sector, max_chars, device)
 
     (autocast_fn, scaler, batch_size, num_workers, pin_memory) = setup_acceleration(
-        accel_config, device,
+        accel_config, mdl, train_data, device,
         is_gawf=isinstance(mdl, GaWFRNNConv),
         use_mmap=use_mmap,
         cnn_feature_size=cnn_feature_size,
     )
 
-    is_gawf = isinstance(mdl, GaWFRNNConv)
-    # For GaWF we build two train loaders up front and switch at epoch boundaries
-    # (GaWF feedback-on uses batch=32 + lr scaled by 1/8). Validation loader remains single.
-    if is_gawf:
-        train_dl_256, val_dl = build_loaders(
-            train_data, val_data, 256, num_workers, pin_memory, accel_config, seed
-        )
-        train_dl_32, _ = build_loaders(
-            train_data, val_data, 32, num_workers, pin_memory, accel_config, seed
-        )
-        base_batch_size_for_logging = 256
-    else:
-        train_dl, val_dl = build_loaders(
-            train_data, val_data, batch_size, num_workers, pin_memory, accel_config, seed
-        )
-        base_batch_size_for_logging = batch_size
+    train_dl, val_dl = build_loaders(
+        train_data, val_data, batch_size, num_workers, pin_memory, accel_config, seed
+    )
 
     # Add weight decay (L2 regularization) to prevent overfitting
     # For h>=512 models (especially dANN), use larger eps for Adam to prevent numerical instability
@@ -779,8 +827,6 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         optim = torch.optim.Adam(mdl.parameters(), lr=lr, weight_decay=weight_decay, eps=1e-6)
     else:
         optim = torch.optim.Adam(mdl.parameters(), lr=lr, weight_decay=weight_decay)
-    # Base learning rate used to restore lr when GaWF feedback is off.
-    lr_base = lr
     criterion_char = nn.CrossEntropyLoss()
     criterion_pos = get_criterion_pos(use_sector) if not predict_all_chars else None
 
@@ -789,14 +835,16 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     else:
         loss_fn = build_loss_fn_single(mdl, criterion_char, criterion_pos, use_sector, loss_weights, rnn_diag_lambda, device)
 
-    def evaluate(mdl, data_loader, use_tqdm=True, use_feedback=None):
+    def evaluate(mdl, data_loader, use_tqdm=True, use_feedback=None, feedback_table=None, update_feedback_table=False):
         """
         Args:
             mdl: model
             data_loader: DataLoader
-            use_feedback: None or bool (GaWFRNNConv). Feedback is stateless (no table).
+            use_feedback: None or bool (GaWFRNNConv)
+            feedback_table: torch.Tensor on CPU, shape (len(dataset), fb_dim) or None
+            update_feedback_table: whether to write new feedback_table from this pass
         Returns:
-            (acc_char, metric_pos) or (acc_char, metric_pos, loss_pos, loss_char) per metrics_mode.
+            (acc_char, metric_pos); if update_feedback_table=True, (acc_char, metric_pos, new_table).
         """
         device = mdl.device
         ds = data_loader.dataset
@@ -807,6 +855,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             device,
         )
         acc = eval_mode.init_eval()
+        new_table = None
 
         pbar = tqdm(enumerate(data_loader), total=len(data_loader),
                     desc="Validation", ncols=100, leave=False, disable=not use_tqdm)
@@ -814,32 +863,41 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         mdl.eval()
         with torch.no_grad():
             for batch_idx, batch in pbar:
-                if isinstance(batch, (list, tuple)) and len(batch) >= 2:
-                    inputs, labels = batch[0], batch[1]
+                if isinstance(batch, (list, tuple)) and len(batch) == 3:
+                    inputs, labels, sample_idx = batch
                 else:
-                    inputs, labels = batch, None
+                    inputs, labels = batch
+                    sample_idx = None
 
-                if inputs.dtype == torch.float64:
-                    inputs = inputs.float()
                 inputs = inputs.to(device)
-                if labels is not None:
-                    if labels.dtype == torch.float64:
-                        labels = labels.float()
-                    labels = labels.to(device)
+                labels = labels.to(device)
 
                 out_char, out_pos = run_forward_with_feedback(
-                    mdl, inputs,
+                    mdl, inputs, device,
                     use_feedback=use_feedback,
+                    feedback_table=feedback_table,
+                    sample_idx=sample_idx,
                 )
+
+                if update_feedback_table and (use_feedback is True) and (sample_idx is not None):
+                    fb_full = out_char.detach() if out_pos is None else torch.cat([out_char, out_pos], dim=-1).detach()
+                    fb_last = fb_full[:, -1, :] if fb_full.dim() == 3 else fb_full
+                    if new_table is None:
+                        new_table = torch.zeros(len(ds), fb_last.shape[-1], dtype=torch.float32)
+                    new_table[sample_idx] = fb_last.to("cpu", dtype=torch.float32)
+
                 acc = eval_mode.update_eval_batch(acc, out_char, labels, out_pos)
 
         result = eval_mode.finalize_eval(acc, len(data_loader))
+
+        if update_feedback_table:
+            return result[0], result[1], new_table
         return result
 
     if logger is not None:
         log_dataset_and_batch_info(
-            logger, train_data, val_data, base_batch_size_for_logging, accel_config,
-            train_dl if not is_gawf else train_dl_256, num_workers, pin_memory, use_sector, predict_all_chars,
+            logger, train_data, val_data, batch_size, accel_config,
+            train_dl, num_workers, pin_memory, use_sector, predict_all_chars,
         )
 
     stepper = TrainStepper(mdl, optim, loss_fn, accel_config, device, scaler, autocast_fn, pin_memory)
@@ -866,48 +924,19 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
     # GaWFRNN: single nofb-based control for feedback. This value is passed to forward(use_feedback=...) and
     # governs both whether the feedback path is used and (when nofb) whether U,V are frozen.
     def _use_feedback_this_epoch(epoch):
-        if not is_gawf:
+        if not isinstance(mdl, GaWFRNNConv):
             return None  # not used
         if not nofb:
             return True  # default: always feedback
         return epoch >= fb_start_epoch
 
-    val_every = 1 #5  # run full validation only every N epochs
     try:
+        prev_epoch_feedback_table = None  # CPU tensor: (len(train_data), fb_dim)
         for epoch in range(num_epochs):
             mdl.train()
             use_feedback_this_epoch = _use_feedback_this_epoch(epoch)
-
-            # Select train DataLoader and learning rate at epoch boundary.
-            # GaWF feedback-on uses batch=32 + lr scaled by 1/8.
-            if is_gawf:
-                if use_feedback_this_epoch:
-                    current_train_dl = train_dl_32
-                    new_lr = lr_base / 8.0
-                else:
-                    current_train_dl = train_dl_256
-                    new_lr = lr_base
-                # No LR scheduler is used in this training loop, so we safely
-                # scale optimizer.param_groups['lr'] at epoch boundaries only.
-                for pg in optim.param_groups:
-                    if pg.get("lr", None) != new_lr:
-                        pg["lr"] = new_lr
-                msg_suffix = f"lr={new_lr:.6g}"
-                if logger is not None:
-                    if use_feedback_this_epoch:
-                        logger.info(
-                            "[Epoch %d] GaWF feedback ON -> batch=32 + lr scaled by 1/8 (%s)",
-                            epoch, msg_suffix,
-                        )
-                    else:
-                        logger.info(
-                            "[Epoch %d] GaWF feedback OFF -> batch=256, lr reset to base (%s)",
-                            epoch, msg_suffix,
-                        )
-            else:
-                current_train_dl = train_dl
-
-            if is_gawf:
+            new_epoch_feedback_table = None  # will be lazily initialized (CPU) when first fb is produced
+            if isinstance(mdl, GaWFRNNConv):
                 if nofb:
                     mdl.set_feedback_frozen(use_feedback_this_epoch is False)  # freeze when epoch < fb_start_epoch
                 if use_tqdm and nofb and (epoch == 0 or epoch == fb_start_epoch):
@@ -919,7 +948,8 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             if use_tqdm:
                 print(f"Epoch {epoch + 1}/{num_epochs}: Starting training...", flush=True)
             
-            train_pbar = tqdm(enumerate(current_train_dl), total=len(current_train_dl),
+            # Use tqdm for progress bar
+            train_pbar = tqdm(enumerate(train_dl), total=len(train_dl), 
                              desc=f"Epoch {epoch + 1}/{num_epochs} [Train]",
                              ncols=100, leave=False, disable=not use_tqdm)
             
@@ -928,19 +958,38 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
                 if _STOP_REQUESTED:
                     raise KeyboardInterrupt
 
-                current_loss, out_char, out_pos, labels_device = stepper.step(
-                    batch, batch_idx, use_feedback_this_epoch
+                current_loss, out_char, out_pos, feedback_update = stepper.step(
+                    batch, batch_idx, use_feedback_this_epoch, prev_epoch_feedback_table
                 )
 
+                if feedback_update is not None:
+                    sample_idx, fb_last = feedback_update
+                    if new_epoch_feedback_table is None:
+                        new_epoch_feedback_table = torch.zeros(len(train_data), fb_last.shape[-1], dtype=torch.float32)
+                    new_epoch_feedback_table[sample_idx] = fb_last
+
+                # Get labels for metrics (same batch format as in stepper)
+                if isinstance(batch, (list, tuple)) and len(batch) == 3:
+                    _, labels, _ = batch
+                else:
+                    _, labels = batch
+
+                labels = labels.to(device)
+
                 epoch_acc = metrics_mode.update_train_batch(
-                    epoch_acc, out_char, labels_device, batch_idx, len(current_train_dl), out_pos
+                    epoch_acc, out_char, labels, batch_idx, len(train_dl), out_pos
                 )
 
                 num_batches += 1
+                
+                # Memory optimization: periodically clear GPU cache and unused memory
+                if accel_config.enable_memory_opt and batch_idx % 50 == 0 and device == 'cuda':
+                    torch.cuda.empty_cache()  # Clear GPU cache
+                    torch.cuda.synchronize()  # Ensure all GPU operations complete
             
                 if batch_idx % 10 == 0:
                     train_pbar.set_postfix(metrics_mode.postfix_for_pbar(
-                        current_loss, out_char, out_pos, labels_device
+                        current_loss, out_char, out_pos, labels
                     ))
             
             train_result = metrics_mode.finalize_train_epoch(epoch_acc, num_batches)
@@ -952,51 +1001,44 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             if len(train_result) >= 4 and train_result[3] is not None:
                 train_loss_char[epoch] = train_result[3]
 
+            gpu_info = ""
+            if accel_config.use_acceleration and device == 'cuda' and torch.cuda.is_available():
+                gpu_mem = get_gpu_memory_usage()
+                gpu_info = f" | GPU memory: {gpu_mem:.1f}%"
+
             train_str = metrics_mode.format_train_str(
-                epoch, num_epochs, train_acc_char[epoch], train_metric_pos[epoch]
+                epoch, num_epochs, train_acc_char[epoch], train_metric_pos[epoch], gpu_info
             )
 
-            run_val_this_epoch = (epoch % val_every == 0)
-            if run_val_this_epoch:
-                with torch.no_grad():
-                    val_res = evaluate(
-                        mdl, val_dl, use_tqdm, use_feedback=use_feedback_this_epoch
-                    )
-                    val_acc_char[epoch], val_metric_pos[epoch] = val_res[0], val_res[1]
-                    if len(val_res) >= 3 and val_res[2] is not None and val_loss_pos is not None:
-                        val_loss_pos[epoch] = val_res[2]
-                    if len(val_res) >= 4 and val_res[3] is not None:
-                        val_loss_char[epoch] = val_res[3]
-                val_str = metrics_mode.format_val_str(val_acc_char[epoch], val_metric_pos[epoch])
-            else:
-                if epoch > 0:
-                    val_acc_char[epoch] = val_acc_char[epoch - 1]
-                    val_metric_pos[epoch] = val_metric_pos[epoch - 1]
-                    if val_loss_pos is not None:
-                        val_loss_pos[epoch] = val_loss_pos[epoch - 1]
-                    if val_loss_char is not None:
-                        val_loss_char[epoch] = val_loss_char[epoch - 1]
-                val_str = metrics_mode.format_val_str(val_acc_char[epoch], val_metric_pos[epoch])
+            if use_feedback_this_epoch is True and new_epoch_feedback_table is not None:
+                prev_epoch_feedback_table = new_epoch_feedback_table
+
+            with torch.no_grad():
+                val_res = evaluate(
+                    mdl, val_dl, use_tqdm, use_feedback=use_feedback_this_epoch
+                )
+                val_acc_char[epoch], val_metric_pos[epoch] = val_res[0], val_res[1]
+                # SingleCharMetricsMode: (acc_char, metric_pos, loss_pos, loss_char)
+                # AllCharsMetricsMode: (acc_char, metric_pos)
+                if len(val_res) >= 3 and val_res[2] is not None and val_loss_pos is not None:
+                    val_loss_pos[epoch] = val_res[2]
+                if len(val_res) >= 4 and val_res[3] is not None:
+                    val_loss_char[epoch] = val_res[3]
+            val_str = metrics_mode.format_val_str(val_acc_char[epoch], val_metric_pos[epoch])
             print(train_str + val_str, flush=True)
   
     except (KeyboardInterrupt, SystemExit):
         # Handle interruption gracefully
         print("\nTraining interrupted, cleaning up resources...")
     finally:
-        # Explicit resource cleanup for DataLoader so worker processes exit.
-        # Use Ctrl+C (SIGINT) to stop training; kill -9 skips this and can leave workers running.
+        # Explicit resource cleanup for DataLoader to prevent semaphore leaks
+        # This is critical when using persistent_workers=True with multiprocessing
         if num_workers > 0:
             try:
                 # Shutdown DataLoader workers properly to prevent semaphore leaks
                 if 'train_dl' in locals():
                     train_dl._iterator = None
                     del train_dl
-                if 'train_dl_256' in locals():
-                    train_dl_256._iterator = None
-                    del train_dl_256
-                if 'train_dl_32' in locals():
-                    train_dl_32._iterator = None
-                    del train_dl_32
                 if 'val_dl' in locals():
                     val_dl._iterator = None
                     del val_dl
@@ -1005,8 +1047,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
             except Exception as e:
                 print(f"Warning: Error during DataLoader cleanup: {e}")
 
-    if device == 'cuda':
-        torch.cuda.empty_cache()
+    torch.cuda.empty_cache()
 
     # If early stopping triggered, only return actual trained epochs (epoch starts from 0, so actually trained epoch+1 epochs)
     actual_epochs = epoch + 1
@@ -1022,6 +1063,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         train_loss_pos=train_loss_pos, val_loss_pos=val_loss_pos,
         train_loss_char=train_loss_char, val_loss_char=val_loss_char,
     )
+
 
 # ==================== Parse Arguments ====================
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -1045,7 +1087,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--num_epochs",
         type=int,
-        default=100,
+        default=50,
         help="Number of training epochs (default: 100)",
     )
     parser.add_argument(
@@ -1056,18 +1098,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Learning rates to search over (default: [0.001])",
     )
     parser.add_argument(
-        "--wds",
+        "--weight_decays",
         type=float,
         nargs="+",
-        default=[0],  # [1e-4],
+        default=[0], #[1e-4],
         help="Weight decay values to search over (default: [1e-4])",
     )
     parser.add_argument(
-        "--dropouts",
-        dest="dropouts",
+        "--dropout_rates",
         type=float,
         nargs="+",
-        default=[0],  # [0.3],
+        default=[0], #[0.3],
         help="Dropout rates to search over for model creation (default: [0.3])",
     )
     parser.add_argument(
@@ -1114,12 +1155,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="GaWFRNN with --nofb: 0-based epoch at which to turn on feedback and unfreeze U,V. Only meaningful with --nofb; default 999999 means never turn on (default: 999999)",
     )
     parser.add_argument(
-        "--data_dir",
-        type=str,
-        default="",
-        help="Base directory containing stimulus_reg-* files. If not set, uses AIM3_STIMULI_PATH / FAW_RNN_DATA_PATH env, else <repo>/stimuli.",
-    )
-    parser.add_argument(
         "--data_suffix",
         type=str,
         default="",
@@ -1140,13 +1175,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         choices=["large", "small"],
         help="CNN encoder output feature map size: large (64, 12, 12), small (32, 6, 6). Default: large",
     )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="auto",
-        choices=["auto", "cuda", "mps", "cpu"],
-        help="Device: auto (cuda > mps > cpu), cuda, mps (Mac Apple Silicon), or cpu. Default: auto",
-    )
 
     return parser
 
@@ -1160,8 +1188,7 @@ if __name__ == "__main__":
     set_seed(args.seed)
     print(f"Random seed set to: {args.seed}")
 
-    device = "cuda:0" #pick_device(args.device)
-    print(f"Using device: {device}")
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"   # 可见设备中的 0（由 CUDA_VISIBLE_DEVICES 决定映射到物理哪张卡）
 
     disable_tqdm_env = os.environ.get('DISABLE_TQDM', '').lower() in ['1', 'true', 'yes']
     enable_tqdm_env  = os.environ.get('ENABLE_TQDM', '').lower() in ['1', 'true', 'yes']
@@ -1170,8 +1197,8 @@ if __name__ == "__main__":
         not disable_tqdm_env and sys.stdout.isatty() and term_ok
     )
     
-    # Data path configuration 
-    base_path = get_base_path(override=args.data_dir or None)
+    # Data path configuration
+    base_path = get_base_path()
     stim_train_path, label_train_path, stim_val_path, label_val_path = prepare_data_paths(
         base_path, data_suffix=args.data_suffix
     )
@@ -1208,8 +1235,8 @@ if __name__ == "__main__":
     model_types = args.model_types
     hidden_sizes = args.hidden_sizes
     lrs = args.lrs
-    wds = args.wds
-    dropouts = args.dropouts
+    weight_decays = args.weight_decays
+    dropout_rates = args.dropout_rates
     cnn_feature_sizes = args.cnn_feature_size
 
     # Create results directory
@@ -1222,9 +1249,9 @@ if __name__ == "__main__":
     log_file = os.path.join(results_dir, "train.log")
     logger = setup_logger("train", log_file=log_file)
 
-    # Build hyperparameter combinations: (model_type, hidden_size, lr, weight_decay, dropout)
+    # Build hyperparameter combinations: (model_type, hidden_size, lr, weight_decay, dropout_rate)
     experiment_configs = list(
-        product(model_types, hidden_sizes, lrs, wds, dropouts)
+        product(model_types, hidden_sizes, lrs, weight_decays, dropout_rates)
     )
 
     # Training loop over all hyperparameter combinations
@@ -1237,8 +1264,8 @@ if __name__ == "__main__":
         model_types,
         hidden_sizes,
         lrs,
-        wds,
-        dropouts,
+        weight_decays,
+        dropout_rates,
         cnn_feature_sizes,
     )
 
@@ -1268,7 +1295,6 @@ if __name__ == "__main__":
                 num_classes=10,
                 num_pos=num_pos,
                 kernel_size=5,
-                device=device,
                 dropout_rate=dropout_rate,
                 hidden_size=hidden_size,
                 max_chars=max_chars,

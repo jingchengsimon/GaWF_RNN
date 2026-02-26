@@ -21,9 +21,13 @@
 # conda activate aim3_rn
 
 # 解析命令行参数
+# 用法: $0 <RESULT_SUFFIX> [epoch_start] [epoch_end]
+# 例如: $0 sector_40h           # 绘制全部 epoch
+#       $0 sector_40h 0 100     # 只绘制 epoch 0~99（共 100 个）
 if [ $# -eq 0 ]; then
-    echo "用法: $0 <RESULT_SUFFIX>"
-    echo "示例: $0 hparam_search_2"
+    echo "用法: $0 <RESULT_SUFFIX> [epoch_start] [epoch_end]"
+    echo "示例: $0 hparam_search_2           # 绘制全部 epoch"
+    echo "      $0 sector_40h 0 100        # 只绘制 epoch 0~99"
     echo ""
     echo "可用的结果目录:"
     ls -d results/models/*/ 2>/dev/null | sed 's|results/models/||' | sed 's|/$||'
@@ -31,6 +35,8 @@ if [ $# -eq 0 ]; then
 fi
 
 RESULT_SUFFIX="$1"
+EPOCH_START="${2:-}"
+EPOCH_END="${3:-}"
 RESULTS_DIR="results/models/${RESULT_SUFFIX}"
 OUTPUT_DIR="results/visualization/${RESULT_SUFFIX}"
 
@@ -51,6 +57,11 @@ echo "批量可视化训练结果"
 echo "============================================================"
 echo "输入目录: $RESULTS_DIR"
 echo "输出目录: $OUTPUT_DIR"
+if [ -n "$EPOCH_START" ] && [ -n "$EPOCH_END" ]; then
+    echo "绘制范围: epoch $EPOCH_START ~ $(( EPOCH_END - 1 )) (不含 $EPOCH_END)"
+else
+    echo "绘制范围: 全部 epoch"
+fi
 echo "============================================================"
 echo ""
 
@@ -82,8 +93,14 @@ for pkl_file in "${PKL_FILES[@]}"; do
     
     echo "处理: $filename"
     
-    # 调用 Python 脚本生成可视化
-    if python visualize_single_result.py "$pkl_file" --output_dir "$OUTPUT_DIR"; then
+    # 调用 Python 脚本生成可视化（若有 epoch 范围则传入）
+    if [ -n "$EPOCH_START" ] && [ -n "$EPOCH_END" ]; then
+        python visualize_single_result.py "$pkl_file" --output_dir "$OUTPUT_DIR" \
+            --epoch_start "$EPOCH_START" --epoch_end "$EPOCH_END"
+    else
+        python visualize_single_result.py "$pkl_file" --output_dir "$OUTPUT_DIR"
+    fi
+    if [ $? -eq 0 ]; then
         ((success_count++))
         echo "  ✓ 成功"
     else
