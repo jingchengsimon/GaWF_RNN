@@ -15,6 +15,21 @@ from .train_helpers import worker_init_fn
 # -----------------------------------------------------------------------------
 # Device/dtype helpers (no extra deps). Use at data load / step to avoid float64 on MPS.
 # -----------------------------------------------------------------------------
+
+def _is_cuda(device) -> bool:
+    """True if device is CUDA (string 'cuda' or 'cuda:N')."""
+    if isinstance(device, torch.device):
+        return device.type == "cuda"
+    return device == "cuda" or (isinstance(device, str) and device.startswith("cuda:"))
+
+
+def _device_type(device) -> str:
+    """Return device_type for autocast: 'cuda' or 'cpu'."""
+    if _is_cuda(device):
+        return "cuda"
+    if isinstance(device, torch.device):
+        return device.type
+    return device if isinstance(device, str) else "cpu"
  
 class AccelerationConfig:
     """
@@ -89,12 +104,11 @@ def init_acceleration_modules():
         return None, None, None
 
 
-def setup_acceleration(accel_config, device, is_gawf=False, use_mmap=False, cnn_feature_size="large"):
+def setup_acceleration(accel_config, device, is_gawf=False, use_mmap=False):
     """
     Setup acceleration artifacts from config. No if-else on use_acceleration inside training loop.
     is_gawf: if True, skip batch size search (caller sets this to avoid circular import).
     use_mmap: if True, use mmap mode to load data.
-    cnn_feature_size: "large" or "small"; for GaWFRNN, large -> batch_size=32, small -> batch_size=256.
     Returns: (autocast_fn, scaler, batch_size, num_workers, pin_memory).
     """
     if not accel_config.use_acceleration:
@@ -106,34 +120,18 @@ def setup_acceleration(accel_config, device, is_gawf=False, use_mmap=False, cnn_
         return (lambda _: nullcontext()), None, 32, 0, False
 
     print("Enabling acceleration training...")
-    if is_gawf:
-        batch_size = 256 #64 if cnn_feature_size == "large" else 256
-    else:      
-        batch_size = 128
-
-    if not is_gawf:
-        if not use_mmap:
-            num_workers = min(8, os.cpu_count() or 1)
-        else:
-            num_workers = 2
-    else:
-        num_workers = 0
-    # num_workers = min(8, os.cpu_count() or 1) if not is_gawf else 0
-
-    pin_memory = True if num_workers > 0 else False
-    autocast_fn = (lambda d: autocast_cls(device_type=d)) if accel_config.enable_amp else (lambda _: nullcontext())
     
-    # pin_memory = (num_workers > 0) and (device == "cuda")  # pin_memory only for CUDA
-    # # AMP only on CUDA; MPS/CPU use full precision (no autocast)
-    # use_amp = device == "cuda" and accel_config.enable_amp
-    # autocast_fn = (lambda d: autocast_cls(device_type=d) if d == "cuda" else nullcontext()) if use_amp else (lambda _: nullcontext())
-
-    scaler = GradScaler_cls("cuda") if device == "cuda" and accel_config.enable_gradient_scale else None
+    batch_size, num_workers = 256, 0
     
-    if device == "cuda" and scaler is not None:
+
+    pin_memory = False #True if num_workers > 0 else False
+    use_amp = _is_cuda(device) and accel_config.enable_amp
+    autocast_fn = (lambda d: autocast_cls(device_type=_device_type(d))) if use_amp else (lambda _: nullcontext())
+
+    scaler = GradScaler_cls("cuda") if _is_cuda(device) and accel_config.enable_gradient_scale else None
+
+    if _is_cuda(device) and scaler is not None:
         print(f"Acceleration: batch_size={batch_size}, num_workers={num_workers}, pin_memory={pin_memory}, AMP=enabled")
-    elif device == "mps":
-        print(f"Acceleration: batch_size={batch_size}, num_workers={num_workers}, AMP=disabled (MPS)")
 
     return autocast_fn, scaler, batch_size, num_workers, pin_memory
 

@@ -3,6 +3,7 @@ Helper functions for training script.
 Contains utility functions for data loading, path management, result saving,
 random seed setting, GPU memory management, model class mapping, and logging.
 """
+import argparse
 import logging
 import os
 from typing import Optional
@@ -11,7 +12,6 @@ import random
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import DataLoader
 
 # -----------------------------------------------------------------------------
 # Logging: setup_logger, log_experiment_config, log_write (tqdm-safe)
@@ -78,7 +78,6 @@ def log_experiment_config(
     lrs,
     weight_decays,
     dropout_rates,
-    cnn_feature_sizes,
 ):
     """
     Log training loop banner and config summary (same content as original print block).
@@ -98,7 +97,6 @@ def log_experiment_config(
         weight_decays,
         dropout_rates,
     )
-    logger.info("CNN feature sizes: %s", cnn_feature_sizes)
     logger.info(sep)
 
 
@@ -171,28 +169,75 @@ def log_dataset_and_batch_info(
         logger.info("  DataLoader prefetch_factor: %s", accel_config.dataloader_prefetch_factor)
 
 
-def pick_device(requested: str) -> str:
+def _gpu_has_train_rnn_process(gpu_index: int) -> bool:
     """
-    Resolve device string: auto -> cuda > mps > cpu; or explicit cuda/mps/cpu.
-    Raises if user requests cuda/mps but it is not available.
+    Return True if the given GPU has a Python process running train_rnn_updated (this script).
+    Used to avoid placing a second training job on the same GPU.
     """
-    if requested == "cuda":
-        if not torch.cuda.is_available():
-            raise RuntimeError("--device cuda requested but torch.cuda.is_available() is False")
-        return "cuda"
-    if requested == "mps":
-        if not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
-            raise RuntimeError("--device mps requested but MPS is not available (macOS Apple Silicon required)")
-        return "mps"
-    if requested == "cpu":
-        return "cpu"
-    if requested == "auto":
-        if torch.cuda.is_available():
-            return "cuda"
-        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            return "mps"
-        return "cpu"
-    raise ValueError(f"Invalid --device: {requested}. Use one of: auto, cuda, mps, cpu")
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "-i", str(gpu_index), "--query-compute-apps=pid", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=5)
+        if out.returncode != 0:
+            return False
+        lines = [x.strip() for x in out.stdout.strip().splitlines() if x.strip()]
+        for line in lines:
+            if not line.isdigit():
+                continue
+            pid = int(line)
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    cmd = f.read().decode("utf-8", errors="ignore").replace("\x00", " ")
+                if "train_rnn_updated" in cmd:
+                    return True
+            except (FileNotFoundError, PermissionError, ValueError):
+                continue
+        return False
+    except Exception:
+        return False
+
+
+def pick_cuda_device_index() -> Optional[int]:
+    """
+    Choose a CUDA device index: prefer a GPU that has no Python train_rnn_updated task.
+    If multiple GPUs exist, returns the first index with no such process; otherwise 0.
+    Call this before any torch.cuda init and set CUDA_VISIBLE_DEVICES to the returned index.
+    Returns None if no NVIDIA GPU is visible (or nvidia-smi is unavailable).
+    """
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if out.returncode != 0:
+            return None
+        indices = []
+        for line in out.stdout.strip().splitlines():
+            s = line.strip()
+            if not s:
+                continue
+            try:
+                indices.append(int(s))
+            except ValueError:
+                continue
+        if not indices:
+            return None
+        if len(indices) == 1:
+            idx = indices[0]
+            # Single GPU: either use it or nothing else is available anyway
+            return idx
+        # Multi-GPU: prefer one without train_rnn_updated running
+        for idx in indices:
+            if not _gpu_has_train_rnn_process(idx):
+                return idx
+        # If all have train_rnn_updated, just fall back to the first
+        return indices[0]
+    except Exception:
+        return None
 
 
 def save_results(results, filepath):
@@ -413,85 +458,6 @@ def set_seed(seed: int):
         torch.backends.cudnn.benchmark = False
 
 
-def get_gpu_memory_usage():
-    """Get current GPU memory usage (only used in acceleration mode)"""
-    if not torch.cuda.is_available():
-        return 0.0
-    dev = torch.cuda.current_device()
-    allocated = torch.cuda.memory_allocated(dev) / 1024**3
-    reserved = torch.cuda.memory_reserved(dev) / 1024**3
-    total = torch.cuda.get_device_properties(dev).total_memory / 1024**3
-    return (reserved / total) * 100.0 if total > 0 else 0.0
-
-
-def find_optimal_batch_size(model, train_data, device='cuda', start_batch_size=32, max_batch_size=256,
-                            enable_grad_accum=False, grad_accum_steps=4):
-    # GPU memory search only for CUDA; MPS/CPU use default batch size
-    if device != 'cuda':
-        num_workers = 0 if device == 'cpu' else min(4, os.cpu_count() or 1)
-        return start_batch_size, num_workers
-
-    model.eval()
-    optimal_batch_size = start_batch_size
-    num_workers_adjusted = 0
-
-    test_sizes = [start_batch_size, 64] if not enable_grad_accum else [start_batch_size, 32, 16, 8]
-
-    for batch_size in test_sizes:
-        if batch_size > max_batch_size:
-            break
-
-        try:
-            torch.cuda.empty_cache()
-            test_loader = DataLoader(train_data, batch_size=batch_size, shuffle=False, num_workers=0)
-            test_batch = next(iter(test_loader))
-
-            # Support (inputs, labels) or (inputs, labels, idx)
-            if isinstance(test_batch, (list, tuple)) and len(test_batch) == 3:
-                inputs, labels, _ = test_batch
-            else:
-                inputs, labels = test_batch
-
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-
-            # IMPORTANT: clear GaWFRNN state between different batch sizes
-            if hasattr(model, "prev_feedback"):
-                model.prev_feedback = None
-
-            with torch.no_grad():
-                # If model supports reset_feedback, use it; otherwise fallback
-                try:
-                    _ = model(inputs, use_feedback=True, reset_feedback=True)
-                except TypeError:
-                    _ = model(inputs)
-
-            memory_usage = get_gpu_memory_usage()
-
-            if memory_usage < 70.0:
-                optimal_batch_size = batch_size
-                num_workers_adjusted = 2 if enable_grad_accum else 4
-                print(f"Testing batch_size={batch_size}: GPU memory usage {memory_usage:.1f}%, usable (num_workers will be {num_workers_adjusted})")
-            else:
-                print(f"Testing batch_size={batch_size}: GPU memory usage {memory_usage:.1f}%, exceeds limit")
-                break
-
-        except RuntimeError as e:
-            if "out of memory" in str(e):
-                print(f"batch_size={batch_size} caused OOM, using batch_size={optimal_batch_size}")
-                torch.cuda.empty_cache()
-                break
-            else:
-                raise e
-        finally:
-            if 'test_loader' in locals():
-                del test_loader
-                import gc
-                gc.collect()
-
-    return optimal_batch_size, num_workers_adjusted
-
-
 def worker_init_fn(worker_id, seed):
     """Worker initialization function for DataLoader workers.
     This function must be at module level to be picklable for multiprocessing.
@@ -527,3 +493,128 @@ def get_model_classes(rnn_conv_class, lstm_conv_class, gru_conv_class,
         "ffn": feedforward_conv_class,
         "dann": dendritic_ann_conv_class,
     }
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    """Build the argument parser for command line options."""
+    parser = argparse.ArgumentParser(description="Train RNN models for sector classification")
+    parser.add_argument(
+        "--model_types",
+        type=str,
+        nargs="+",
+        default=["rnn"],
+        choices=["rnn", "lstm", "gru", "gawf", "ffn", "dann"],
+        help='Model types to train (default: ["rnn"])',
+    )
+    parser.add_argument(
+        "--hidden_sizes",
+        type=int,
+        nargs="+",
+        default=[256],
+        help="Hidden sizes to test (default: [256])",
+    )
+    parser.add_argument(
+        "--num_epochs",
+        type=int,
+        default=100,
+        help="Number of training epochs (default: 100)",
+    )
+    parser.add_argument(
+        "--lrs",
+        type=float,
+        nargs="+",
+        default=[0.001],
+        help="Learning rates to search over (default: [0.001])",
+    )
+    parser.add_argument(
+        "--wds",
+        type=float,
+        nargs="+",
+        default=[0],
+        help="Weight decay values to search over (default: [1e-4])",
+    )
+    parser.add_argument(
+        "--dropouts",
+        dest="dropouts",
+        type=float,
+        nargs="+",
+        default=[0],
+        help="Dropout rates to search over for model creation (default: [0.3])",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 42)",
+    )
+    parser.add_argument(
+        "--use_acceleration",
+        action="store_true",
+        default=False,
+        help="Enable acceleration features for training (default: False)",
+    )
+    parser.add_argument(
+        "--use_sector_mode",
+        action="store_true",
+        default=False,
+        help="Use sector mode (3x3 grid, 9 sectors) instead of coordinate mode (default: False)",
+    )
+    parser.add_argument(
+        "--predict_all_chars",
+        action="store_true",
+        default=False,
+        help="Predict all characters (fg+bg) per frame instead of only foreground character (default: False)",
+    )
+    parser.add_argument(
+        "--use_mmap",
+        action="store_true",
+        default=False,
+        help=(
+            "Load stimuli with memory mapping (mmap_mode='r'). "
+            "If not set, load as ndarray in memory so num_workers can be used (default: False)"
+        ),
+    )
+    parser.add_argument(
+        "--nofb",
+        action="store_true",
+        default=False,
+        help=(
+            "GaWFRNN only: disable feedback. Behavior: "
+            "(1) omit --nofb -> full feedback throughout. "
+            "(2) use --nofb only -> no feedback throughout. "
+            "(3) use --nofb and --fb_start_epoch N -> no feedback until epoch N, then feedback on"
+        ),
+    )
+    parser.add_argument(
+        "--fb_start_epoch",
+        type=int,
+        default=999999,
+        help="GaWFRNN with --nofb: 0-based epoch at which to turn on feedback and unfreeze U,V.",
+    )
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        default="",
+        help=(
+            "Base directory containing stimulus_reg-* files. "
+            "If not set, uses AIM3_STIMULI_PATH / FAW_RNN_DATA_PATH env, else <repo>/stimuli."
+        ),
+    )
+    parser.add_argument(
+        "--data_suffix",
+        type=str,
+        default="",
+        help=(
+            "Suffix appended to stimulus_reg-* file names. "
+            "Example: 'cplx' -> 'stimulus_reg-train-cplx.npy'. "
+            "Default: empty string (no suffix)."
+        ),
+    )
+    parser.add_argument(
+        "--result_suffix",
+        type=str,
+        default="sector",
+        help="Suffix to append to result file names for distinguishing different training runs (default: empty string)",
+    )
+    return parser
+
