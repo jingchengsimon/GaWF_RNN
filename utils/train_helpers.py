@@ -550,29 +550,29 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--use_acceleration",
         action="store_true",
-        default=False,
+        default=True,
         help="Enable acceleration features for training (default: False)",
     )
     parser.add_argument(
         "--use_sector_mode",
         action="store_true",
-        default=False,
+        default=True,
         help="Use sector mode (3x3 grid, 9 sectors) instead of coordinate mode (default: False)",
+    )
+    parser.add_argument(
+        "--use_mmap",
+        action="store_true",
+        default=True,
+        help=(
+            "Load stimuli with memory mapping (mmap_mode='r'). "
+            "If not set, load as ndarray in memory so num_workers can be used (default: False)"
+        ),
     )
     parser.add_argument(
         "--predict_all_chars",
         action="store_true",
         default=False,
         help="Predict all characters (fg+bg) per frame instead of only foreground character (default: False)",
-    )
-    parser.add_argument(
-        "--use_mmap",
-        action="store_true",
-        default=False,
-        help=(
-            "Load stimuli with memory mapping (mmap_mode='r'). "
-            "If not set, load as ndarray in memory so num_workers can be used (default: False)"
-        ),
     )
     parser.add_argument(
         "--nofb",

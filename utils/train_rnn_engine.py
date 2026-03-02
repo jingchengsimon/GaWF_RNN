@@ -90,13 +90,20 @@ def setup_training_components(
     autocast_fn, scaler, batch_size, num_workers, pin_memory = setup_acceleration(
         accel_config,
         device,
-        is_gawf=isinstance(mdl, GaWFRNNConv),
-        use_mmap=use_mmap,
     )
 
     is_gawf = isinstance(mdl, GaWFRNNConv)
     if is_gawf:
         train_dl_256, val_dl = build_loaders(
+            train_data,
+            val_data,
+            256,
+            num_workers,
+            pin_memory,
+            accel_config,
+            seed,
+        )
+        train_dl_256, _ = build_loaders(
             train_data,
             val_data,
             256,
@@ -117,6 +124,7 @@ def setup_training_components(
             accel_config,
             seed,
         )
+        train_dl_256 = None
         train_dl_256 = None
         base_batch_size_for_logging = batch_size
 
@@ -209,6 +217,7 @@ def setup_training_components(
         "pin_memory": pin_memory,
         "is_gawf": is_gawf,
         "train_dl": train_dl,
+        "train_dl_256": train_dl_256,
         "train_dl_256": train_dl_256,
         "val_dl": val_dl,
         "base_batch_size_for_logging": base_batch_size_for_logging,
@@ -308,7 +317,7 @@ def cleanup_dataloaders(state: Dict[str, Any]) -> None:
         logger = state.get("logger", None)
         train_dl = state.get("train_dl")
         train_dl_256 = state.get("train_dl_256")
-        train_dl_32 = state.get("train_dl_32")
+        train_dl_256 = state.get("train_dl_256")
         val_dl = state.get("val_dl")
 
         if train_dl is not None:
@@ -317,9 +326,9 @@ def cleanup_dataloaders(state: Dict[str, Any]) -> None:
         if train_dl_256 is not None:
             train_dl_256._iterator = None
             del train_dl_256
-        if train_dl_32 is not None:
-            train_dl_32._iterator = None
-            del train_dl_32
+        if train_dl_256 is not None:
+            train_dl_256._iterator = None
+            del train_dl_256
         if val_dl is not None:
             val_dl._iterator = None
             del val_dl
@@ -389,6 +398,7 @@ def prepare_training_epoch(
     is_gawf = components["is_gawf"]
     train_dl = components["train_dl"]
     train_dl_256 = components["train_dl_256"]
+    train_dl_256 = components["train_dl_256"]
     optim = components["optim"]
     lr_base = components["lr_base"]
     metrics_mode = components["metrics_mode"]
@@ -400,7 +410,7 @@ def prepare_training_epoch(
     if is_gawf:
         if feedback_flag:
             current_train_dl = train_dl_256
-            new_lr = lr_base / 8.0
+            new_lr = lr_base # / 8.0
         else:
             current_train_dl = train_dl_256
             new_lr = lr_base
@@ -412,7 +422,7 @@ def prepare_training_epoch(
         if logger is not None:
             if feedback_flag:
                 logger.info(
-                    "[Epoch %d] GaWF feedback ON -> batch=32 + lr scaled by 1/8 (%s)",
+                    "[Epoch %d] GaWF feedback ON -> batch=256 + lr scaled by 1/8 (%s)",
                     epoch,
                     msg_suffix,
                 )

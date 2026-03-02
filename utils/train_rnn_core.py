@@ -29,8 +29,7 @@ class BaseConvSequenceModel(nn.Module):
 
         # Fixed \"large\" CNN feature configuration: (64, 12, 12) from MP1 output 48x48
         out_ch, out_h, out_w = 64, 12, 12
-        mp2_k = 4
-        mp2_s = 4
+        mp2_k, mp2_s = 4, 4
         self.conv1 = nn.Conv2d(2, 32, kernel_size=kernel_size, padding="same")
         self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.LNorm1 = nn.LayerNorm([32, 48, 48])
@@ -38,12 +37,13 @@ class BaseConvSequenceModel(nn.Module):
         self.MP2 = nn.MaxPool2d(kernel_size=mp2_k, stride=mp2_s)
         self.LNorm2 = nn.LayerNorm([out_ch, out_h, out_w])
 
-        reduced_ch = max(8, out_ch // 4)
+        reduced_ch = max(8, out_ch // 2)
+        reduced_h, reduced_w = out_h // 2, out_w // 2
         self.conv_reduce = nn.Conv2d(out_ch, reduced_ch, kernel_size=1)
-        self.pool_reduce = nn.AdaptiveAvgPool2d((3, 3))
+        self.pool_reduce = nn.AdaptiveAvgPool2d((reduced_h, reduced_w))
 
         # self.encoder_flatten_size = out_ch * out_h * out_w
-        self.encoder_flatten_size = reduced_ch * 3 * 3
+        self.encoder_flatten_size = reduced_ch * reduced_h * reduced_w
 
         if predict_all_chars:
             self.fcchars = nn.Linear(hidden_size, max_chars * num_classes)

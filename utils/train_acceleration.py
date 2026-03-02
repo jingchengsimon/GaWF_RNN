@@ -104,7 +104,7 @@ def init_acceleration_modules():
         return None, None, None
 
 
-def setup_acceleration(accel_config, device, is_gawf=False, use_mmap=False):
+def setup_acceleration(accel_config, device):
     """
     Setup acceleration artifacts from config. No if-else on use_acceleration inside training loop.
     is_gawf: if True, skip batch size search (caller sets this to avoid circular import).
@@ -123,7 +123,6 @@ def setup_acceleration(accel_config, device, is_gawf=False, use_mmap=False):
     
     batch_size, num_workers = 256, 0
     
-
     pin_memory = False #True if num_workers > 0 else False
     use_amp = _is_cuda(device) and accel_config.enable_amp
     autocast_fn = (lambda d: autocast_cls(device_type=_device_type(d))) if use_amp else (lambda _: nullcontext())

@@ -89,7 +89,8 @@ def visualize_training_curves(pkl_path, output_path, hparams=None, epoch_start=0
     plot_end = actual_epochs if epoch_end is None else min(epoch_end, actual_epochs)
     plot_start = max(0, min(epoch_start, plot_end))
     plot_epochs = plot_end - plot_start
-    epoch_indices = np.arange(plot_start, plot_end)
+    # 使用 1-based 显示 epoch（从 1 开始）
+    epoch_indices = np.arange(plot_start, plot_end) + 1
     
     # 打印统计信息
     print(f"实际训练的epoch数: {actual_epochs}, 绘制范围: [{plot_start}, {plot_end}) 共 {plot_epochs} 个 epoch")
