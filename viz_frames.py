@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 
 # Load the npy file
 npy_file = "stimuli/stimulus_1bg-test.npy"

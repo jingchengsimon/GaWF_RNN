@@ -6,7 +6,7 @@
 # ============================================================
 # 功能：
 # 1. 遍历 results/<RESULT_SUFFIX>/ 目录下的所有 .pkl 文件
-# 2. 调用 visualize_single_result.py 生成训练曲线图
+# 2. 调用 viz_single_result.py 生成训练曲线图
 # 3. 保存到 results/visualization/ 目录
 #
 # 使用方法：
@@ -95,10 +95,10 @@ for pkl_file in "${PKL_FILES[@]}"; do
     
     # 调用 Python 脚本生成可视化（若有 epoch 范围则传入）
     if [ -n "$EPOCH_START" ] && [ -n "$EPOCH_END" ]; then
-        python visualize_single_result.py "$pkl_file" --output_dir "$OUTPUT_DIR" \
+        python viz_single_result.py "$pkl_file" --output_dir "$OUTPUT_DIR" \
             --epoch_start "$EPOCH_START" --epoch_end "$EPOCH_END"
     else
-        python visualize_single_result.py "$pkl_file" --output_dir "$OUTPUT_DIR"
+        python viz_single_result.py "$pkl_file" --output_dir "$OUTPUT_DIR"
     fi
     if [ $? -eq 0 ]; then
         ((success_count++))

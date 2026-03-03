@@ -51,7 +51,6 @@ class GaWFRNNConv(BaseConvSequenceModel):
 
     def middle_gawf(self, x_t, h_prev, fb_t):
         input_size = x_t.size(-1)
-        hidden_size = self.rnn.hidden_size
         weight_ih = self.rnn.weight_ih_l0
         weight_hh = self.rnn.weight_hh_l0
         bias_ih = self.rnn.bias_ih_l0

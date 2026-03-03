@@ -305,7 +305,7 @@ if __name__ == "__main__":
     # Data path configuration 
     base_path = get_base_path(override=args.data_dir or None)
     stim_train_path, label_train_path, stim_val_path, label_val_path = prepare_data_paths(
-        base_path, data_suffix=args.data_suffix
+        base_path, data_suffix=args.data_suffix, splits=("train", "valid")
     )
     stims_train, lbls_train, stims_val, lbls_val = load_raw_data(
         stim_train_path, label_train_path, stim_val_path, label_val_path,
@@ -324,6 +324,7 @@ if __name__ == "__main__":
         predict_all_chars=args.predict_all_chars,
         max_chars=max_chars,
         dataset_class=MC_RNN_Dataset,
+        splits=("train", "valid"),
     )
 
     # Model class mapping table

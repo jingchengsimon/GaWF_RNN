@@ -308,7 +308,7 @@ def get_base_path(override: Optional[str] = None) -> str:
     return base_path
 
 
-def prepare_data_paths(base_path: str, data_suffix: str = ""):
+def prepare_data_paths(base_path: str, data_suffix: str = "", splits: tuple = ("train", "valid")):
     """Construct and validate stimulus / label file paths.
 
     Args:
@@ -317,9 +317,13 @@ def prepare_data_paths(base_path: str, data_suffix: str = ""):
             - Default ""  -> use filenames without any suffix, e.g. 'stimulus_reg-train.npy'
             - Non-empty (e.g. "cplx", "40h") -> a leading hyphen is added automatically,
               resulting in filenames like 'stimulus_reg-train-cplx.npy'.
-    
+        splits: Which splits to prepare and validate. One or more of "train", "valid", "test".
+            - ("train", "valid") -> returns (stim_train_path, label_train_path, stim_val_path, label_val_path)
+            - ("test",) -> returns (stim_test_path, label_test_path)
+            - ("train", "valid", "test") -> returns (..., stim_test_path, label_test_path)  (6 elements)
+
     Returns:
-        Tuple of (stim_train_path, label_train_path, stim_val_path, label_val_path)
+        Tuple of paths for the requested splits only (see splits above).
     """
     # Normalize suffix: ensure a single leading hyphen when non-empty
     if data_suffix:
@@ -330,45 +334,78 @@ def prepare_data_paths(base_path: str, data_suffix: str = ""):
     else:
         suffix = ""
 
-    stim_train_path = os.path.join(base_path, f"stimulus_reg-train{suffix}.npy")
-    label_train_path = os.path.join(base_path, f"stimulus_reg-train{suffix}.tsv")
-    stim_val_path = os.path.join(base_path, f"stimulus_reg-validation{suffix}.npy")
-    label_val_path = os.path.join(base_path, f"stimulus_reg-validation{suffix}.tsv")
+    # (file basename without extension, display name for logs)
+    _path_spec = {
+        "train": ("stimulus_reg-train", "train"),
+        "valid": ("stimulus_reg-validation", "val"),
+        "test": ("stimulus_reg-test", "test"),
+    }
+    out = []
+    checks = []
+    for name in splits:
+        if name not in _path_spec:
+            raise ValueError(f"Unknown split: {name}. Must be one of {list(_path_spec)}")
+        base, label = _path_spec[name]
+        stim_path = os.path.join(base_path, f"{base}{suffix}.npy")
+        label_path = os.path.join(base_path, f"{base}{suffix}.tsv")
+        out.extend([stim_path, label_path])
+        checks.extend([(f"{label} stim", stim_path), (f"{label} label", label_path)])
 
     print("Checking data paths...")
     print(f"Base path: {base_path}")
-    for path_name, path in [
-        ("train stim", stim_train_path),
-        ("train label", label_train_path),
-        ("val stim", stim_val_path),
-        ("val label", label_val_path),
-    ]:
+    for path_name, path in checks:
         if not os.path.exists(path):
             print(f"ERROR: {path_name} path does not exist: {path}")
             raise FileNotFoundError(f"Data file not found: {path}")
-        else:
-            print(f"  ✓ {path_name}: {path}")
+        print(f"  ✓ {path_name}: {path}")
 
-    return stim_train_path, label_train_path, stim_val_path, label_val_path
+    return tuple(out)
 
 
 def load_raw_data(stim_train_path: str, label_train_path: str,
                   stim_val_path: str, label_val_path: str,
-                  use_mmap: bool = False):
+                  use_mmap: bool = False,
+                  paths_tuple=None):
     """Load raw numpy and label data from disk.
 
     Args:
-        stim_train_path: Path to training stimuli numpy file
-        label_train_path: Path to training labels TSV file
-        stim_val_path: Path to validation stimuli numpy file
-        label_val_path: Path to validation labels TSV file
+        stim_train_path: Path to training stimuli numpy file (ignored if paths_tuple is set).
+        label_train_path: Path to training labels TSV file (ignored if paths_tuple is set).
+        stim_val_path: Path to validation stimuli numpy file (ignored if paths_tuple is set).
+        label_val_path: Path to validation labels TSV file (ignored if paths_tuple is set).
         use_mmap: If True, load stimuli with mmap_mode='r' (memory-mapped, use num_workers=0).
                   If False, load as ndarray in memory so DataLoader can use num_workers > 0.
-    
+        paths_tuple: Optional. If set, must be the tuple returned by prepare_data_paths(...).
+            Length 4 -> load train and valid only; length 2 -> load test only; length 6 -> load all.
+            When provided, the four path args above are ignored.
+
     Returns:
-        Tuple of (stims_train, lbls_train, stims_val, lbls_val)
+        - If paths_tuple has length 2 (test only): (stims_test, lbls_test)
+        - If paths_tuple has length 4 or not set (train+valid): (stims_train, lbls_train, stims_val, lbls_val)
+        - If paths_tuple has length 6: (stims_train, lbls_train, stims_val, lbls_val, stims_test, lbls_test)
     """
-    print("\nLoading data...")
+    if paths_tuple is not None:
+        n = len(paths_tuple)
+        if n == 2:
+            stim_path, label_path = paths_tuple
+            return _load_single_split(stim_path, label_path, "test", use_mmap)
+        if n == 4:
+            stim_train_path, label_train_path, stim_val_path, label_val_path = paths_tuple
+            return _load_train_val(stim_train_path, label_train_path, stim_val_path, label_val_path, use_mmap)
+        if n == 6:
+            (stim_train_path, label_train_path, stim_val_path, label_val_path,
+             stim_test_path, label_test_path) = paths_tuple
+            train_val = _load_train_val(stim_train_path, label_train_path, stim_val_path, label_val_path, use_mmap)
+            test_pair = _load_single_split(stim_test_path, label_test_path, "test", use_mmap)
+            return train_val + test_pair
+        raise ValueError(f"paths_tuple must have length 2, 4, or 6, got {n}")
+
+    return _load_train_val(stim_train_path, label_train_path, stim_val_path, label_val_path, use_mmap)
+
+
+def _load_train_val(stim_train_path, label_train_path, stim_val_path, label_val_path, use_mmap):
+    """Load train and validation arrays only."""
+    print("\nLoading data (train, valid)...")
     if use_mmap:
         stims_train = np.load(stim_train_path, allow_pickle=True, mmap_mode="r")
         stims_val = np.load(stim_val_path, allow_pickle=True, mmap_mode="r")
@@ -379,71 +416,84 @@ def load_raw_data(stim_train_path: str, label_train_path: str,
         stims_val = np.load(stim_val_path, allow_pickle=True)
         print(f"  ✓ Loaded training stimuli (ndarray): {stims_train.shape}")
         print(f"  ✓ Loaded validation stimuli (ndarray): {stims_val.shape}")
-
     lbls_train = pd.read_csv(label_train_path, sep="\t", index_col=0)
     print(f"  ✓ Loaded training labels: {lbls_train.shape}")
     lbls_val = pd.read_csv(label_val_path, sep="\t", index_col=0)
     print(f"  ✓ Loaded validation labels: {lbls_val.shape}")
-
     return stims_train, lbls_train, stims_val, lbls_val
+
+
+def _load_single_split(stim_path, label_path, split_name: str, use_mmap: bool):
+    """Load a single split (e.g. test) and return (stims, lbls)."""
+    print(f"\nLoading data ({split_name})...")
+    if use_mmap:
+        stims = np.load(stim_path, allow_pickle=True, mmap_mode="r")
+        print(f"  ✓ Loaded {split_name} stimuli (mmap): {stims.shape}")
+    else:
+        stims = np.load(stim_path, allow_pickle=True)
+        print(f"  ✓ Loaded {split_name} stimuli (ndarray): {stims.shape}")
+    lbls = pd.read_csv(label_path, sep="\t", index_col=0)
+    print(f"  ✓ Loaded {split_name} labels: {lbls.shape}")
+    return (stims, lbls)
 
 
 def create_datasets(stims_train, lbls_train, stims_val, lbls_val,
                     use_sector_mode: bool, predict_all_chars: bool,
-                    max_chars: int = 10, dataset_class=None):
-    """Create training / validation datasets and return dataset objects and num_pos.
-    
+                    max_chars: int = 10, dataset_class=None,
+                    splits: tuple = ("train", "valid"),
+                    stims_test=None, lbls_test=None):
+    """Create train/validation/test dataset(s) and return dataset objects and num_pos.
+
     Args:
-        stims_train: Training stimuli numpy array
-        lbls_train: Training labels DataFrame
-        stims_val: Validation stimuli numpy array
-        lbls_val: Validation labels DataFrame
-        use_sector_mode: Whether to use sector mode (3x3 grid)
-        predict_all_chars: Whether to predict all characters (fg+bg)
-        max_chars: Maximum number of characters per frame (for predict_all_chars mode)
+        stims_train: Training stimuli numpy array (required when "train" in splits).
+        lbls_train: Training labels DataFrame (required when "train" in splits).
+        stims_val: Validation stimuli numpy array (required when "valid" in splits).
+        lbls_val: Validation labels DataFrame (required when "valid" in splits).
+        use_sector_mode: Whether to use sector mode (3x3 grid).
+        predict_all_chars: Whether to predict all characters (fg+bg).
+        max_chars: Maximum number of characters per frame (for predict_all_chars mode).
         dataset_class: Dataset class to use (MC_RNN_Dataset). If None, will raise error.
-    
+        splits: Which splits to create. ("train", "valid") | ("test",) | ("train", "valid", "test").
+        stims_test: Test stimuli (required when "test" in splits).
+        lbls_test: Test labels (required when "test" in splits).
+
     Returns:
-        Tuple of (train_ds, val_ds, num_pos)
+        - splits=("train", "valid"): (train_ds, val_ds, num_pos)
+        - splits=("test",): (test_ds, num_pos)
+        - splits=("train", "valid", "test"): (train_ds, val_ds, test_ds, num_pos)
     """
     if dataset_class is None:
         raise ValueError("dataset_class must be provided (e.g., MC_RNN_Dataset)")
-    
+
     print("Creating datasets...")
+    if "test" in splits and (stims_test is None or lbls_test is None):
+        raise ValueError("stims_test and lbls_test are required when 'test' is in splits")
 
     if predict_all_chars:
-        train_ds = dataset_class(
-            stims_train, lbls_train, use_sector=False,
-            predict_all_chars=True, max_chars=max_chars,
-        )
-        val_ds = dataset_class(
-            stims_val, lbls_val, use_sector=False,
-            predict_all_chars=True, max_chars=max_chars,
-        )
         num_pos = 0
+        _kw = {"use_sector": False, "predict_all_chars": True, "max_chars": max_chars}
         print(f"Using all-chars mode: predict all characters (fg+bg) per frame, max_chars={max_chars}")
     elif use_sector_mode:
         num_pos = 9
-        train_ds = dataset_class(
-            stims_train, lbls_train, use_sector=True, num_sectors=num_pos,
-            predict_all_chars=False,
-        )
-        val_ds = dataset_class(
-            stims_val, lbls_val, use_sector=True, num_sectors=num_pos,
-            predict_all_chars=False,
-        )
+        _kw = {"use_sector": True, "num_sectors": num_pos, "predict_all_chars": False}
         print("Using sector mode (3x3 grid, 9 sectors)")
     else:
         num_pos = 2
-        train_ds = dataset_class(
-            stims_train, lbls_train, use_sector=False, predict_all_chars=False,
-        )
-        val_ds = dataset_class(
-            stims_val, lbls_val, use_sector=False, predict_all_chars=False,
-        )
+        _kw = {"use_sector": False, "predict_all_chars": False}
         print("Using coordinate mode (directly predict x, y coordinates)")
 
-    return train_ds, val_ds, num_pos
+    def make_ds(stims, lbls):
+        return dataset_class(stims, lbls, **_kw)
+
+    # (stims, lbls) per split in fixed order
+    _data_by_split = [
+        ("train", stims_train, lbls_train),
+        ("valid", stims_val, lbls_val),
+        ("test", stims_test, lbls_test),
+    ]
+    out = [make_ds(stims, lbls) for name, stims, lbls in _data_by_split if name in splits]
+    out.append(num_pos)
+    return tuple(out)
 
 
 def set_seed(seed: int):

@@ -2,7 +2,6 @@
 单个模型结果的可视化脚本
 用于在远程服务器批量生成训练曲线图
 """
-import os
 import sys
 import pickle
 import argparse

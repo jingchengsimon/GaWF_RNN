@@ -3,8 +3,6 @@ Acceleration-related utilities for training.
 Contains AccelerationConfig, setup_acceleration, build_loaders, run_forward_with_feedback, TrainStepper.
 Device/dtype helpers for CUDA/MPS/CPU compatibility (MPS does not support float64).
 """
-
-import os
 import torch
 from contextlib import nullcontext
 from functools import partial
