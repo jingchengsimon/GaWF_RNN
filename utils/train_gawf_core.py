@@ -37,6 +37,7 @@ class GaWFRNNConv(BaseConvSequenceModel):
         self.hidden_size = hidden_size
         input_size = self.encoder_flatten_size
         self.rnn = nn.RNN(input_size=input_size, hidden_size=hidden_size, num_layers=1, batch_first=True)
+        # self._init_recurrent_module(self.rnn)
 
         feedback_dim = num_classes + num_pos
         combined_weight_size = input_size + hidden_size
@@ -44,6 +45,15 @@ class GaWFRNNConv(BaseConvSequenceModel):
         self.V = nn.Parameter(torch.randn(feedback_dim, combined_weight_size) * 0.01)
         self.LNormRNN = nn.LayerNorm(hidden_size)
         self.register_buffer("prev_feedback", None)
+
+        self._init_gawf_params()
+
+    def _init_gawf_params(self) -> None:
+        """
+        Explicit initialization hook for GaWF-specific parameters (U and V).
+        Currently preserves the initialization defined in __init__ to keep behavior unchanged.
+        """
+        return
 
     def set_feedback_frozen(self, freeze: bool):
         for p in (self.U, self.V):
@@ -59,9 +69,9 @@ class GaWFRNNConv(BaseConvSequenceModel):
         V_hh = self.V[:, input_size:].unsqueeze(0)
         trans_ih = torch.matmul(self.U, fb_t * V_ih)
         trans_hh = torch.matmul(self.U, fb_t * V_hh)
-        tau = 2.0
-        gate_ih = torch.sigmoid(trans_ih / tau)
-        gate_hh = torch.sigmoid(trans_hh / tau)
+        tau = 0.5 # 2.0
+        gate_ih = torch.sigmoid(trans_ih / tau) * 2
+        gate_hh = torch.sigmoid(trans_hh / tau) * 2
         gated_weight_ih = gate_ih * weight_ih.unsqueeze(0)
         gated_weight_hh = gate_hh * weight_hh.unsqueeze(0)
         ih = torch.bmm(x_t.unsqueeze(1), gated_weight_ih.transpose(1, 2)).squeeze(1)

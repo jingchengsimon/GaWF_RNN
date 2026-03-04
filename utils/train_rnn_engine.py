@@ -62,6 +62,7 @@ def setup_training_components(
     use_tqdm: bool,
     seed: int,
     logger,
+    optim: str = "adam",
 ) -> Dict[str, Any]:
     """
     Build all training components:
@@ -128,20 +129,66 @@ def setup_training_components(
         train_dl_256 = None
         base_batch_size_for_logging = batch_size
 
-    # Optimizer: handle larger hidden sizes specially to improve numerical stability.
-    if hasattr(mdl, "hidden_size") and mdl.hidden_size >= 512:
-        optim = torch.optim.Adam(
-            mdl.parameters(),
-            lr=lr,
-            weight_decay=weight_decay if weight_decay is not None else 0.0,
-            eps=1e-6,
-        )
+    # Optimizer: for GaWF, disable weight decay on U and V; base params use passed wd.
+    wd = weight_decay if weight_decay is not None else 0.0
+    has_big_hidden = getattr(mdl, "hidden_size", 0) >= 512
+
+    optim = (optim or "adam").lower()
+    if optim == "adamw":
+        OptimClass = torch.optim.AdamW
+    elif optim == "muon":
+        if hasattr(torch.optim, "Muon"):
+            OptimClass = torch.optim.Muon
+        else:
+            raise RuntimeError(
+                "Selected optimizer 'muon' but torch.optim.Muon is not available in this "
+                "PyTorch version. Please upgrade PyTorch or choose a different optimizer."
+            )
     else:
-        optim = torch.optim.Adam(
-            mdl.parameters(),
-            lr=lr,
-            weight_decay=weight_decay if weight_decay is not None else 0.0,
-        )
+        OptimClass = torch.optim.Adam
+
+    # torch.optim.Muon only supports 2D parameters. Our models commonly include Conv2d
+    # (4D kernels) and bias vectors (1D), so proactively fall back to a safe optimizer.
+    if OptimClass is getattr(torch.optim, "Muon", None):
+        non_2d = []
+        for name, p in mdl.named_parameters():
+            if p is None:
+                continue
+            if p.dim() != 2:
+                non_2d.append((name, tuple(p.size())))
+                if len(non_2d) >= 5:
+                    break
+        if non_2d:
+            if logger is not None:
+                shown = ", ".join([f"{n}={s}" for n, s in non_2d])
+                logger.warning(
+                    "Requested optimizer 'muon' but found non-2D parameters (Muon only supports 2D). "
+                    "Falling back to AdamW. Examples: %s",
+                    shown,
+                )
+            OptimClass = torch.optim.AdamW
+
+    if is_gawf:
+        gawf_params = []
+        base_params = []
+        for name, param in mdl.named_parameters():
+            if "U" in name or "V" in name:
+                gawf_params.append(param)
+            else:
+                base_params.append(param)
+        param_groups = [
+            {"params": base_params, "weight_decay": wd},
+            {"params": gawf_params, "weight_decay": 0.0},
+        ]
+        optim_kwargs = {"lr": lr}
+        if OptimClass in (torch.optim.Adam, torch.optim.AdamW) and has_big_hidden:
+            optim_kwargs["eps"] = 1e-6
+        optim = OptimClass(param_groups, **optim_kwargs)
+    else:
+        optim_kwargs = {"lr": lr, "weight_decay": wd}
+        if OptimClass in (torch.optim.Adam, torch.optim.AdamW) and has_big_hidden:
+            optim_kwargs["eps"] = 1e-6
+        optim = OptimClass(mdl.parameters(), **optim_kwargs)
     lr_base = lr
 
     criterion_char = nn.CrossEntropyLoss()

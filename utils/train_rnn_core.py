@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -52,6 +53,22 @@ class BaseConvSequenceModel(nn.Module):
             self.fcchar = nn.Linear(hidden_size, num_classes)
             self.fcpos = nn.Linear(hidden_size, num_pos)
         self.to(self.device)
+
+    def _init_recurrent_module(self, rnn_module: nn.Module) -> None:
+        """
+        Initialize recurrent module parameters with a consistent scheme:
+        - weight_ih_* with Xavier uniform
+        - weight_hh_* with orthogonal
+        - bias_* with zeros
+        """
+        with torch.no_grad():
+            for name, param in rnn_module.named_parameters():
+                if "weight_ih" in name:
+                    nn.init.xavier_uniform_(param)
+                elif "weight_hh" in name:
+                    nn.init.orthogonal_(param)
+                elif "bias" in name:
+                    nn.init.zeros_(param)
 
     def encoder(self, x):
         x = self.conv1(x)
@@ -124,6 +141,7 @@ class BaseRNNConv(BaseConvSequenceModel):
             num_layers=1,
             batch_first=True,
         )
+        # self._init_recurrent_module(self.rnn)
         self.LNormRNN = nn.LayerNorm(hidden_size)
 
     def middle(self, x):

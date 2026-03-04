@@ -176,9 +176,25 @@ class MC_RNN_Dataset(Dataset):
 # - Dend: linear only (no nonlinearity on dendrite outputs).
 # - Soma: fixed aggregation (non-learnable), i.e. sum over dendrites per soma; then LeakyReLU on soma (match opt).
 # ==================== Training Function ====================
-def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, lr=0.001,
-                  use_acceleration=False, weight_decay=None, dropout_rate=None, rnn_diag_lambda=1e-4,
-                  use_mmap=False, use_tqdm=True, nofb=False, fb_start_epoch=999999, seed=42, logger=None):
+def network_train(
+    mdl,
+    train_data,
+    val_data,
+    num_epochs=50,
+    loss_weights=None,
+    lr=0.001,
+    use_acceleration=False,
+    weight_decay=None,
+    dropout_rate=None,
+    rnn_diag_lambda=1e-4,
+    use_mmap=False,
+    use_tqdm=True,
+    nofb=False,
+    fb_start_epoch=999999,
+    seed=42,
+    logger=None,
+    optim: str = "adam",
+):
     """
     Train model, supports sector mode and coordinate mode.
     Acceleration is config-driven; training loop is single-path (no AMP branches).
@@ -199,6 +215,7 @@ def network_train(mdl, train_data, val_data, num_epochs=50, loss_weights=None, l
         use_tqdm=use_tqdm,
         seed=seed,
         logger=logger,
+        optim=optim,
     )
 
     val_every = 1  # run full validation only every N epochs
@@ -438,6 +455,7 @@ if __name__ == "__main__":
             fb_start_epoch=args.fb_start_epoch,
             seed=args.seed,
             logger=logger,
+            optim=args.optim,
         )
 
         # Save training results

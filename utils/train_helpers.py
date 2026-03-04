@@ -584,6 +584,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Weight decay values to search over (default: [1e-4])",
     )
     parser.add_argument(
+        "--optim",
+        type=str,
+        default="adamw",
+        choices=["adam", "adamw", "muon"],
+        help="Optimizer (optim) to use: 'adam', 'adamw', or 'muon' (default: 'adam')",
+    )
+    parser.add_argument(
         "--dropouts",
         dest="dropouts",
         type=float,
