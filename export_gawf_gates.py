@@ -12,26 +12,27 @@ Uses the test dataset only (splits=("test",)); train/valid are not loaded.
 
 Example commands:
 
-  # 导出 gate 矩阵（使用 test 集）
+  # 导出 gate 矩阵（使用 test 集，默认在 sample 0/1/2 中找相同 fg digit）
   python export_gawf_gates.py \\
       --ckpt /path/to/gawf_sector_acc_h256_lr0.0005_wd0.0001_do0.3_model.pth \\
       --split test \\
-      --index 0 \\
+      --sample_indices 0 1 2 \\
       --out ./gawf_gates.pt
 
   # 使用 GPU
   python export_gawf_gates.py \\
       --ckpt /path/to/gawf_sector_acc_h256_lr0.0005_wd0.0001_do0.3_model.pth \\
       --split test \\
-      --index 0 \\
+      --sample_indices 0 1 2 \\
       --out ./gawf_gates.pt \\
       --device cuda
 """
 
 import argparse
 import os
-from typing import Tuple
+from typing import List, Tuple
 
+import numpy as np
 import torch
 
 from train_rnn_updated import MC_RNN_Dataset
@@ -53,7 +54,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ckpt",
         type=str,
-        default="/G/MIMOlab/Codes/aim3_RNN/results/models/sector_40h_uint8_5/gawf_sector_acc_h256_lr0.0005_wd0.0001_do0.3_fb70_model.pth",
+        default="/G/MIMOlab/Codes/aim3_RNN/results/models/sector_40h/gawf_sector_acc_h256_lr0.0005_wd0.0001_do0.3_fb100_model.pth",
         help="Path to trained GaWFRNNConv checkpoint (e.g. *_model.pth).",
     )
     parser.add_argument(
@@ -64,10 +65,17 @@ def parse_args() -> argparse.Namespace:
         help="Dataset split to sample from (analysis uses test set only).",
     )
     parser.add_argument(
-        "--index",
+        "--num_samples",
         type=int,
-        default=0,
-        help="Sample index within the chosen split (default: 0).",
+        default=3,
+        help="Number of samples to select that contain the target fg digit (default: 3).",
+    )
+    parser.add_argument(
+        "--fg_digit",
+        type=int,
+        default=5,
+        choices=list(range(10)),
+        help="Target foreground digit (0-9) that all chosen samples must contain (default: 0).",
     )
     parser.add_argument(
         "--out",
@@ -188,6 +196,214 @@ def pick_sample(test_ds: MC_RNN_Dataset, index: int):
     return frames, labels, test_ds
 
 
+def select_nonconsecutive_frames_with_same_digit(
+    labels: np.ndarray,
+    num_frames: int = 3,
+    min_time_gap: int = 2,
+) -> Tuple[int, List[int]]:
+    """
+    从单个样本的 label 序列中，选择若干个前景 digit 相同且时间上不连续的 frame 下标。
+
+    Args:
+        labels: shape (T, 2 or 3...)，第 0 列为 fg_char_id（sector/coord 模式均如此）。
+        num_frames: 期望选择的 frame 数量。
+        min_time_gap: 任意两个被选 frame 在时间轴上的最小间隔（>=2 表示不相邻）。
+
+    Returns:
+        (digit, frame_indices)：
+            digit: 被选中的前景 digit id。
+            frame_indices: 在当前 sample 序列中的下标列表（长度为 num_frames）。
+    """
+    if isinstance(labels, torch.Tensor):
+        labels_np = labels.detach().cpu().numpy()
+    else:
+        labels_np = np.asarray(labels)
+
+    if labels_np.ndim < 2 or labels_np.shape[0] == 0:
+        raise ValueError(f"labels has invalid shape: {labels_np.shape}")
+
+    fg_ids = labels_np[:, 0].astype(np.int64)
+    T = fg_ids.shape[0]
+
+    # 按 digit 分组所有时间步的位置
+    digit_to_indices: dict[int, List[int]] = {}
+    for t in range(T):
+        d = int(fg_ids[t])
+        digit_to_indices.setdefault(d, []).append(t)
+
+    # 优先选择在当前样本中出现次数较多的 digit
+    # 对每个 digit 试图贪心选出满足时间间隔约束的若干帧
+    candidate = None
+    for d, idx_list in sorted(
+        digit_to_indices.items(), key=lambda kv: len(kv[1]), reverse=True
+    ):
+        if len(idx_list) < num_frames:
+            continue
+        chosen: List[int] = []
+        for idx in idx_list:
+            if not chosen or all(abs(idx - c) >= min_time_gap for c in chosen):
+                chosen.append(idx)
+                if len(chosen) == num_frames:
+                    candidate = (d, chosen)
+                    break
+        if candidate is not None:
+            break
+
+    # 若无法满足时间间隔约束，退化为同 digit 的前 num_frames 个位置（仍保证 digit 一致）
+    if candidate is None:
+        for d, idx_list in digit_to_indices.items():
+            if len(idx_list) >= num_frames:
+                candidate = (d, idx_list[:num_frames])
+                break
+
+    if candidate is None:
+        # 极端情况：当前样本中没有任何 digit 至少出现 num_frames 次
+        # 退化为按照出现顺序取前 num_frames 个时间步（可能 digit 不同）。
+        fallback_indices = list(range(min(num_frames, T)))
+        fallback_digit = int(fg_ids[0])
+        return fallback_digit, fallback_indices
+
+    return candidate
+
+
+def compute_gates_for_single_frame(
+    model: GaWFRNNConv,
+    x_frame: torch.Tensor,
+    device: torch.device,
+    tau: float,
+    verbose: bool = True,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    对单个时间步的输入 frame（形状 (1, 1, C, H, W)）计算 GaWF gate 矩阵。
+
+    Returns:
+        gate_ih: (1, hidden_size, input_size)
+        gate_hh: (1, hidden_size, hidden_size)
+        prev_fb: (1, fb_dim)
+    """
+    x_input = x_frame.to(device=device, dtype=torch.float32)
+
+    with torch.no_grad():
+        batch_size, frame_num, channels, height, width = x_input.size()
+        x_flat = x_input.view(batch_size * frame_num, channels, height, width)
+        x_encoded = model.encoder(x_flat)
+        x_seq = x_encoded.view(batch_size, frame_num, -1)
+
+        # 单步（t=0）
+        x_t = x_seq[:, 0, :]  # (B, input_size)
+        fb_dim = model.num_classes + model.num_pos
+        fb = torch.zeros(batch_size, fb_dim, device=device, dtype=torch.float32)
+
+        hidden_size = model.rnn.hidden_size
+        h_prev = torch.zeros(batch_size, hidden_size, device=device, dtype=x_t.dtype)
+
+        # 第一次 middle_gawf：fb=0，仅用于得到 logits -> prev_feedback
+        fb_t0 = fb.clamp(-10, 10).unsqueeze(2)
+        gated_output0 = model.middle_gawf(x_t, h_prev, fb_t0)
+        char_t, pos_t = model.classifier(gated_output0)
+
+        # 和 forward() 一致：反馈直接使用 logits
+        prev_fb = torch.cat([char_t, pos_t], dim=-1)
+
+        # 使用更新后的反馈重新计算 gate 矩阵
+        fb_t1 = prev_fb.clamp(-10, 10).unsqueeze(2)
+
+        input_size = x_t.size(-1)
+        V_ih = model.V[:, :input_size].unsqueeze(0)
+        V_hh = model.V[:, input_size:].unsqueeze(0)
+
+        if verbose:
+            U, V = model.U, model.V
+            print("[U] shape=%s min=%.4f max=%.4f mean=%.4f std=%.4f" % (
+                tuple(U.shape), U.min().item(), U.max().item(), U.mean().item(), U.std().item()))
+            print("[V] shape=%s min=%.4f max=%.4f mean=%.4f std=%.4f" % (
+                tuple(V.shape), V.min().item(), V.max().item(), V.mean().item(), V.std().item()))
+            ft1 = fb_t1.squeeze()
+            print("[fb_t1] shape=%s min=%.4f max=%.4f std=%.4f" % (
+                tuple(fb_t1.shape), ft1.min().item(), ft1.max().item(), ft1.std().item()))
+            fb_V_ih = fb_t1 * V_ih
+            print("[fb_t1 * V_ih] mean=%.4f max=%.4f" % (fb_V_ih.mean().item(), fb_V_ih.abs().max().item()))
+
+        trans_ih = torch.matmul(model.U, fb_t1 * V_ih)
+        trans_hh = torch.matmul(model.U, fb_t1 * V_hh)
+
+        if verbose:
+            print("[trans_ih] mean=%.4f max=%.4f" % (trans_ih.mean().item(), trans_ih.abs().max().item()))
+
+        gate_ih = torch.sigmoid(trans_ih / tau)
+        gate_hh = torch.sigmoid(trans_hh / tau)
+
+    return gate_ih, gate_hh, prev_fb
+
+
+def collect_gate_matrices_for_digits(
+    test_ds: MC_RNN_Dataset,
+    model: GaWFRNNConv,
+    device: torch.device,
+    tau: float = 2.0,
+    num_per_digit: int = 100,
+    verbose: bool = False,
+) -> Tuple[dict, dict]:
+    """
+    Collect gate_ih and gate_hh matrices for each digit 0-9 from the test set.
+    Does not save to file; returns in-memory lists.
+
+    Returns:
+        gate_ih_by_digit: dict[int, List[np.ndarray]]  # digit -> list of (H, W) matrices
+        gate_hh_by_digit: dict[int, List[np.ndarray]]  # digit -> list of (H, H) matrices
+    """
+    from collections import defaultdict
+
+    # 1) Build digit -> [(sample_idx, frame_idx), ...] mapping
+    digit_to_pairs: dict[int, List[Tuple[int, int]]] = defaultdict(list)
+    for sample_idx in range(len(test_ds)):
+        frames, labels = test_ds[sample_idx]
+        if isinstance(labels, torch.Tensor):
+            labels_np = labels.detach().cpu().numpy()
+        else:
+            labels_np = np.asarray(labels)
+        if labels_np.ndim < 2:
+            continue
+        fg_ids = labels_np[:, 0].astype(np.int64)
+        for t in range(len(fg_ids)):
+            d = int(fg_ids[t])
+            if 0 <= d <= 9 and len(digit_to_pairs[d]) < num_per_digit:
+                digit_to_pairs[d].append((sample_idx, t))
+
+    gate_ih_by_digit: dict[int, List[np.ndarray]] = {}
+    gate_hh_by_digit: dict[int, List[np.ndarray]] = {}
+
+    for digit in range(10):
+        pairs = digit_to_pairs.get(digit, [])
+        gate_ih_list: List[np.ndarray] = []
+        gate_hh_list: List[np.ndarray] = []
+        for sample_idx, frame_idx in pairs:
+            frames, _ = test_ds[sample_idx]
+            if isinstance(frames, torch.Tensor):
+                frames_t = frames
+            else:
+                frames_t = torch.as_tensor(frames, dtype=torch.float32)
+            single_frame = frames_t[frame_idx : frame_idx + 1]
+            x_frame = single_frame.unsqueeze(0)
+            gate_ih, gate_hh, _ = compute_gates_for_single_frame(
+                model=model,
+                x_frame=x_frame,
+                device=device,
+                tau=tau,
+                verbose=verbose,
+            )
+            g_ih = gate_ih.squeeze(0).detach().cpu().numpy()
+            g_hh = gate_hh.squeeze(0).detach().cpu().numpy()
+            gate_ih_list.append(g_ih)
+            gate_hh_list.append(g_hh)
+        gate_ih_by_digit[digit] = gate_ih_list
+        gate_hh_by_digit[digit] = gate_hh_list
+        if verbose:
+            print(f"Digit {digit}: collected {len(gate_ih_list)} matrices")
+
+    return gate_ih_by_digit, gate_hh_by_digit
+
+
 def build_model_from_ckpt(
     ckpt_path: str,
     num_pos: int,
@@ -235,116 +451,207 @@ def main() -> None:
 
     # 1) Build test dataset only (same helpers as training, splits=("test",)).
     test_ds, num_pos = build_test_dataset(args)
+    ds = test_ds
 
-    # 2) Select a single sample from test set.
-    frames, labels, ds = pick_sample(test_ds, args.index)
-    print(f"Selected sample index {args.index} from split test, frames shape={getattr(frames, 'shape', None)}")
+    # 2) 根据指定的 fg_digit，在 test 集中寻找包含该 digit 的若干 sample。
+    target_fg_digit = int(args.fg_digit)
+    max_samples = int(args.num_samples)
 
-    # 3) Prepare input tensor: (B=1, T=1, C, H, W)
-    if isinstance(frames, torch.Tensor):
-        frames_t = frames
+    frames_per_sample: List[torch.Tensor] = []
+    labels_per_sample_np: List[np.ndarray] = []
+    sample_indices: List[int] = []
+
+    for sidx in range(len(test_ds)):
+        frames, labels = test_ds[sidx]
+        if isinstance(frames, torch.Tensor):
+            frames_t = frames
+        else:
+            frames_t = torch.as_tensor(frames)
+        if frames_t.ndim != 4:
+            raise ValueError(
+                f"Unexpected frames tensor shape for sample {sidx} (expect T,C,H,W): {frames_t.shape}"
+            )
+
+        if isinstance(labels, torch.Tensor):
+            labels_np = labels.detach().cpu().numpy()
+        else:
+            labels_np = np.asarray(labels)
+        if labels_np.ndim < 2 or labels_np.shape[0] == 0:
+            raise ValueError(f"labels for sample {sidx} has invalid shape: {labels_np.shape}")
+
+        fg_ids = labels_np[:, 0].astype(np.int64)
+        digits = set(int(d) for d in fg_ids.tolist())
+
+        if target_fg_digit in digits:
+            sample_indices.append(int(sidx))
+            frames_per_sample.append(frames_t)
+            labels_per_sample_np.append(labels_np)
+            print(
+                f"[match] sample {sidx}: frames shape={tuple(frames_t.shape)}, "
+                f"fg digits={sorted(digits)}"
+            )
+            if len(sample_indices) >= max_samples:
+                break
+
+    if not sample_indices:
+        raise RuntimeError(
+            f"No samples in test set contain fg_digit={target_fg_digit}."
+        )
+    if len(sample_indices) < max_samples:
+        print(
+            f"[warn] Only found {len(sample_indices)} samples containing fg_digit={target_fg_digit}, "
+            f"less than requested num_samples={max_samples}."
+        )
+
+    print(f"Using sample indices (split=test, fg_digit={target_fg_digit}): {sample_indices}")
+
+    # 2.2) 对每个 sample，选取该目标 digit 的一个时间点 t（若该 sample 中不存在该 digit，则退化为 t=0）。
+    selected_frame_indices: List[int] = []
+    selected_global_indices: List[int] = []
+
+    if isinstance(ds, MC_RNN_Dataset):
+        frame_num = ds.frame_num
+        chan_num = ds.chan_num
     else:
-        frames_t = torch.as_tensor(frames)
+        frame_num = frames_per_sample[0].shape[0]
+        chan_num = 0
 
-    if frames_t.ndim == 4:
-        # Dataset returns (T, C, H, W). We only need the first time step (t=0).
-        first_frame = frames_t[1:2]  # (1, C, H, W)
-        x_input = first_frame.unsqueeze(0)  # (1, 1, C, H, W)
-    elif frames_t.ndim == 3:
-        # Single frame (C, H, W) -> treat as T=1.
-        x_input = frames_t.unsqueeze(0).unsqueeze(0)  # (1, 1, C, H, W)
-    else:
-        raise ValueError(f"Unexpected frames tensor shape: {frames_t.shape}")
+    neighbor_frames_tensor = None
+    neighbor_global_indices_tensor = None
+    data_all = getattr(ds, "data", None)
+    neighbor_global_indices: List[List[int]] = []
+    neighbor_frames: List[torch.Tensor] = []
 
-    x_input = x_input.to(device=device, dtype=torch.float32)
+    for sidx, frames_t, labels_np in zip(sample_indices, frames_per_sample, labels_per_sample_np):
+        fg_ids = labels_np[:, 0].astype(np.int64)
+        t_candidates = np.where(fg_ids == target_fg_digit)[0]
+        if t_candidates.size == 0:
+            print(
+                f"[warn] sample {sidx} has no frame with fg_digit={target_fg_digit}; "
+                "fallback to t=0 for this sample."
+            )
+            t = 0
+        else:
+            t = int(t_candidates[0])
+            print(f"[info] sample {sidx} has frame with fg_digit={target_fg_digit} at t={t_candidates}")
 
-    # 4) Build and load GaWFRNNConv model from checkpoint.
+        selected_frame_indices.append(int(t))
+
+        # 参考 MC_RNN_Dataset.__getitem__ 中的定义：
+        #   start_idx = (idx * frame_num) + chan_num
+        global_start_idx = (int(sidx) * frame_num) + chan_num
+        g_idx = global_start_idx + t
+        selected_global_indices.append(int(g_idx))
+
+        # 额外保存用于可视化的原始帧：对于该时间点 t 的全局索引 g_idx，取 t-1, t, t+1。
+        if data_all is not None:
+            total_T = int(data_all.shape[0])
+            local_indices = []
+            local_frames = []
+            for offset in (-1, 0, 1):
+                gi = int(np.clip(g_idx + offset, 0, total_T - 1))
+                local_indices.append(gi)
+                frame_img = data_all[gi]  # (H, W) 或 (C, H, W)
+                local_frames.append(torch.as_tensor(frame_img, dtype=torch.float32))
+            neighbor_global_indices.append(local_indices)          # (3,)
+            neighbor_frames.append(torch.stack(local_frames, 0))   # (3, H, W) or (3, C, H, W)
+
+    print(
+        f"Selected per-sample frame indices (t)={selected_frame_indices}, "
+        f"global={selected_global_indices}"
+    )
+
+    if data_all is not None and neighbor_frames:
+        neighbor_frames_tensor = torch.stack(neighbor_frames, 0)              # (N, 3, ...)
+        neighbor_global_indices_tensor = torch.as_tensor(
+            neighbor_global_indices, dtype=torch.long
+        )  # (N, 3)
+
+    # 3) Build and load GaWFRNNConv model from checkpoint.
     model = build_model_from_ckpt(args.ckpt, num_pos=num_pos, device=device)
     print(
         f"Loaded GaWFRNNConv from '{args.ckpt}' "
         f"(hidden_size={model.hidden_size}, num_pos={model.num_pos})"
     )
 
-    # 5) Single-step forward at t=0 to obtain prev_feedback using fb=0.
-    with torch.no_grad():
-        # Encoder path must exactly match GaWFRNNConv.forward.
-        batch_size, frame_num, channels, height, width = x_input.size()
-        x_flat = x_input.view(batch_size * frame_num, channels, height, width)
-        x_encoded = model.encoder(x_flat)
-        x_seq = x_encoded.view(batch_size, frame_num, -1)
+    # 4) 对选中的多个样本 / 时间点分别计算 gate 矩阵。
+    tau = float(args.tau)
 
-        # t=0 step
-        x_t = x_seq[:, 0, :]  # (B, input_size)
-        fb_dim = model.num_classes + model.num_pos
-        fb = torch.zeros(batch_size, fb_dim, device=device, dtype=torch.float32)
+    gate_ih_list: List[torch.Tensor] = []
+    gate_hh_list: List[torch.Tensor] = []
+    prev_fb_list: List[torch.Tensor] = []
 
-        hidden_size = model.rnn.hidden_size
-        h_prev = torch.zeros(batch_size, hidden_size, device=device, dtype=x_t.dtype)
+    for frames_t, t in zip(frames_per_sample, selected_frame_indices):
+        # frames_t 形状 (T, C, H, W)，取单个时间步 t，shape -> (1, C, H, W)
+        single_frame = frames_t[t : t + 1]
+        x_frame = single_frame.unsqueeze(0)  # (1, 1, C, H, W)
+        gate_ih, gate_hh, prev_fb = compute_gates_for_single_frame(
+            model=model,
+            x_frame=x_frame,
+            device=device,
+            tau=tau,
+        )
 
-        # First middle_gawf call with zero feedback (not used for gate export,
-        # only to obtain logits and thus prev_feedback).
-        fb_t0 = fb.clamp(-10, 10).unsqueeze(2)
-        gated_output0 = model.middle_gawf(x_t, h_prev, fb_t0)
-        char_t, pos_t = model.classifier(gated_output0)
+        # 只保存去掉 batch 维度后的 2D gate。
+        gate_ih_2d = gate_ih.squeeze(0).detach().cpu()
+        gate_hh_2d = gate_hh.squeeze(0).detach().cpu()
+        prev_fb_vec = prev_fb.squeeze(0).detach().cpu()
 
-        # Feedback uses raw logits, exactly as in forward().
-        prev_fb = torch.cat([char_t, pos_t], dim=-1)
+        gate_ih_list.append(gate_ih_2d)
+        gate_hh_list.append(gate_hh_2d)
+        prev_fb_list.append(prev_fb_vec)
 
-        # 6) Recompute gates using updated feedback and the same x_t / h_prev.
-        fb_t1 = prev_fb.clamp(-10, 10).unsqueeze(2)
+    # 7) 准备保存的张量。
+    # 为了兼容旧版可视化脚本，仍然保留单个 gate_ih / gate_hh 字段（取第一个时间点）。
+    gate_ih_first = gate_ih_list[0]
+    gate_hh_first = gate_hh_list[0]
+    prev_fb_first = prev_fb_list[0]
 
-        input_size = x_t.size(-1)
-        weight_ih = model.rnn.weight_ih_l0  # (hidden_size, input_size)
-        weight_hh = model.rnn.weight_hh_l0  # (hidden_size, hidden_size)
-
-        V_ih = model.V[:, :input_size].unsqueeze(0)
-        V_hh = model.V[:, input_size:].unsqueeze(0)
-
-        # --- diagnostics (gate 计算前后) ---
-        U, V = model.U, model.V
-        print("[U] shape=%s min=%.4f max=%.4f mean=%.4f std=%.4f" % (
-            tuple(U.shape), U.min().item(), U.max().item(), U.mean().item(), U.std().item()))
-        print("[V] shape=%s min=%.4f max=%.4f mean=%.4f std=%.4f" % (
-            tuple(V.shape), V.min().item(), V.max().item(), V.mean().item(), V.std().item()))
-        ft1 = fb_t1.squeeze()
-        print("[fb_t1] shape=%s min=%.4f max=%.4f std=%.4f" % (
-            tuple(fb_t1.shape), ft1.min().item(), ft1.max().item(), ft1.std().item()))
-        fb_V_ih = fb_t1 * V_ih
-        print("[fb_t1 * V_ih] mean=%.4f max=%.4f" % (fb_V_ih.mean().item(), fb_V_ih.abs().max().item()))
-
-        trans_ih = torch.matmul(model.U, fb_V_ih)
-        trans_hh = torch.matmul(model.U, fb_t1 * V_hh)
-
-        print("[trans_ih] mean=%.4f max=%.4f" % (trans_ih.mean().item(), trans_ih.abs().max().item()))
-
-        tau = float(args.tau)
-        gate_ih = torch.sigmoid(trans_ih / tau)
-        gate_hh = torch.sigmoid(trans_hh / tau)
-
-        gated_weight_ih = gate_ih * weight_ih.unsqueeze(0)
-        gated_weight_hh = gate_hh * weight_hh.unsqueeze(0)
-
-    # 7) Prepare tensors for saving (remove batch dimension).
-    gate_ih_2d = gate_ih.squeeze(0).detach().cpu()
-    gate_hh_2d = gate_hh.squeeze(0).detach().cpu()
-    prev_fb_vec = prev_fb.squeeze(0).detach().cpu()
+    gate_ih_stack = torch.stack(gate_ih_list, dim=0)  # (N, H, W)
+    gate_hh_stack = torch.stack(gate_hh_list, dim=0)  # (N, H, W)
+    prev_fb_stack = torch.stack(prev_fb_list, dim=0)  # (N, fb_dim)
 
     save_dict = {
-        "gate_ih": gate_ih_2d,
-        "gate_hh": gate_hh_2d,
-        "input_size": int(input_size),
-        "hidden_size": int(hidden_size),
-        "fb_dim": int(prev_fb_vec.numel()),
+        # 兼容字段：单个 gate（第一个被选时间点）
+        "gate_ih": gate_ih_first,
+        "gate_hh": gate_hh_first,
+        "prev_fb": prev_fb_first,
+        # 扩展字段：多个时间点的 gate
+        "gate_ih_all": gate_ih_stack,
+        "gate_hh_all": gate_hh_stack,
+        "prev_fb_all": prev_fb_stack,
+        # 维度信息
+        "input_size": int(gate_ih_first.shape[1]),
+        "hidden_size": int(gate_ih_first.shape[0]),
+        "fb_dim": int(prev_fb_first.numel()),
         "tau": float(args.tau),
-        "prev_fb": prev_fb_vec,
-        "sample_index": int(args.index),
+        # 元信息：整体使用到的 sample indices，以及目标前景 digit
+        "sample_indices": torch.as_tensor(sample_indices, dtype=torch.long),
+        "target_fg_digit": int(target_fg_digit),
         "split": args.split,
         "ckpt_path": os.path.abspath(args.ckpt),
+        # 被选中的样本 / 时间点及其信息
+        "selected_fg_digit": int(target_fg_digit),
+        "selected_frame_indices": torch.as_tensor(
+            selected_frame_indices, dtype=torch.long
+        ),
+        "selected_global_indices": torch.as_tensor(
+            selected_global_indices, dtype=torch.long
+        ),
     }
 
+    # 如果有邻近帧信息，则一并保存，供可视化脚本使用。
+    if neighbor_frames_tensor is not None and neighbor_global_indices_tensor is not None:
+        save_dict["neighbor_frames"] = neighbor_frames_tensor
+        save_dict["neighbor_global_indices"] = neighbor_global_indices_tensor
+
     if args.save_weights:
-        save_dict["gated_weight_ih"] = gated_weight_ih.squeeze(0).detach().cpu()
-        save_dict["gated_weight_hh"] = gated_weight_hh.squeeze(0).detach().cpu()
+        # 这里仅对第一个选中 frame 保存对应的 gated weight，
+        # 与旧版脚本行为一致（单帧 gate）。
+        weight_ih_full = model.rnn.weight_ih_l0.detach().cpu()
+        weight_hh_full = model.rnn.weight_hh_l0.detach().cpu()
+        save_dict["gated_weight_ih"] = (gate_ih_first * weight_ih_full)
+        save_dict["gated_weight_hh"] = (gate_hh_first * weight_hh_full)
 
     out_dir = os.path.dirname(args.out)
     if out_dir and not os.path.exists(out_dir):

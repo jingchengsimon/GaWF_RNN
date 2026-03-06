@@ -152,7 +152,7 @@ def build_loaders(train_data, val_data, batch_size, num_workers, pin_memory, acc
     val_kw = dict(
         dataset=val_data,
         batch_size=batch_size,
-        shuffle=False,
+        shuffle=True,
         num_workers=num_workers,
         pin_memory=pin_memory and num_workers > 0,
         persistent_workers=(num_workers > 0),

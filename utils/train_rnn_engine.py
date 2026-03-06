@@ -94,40 +94,16 @@ def setup_training_components(
     )
 
     is_gawf = isinstance(mdl, GaWFRNNConv)
-    if is_gawf:
-        train_dl_256, val_dl = build_loaders(
-            train_data,
-            val_data,
-            256,
-            num_workers,
-            pin_memory,
-            accel_config,
-            seed,
-        )
-        train_dl_256, _ = build_loaders(
-            train_data,
-            val_data,
-            256,
-            num_workers,
-            pin_memory,
-            accel_config,
-            seed,
-        )
-        train_dl = train_dl_256
-        base_batch_size_for_logging = 256
-    else:
-        train_dl, val_dl = build_loaders(
-            train_data,
-            val_data,
-            batch_size,
-            num_workers,
-            pin_memory,
-            accel_config,
-            seed,
-        )
-        train_dl_256 = None
-        train_dl_256 = None
-        base_batch_size_for_logging = batch_size
+    train_dl, val_dl = build_loaders(
+        train_data,
+        val_data,
+        batch_size,
+        num_workers,
+        pin_memory,
+        accel_config,
+        seed,
+    )
+    base_batch_size_for_logging = batch_size
 
     # Optimizer: for GaWF, disable weight decay on U and V; base params use passed wd.
     wd = weight_decay if weight_decay is not None else 0.0
@@ -264,8 +240,6 @@ def setup_training_components(
         "pin_memory": pin_memory,
         "is_gawf": is_gawf,
         "train_dl": train_dl,
-        "train_dl_256": train_dl_256,
-        "train_dl_256": train_dl_256,
         "val_dl": val_dl,
         "base_batch_size_for_logging": base_batch_size_for_logging,
         "optim": optim,
@@ -363,19 +337,11 @@ def cleanup_dataloaders(state: Dict[str, Any]) -> None:
     try:
         logger = state.get("logger", None)
         train_dl = state.get("train_dl")
-        train_dl_256 = state.get("train_dl_256")
-        train_dl_256 = state.get("train_dl_256")
         val_dl = state.get("val_dl")
 
         if train_dl is not None:
             train_dl._iterator = None
             del train_dl
-        if train_dl_256 is not None:
-            train_dl_256._iterator = None
-            del train_dl_256
-        if train_dl_256 is not None:
-            train_dl_256._iterator = None
-            del train_dl_256
         if val_dl is not None:
             val_dl._iterator = None
             del val_dl
@@ -438,49 +404,16 @@ def prepare_training_epoch(
 ) -> Dict[str, Any]:
     """
     Prepare one training epoch:
-    - choose train DataLoader and learning rate (GaWF)
-    - optionally freeze/unfreeze feedback parameters
+    - optionally freeze/unfreeze feedback parameters (GaWF nofb)
     - init epoch metrics and tqdm progress bar
     """
     is_gawf = components["is_gawf"]
     train_dl = components["train_dl"]
-    train_dl_256 = components["train_dl_256"]
-    train_dl_256 = components["train_dl_256"]
-    optim = components["optim"]
-    lr_base = components["lr_base"]
     metrics_mode = components["metrics_mode"]
     use_tqdm = components["use_tqdm"]
     logger = components["logger"]
 
     feedback_flag = use_feedback_this_epoch(epoch, is_gawf, nofb, fb_start_epoch)
-
-    if is_gawf:
-        if feedback_flag:
-            current_train_dl = train_dl_256
-            new_lr = lr_base # / 8.0
-        else:
-            current_train_dl = train_dl_256
-            new_lr = lr_base
-
-        for pg in optim.param_groups:
-            if pg.get("lr", None) != new_lr:
-                pg["lr"] = new_lr
-        msg_suffix = f"lr={new_lr:.6g}"
-        if logger is not None:
-            if feedback_flag:
-                logger.info(
-                    "[Epoch %d] GaWF feedback ON -> batch=256 + lr scaled by 1/8 (%s)",
-                    epoch,
-                    msg_suffix,
-                )
-            else:
-                logger.info(
-                    "[Epoch %d] GaWF feedback OFF -> batch=256, lr reset to base (%s)",
-                    epoch,
-                    msg_suffix,
-                )
-    else:
-        current_train_dl = train_dl
 
     if is_gawf and nofb:
         if hasattr(mdl, "set_feedback_frozen"):
@@ -489,13 +422,13 @@ def prepare_training_epoch(
             logger.info("GaWFRNN (nofb): epoch %d use_feedback=%s", epoch, feedback_flag)
 
     epoch_acc = metrics_mode.init_epoch_train()
-    num_batches_total = len(current_train_dl)
+    num_batches_total = len(train_dl)
 
     train_desc = f"Epoch {epoch + 1}/{num_epochs} [Train]"
     if logger is not None:
         logger.info(train_desc)
     train_pbar = tqdm(
-        enumerate(current_train_dl),
+        enumerate(train_dl),
         total=num_batches_total,
         desc=train_desc,
         ncols=100,
@@ -511,7 +444,6 @@ def prepare_training_epoch(
         "epoch_acc": epoch_acc,
         "num_batches_total": num_batches_total,
         "train_pbar": train_pbar,
-        "current_train_dl": current_train_dl,
         "components": components,
     }
 
@@ -527,7 +459,7 @@ def train_one_batch(epoch_ctx: Dict[str, Any], batch_idx: int, batch):
     components = epoch_ctx["components"]
     stepper = components["stepper"]
     metrics_mode = epoch_ctx["metrics_mode"]
-    current_train_dl = epoch_ctx["current_train_dl"]
+    train_dl = components["train_dl"]
     use_feedback_this_epoch = epoch_ctx["use_feedback_this_epoch"]
     use_tqdm = components["use_tqdm"]
     train_pbar = epoch_ctx["train_pbar"]
@@ -543,7 +475,7 @@ def train_one_batch(epoch_ctx: Dict[str, Any], batch_idx: int, batch):
         out_char,
         labels_device,
         batch_idx,
-        len(current_train_dl),
+        len(train_dl),
         out_pos,
     )
 
