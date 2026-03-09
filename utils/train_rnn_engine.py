@@ -94,7 +94,7 @@ def setup_training_components(
     )
 
     is_gawf = isinstance(mdl, GaWFRNNConv)
-    train_dl, val_dl = build_loaders(
+    train_dl, train_eval_dl, val_dl = build_loaders(
         train_data,
         val_data,
         batch_size,
@@ -240,6 +240,7 @@ def setup_training_components(
         "pin_memory": pin_memory,
         "is_gawf": is_gawf,
         "train_dl": train_dl,
+        "train_eval_dl": train_eval_dl,
         "val_dl": val_dl,
         "base_batch_size_for_logging": base_batch_size_for_logging,
         "optim": optim,
@@ -272,21 +273,28 @@ def evaluate_epoch(
     use_tqdm: bool,
     logger,
     use_feedback,
+    desc: str = "Validation",
 ) -> Tuple:
     """
     Run a full validation epoch and return metrics:
     (acc_char, metric_pos) or (acc_char, metric_pos, loss_pos, loss_char).
     """
     ds = data_loader.dataset
+    # Some loaders (e.g., train_eval_dl) may wrap the real dataset in a Subset.
+    # Read flags from the underlying dataset to keep metrics mode consistent.
+    base_ds = getattr(ds, "dataset", ds)
+    predict_all_chars = getattr(base_ds, "predict_all_chars", False)
+    use_sector = getattr(base_ds, "use_sector", False)
+    max_chars = getattr(base_ds, "max_chars", 10)
     eval_mode = create_metrics_mode(
-        getattr(ds, "predict_all_chars", False),
-        getattr(ds, "use_sector", False),
-        getattr(ds, "max_chars", 10),
+        predict_all_chars,
+        use_sector,
+        max_chars if predict_all_chars else None,
         device,
     )
     acc = eval_mode.init_eval()
 
-    val_desc = "Validation"
+    val_desc = desc
     if logger is not None:
         logger.info(val_desc)
     valid_pbar = tqdm(
@@ -319,9 +327,18 @@ def evaluate_epoch(
                 inputs,
                 use_feedback=use_feedback,
             )
-            acc = eval_mode.update_eval_batch(acc, out_char, labels, out_pos)
+            # Single-char and all-chars modes have different eval update signatures.
+            if isinstance(eval_mode, AllCharsMetricsMode):
+                acc = eval_mode.update_eval_batch(acc, out_char, labels)
+            else:
+                acc = eval_mode.update_eval_batch(acc, out_char, labels, out_pos)
 
     result = eval_mode.finalize_eval(acc, len(data_loader))
+    # Normalize to (acc_char, metric_pos, loss_pos, loss_char) where loss_* may be None.
+    if len(result) == 2:
+        acc_char, metric_pos = result
+        loss_pos, loss_char = None, None
+        return acc_char, metric_pos, loss_pos, loss_char
     return result
 
 
@@ -337,11 +354,15 @@ def cleanup_dataloaders(state: Dict[str, Any]) -> None:
     try:
         logger = state.get("logger", None)
         train_dl = state.get("train_dl")
+        train_eval_dl = state.get("train_eval_dl")
         val_dl = state.get("val_dl")
 
         if train_dl is not None:
             train_dl._iterator = None
             del train_dl
+        if train_eval_dl is not None:
+            train_eval_dl._iterator = None
+            del train_eval_dl
         if val_dl is not None:
             val_dl._iterator = None
             del val_dl
@@ -494,7 +515,9 @@ def train_one_batch(epoch_ctx: Dict[str, Any], batch_idx: int, batch):
 
 def finalize_training_epoch(epoch_ctx: Dict[str, Any]) -> str:
     """
-    Finalize metrics for one epoch and return formatted training string.
+    Finalize online training metrics for one epoch and return a concise summary string.
+    This uses train-mode outputs accumulated during the epoch and is intended only
+    for monitoring; epoch-level arrays are filled from eval-mode metrics elsewhere.
     """
     components = epoch_ctx["components"]
     metrics_mode = epoch_ctx["metrics_mode"]
@@ -505,24 +528,17 @@ def finalize_training_epoch(epoch_ctx: Dict[str, Any]) -> str:
 
     train_result = metrics_mode.finalize_train_epoch(epoch_acc, num_batches_total)
 
-    train_acc_char = components["train_acc_char"]
-    train_metric_pos = components["train_metric_pos"]
-    train_loss_pos = components["train_loss_pos"]
-    train_loss_char = components["train_loss_char"]
+    acc_char = train_result[0]
+    metric_pos = train_result[1]
+    loss_pos = train_result[2] if len(train_result) >= 3 else None
+    loss_char = train_result[3] if len(train_result) >= 4 else None
 
-    train_acc_char[epoch], train_metric_pos[epoch] = train_result[0], train_result[1]
-    if len(train_result) >= 3 and train_result[2] is not None and train_loss_pos is not None:
-        train_loss_pos[epoch] = train_result[2]
-    if len(train_result) >= 4 and train_result[3] is not None:
-        train_loss_char[epoch] = train_result[3]
-
-    train_str = metrics_mode.format_train_str(
-        epoch,
-        num_epochs,
-        train_acc_char[epoch],
-        train_metric_pos[epoch],
-    )
-    return train_str
+    parts = [f"acc_char={acc_char:.2f}", f"metric_pos={metric_pos:.4f}"]
+    if loss_pos is not None:
+        parts.append(f"loss_pos={loss_pos:.4f}")
+    if loss_char is not None:
+        parts.append(f"loss_char={loss_char:.4f}")
+    return ", ".join(parts)
 
 
 def run_validation_for_epoch(
@@ -546,20 +562,21 @@ def run_validation_for_epoch(
     logger = components["logger"]
 
     if epoch % val_every == 0:
-        with torch.no_grad():
-            val_res = evaluate_epoch(
-                mdl=mdl,
-                data_loader=val_dl,
-                device=device,
-                use_tqdm=use_tqdm,
-                logger=logger,
-                use_feedback=use_feedback_this_epoch,
-            )
-            val_acc_char[epoch], val_metric_pos[epoch] = val_res[0], val_res[1]
-            if len(val_res) >= 3 and val_res[2] is not None and val_loss_pos is not None:
-                val_loss_pos[epoch] = val_res[2]
-            if len(val_res) >= 4 and val_res[3] is not None:
-                val_loss_char[epoch] = val_res[3]
+        # Full validation pass in eval mode (internally uses no_grad()).
+        val_res = evaluate_epoch(
+            mdl=mdl,
+            data_loader=val_dl,
+            device=device,
+            use_tqdm=use_tqdm,
+            logger=logger,
+            use_feedback=use_feedback_this_epoch,
+            desc="Validation",
+        )
+        val_acc_char[epoch], val_metric_pos[epoch] = val_res[0], val_res[1]
+        if len(val_res) >= 3 and val_res[2] is not None and val_loss_pos is not None:
+            val_loss_pos[epoch] = val_res[2]
+        if len(val_res) >= 4 and val_res[3] is not None:
+            val_loss_char[epoch] = val_res[3]
     else:
         if epoch > 0:
             val_acc_char[epoch] = val_acc_char[epoch - 1]

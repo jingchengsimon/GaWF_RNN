@@ -6,7 +6,7 @@ Device/dtype helpers for CUDA/MPS/CPU compatibility (MPS does not support float6
 import torch
 from contextlib import nullcontext
 from functools import partial
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from .train_helpers import worker_init_fn
 
 
@@ -134,7 +134,7 @@ def setup_acceleration(accel_config, device):
 
 
 def build_loaders(train_data, val_data, batch_size, num_workers, pin_memory, accel_config, seed):
-    """Build train and val DataLoaders from config. Single code path."""
+    """Build train, train-eval, and val DataLoaders from config. Single code path."""
     worker_init_fn_param = partial(worker_init_fn, seed=seed) if num_workers > 0 else None
     train_generator = torch.Generator().manual_seed(seed)
 
@@ -149,10 +149,30 @@ def build_loaders(train_data, val_data, batch_size, num_workers, pin_memory, acc
         generator=train_generator,
         worker_init_fn=worker_init_fn_param,
     )
+    # Validation loader: full-pass evaluation mode
     val_kw = dict(
         dataset=val_data,
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=False, #True,
+        num_workers=num_workers,
+        pin_memory=pin_memory and num_workers > 0,
+        persistent_workers=(num_workers > 0),
+        drop_last=False,
+        worker_init_fn=worker_init_fn_param,
+    )
+    # Train-eval loader: subset of train_data with the same length as val_data (or smaller),
+    # used only for eval-mode metrics to keep runtime reasonable.
+    if val_data is not None:
+        eval_len = min(len(train_data), len(val_data))
+        eval_indices = list(range(eval_len))
+        train_eval_dataset = Subset(train_data, eval_indices)
+    else:
+        train_eval_dataset = train_data
+
+    train_eval_kw = dict(
+        dataset=train_eval_dataset,
+        batch_size=batch_size,
+        shuffle=False,
         num_workers=num_workers,
         pin_memory=pin_memory and num_workers > 0,
         persistent_workers=(num_workers > 0),
@@ -162,10 +182,13 @@ def build_loaders(train_data, val_data, batch_size, num_workers, pin_memory, acc
     if num_workers > 0:
         train_kw["prefetch_factor"] = accel_config.dataloader_prefetch_factor
         val_kw["prefetch_factor"] = accel_config.dataloader_prefetch_factor
+        train_eval_kw["prefetch_factor"] = accel_config.dataloader_prefetch_factor
 
-    train_dl, val_dl = DataLoader(**train_kw), DataLoader(**val_kw)
-    
-    return train_dl, val_dl
+    train_dl = DataLoader(**train_kw)
+    train_eval_dl = DataLoader(**train_eval_kw)
+    val_dl = DataLoader(**val_kw)
+
+    return train_dl, train_eval_dl, val_dl
 
 
 def run_forward_with_feedback(mdl, inputs, use_feedback=None):

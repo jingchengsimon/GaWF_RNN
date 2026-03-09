@@ -37,6 +37,7 @@ from utils.train_rnn_engine import (
     train_one_batch,
     finalize_training_epoch,
     run_validation_for_epoch,
+    evaluate_epoch,
 )
 
 from utils.train_rnn_core import RNNConv, GRUConv, LSTMConv
@@ -242,8 +243,46 @@ def network_train(
                 # 单步训练：forward + backward + optimizer.step（封装在 utils 中）
                 train_one_batch(epoch_ctx, batch_idx, batch)
 
-            # 每个 epoch 后：整理训练指标 + 验证
-            train_str = finalize_training_epoch(epoch_ctx)
+            # 每个 epoch 后：
+            # 1) 整理在线 train 统计（仅用于监控，不写入数组）
+            train_online_summary = finalize_training_epoch(epoch_ctx)
+
+            # 2) 在 eval 模式下对 train 集做一遍完整评估，写入 train_* 数组
+            train_eval_dl = components["train_eval_dl"]
+            device = components["device"]
+            use_tqdm = components["use_tqdm"]
+            logger_local = components["logger"]
+
+            train_eval_res = evaluate_epoch(
+                mdl=mdl,
+                data_loader=train_eval_dl,
+                device=device,
+                use_tqdm=use_tqdm,
+                logger=logger_local,
+                use_feedback=epoch_ctx["use_feedback_this_epoch"],
+                desc="Train(eval-mode)",
+            )
+
+            train_acc_char_arr = components["train_acc_char"]
+            train_metric_pos_arr = components["train_metric_pos"]
+            train_loss_pos_arr = components["train_loss_pos"]
+            train_loss_char_arr = components["train_loss_char"]
+
+            train_acc_char_arr[epoch], train_metric_pos_arr[epoch] = train_eval_res[0], train_eval_res[1]
+            if len(train_eval_res) >= 3 and train_eval_res[2] is not None and train_loss_pos_arr is not None:
+                train_loss_pos_arr[epoch] = train_eval_res[2]
+            if len(train_eval_res) >= 4 and train_eval_res[3] is not None:
+                train_loss_char_arr[epoch] = train_eval_res[3]
+
+            metrics_mode = components["metrics_mode"]
+            train_eval_str = metrics_mode.format_train_str(
+                epoch,
+                num_epochs,
+                train_acc_char_arr[epoch],
+                train_metric_pos_arr[epoch],
+            )
+
+            # 3) 验证集评估（保持原有逻辑）
             val_str = run_validation_for_epoch(
                 mdl=mdl,
                 components=components,
@@ -252,7 +291,10 @@ def network_train(
                 val_every=val_every,
             )
             if logger is not None:
-                logger.info(train_str + val_str)
+                msg = train_eval_str + val_str
+                if train_online_summary:
+                    msg += f" | Train(online): {train_online_summary}"
+                logger.info(msg)
   
     except (KeyboardInterrupt, SystemExit):
         # Handle interruption gracefully
