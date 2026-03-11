@@ -20,6 +20,11 @@
 # source /G/anaconda3/etc/profile.d/conda.sh
 # conda activate aim3_rn
 
+# 确保在项目根目录运行（无论从何处调用脚本）
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$SCRIPT_DIR"
+cd "$PROJECT_ROOT" || exit 1
+
 # 解析命令行参数
 # 用法: $0 <RESULT_SUFFIX> [epoch_start] [epoch_end]
 # 例如: $0 sector_40h           # 绘制全部 epoch
@@ -95,10 +100,10 @@ for pkl_file in "${PKL_FILES[@]}"; do
     
     # 调用 Python 脚本生成可视化（若有 epoch 范围则传入）
     if [ -n "$EPOCH_START" ] && [ -n "$EPOCH_END" ]; then
-        python viz_single_result.py "$pkl_file" --output_dir "$OUTPUT_DIR" \
+        python viz_utils/viz_single_result.py "$pkl_file" --output_dir "$OUTPUT_DIR" \
             --epoch_start "$EPOCH_START" --epoch_end "$EPOCH_END"
     else
-        python viz_single_result.py "$pkl_file" --output_dir "$OUTPUT_DIR"
+        python viz_utils/viz_single_result.py "$pkl_file" --output_dir "$OUTPUT_DIR"
     fi
     if [ $? -eq 0 ]; then
         ((success_count++))

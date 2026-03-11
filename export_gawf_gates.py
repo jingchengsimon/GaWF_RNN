@@ -44,7 +44,7 @@ from utils.train_helpers import (
     prepare_data_paths,
     set_seed,
 )
-from viz_single_result import parse_hparams_from_filename
+from viz_utils.viz_single_result import parse_hparams_from_filename
 
 
 def parse_args() -> argparse.Namespace:

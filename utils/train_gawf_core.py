@@ -70,8 +70,8 @@ class GaWFRNNConv(BaseConvSequenceModel):
         trans_ih = torch.matmul(self.U, fb_t * V_ih)
         trans_hh = torch.matmul(self.U, fb_t * V_hh)
         tau = 0.5 # 2.0
-        gate_ih = torch.sigmoid(trans_ih / tau) * 2
-        gate_hh = torch.sigmoid(trans_hh / tau) * 2
+        gate_ih = torch.sigmoid(trans_ih / tau) 
+        gate_hh = torch.sigmoid(trans_hh / tau) 
         gated_weight_ih = gate_ih * weight_ih.unsqueeze(0)
         gated_weight_hh = gate_hh * weight_hh.unsqueeze(0)
         ih = torch.bmm(x_t.unsqueeze(1), gated_weight_ih.transpose(1, 2)).squeeze(1)

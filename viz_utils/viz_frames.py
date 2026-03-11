@@ -1,9 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
+
+# Resolve paths relative to project root (viz_utils is under project root)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Load the npy file
-npy_file = "stimuli/stimulus_1bg-test.npy"
-data = np.load(npy_file, allow_pickle=True)
+npy_file = _PROJECT_ROOT / "stimuli" / "stimulus_1bg-test.npy"
+data = np.load(str(npy_file), allow_pickle=True)
 
 # Print information about the data
 print(f"Data shape: {data.shape}")
@@ -59,8 +63,8 @@ for i, frame in enumerate(frames):
 plt.tight_layout()
 
 # Save the figure
-output_file = "first_10_frames.pdf"
-plt.savefig(output_file, dpi=150, bbox_inches='tight')
+output_file = _PROJECT_ROOT / "first_10_frames.pdf"
+plt.savefig(str(output_file), dpi=150, bbox_inches='tight')
 print(f"\nSaved visualization to: {output_file}")
 
 plt.close()

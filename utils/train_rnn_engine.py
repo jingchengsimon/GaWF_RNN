@@ -30,8 +30,25 @@ from .train_acceleration import (
 )
 from .train_helpers import log_dataset_and_batch_info
 from .train_predict_all_chars import build_loss_fn_all_chars, AllCharsMetricsMode
-from .train_sector import get_loss_weights, get_criterion_pos, build_loss_fn_single, SingleCharMetricsMode
+from .train_sector import build_loss_fn_single, SingleCharMetricsMode
 from .train_gawf_core import GaWFRNNConv
+
+
+
+def get_loss_weights(predict_all_chars, use_sector):
+    """Default loss weights: [char_weight, pos_weight]."""
+    if predict_all_chars:
+        return [1, 0]
+    if use_sector:
+        return [1, 1]
+    return [1, 0.001]
+
+
+def get_criterion_pos(use_sector):
+    """Position criterion: CrossEntropyLoss for sector, MSELoss for coordinate."""
+    if use_sector:
+        return nn.CrossEntropyLoss()
+    return nn.MSELoss()
 
 
 def create_metrics_mode(
@@ -45,7 +62,15 @@ def create_metrics_mode(
     """
     if predict_all_chars:
         return AllCharsMetricsMode(max_chars, device)
-    return SingleCharMetricsMode(use_sector)
+    elif use_sector:
+        return SingleCharMetricsMode(use_sector)
+    else:
+        msg = (
+            "No metrics mode created: unsupported configuration "
+            "(predict_all_chars=False, use_sector=False)."
+        )
+        print(msg)
+        raise RuntimeError(msg)
 
 
 def setup_training_components(
@@ -179,16 +204,22 @@ def setup_training_components(
             loss_weights,
             rnn_diag_lambda,
         )
-    else:
+    elif use_sector:
         loss_fn = build_loss_fn_single(
             mdl,
             criterion_char,
             criterion_pos,
-            use_sector,
             loss_weights,
             rnn_diag_lambda,
             device,
         )
+    else:
+        msg = (
+            "No loss function built: unsupported configuration "
+            "(predict_all_chars=False, use_sector=False)."
+        )
+        print(msg)
+        raise RuntimeError(msg)
 
     if logger is not None:
         log_dataset_and_batch_info(
