@@ -6,7 +6,8 @@ random seed setting, GPU memory management, model class mapping, and logging.
 import argparse
 import logging
 import os
-from typing import Optional
+from typing import Optional, Dict, Any
+import json
 import pickle
 import random
 import numpy as np
@@ -674,4 +675,178 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Suffix to append to result file names for distinguishing different training runs (default: empty string)",
     )
     return parser
+
+
+def _as_array_or_none(x) -> Optional[np.ndarray]:
+    """Convert input to 1D numpy array or return None if not available."""
+    if x is None:
+        return None
+    arr = np.asarray(x)
+    if arr.size == 0:
+        return None
+    return arr
+
+
+def _safe_max(x) -> Optional[float]:
+    arr = _as_array_or_none(x)
+    if arr is None:
+        return None
+    return float(np.nanmax(arr))
+
+
+def _safe_min(x) -> Optional[float]:
+    arr = _as_array_or_none(x)
+    if arr is None:
+        return None
+    return float(np.nanmin(arr))
+
+
+def _safe_last(x) -> Optional[float]:
+    arr = _as_array_or_none(x)
+    if arr is None:
+        return None
+    return float(arr[-1])
+
+
+def _safe_best_epoch_1based(x) -> Optional[int]:
+    """Return 1-based epoch index of minimum value in array (e.g., best val loss)."""
+    arr = _as_array_or_none(x)
+    if arr is None:
+        return None
+    idx = int(np.nanargmin(arr))
+    return idx + 1
+
+
+def _gap(train_acc: Optional[float], val_acc: Optional[float]) -> Optional[float]:
+    """Compute generalization gap (train - val) in accuracy percentage."""
+    if train_acc is None or val_acc is None:
+        return None
+    return float(train_acc - val_acc)
+
+
+def _round2(x: Optional[float]) -> Optional[float]:
+    if x is None:
+        return None
+    return float(round(x, 2))
+
+
+def summarize_experiment_metrics(
+    results: Dict[str, Any],
+    *,
+    model_type: str,
+    dataset_suffix: str,
+    dataset_mode: str,
+    num_epochs: int,
+    hidden_size: int,
+    lr: float,
+    weight_decay: float,
+    dropout: float,
+    optimizer: str,
+) -> Dict[str, Any]:
+    """
+    Build a compact metrics summary dict from a single training run.
+
+    This mirrors the logic used in hparam-search style helpers:
+    - best / final train & val accuracies
+    - best / final losses
+    - best epoch indices (1-based, by validation loss)
+    """
+    actual_epochs = int(results.get("actual_epochs", num_epochs))
+
+    train_acc_char = results.get("train_acc_char")
+    val_acc_char = results.get("val_acc_char")
+    # 注意：这些可能是 numpy 数组，不能直接用 `or` 做布尔判断，否则会触发
+    # "The truth value of an array with more than one element is ambiguous" 错误。
+    train_acc_pos = results.get("train_acc_pos")
+    if train_acc_pos is None:
+        train_acc_pos = results.get("train_metric_pos")
+    val_acc_pos = results.get("val_acc_pos")
+    if val_acc_pos is None:
+        val_acc_pos = results.get("val_metric_pos")
+
+    train_loss_char = results.get("train_loss_char")
+    val_loss_char = results.get("val_loss_char")
+    train_loss_pos = results.get("train_loss_pos")
+    val_loss_pos = results.get("val_loss_pos")
+
+    best_train_acc_char = _safe_max(train_acc_char)
+    best_train_acc_pos = _safe_max(train_acc_pos)
+    best_train_loss_char = _safe_min(train_loss_char)
+    best_train_loss_pos = _safe_min(train_loss_pos)
+    final_train_acc_char = _safe_last(train_acc_char)
+    final_train_acc_pos = _safe_last(train_acc_pos)
+
+    best_val_acc_char = _safe_max(val_acc_char)
+    best_val_acc_pos = _safe_max(val_acc_pos)
+    best_val_loss_char = _safe_min(val_loss_char)
+    best_val_loss_pos = _safe_min(val_loss_pos)
+    final_val_acc_char = _safe_last(val_acc_char)
+    final_val_acc_pos = _safe_last(val_acc_pos)
+
+    best_epoch_char = _safe_best_epoch_1based(val_loss_char)
+    best_epoch_pos = _safe_best_epoch_1based(val_loss_pos)
+
+    final_train_loss_char = _safe_last(train_loss_char)
+    final_val_loss_char = _safe_last(val_loss_char)
+    final_train_loss_pos = _safe_last(train_loss_pos)
+    final_val_loss_pos = _safe_last(val_loss_pos)
+
+    gap_char = _gap(final_train_acc_char, final_val_acc_char)
+    gap_pos = _gap(final_train_acc_pos, final_val_acc_pos)
+    overfit_flag = bool(
+        (gap_char is not None and gap_char > 10.0)
+        or (gap_pos is not None and gap_pos > 10.0)
+    )
+
+    metric_summary: Dict[str, Any] = {
+        "model_type": model_type,
+        "dataset_suffix": dataset_suffix,
+        "dataset_mode": dataset_mode,
+        "num_epochs": num_epochs,
+        "hidden_size": hidden_size,
+        "lr": lr,
+        "weight_decay": weight_decay,
+        "dropout": dropout,
+        "optimizer": optimizer,
+        "actual_epochs": actual_epochs,
+        "best_train_acc_char": best_train_acc_char,
+        "best_train_acc_pos": best_train_acc_pos,
+        "best_train_loss_char": best_train_loss_char,
+        "best_train_loss_pos": best_train_loss_pos,
+        "best_val_acc_char": best_val_acc_char,
+        "best_val_acc_pos": best_val_acc_pos,
+        "best_val_loss_char": best_val_loss_char,
+        "best_val_loss_pos": best_val_loss_pos,
+        "best_epoch_char": best_epoch_char,
+        "best_epoch_pos": best_epoch_pos,
+        "gap_char": _round2(gap_char),
+        "gap_pos": _round2(gap_pos),
+        "overfit_flag": overfit_flag,
+        "final_train_loss_char": final_train_loss_char,
+        "final_val_loss_char": final_val_loss_char,
+        "final_train_loss_pos": final_train_loss_pos,
+        "final_val_loss_pos": final_val_loss_pos,
+        "final_train_acc_char": final_train_acc_char,
+        "final_train_acc_pos": final_train_acc_pos,
+        "final_val_acc_char": final_val_acc_char,
+        "final_val_acc_pos": final_val_acc_pos,
+    }
+
+    return metric_summary
+
+
+def save_metrics_summary(
+    metric_summary: Dict[str, Any],
+    metric_path: str,
+    logger: Optional[logging.Logger] = None,
+) -> None:
+    """Save metrics summary as JSON to the given path."""
+    directory = os.path.dirname(metric_path)
+    if directory and not os.path.exists(directory):
+        os.makedirs(directory, exist_ok=True)
+    with open(metric_path, "w", encoding="utf-8") as f:
+        json.dump(metric_summary, f, indent=2)
+    if logger is not None:
+        logger.info("Wrote metrics summary to %s", metric_path)
+
 

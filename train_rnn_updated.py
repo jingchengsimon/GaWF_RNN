@@ -27,6 +27,8 @@ from utils.train_helpers import (
     log_experiment_start,
     build_arg_parser,
     pick_cuda_device_index,
+    summarize_experiment_metrics,
+    save_metrics_summary,
 )
 
 from utils.train_rnn_engine import (
@@ -513,12 +515,28 @@ if __name__ == "__main__":
                 fb_path_suffix = f"_fb{args.fb_start_epoch}"
         else:
             fb_path_suffix = ""
-        results_path = os.path.join(
-            results_dir,
-            f"{model_type}_{mode_suffix}{acc_suffix}_h{hidden_size}{hp_suffix}{fb_path_suffix}",
-        )
+        results_stem = f"{model_type}_{mode_suffix}{acc_suffix}_h{hidden_size}{hp_suffix}{fb_path_suffix}"
+        results_path = os.path.join(results_dir, results_stem)
 
         save_results(results, results_path)
+
+        # Build and save concise metrics summary for this experiment
+        dataset_mode = mode_suffix
+        metric_summary = summarize_experiment_metrics(
+            results,
+            model_type=model_type,
+            dataset_suffix=args.data_suffix,
+            dataset_mode=dataset_mode,
+            num_epochs=args.num_epochs,
+            hidden_size=hidden_size,
+            lr=lr,
+            weight_decay=weight_decay,
+            dropout=dropout_rate,
+            optimizer=args.optim,
+        )
+        metrics_path = os.path.join(results_dir, f"{results_stem}_metrics.json")
+        save_metrics_summary(metric_summary, metrics_path, logger=logger)
+
         logger.info("Experiment %s/%s completed!", experiment_num, total_experiments)
 
     logger.info("=" * 60)
