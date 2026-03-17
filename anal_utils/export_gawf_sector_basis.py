@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ckpt",
         type=str,
-        default="/G/MIMOlab/Codes/aim3_RNN/results/models/sector_40h_adamw_0316/gawf_sector_acc_h256_lr0.0005_wd0.0001_do0_fb50_model.pth",
+        default="/G/MIMOlab/Codes/aim3_RNN/results/models/sector_40h_adamw/gawf_sector_acc_h256_lr0.0005_wd0.0001_do0_fb50_model.pth",
         help="Path to trained GaWFRNNConv checkpoint (e.g. *_model.pth).",
     )
     parser.add_argument(
@@ -57,7 +57,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/gawf_sector_basis_exports_0316",
+        default="./results/gawf_sector_basis_exports",
         help="Directory to save exported .pt results.",
     )
     parser.add_argument(
@@ -110,9 +110,7 @@ def build_model_from_ckpt(ckpt_path: str, device: torch.device) -> GaWFRNNConv:
 
     state_dict = torch.load(ckpt_path, map_location=device)
     state_dict = {k: v for k, v in state_dict.items() if k != "prev_feedback"}
-    # load_result = model.load_state_dict(state_dict, strict=False)
-    # print("[load_state_dict] missing_keys:", load_result.missing_keys)
-    # print("[load_state_dict] unexpected_keys:", load_result.unexpected_keys)
+    load_result = model.load_state_dict(state_dict, strict=False)
 
     model.to(device)
     model.eval()

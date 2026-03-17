@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input_path",
         type=str,
-        default="./results/gawf_sector_basis_exports_0316",
+        default="./results/gawf_sector_basis_exports",
         help=(
             "Path to exported .pt file from export_gawf_sector_basis.py. "
             "If a directory is given, file name will be auto-completed as "
@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/gawf_sector_basis_figs_0316",
+        default="./results/gawf_sector_basis_figs",
         help="Directory to save figures.",
     )
     parser.add_argument(
@@ -92,9 +92,9 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=False,
         help=(
-            "When set, additionally save a simplified copy of the UxV signed-mean "
-            "matrix under save_dir/sector/sector_k/ or save_dir/digit/digit_d/ with "
-            "file names prefixed by 'sector_' or 'digit_' for quick browsing."
+            "When set: in digit mode, only save one UxV signed-mean figure per digit "
+            "into save_dir/digit/ (skip other digit visualizations). In sector mode, "
+            "additionally save a simplified copy under save_dir/sector/ for quick browsing."
         ),
     )
     return parser.parse_args()
@@ -160,8 +160,7 @@ def _build_model_from_ckpt(ckpt_path: str, device: torch.device) -> GaWFRNNConv:
     state_dict = torch.load(ckpt_path, map_location=device)
     state_dict = {k: v for k, v in state_dict.items() if k != "prev_feedback"}
     load_result = model.load_state_dict(state_dict, strict=False)
-    print("[viz][load_state_dict] missing_keys:", load_result.missing_keys)
-    print("[viz][load_state_dict] unexpected_keys:", load_result.unexpected_keys)
+    
     model.to(device)
     model.eval()
     return model
@@ -295,15 +294,22 @@ def main() -> None:
     # If input_path points to a directory, auto-complete file name using sector or digit.
     raw_in_path = args.input_path
     if raw_in_path is None or raw_in_path == "":
-        raw_in_path = "./gawf_sector_basis_exports"
+        raw_in_path = "./results/gawf_sector_basis_exports"
     if os.path.isdir(raw_in_path) or not os.path.splitext(raw_in_path)[1]:
         raw_in_path = os.path.join(raw_in_path, f"{prefix}_{idx}_basis.pt")
 
     in_path = os.path.abspath(raw_in_path)
     save_dir = os.path.abspath(args.save_dir)
     os.makedirs(save_dir, exist_ok=True)
-    # One subdir per sector/digit: sector_k or digit_k
-    out_dir = os.path.join(save_dir, f"{prefix}_{idx}")
+
+    # Output layout:
+    # - Default (legacy): one subdir per sector/digit: save_dir/sector_k or save_dir/digit_k
+    # - Digit + --simple: write only one UxV figure per digit into save_dir/digit/
+    simple_digit_uv_only = (mode == "digit") and bool(args.simple)
+    if simple_digit_uv_only:
+        out_dir = os.path.join(save_dir, prefix)
+    else:
+        out_dir = os.path.join(save_dir, f"{prefix}_{idx}")
     os.makedirs(out_dir, exist_ok=True)
 
     obj = torch.load(in_path, map_location="cpu")
@@ -363,82 +369,89 @@ def main() -> None:
         plt.close(fig)
         print(f"Saved: {signed_out}")
     else:
-        # Digit: V[k] input-part averaged over (H,W) -> 32 channels; display as 4x8 (no spatial meaning)
-        if "channel_abs" in obj and "channel_signed" in obj:
-            channel_abs = _to_numpy_1d(obj["channel_abs"])
-            channel_signed = _to_numpy_1d(obj["channel_signed"])
+        if simple_digit_uv_only:
+            # In digit+simple mode, we skip all other digit visualizations and only
+            # save the UxV (U_k ⊗ V_k) input-part figure into save_dir/digit/.
+            pass
         else:
-            # Backward compat: compute from basis_input
-            basis_input = obj["basis_input"]
-            if isinstance(basis_input, torch.Tensor):
-                basis_input = basis_input.detach().cpu()
-            basis_input_map = basis_input.view(C, H, W)
-            channel_abs = basis_input_map.abs().mean(dim=(1, 2)).numpy()
-            channel_signed = basis_input_map.mean(dim=(1, 2)).numpy()
-        if channel_abs.size != C:
-            raise ValueError(f"channel_abs size {channel_abs.size} != C={C}")
+            # Digit: V[k] input-part averaged over (H,W) -> 32 channels; display as 4x8 (no spatial meaning)
+            if "channel_abs" in obj and "channel_signed" in obj:
+                channel_abs = _to_numpy_1d(obj["channel_abs"])
+                channel_signed = _to_numpy_1d(obj["channel_signed"])
+            else:
+                # Backward compat: compute from basis_input
+                basis_input = obj["basis_input"]
+                if isinstance(basis_input, torch.Tensor):
+                    basis_input = basis_input.detach().cpu()
+                basis_input_map = basis_input.view(C, H, W)
+                channel_abs = basis_input_map.abs().mean(dim=(1, 2)).numpy()
+                channel_signed = basis_input_map.mean(dim=(1, 2)).numpy()
+            if channel_abs.size != C:
+                raise ValueError(f"channel_abs size {channel_abs.size} != C={C}")
 
-        # Optional: reorder feature channels using shared CNN activation order.
-        # 这里仅做纯索引重排，不做任何数值运算；如果不开启开关，则保持旧行为。
-        if channel_order is not None:
-            # 我们希望 order 中更早的 index 在图中更靠上，因此在 0..C-1 这一轴上
-            # 使用反向索引：较早的通道排到更大的行 index。
-            apply_order = channel_order[::-1]
-            channel_abs = channel_abs[apply_order]
-            channel_signed = channel_signed[apply_order]
+            # Optional: reorder feature channels using shared CNN activation order.
+            # 这里仅做纯索引重排，不做任何数值运算；如果不开启开关，则保持旧行为。
+            if channel_order is not None:
+                # 我们希望 order 中更早的 index 在图中更靠上，因此在 0..C-1 这一轴上
+                # 使用反向索引：较早的通道排到更大的行 index。
+                apply_order = channel_order[::-1]
+                channel_abs = channel_abs[apply_order]
+                channel_signed = channel_signed[apply_order]
 
-        # Layout 4x8 for 32 channels
-        display_h, display_w = 4, 8
-        if C != display_h * display_w:
-            raise ValueError(f"Expected C=32 for 4x8 layout, got C={C}")
-        channel_abs_2d = channel_abs.reshape(display_h, display_w)
-        channel_signed_2d = channel_signed.reshape(display_h, display_w)
+            # Layout 4x8 for 32 channels
+            display_h, display_w = 4, 8
+            if C != display_h * display_w:
+                raise ValueError(f"Expected C=32 for 4x8 layout, got C={C}")
+            channel_abs_2d = channel_abs.reshape(display_h, display_w)
+            channel_signed_2d = channel_signed.reshape(display_h, display_w)
 
-        abs_out = os.path.join(out_dir, "basis_abs_mean_4x8.png")
-        fig, ax = plt.subplots(1, 1, figsize=(6, 4))
-        im = ax.imshow(channel_abs_2d, origin="lower", interpolation="nearest", aspect="auto")
-        ax.set_xlabel("Channel index (layout)")
-        ax.set_ylabel("Channel index (layout)")
-        ax.set_title(
-            "V[k] input-part mean over (H,W), 32 feature channels (4x8, no spatial meaning)\n"
-            f"{label}={idx}\n"
-            f"feature shape=({C},{H},{W})"
-        )
-        fig.colorbar(im, ax=ax)
-        fig.tight_layout()
-        fig.savefig(abs_out, dpi=150)
-        plt.close(fig)
-        print(f"Saved: {abs_out}")
+            abs_out = os.path.join(out_dir, "basis_abs_mean_4x8.png")
+            fig, ax = plt.subplots(1, 1, figsize=(6, 4))
+            im = ax.imshow(
+                channel_abs_2d, origin="lower", interpolation="nearest", aspect="auto"
+            )
+            ax.set_xlabel("Channel index (layout)")
+            ax.set_ylabel("Channel index (layout)")
+            ax.set_title(
+                "V[k] input-part mean over (H,W), 32 feature channels (4x8, no spatial meaning)\n"
+                f"{label}={idx}\n"
+                f"feature shape=({C},{H},{W})"
+            )
+            fig.colorbar(im, ax=ax)
+            fig.tight_layout()
+            fig.savefig(abs_out, dpi=150)
+            plt.close(fig)
+            print(f"Saved: {abs_out}")
 
-        signed_out = os.path.join(out_dir, "basis_signed_mean_4x8.png")
-        mn = float(np.min(channel_signed_2d))
-        mx = float(np.max(channel_signed_2d))
-        m = float(max(abs(mn), abs(mx)))
-        if m == 0.0:
-            m = 1e-8
-        vmin, vmax = -m, m
-        fig, ax = plt.subplots(1, 1, figsize=(6, 4))
-        im = ax.imshow(
-            channel_signed_2d,
-            origin="lower",
-            interpolation="nearest",
-            aspect="auto",
-            vmin=vmin,
-            vmax=vmax,
-            cmap="RdBu_r",
-        )
-        ax.set_xlabel("Channel index (layout)")
-        ax.set_ylabel("Channel index (layout)")
-        ax.set_title(
-            "V[k] input-part signed mean over (H,W), 32 channels (4x8, no spatial meaning)\n"
-            f"{label}={idx}\n"
-            f"feature shape=({C},{H},{W})"
-        )
-        fig.colorbar(im, ax=ax)
-        fig.tight_layout()
-        fig.savefig(signed_out, dpi=150)
-        plt.close(fig)
-        print(f"Saved: {signed_out}")
+            signed_out = os.path.join(out_dir, "basis_signed_mean_4x8.png")
+            mn = float(np.min(channel_signed_2d))
+            mx = float(np.max(channel_signed_2d))
+            m = float(max(abs(mn), abs(mx)))
+            if m == 0.0:
+                m = 1e-8
+            vmin, vmax = -m, m
+            fig, ax = plt.subplots(1, 1, figsize=(6, 4))
+            im = ax.imshow(
+                channel_signed_2d,
+                origin="lower",
+                interpolation="nearest",
+                aspect="auto",
+                vmin=vmin,
+                vmax=vmax,
+                cmap="RdBu_r",
+            )
+            ax.set_xlabel("Channel index (layout)")
+            ax.set_ylabel("Channel index (layout)")
+            ax.set_title(
+                "V[k] input-part signed mean over (H,W), 32 channels (4x8, no spatial meaning)\n"
+                f"{label}={idx}\n"
+                f"feature shape=({C},{H},{W})"
+            )
+            fig.colorbar(im, ax=ax)
+            fig.tight_layout()
+            fig.savefig(signed_out, dpi=150)
+            plt.close(fig)
+            print(f"Saved: {signed_out}")
 
     # -------------------------------------------------------------------------
     # NEW: Visualize U_k ⊗ V_k input-part aggregated over channels
@@ -573,32 +586,33 @@ def main() -> None:
     print(f"[viz] final abs_mat.shape={abs_mat.shape} (expected ({mat_h}, {mat_w}))")
     print(f"[viz] final signed_mat.shape={signed_mat.shape} (expected ({mat_h}, {mat_w}))")
 
-    abs_uv_out = os.path.join(
-        out_dir, f"UxV_input_abs_mean_{mat_h}x{mat_w}.png"
-    )
-    signed_uv_out = os.path.join(
-        out_dir, f"UxV_input_signed_mean_{mat_h}x{mat_w}.png"
-    )
-
-    # Abs 版本：保持原来的单子图，不做拓展。
-    fig, ax = plt.subplots(1, 1, figsize=(8, 5))
-    im = ax.imshow(
-        abs_mat,
-        origin="lower",
-        interpolation="nearest",
-        aspect="auto",
-    )
-    ax.set_xlabel("Recurrent units")
-    ax.set_ylabel(ylabel)
-    ax.set_title(
-        f"U_k ⊗ V_k input-part signed mean {label}={idx}\n"
-        f"matrix shape={shape_str}"
-    )
-    fig.colorbar(im, ax=ax)
-    fig.tight_layout()
-    fig.savefig(abs_uv_out, dpi=150)
-    plt.close(fig)
-    print(f"Saved: {abs_uv_out}")
+    abs_uv_out = os.path.join(out_dir, f"UxV_input_abs_mean_{mat_h}x{mat_w}.png")
+    signed_uv_out = os.path.join(out_dir, f"UxV_input_signed_mean_{mat_h}x{mat_w}.png")
+    if simple_digit_uv_only:
+        # For quick browsing: one UV figure per digit under save_dir/digit/.
+        signed_uv_out = os.path.join(
+            out_dir, f"{prefix}_{idx}_UxV_input_signed_mean_{mat_h}x{mat_w}.png"
+        )
+    else:
+        # Abs 版本：保持原来的单子图，不做拓展。
+        fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+        im = ax.imshow(
+            abs_mat,
+            origin="lower",
+            interpolation="nearest",
+            aspect="auto",
+        )
+        ax.set_xlabel("Recurrent units")
+        ax.set_ylabel(ylabel)
+        ax.set_title(
+            f"U_k ⊗ V_k input-part signed mean {label}={idx}\n"
+            f"matrix shape={shape_str}"
+        )
+        fig.colorbar(im, ax=ax)
+        fig.tight_layout()
+        fig.savefig(abs_uv_out, dpi=150)
+        plt.close(fig)
+        print(f"Saved: {abs_uv_out}")
 
     # Signed 版本：在 digit 模式下，右侧额外加上一列 CNN row-wise z-score。
     mn = float(np.min(signed_mat))
@@ -693,8 +707,9 @@ def main() -> None:
     print(f"Saved: {signed_uv_out}")
 
     # Optionally save a simplified copy of the UxV signed-mean matrix
-    # under save_dir/sector/sector_k/ or save_dir/digit/digit_d/.
-    if args.simple:
+    # under save_dir/sector/ or save_dir/digit/ for quick browsing.
+    # In digit+simple mode, we already wrote the only desired output into save_dir/digit/.
+    if args.simple and (not simple_digit_uv_only):
         simple_dir = os.path.join(save_dir, prefix)
         os.makedirs(simple_dir, exist_ok=True)
         simple_name = f"{prefix}_{idx}_UxV_input_signed_mean_{mat_h}x{mat_w}.png"
