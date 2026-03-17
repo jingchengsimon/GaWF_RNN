@@ -9,7 +9,7 @@ Output:
 
 Important constraints (per project request):
   - Do NOT use U.
-  - Analyze only V[k] for one sector_idx (default 0).
+  - Analyze only V[k] for one sector (default 0).
   - Do NOT visualize or export the whole V.
   - Reshape must satisfy: assert C * H * W == input_size.
   - The (C,H,W) feature shape must match the CNN encoder output to RNN feature shape.
@@ -32,16 +32,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ckpt",
         type=str,
-        default="/G/MIMOlab/Codes/aim3_RNN/results/models/sector_40h_adamw/gawf_sector_acc_h256_lr0.0005_wd0.0001_do0_fb50_model.pth",
+        default="/G/MIMOlab/Codes/aim3_RNN/results/models/sector_40h_adamw_0316/gawf_sector_acc_h256_lr0.0005_wd0.0001_do0_fb50_model.pth",
         help="Path to trained GaWFRNNConv checkpoint (e.g. *_model.pth).",
     )
     parser.add_argument(
-        "--sector_idx",
+        "--sector",
         type=int,
         default=None,
         help=(
             "Sector index k to analyze (sector feedback rows in V). "
-            "If neither --sector_idx nor --digit is provided, defaults to sector_idx=0."
+            "If neither --sector nor --digit is provided, defaults to sector=0."
         ),
     )
     parser.add_argument(
@@ -51,13 +51,13 @@ def parse_args() -> argparse.Namespace:
         choices=list(range(10)),
         help=(
             "Digit index d (0-9) to analyze using the character-feedback rows in V. "
-            "If provided without --sector_idx, digit mode is used and sector mode is skipped."
+            "If provided without --sector, digit mode is used and sector mode is skipped."
         ),
     )
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./gawf_sector_basis_exports",
+        default="./results/gawf_sector_basis_exports_0316",
         help="Directory to save exported .pt results.",
     )
     parser.add_argument(
@@ -110,9 +110,9 @@ def build_model_from_ckpt(ckpt_path: str, device: torch.device) -> GaWFRNNConv:
 
     state_dict = torch.load(ckpt_path, map_location=device)
     state_dict = {k: v for k, v in state_dict.items() if k != "prev_feedback"}
-    load_result = model.load_state_dict(state_dict, strict=False)
-    print("[load_state_dict] missing_keys:", load_result.missing_keys)
-    print("[load_state_dict] unexpected_keys:", load_result.unexpected_keys)
+    # load_result = model.load_state_dict(state_dict, strict=False)
+    # print("[load_state_dict] missing_keys:", load_result.missing_keys)
+    # print("[load_state_dict] unexpected_keys:", load_result.unexpected_keys)
 
     model.to(device)
     model.eval()
@@ -150,24 +150,24 @@ def main() -> None:
     device = resolve_device(args.device)
 
     ckpt_path = os.path.abspath(args.ckpt)
-    sector_idx_arg = args.sector_idx
+    sector_arg = args.sector
     digit_arg = args.digit
 
     # Determine mode: sector vs digit
-    use_sector = sector_idx_arg is not None
+    use_sector = sector_arg is not None
     use_digit = digit_arg is not None
 
     if use_sector and use_digit:
         raise ValueError(
-            "Both --sector_idx and --digit were provided. "
+            "Both --sector and --digit were provided. "
             "Please specify only one of them."
         )
     if not use_sector and not use_digit:
-        # Default behavior: sector_idx=0 (backward-compatible)
+        # Default behavior: sector=0 (backward-compatible)
         use_sector = True
-        sector_idx = 0
+        sector = 0
     elif use_sector:
-        sector_idx = int(sector_idx_arg)
+        sector = int(sector_arg)
     else:
         # digit-only mode
         digit = int(digit_arg)
@@ -209,14 +209,14 @@ def main() -> None:
 
     mode = "sector" if use_sector else "digit"
     if mode == "sector":
-        if not (0 <= sector_idx < num_pos):
+        if not (0 <= sector < num_pos):
             raise IndexError(
-                f"sector_idx={sector_idx} out of valid range [0, num_pos={num_pos}). "
+                f"sector={sector} out of valid range [0, num_pos={num_pos}). "
                 f"(V.shape[0]={feedback_dim}, first {num_classes} rows are char logits, "
                 f"last {num_pos} rows are sector feedback.)"
             )
         # 实际在 V 中对应的行索引：跳过前 num_classes 行，落在 sector 部分。
-        row_idx = num_classes + sector_idx
+        row_idx = num_classes + sector
     else:
         if not (0 <= digit < num_classes):
             raise IndexError(
@@ -246,13 +246,13 @@ def main() -> None:
         signed_mean_map = basis_input_map.mean(dim=0)  # (H,W) kept for file compat
 
     if mode == "sector":
-        out_path = os.path.join(save_dir, f"sector_{sector_idx}_basis.pt")
+        out_path = os.path.join(save_dir, f"sector_{sector}_basis.pt")
     else:
         out_path = os.path.join(save_dir, f"digit_{digit}_basis.pt")
 
     save_obj = {
         "mode": mode,
-        "sector_idx": int(sector_idx) if mode == "sector" else None,
+        "sector": int(sector) if mode == "sector" else None,
         "digit": int(digit) if mode == "digit" else None,
         "row_idx": int(row_idx),
         "V_shape": tuple(V.shape),
@@ -283,7 +283,7 @@ def main() -> None:
     print(f"checkpoint path: {ckpt_path}")
     print(f"V shape: {tuple(V.shape)}")
     if mode == "sector":
-        print(f"mode: sector, sector_idx: {sector_idx}, row_idx: {row_idx}")
+        print(f"mode: sector, sector: {sector}, row_idx: {row_idx}")
     else:
         print(f"mode: digit, digit: {digit}, row_idx: {row_idx}")
     print(f"input_size: {input_size}")

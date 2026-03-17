@@ -8,6 +8,7 @@ Generates two heatmaps:
 
 import argparse
 import os
+import shutil
 from typing import Tuple
 
 import torch
@@ -29,21 +30,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input_path",
         type=str,
-        default="./gawf_sector_basis_exports",
+        default="./results/gawf_sector_basis_exports_0316",
         help=(
             "Path to exported .pt file from export_gawf_sector_basis.py. "
             "If a directory is given, file name will be auto-completed as "
-            "'sector_{sector_idx}_basis.pt'."
+            "'sector_{sector}_basis.pt'."
         ),
     )
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./gawf_sector_basis_figs",
+        default="./results/gawf_sector_basis_figs_0316",
         help="Directory to save figures.",
     )
     parser.add_argument(
-        "--sector_idx",
+        "--sector",
         type=int,
         default=None,
         help="Sector index k whose basis file will be visualized. Mutually exclusive with --digit.",
@@ -53,7 +54,48 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         choices=list(range(10)),
-        help="Digit index d (0-9) whose basis file will be visualized. Mutually exclusive with --sector_idx.",
+        help="Digit index d (0-9) whose basis file will be visualized. Mutually exclusive with --sector.",
+    )
+    parser.add_argument(
+        "--use_cnn_channel_order",
+        action="store_true",
+        default=False,
+        help=(
+            "When set, and in digit mode, reorder feature channels according to the "
+            "CNN activation channel order loaded from --channel_order_path. "
+            "By default this is disabled and the legacy channel order is used."
+        ),
+    )
+    parser.add_argument(
+        "--channel_order_path",
+        type=str,
+        default="./results/cnn_channel_activation_data/channel_order_by_cosine_similarity.npy",
+        help=(
+            "Path to a NumPy .npy file containing the CNN feature-channel order "
+            "computed by analyze_cnn_channel_activation.py. Only used when "
+            "--use_cnn_channel_order is True."
+        ),
+    )
+    parser.add_argument(
+        "--cnn_stats_path",
+        type=str,
+        default="./results/cnn_channel_activation_data",
+        help=(
+            "Path to cnn_channel_activation_stats.npz (or its containing directory) "
+            "used in viz_cnn_channel_activation.py. In digit mode, this is used to "
+            "draw a narrow row-wise z-score column for the selected digit next to "
+            "the UxV input-part matrix."
+        ),
+    )
+    parser.add_argument(
+        "--simple",
+        action="store_true",
+        default=False,
+        help=(
+            "When set, additionally save a simplified copy of the UxV signed-mean "
+            "matrix under save_dir/sector/sector_k/ or save_dir/digit/digit_d/ with "
+            "file names prefixed by 'sector_' or 'digit_' for quick browsing."
+        ),
     )
     return parser.parse_args()
 
@@ -125,36 +167,136 @@ def _build_model_from_ckpt(ckpt_path: str, device: torch.device) -> GaWFRNNConv:
     return model
 
 
+def _load_channel_order(path: str, num_channels: int) -> np.ndarray:
+    """
+    Load channel order from a .npy file.
+
+    Returns a permutation of [0..C-1]. This函数本身只负责产生索引序列，
+    不对任意矩阵做数值运算，确保之后的重排序仅仅是行交换。
+    """
+    default_order = np.arange(num_channels, dtype=np.int64)
+
+    if not path:
+        return default_order
+
+    abs_path = os.path.abspath(path)
+    if not os.path.isfile(abs_path):
+        print(
+            f"[viz][warn] channel order file not found at '{abs_path}'; "
+            "using default channel order."
+        )
+        return default_order
+
+    try:
+        order = np.load(abs_path)
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"[viz][warn] failed to load channel order from '{abs_path}' "
+            f"({exc}); using default channel order."
+        )
+        return default_order
+
+    order = np.asarray(order, dtype=np.int64)
+    if order.ndim != 1 or order.size != num_channels:
+        print(
+            "[viz][warn] channel order has incompatible shape "
+            f"{order.shape} for num_channels={num_channels}; "
+            "using default channel order."
+        )
+        return default_order
+
+    # 根据约定：order 中更早的 index 映射到更靠上的行（更大的 y 轴 index）。
+    # 这里仅返回索引序列本身，具体如何应用交给调用方。
+    return order
+
+
+def _load_cnn_rowwise_column(
+    stats_path: str,
+    digit: int,
+    channel_order: np.ndarray | None,
+) -> np.ndarray:
+    """
+    Load the row-wise z-score matrix from cnn_channel_activation_stats.npz and
+    return the column for the specified digit as a 1D array of length C.
+
+    The computation mirrors the 'row-wise' z-score mode used in
+    viz_cnn_channel_activation.py, and then applies the same optional
+    channel-order reindexing logic as used for the digit-mode UxV matrices
+    (so that rows align visually when --use_cnn_channel_order is enabled).
+    """
+    # Resolve directory vs file, mirroring viz_cnn_channel_activation.py.
+    raw_in_path = stats_path
+    if raw_in_path is None or raw_in_path == "":
+        raw_in_path = "./results/cnn_channel_activation_data"
+    if os.path.isdir(raw_in_path) or not os.path.splitext(raw_in_path)[1]:
+        raw_in_path = os.path.join(raw_in_path, "cnn_channel_activation_stats.npz")
+    stats_file = os.path.abspath(raw_in_path)
+
+    obj = np.load(stats_file)
+    mean_activation = np.asarray(obj["mean_activation"], dtype=np.float32)
+    if mean_activation.shape != (32, 10):
+        raise ValueError(
+            f"Expected mean_activation shape (32, 10), got {mean_activation.shape}"
+        )
+    C, D = mean_activation.shape
+    if not (0 <= digit < D):
+        raise ValueError(f"digit index {digit} out of range for D={D}")
+
+    # Row-wise z-score across digits (per-channel), identical to the
+    # 'row-wise' branch of compute_zscore(...) in viz_cnn_channel_activation.py.
+    z = np.zeros_like(mean_activation, dtype=np.float32)
+    for c in range(C):
+        row = mean_activation[c]
+        mu = float(row.mean())
+        sigma = float(row.std())
+        if sigma < 1e-8:
+            sigma = 1e-8
+        z[c] = (row - mu) / sigma
+
+    col = z[:, digit]  # (C,)
+
+    # Apply the same row-reordering convention as digit-mode UxV matrices.
+    if channel_order is not None:
+        apply_order = channel_order[::-1]
+        if apply_order.shape[0] != C:
+            raise ValueError(
+                f"channel_order length {apply_order.shape[0]} does not match C={C}"
+            )
+        col = col[apply_order]
+
+    return col
+
+
 def main() -> None:
     args = parse_args()
     # Determine mode: sector vs digit
-    use_sector = args.sector_idx is not None
+    use_sector = args.sector is not None
     use_digit = args.digit is not None
 
     if use_sector and use_digit:
         raise ValueError(
-            "Both --sector_idx and --digit were provided. "
+            "Both --sector and --digit were provided. "
             "Please specify only one of them."
         )
     if not use_sector and not use_digit:
-        # Default behavior: sector_idx=0 (backward-compatible)
+        # Default behavior: sector=0 (backward-compatible)
         mode = "sector"
         idx = 0
     elif use_sector:
         mode = "sector"
-        idx = int(args.sector_idx)
+        idx = int(args.sector)
     else:
         mode = "digit"
         idx = int(args.digit)
 
     label = "sector" if mode == "sector" else "digit"
+    prefix = "sector" if mode == "sector" else "digit"
 
-    # If input_path points to a directory, auto-complete file name using sector_idx or digit.
+    # If input_path points to a directory, auto-complete file name using sector or digit.
     raw_in_path = args.input_path
     if raw_in_path is None or raw_in_path == "":
         raw_in_path = "./gawf_sector_basis_exports"
     if os.path.isdir(raw_in_path) or not os.path.splitext(raw_in_path)[1]:
-        prefix = "sector" if mode == "sector" else "digit"
         raw_in_path = os.path.join(raw_in_path, f"{prefix}_{idx}_basis.pt")
 
     in_path = os.path.abspath(raw_in_path)
@@ -167,7 +309,12 @@ def main() -> None:
     obj = torch.load(in_path, map_location="cpu")
 
     C, H, W = _read_feature_shape(obj)
-    prefix = "sector" if mode == "sector" else "digit"
+
+    # Decide channel order for digit-mode visualizations.
+    if mode == "digit" and args.use_cnn_channel_order:
+        channel_order = _load_channel_order(args.channel_order_path, num_channels=C)
+    else:
+        channel_order = None
 
     if mode == "sector":
         # Sector: V[k] input-part averaged over channels -> spatial (H, W)
@@ -230,6 +377,15 @@ def main() -> None:
             channel_signed = basis_input_map.mean(dim=(1, 2)).numpy()
         if channel_abs.size != C:
             raise ValueError(f"channel_abs size {channel_abs.size} != C={C}")
+
+        # Optional: reorder feature channels using shared CNN activation order.
+        # 这里仅做纯索引重排，不做任何数值运算；如果不开启开关，则保持旧行为。
+        if channel_order is not None:
+            # 我们希望 order 中更早的 index 在图中更靠上，因此在 0..C-1 这一轴上
+            # 使用反向索引：较早的通道排到更大的行 index。
+            apply_order = channel_order[::-1]
+            channel_abs = channel_abs[apply_order]
+            channel_signed = channel_signed[apply_order]
 
         # Layout 4x8 for 32 channels
         display_h, display_w = 4, 8
@@ -334,7 +490,7 @@ def main() -> None:
     if mode == "sector":
         if not (0 <= idx < num_pos):
             raise IndexError(
-                f"sector_idx={idx} out of valid range [0, num_pos={num_pos}). "
+                f"sector={idx} out of valid range [0, num_pos={num_pos}). "
                 f"(V.shape[0]={feedback_dim}, first {num_classes} rows are char logits, "
                 f"last {num_pos} rows are sector feedback.)"
             )
@@ -401,8 +557,15 @@ def main() -> None:
         # Digit: average over (H,W) (dim 1,2) -> (C, rec); each row = one feature channel
         abs_mat_2d = gate_input_4d.abs().mean(dim=(1, 2))  # (C, rec)
         signed_mat_2d = gate_input_4d.mean(dim=(1, 2))  # (C, rec)
+
+        # 先在 PyTorch 端完成统计，再转成 numpy；然后仅通过索引重排行顺序。
         abs_mat = abs_mat_2d.detach().cpu().numpy()
         signed_mat = signed_mat_2d.detach().cpu().numpy()
+        if channel_order is not None:
+            apply_order = channel_order[::-1]
+            abs_mat = abs_mat[apply_order]
+            signed_mat = signed_mat[apply_order]
+
         mat_h, mat_w = C, rec
         ylabel = "Feature channel"
         shape_str = f"({C},{rec})"
@@ -417,6 +580,7 @@ def main() -> None:
         out_dir, f"UxV_input_signed_mean_{mat_h}x{mat_w}.png"
     )
 
+    # Abs 版本：保持原来的单子图，不做拓展。
     fig, ax = plt.subplots(1, 1, figsize=(8, 5))
     im = ax.imshow(
         abs_mat,
@@ -426,17 +590,8 @@ def main() -> None:
     )
     ax.set_xlabel("Recurrent units")
     ax.set_ylabel(ylabel)
-    # For digit mode with 32 feature channels, align y-ticks with CNN feature matrices.
-    if mode == "digit" and mat_h == 32:
-        yticks = list(range(0, 32, 4))
-        ax.set_yticks(yticks)
-        ax.set_yticklabels([str(c) for c in yticks])
     ax.set_title(
-        "U_k ⊗ V_k input-part abs mean"
-        + (" across channels" if mode == "sector" else " over (H,W), rows=channels")
-        + "\n"
-        f"{label}={idx}\n"
-        f"feature shape=({C},{H},{W})\n"
+        f"U_k ⊗ V_k input-part signed mean {label}={idx}\n"
         f"matrix shape={shape_str}"
     )
     fig.colorbar(im, ax=ax)
@@ -445,6 +600,7 @@ def main() -> None:
     plt.close(fig)
     print(f"Saved: {abs_uv_out}")
 
+    # Signed 版本：在 digit 模式下，右侧额外加上一列 CNN row-wise z-score。
     mn = float(np.min(signed_mat))
     mx = float(np.max(signed_mat))
     m = float(max(abs(mn), abs(mx)))
@@ -452,31 +608,99 @@ def main() -> None:
         m = 1e-8
     vmin, vmax = -m, m
 
-    fig, ax = plt.subplots(1, 1, figsize=(8, 5))
-    im = ax.imshow(
-        signed_mat,
-        origin="lower",
-        interpolation="nearest",
-        aspect="auto",
-        vmin=vmin,
-        vmax=vmax,
-        cmap="RdBu_r",
-    )
-    ax.set_xlabel("Recurrent units")
-    ax.set_ylabel(ylabel)
-    ax.set_title(
-        "U_k ⊗ V_k input-part signed mean"
-        + (" across channels" if mode == "sector" else " over (H,W), rows=channels")
-        + "\n"
-        f"{label}={idx}\n"
-        f"feature shape=({C},{H},{W})\n"
-        f"matrix shape={shape_str}"
-    )
-    fig.colorbar(im, ax=ax)
-    fig.tight_layout()
-    fig.savefig(signed_uv_out, dpi=150)
-    plt.close(fig)
+    if mode == "digit":
+        cnn_col = _load_cnn_rowwise_column(
+            stats_path=args.cnn_stats_path,
+            digit=idx,
+            channel_order=channel_order,
+        )
+
+        fig, (ax_main, ax_cnn) = plt.subplots(
+            1, 2,
+            figsize=(9.5, 5),
+            gridspec_kw={"width_ratios": [4.0, 0.7]},
+        )
+
+        # 左：原 UxV signed matrix。
+        im_main = ax_main.imshow(
+            signed_mat,
+            origin="lower",
+            interpolation="nearest",
+            aspect="auto",
+            vmin=vmin,
+            vmax=vmax,
+            cmap="RdBu_r",
+        )
+        ax_main.set_xlabel("Recurrent units")
+        ax_main.set_ylabel(ylabel)
+        if mat_h == 32:
+            yticks = list(range(0, 32, 5))
+            ax_main.set_yticks(yticks)
+            ax_main.set_yticklabels([str(c) for c in yticks])
+        ax_main.set_title(
+            f"U_k ⊗ V_k input-part signed mean {label}={idx}\n"
+            f"matrix shape={shape_str}"
+        )
+        fig.colorbar(im_main, ax=ax_main)
+
+        # 右：CNN row-wise z-score 单列，colorbar 独立。
+        col_img = cnn_col.reshape(-1, 1)
+        im_cnn = ax_cnn.imshow(
+            col_img,
+            origin="lower",
+            interpolation="nearest",
+            aspect="auto",
+            vmin=-3.0,
+            vmax=3.0,
+            cmap="RdBu_r",
+        )
+        ax_cnn.set_xlabel("row-wise z")
+        ax_cnn.set_xticks([])
+        if mat_h == 32:
+            ax_cnn.set_yticks(yticks)
+            ax_cnn.set_yticklabels([str(c) for c in yticks])
+        # ax_cnn.set_ylabel("Feature channel")
+        ax_cnn.set_title(
+            "CNN row-wise z-score\n"
+            f"digit={idx}"
+        )
+        fig.colorbar(im_cnn, ax=ax_cnn)
+
+        fig.tight_layout()
+        fig.savefig(signed_uv_out, dpi=150)
+        plt.close(fig)
+    else:
+        fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+        im = ax.imshow(
+            signed_mat,
+            origin="lower",
+            interpolation="nearest",
+            aspect="auto",
+            vmin=vmin,
+            vmax=vmax,
+            cmap="RdBu_r",
+        )
+        ax.set_xlabel("Recurrent units")
+        ax.set_ylabel(ylabel)
+        ax.set_title(
+            f"U_k ⊗ V_k input-part signed mean {label}={idx}\n"
+            f"matrix shape={shape_str}"
+        )
+        fig.colorbar(im, ax=ax)
+        fig.tight_layout()
+        fig.savefig(signed_uv_out, dpi=150)
+        plt.close(fig)
     print(f"Saved: {signed_uv_out}")
+
+    # Optionally save a simplified copy of the UxV signed-mean matrix
+    # under save_dir/sector/sector_k/ or save_dir/digit/digit_d/.
+    if args.simple:
+        simple_dir = os.path.join(save_dir, prefix)
+        os.makedirs(simple_dir, exist_ok=True)
+        simple_name = f"{prefix}_{idx}_UxV_input_signed_mean_{mat_h}x{mat_w}.png"
+        simple_out = os.path.join(simple_dir, simple_name)
+        shutil.copyfile(signed_uv_out, simple_out)
+        print(f"Saved (simple): {simple_out}")
 
 
 if __name__ == "__main__":

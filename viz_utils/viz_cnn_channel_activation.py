@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input_path",
         type=str,
-        default="./cnn_channel_activation_data",
+        default="./results/cnn_channel_activation_data",
         help=(
             "Path to cnn_channel_activation_stats.npz. If a directory is given, "
             "file name will be auto-completed as 'cnn_channel_activation_stats.npz'."
@@ -37,8 +37,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./cnn_channel_activation_figs",
+        default="./results/cnn_channel_activation_figs",
         help="Directory to save figures.",
+    )
+    parser.add_argument(
+        "--channel_order_path",
+        type=str,
+        default="./results/cnn_channel_activation_data/channel_order_by_cosine_similarity.npy",
+        help=(
+            "Path to a NumPy array specifying the feature-channel order to use "
+            "for visualization (e.g., output from analyze_cnn_channel_activation.py). "
+            "If missing or invalid, the natural order [0..C-1] is used."
+        ),
     )
     parser.add_argument(
         "--z_mode",
@@ -86,6 +96,46 @@ def load_stats(stats_path: str):
             f"Expected digit_sample_count shape (10,), got {digit_sample_count.shape}"
         )
     return mean_activation, std_activation, digit_sample_count
+
+
+def load_channel_order(path: str, num_channels: int) -> np.ndarray:
+    """
+    Load channel order from a .npy file if available; otherwise fall back to [0..C-1].
+    """
+    default_order = np.arange(num_channels, dtype=np.int64)
+
+    if path is None or path == "":
+        return default_order
+
+    abs_path = os.path.abspath(path)
+    if not os.path.isfile(abs_path):
+        print(
+            f"[viz][warn] channel order file not found at '{abs_path}'; "
+            "using default channel order."
+        )
+        return default_order
+
+    try:
+        order = np.load(abs_path)
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"[viz][warn] failed to load channel order from '{abs_path}' "
+            f"({exc}); using default channel order."
+        )
+        return default_order
+
+    order = np.asarray(order, dtype=np.int64)
+    if order.ndim != 1 or order.size != num_channels:
+        print(
+            "[viz][warn] channel order has incompatible shape "
+            f"{order.shape} for num_channels={num_channels}; "
+            "using default channel order."
+        )
+        return default_order
+
+    # Flip so that earlier entries in 'order' are mapped to
+    # visually higher rows (larger row indices with origin='lower').
+    return order[::-1]
 
 
 def compute_zscore(mean_activation: np.ndarray, mode: str) -> np.ndarray:
@@ -236,6 +286,12 @@ def main() -> None:
     out_path = os.path.join(save_dir, f"cnn_channel_activation_matrix_{suffix}.png")
 
     mean_activation, std_activation, digit_sample_count = load_stats(stats_file)
+
+    # Reorder feature channels according to cosine-based order (if provided).
+    C, _ = mean_activation.shape
+    channel_order = load_channel_order(args.channel_order_path, num_channels=C)
+    # mean_activation = mean_activation[channel_order]
+
     z_scores = compute_zscore(mean_activation, mode=args.z_mode)
 
     plot_activation_matrices(

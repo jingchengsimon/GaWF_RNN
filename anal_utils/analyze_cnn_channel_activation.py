@@ -18,11 +18,18 @@ Outputs (in --output_dir):
 
 import argparse
 import os
+import sys
 from typing import Tuple
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+
+# Ensure project root (containing both anal_utils and viz_utils) is on sys.path,
+# so that we can import viz_utils reliably no matter where the script is invoked.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
 
 from train_rnn_updated import MC_RNN_Dataset
 from utils.train_gawf_core import GaWFRNNConv
@@ -50,7 +57,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./cnn_channel_activation_data",
+        default="./results/cnn_channel_activation_data",
         help="Directory to save activation arrays and statistics.",
     )
     parser.add_argument(
@@ -283,6 +290,46 @@ def compute_digit_stats(
     return mean_activation, std_activation, digit_sample_count
 
 
+def compute_channel_order_by_cosine(mean_activation: np.ndarray) -> np.ndarray:
+    """
+    使用均值激活矩阵，根据 cosine similarity 计算 CNN 通道的排序。
+
+    每个通道用其在 10 个 digit 上的 10 维均值向量表示；先在通道维度上取平均，
+    得到一个全局参考模式，然后按与该参考模式的 cosine similarity 从大到小排序。
+
+    返回值
+    ------
+    order : np.ndarray
+        形状为 (num_channels,) 的数组，元素是「原始通道索引」在新的排序中的顺序
+        （例如 [7, 3, 12, ...]）。
+    """
+    if mean_activation.ndim != 2 or mean_activation.shape[1] != 10:
+        raise ValueError(
+            f"Expected mean_activation of shape (C, 10), got {mean_activation.shape}"
+        )
+
+    channel_vectors = mean_activation.astype(np.float32, copy=False)
+
+    # 全局参考模式：在通道维度上做平均，得到一个 10 维向量。
+    ref = channel_vectors.mean(axis=0)
+    ref_norm = np.linalg.norm(ref)
+    if ref_norm < 1e-8:
+        ref_norm = 1e-8
+
+    sims = []
+    for c in range(channel_vectors.shape[0]):
+        v = channel_vectors[c]
+        v_norm = np.linalg.norm(v)
+        if v_norm < 1e-8:
+            v_norm = 1e-8
+        sims.append(float(np.dot(v, ref) / (v_norm * ref_norm)))
+    sims = np.asarray(sims, dtype=np.float32)
+
+    # 按与参考向量的 cosine similarity 从大到小排序。
+    order = np.argsort(-sims)
+    return order
+
+
 def main() -> None:
     args = parse_args()
     set_seed(args.seed)
@@ -356,7 +403,17 @@ def main() -> None:
     )
     print(f"Saved CNN channel activation statistics to: {stats_path}")
 
+    # 7) Compute channel order based on cosine similarity of mean activations.
+    channel_order = compute_channel_order_by_cosine(mean_activation)
+    order_path = os.path.join(args.save_dir, "channel_order_by_cosine_similarity.npy")
+    np.save(order_path, channel_order.astype(np.int64, copy=False))
+
+    print(
+        "Channel order by cosine similarity (indices of original channels):\n"
+        f"{channel_order.tolist()}"
+    )
+    print(f"Saved channel order to: {order_path}")
+
 
 if __name__ == "__main__":
     main()
-
