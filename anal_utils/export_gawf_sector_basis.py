@@ -32,8 +32,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ckpt",
         type=str,
-        default="/G/MIMOlab/Codes/aim3_RNN/results/models/sector_40h_adamw/gawf_sector_acc_h256_lr0.0005_wd0.0001_do0_fb50_model.pth",
+        default="/G/MIMOlab/Codes/aim3_RNN/results/models/sector_40h_adamw_0317/gawf_sector_acc_h256_lr0.0005_wd0.0001_do0_fb50_model.pth",
         help="Path to trained GaWFRNNConv checkpoint (e.g. *_model.pth).",
+    )
+    parser.add_argument(
+        "--save_dir",
+        type=str,
+        default="./results/gawf_sector_basis_exports_0317",
+        help="Directory to save exported .pt results.",
     )
     parser.add_argument(
         "--sector",
@@ -55,17 +61,21 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--save_dir",
-        type=str,
-        default="./results/gawf_sector_basis_exports",
-        help="Directory to save exported .pt results.",
-    )
-    parser.add_argument(
         "--device",
         type=str,
         default="auto",
         choices=["auto", "cpu", "cuda"],
         help="Computation device: auto / cpu / cuda (default: auto).",
+    )
+    parser.add_argument(
+        "--export_uxv",
+        action="store_true",
+        default=True,
+        help=(
+            "When set, additionally export the U_k ⊗ V_k input-part matrices "
+            "(abs/signed mean) needed by viz_gawf_sector_basis.py so that the "
+            "visualization script can skip re-loading the checkpoint."
+        ),
     )
     return parser.parse_args()
 
@@ -108,7 +118,9 @@ def build_model_from_ckpt(ckpt_path: str, device: torch.device) -> GaWFRNNConv:
         predict_all_chars=False,
     )
 
-    state_dict = torch.load(ckpt_path, map_location=device)
+    # PyTorch 2.6+ defaults torch.load(weights_only=True). Our checkpoints are
+    # trusted local files; disable weights-only mode for compatibility.
+    state_dict = torch.load(ckpt_path, map_location=device, weights_only=False)
     state_dict = {k: v for k, v in state_dict.items() if k != "prev_feedback"}
     load_result = model.load_state_dict(state_dict, strict=False)
 
@@ -265,6 +277,38 @@ def main() -> None:
         save_obj["channel_abs"] = channel_abs
         save_obj["channel_signed"] = channel_signed
 
+    # Optional: export U_k ⊗ V_k input-part matrices so viz can skip ckpt reload.
+    if args.export_uxv:
+        # NOTE: This uses U in addition to V. This path is optional and intended
+        # for controlled comparisons / faster iteration in visualization.
+        U = model.U.detach().cpu()
+        recurrent_size = int(model.rnn.hidden_size)
+
+        # Extract U_k and V_k (full row includes input+rec parts).
+        U_k = U[:, row_idx]  # (rec,)
+        V_k = V[row_idx]  # (input_size+rec,)
+
+        # gate_k: (input+rec, rec) ; input part only then reshape to (C,H,W,rec)
+        gate_k = torch.outer(V_k, U_k)
+        gate_input = gate_k[:input_size, :]
+        gate_input_4d = gate_input.view(C, H, W, recurrent_size)
+
+        if mode == "sector":
+            abs_mean_3d = gate_input_4d.abs().mean(dim=0)  # (H,W,rec)
+            signed_mean_3d = gate_input_4d.mean(dim=0)  # (H,W,rec)
+            HW = int(H * W)
+            uxv_abs_mat = abs_mean_3d.view(HW, recurrent_size).numpy()
+            uxv_signed_mat = signed_mean_3d.view(HW, recurrent_size).numpy()
+            uxv_mat_h, uxv_mat_w = HW, recurrent_size
+        else:
+            uxv_abs_mat = gate_input_4d.abs().mean(dim=(1, 2)).numpy()  # (C,rec)
+            uxv_signed_mat = gate_input_4d.mean(dim=(1, 2)).numpy()  # (C,rec)
+            uxv_mat_h, uxv_mat_w = int(C), recurrent_size
+
+        save_obj["uxv_input_abs_mean"] = uxv_abs_mat
+        save_obj["uxv_input_signed_mean"] = uxv_signed_mat
+        save_obj["uxv_shape"] = (int(uxv_mat_h), int(uxv_mat_w))
+
     summary_stats = {
         "basis_vec": stats_dict(basis_vec),
         "basis_input": stats_dict(basis_input),
@@ -274,6 +318,13 @@ def main() -> None:
     if mode == "digit":
         summary_stats["channel_abs"] = stats_dict(channel_abs)
         summary_stats["channel_signed"] = stats_dict(channel_signed)
+    if args.export_uxv:
+        summary_stats["uxv_input_abs_mean"] = stats_dict(
+            torch.as_tensor(save_obj["uxv_input_abs_mean"])
+        )
+        summary_stats["uxv_input_signed_mean"] = stats_dict(
+            torch.as_tensor(save_obj["uxv_input_signed_mean"])
+        )
     save_obj["summary_stats"] = summary_stats
     torch.save(save_obj, out_path)
 

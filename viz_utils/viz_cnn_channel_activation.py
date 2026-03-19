@@ -290,7 +290,7 @@ def main() -> None:
     # Reorder feature channels according to cosine-based order (if provided).
     C, _ = mean_activation.shape
     channel_order = load_channel_order(args.channel_order_path, num_channels=C)
-    # mean_activation = mean_activation[channel_order]
+    mean_activation = mean_activation[channel_order]
 
     z_scores = compute_zscore(mean_activation, mode=args.z_mode)
 

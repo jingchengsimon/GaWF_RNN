@@ -133,8 +133,8 @@ def visualize_training_curves(pkl_path, output_path, hparams=None, epoch_start=0
     
     # 第一行左：字符识别准确率
     plt.subplot(nrows, ncols, 1)
-    plt.plot(epoch_indices, results["train_acc_char"][plot_start:plot_end], label="train char acc", linewidth=2)
-    plt.plot(epoch_indices, results["val_acc_char"][plot_start:plot_end], label="val char acc", linewidth=2)
+    plt.plot(epoch_indices, results["train_acc_char"][plot_start:plot_end], label="train accuracy", linewidth=2)
+    plt.plot(epoch_indices, results["val_acc_char"][plot_start:plot_end], label="validation accuracy", linewidth=2)
     plt.xlabel("Epoch", fontsize=12)
     plt.ylabel("Accuracy (%)", fontsize=12)
     plt.title("Character accuracy", fontsize=13)

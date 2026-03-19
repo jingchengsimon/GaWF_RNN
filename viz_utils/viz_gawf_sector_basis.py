@@ -19,9 +19,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
-from utils.train_gawf_core import GaWFRNNConv  # noqa: E402
-from viz_utils.viz_single_result import parse_hparams_from_filename  # noqa: E402
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -97,6 +94,19 @@ def parse_args() -> argparse.Namespace:
             "additionally save a simplified copy under save_dir/sector/ for quick browsing."
         ),
     )
+    parser.add_argument(
+        "--sector_summary",
+        action="store_true",
+        default=False,
+        help=(
+            "When set, generate a 3x3 summary RF gallery across sectors 0-8 using the "
+            "outer UV input-part matrices from exported sector_{k}_basis.pt files. "
+            "Each subplot corresponds to its sector index (0-8) arranged bottom-up, "
+            "left-to-right. For each sector, pick the recurrent unit with the largest "
+            "abs-mean RF magnitude whose signed-mean RF is positive; if none are "
+            "positive, fall back to the global top-1 by abs mean."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -131,39 +141,6 @@ def _read_feature_shape(obj) -> Tuple[int, int, int]:
     if len(fs) != 3:
         raise ValueError(f"Invalid feature_shape={fs} (expected (C,H,W))")
     return fs[0], fs[1], fs[2]
-
-
-def _build_model_from_ckpt(ckpt_path: str, device: torch.device) -> GaWFRNNConv:
-    """
-    Rebuild GaWFRNNConv from checkpoint, mirroring export_gawf_sector_basis.py.
-    """
-    ckpt_basename = os.path.basename(ckpt_path)
-    hparams = parse_hparams_from_filename(ckpt_basename)
-
-    hidden_size = hparams.get("hidden_size", 256)
-    dropout_rate = hparams.get("dropout", 0.3)
-
-    num_classes = 10
-    num_pos = 9
-
-    model = GaWFRNNConv(
-        num_classes=num_classes,
-        num_pos=num_pos,
-        kernel_size=5,
-        device=str(device),
-        dropout_rate=dropout_rate,
-        hidden_size=hidden_size,
-        max_chars=15,
-        predict_all_chars=False,
-    )
-
-    state_dict = torch.load(ckpt_path, map_location=device)
-    state_dict = {k: v for k, v in state_dict.items() if k != "prev_feedback"}
-    load_result = model.load_state_dict(state_dict, strict=False)
-    
-    model.to(device)
-    model.eval()
-    return model
 
 
 def _load_channel_order(path: str, num_channels: int) -> np.ndarray:
@@ -268,6 +245,134 @@ def _load_cnn_rowwise_column(
 
 def main() -> None:
     args = parse_args()
+
+    # ---------------------------------------------------------------------
+    # Sector summary mode: one 3x3 RF gallery across sectors 0-8.
+    # This is an optional extra visualization and does not modify the
+    # existing per-sector/digit outputs.
+    # ---------------------------------------------------------------------
+    if bool(args.sector_summary):
+        raw_in_path = args.input_path
+        if raw_in_path is None or raw_in_path == "":
+            raw_in_path = "./results/gawf_sector_basis_exports"
+        in_dir = os.path.abspath(raw_in_path)
+        if os.path.isfile(in_dir):
+            in_dir = os.path.dirname(in_dir)
+        save_dir = os.path.abspath(args.save_dir)
+        os.makedirs(save_dir, exist_ok=True)
+        summary_dir = os.path.join(save_dir, "sector_summary")
+        os.makedirs(summary_dir, exist_ok=True)
+
+        rf_h, rf_w = 6, 6
+        selected = []
+        for sector_id in range(9):
+            pt_path = os.path.join(in_dir, f"sector_{sector_id}_basis.pt")
+            obj = torch.load(pt_path, map_location="cpu", weights_only=False)
+            if "uxv_input_signed_mean" not in obj:
+                raise KeyError(
+                    f"Missing 'uxv_input_signed_mean' in {pt_path}. "
+                    "Please re-run export_gawf_sector_basis.py with --export_uxv."
+                )
+            signed_mat = _to_numpy_2d(obj["uxv_input_signed_mean"])
+            if signed_mat.shape[0] != rf_h * rf_w:
+                raise ValueError(
+                    f"Expected outer UV input-part shape ({rf_h*rf_w}, rec), got {signed_mat.shape}"
+                )
+            rec = int(signed_mat.shape[1])
+            rf_all = signed_mat.reshape(rf_h, rf_w, rec).transpose(2, 0, 1)  # (rec,6,6)
+
+            # Step 1: rank units by overall abs-mean (desc).
+            abs_mean = np.mean(np.abs(rf_all), axis=(1, 2))  # (rec,)
+            order = np.argsort(-abs_mean)  # desc
+
+            # Step 2: within that ordering, prefer units whose PEAK block (among 36 blocks)
+            # has a positive signed value; among positives, rank by the peak block magnitude.
+            # This matches the requirement "pick the unit with the largest positive value at
+            # its strongest (abs-largest) block", rather than using the global RF mean sign.
+            rf_flat = rf_all.reshape(rec, rf_h * rf_w)  # (rec,36)
+            abs_flat = np.abs(rf_flat)
+            peak_idx = np.argmax(abs_flat, axis=1)  # (rec,)
+            row_ids = np.arange(rec)
+            peak_signed = rf_flat[row_ids, peak_idx]  # (rec,)
+            peak_abs = np.abs(peak_signed)  # (rec,)
+
+            pos_units_in_order = [int(u) for u in order if float(peak_signed[u]) > 0.0]
+            if len(pos_units_in_order) > 0:
+                pos_units = np.asarray(pos_units_in_order, dtype=np.int64)
+                # Primary: peak_abs desc; Secondary: abs_mean desc (already mostly enforced by order)
+                sort_idx = np.lexsort((-abs_mean[pos_units], -peak_abs[pos_units]))
+                pick = int(pos_units[sort_idx[0]])
+            else:
+                pick = int(order[0])
+
+            selected.append(
+                {
+                    "sector": int(sector_id),
+                    "unit": int(pick),
+                    "abs_mean": float(abs_mean[pick]),
+                    "rf": rf_all[pick],
+                }
+            )
+
+        vmax = float(np.max([np.max(np.abs(s["rf"])) for s in selected]))
+        if vmax == 0.0:
+            vmax = 1e-8
+        vmin = -vmax
+
+        fig, axes = plt.subplots(3, 3, figsize=(9.0, 8.5))
+        im0 = None
+        for s in selected:
+            k = int(s["sector"])
+            r = 2 - (k // 3)  # bottom-up
+            c = k % 3
+            ax = axes[r, c]
+            im0 = ax.imshow(
+                s["rf"],
+                origin="lower",
+                interpolation="nearest",
+                aspect="equal",
+                vmin=vmin,
+                vmax=vmax,
+                cmap="RdBu_r",
+            )
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_title(
+                f"Sector={k} | unit={int(s['unit'])}"#\nabs_mean={float(s['abs_mean']):.4f}"
+            )
+
+        fig.suptitle(
+            "Feedback-dependent gating on input-to-hidden connections in GaWF RNN model",
+            # "Outer UV input-part sector summary | "
+            # "sectors=0-8 (bottom-up) | top-1 unit by abs mean with positive signed mean | RF=6x6",
+            y=0.985, size=13, weight="bold",
+        )
+        fig.subplots_adjust(
+            left=0.05,
+            right=0.88,
+            top=0.93,
+            bottom=0.05,
+            wspace=0.15,
+            hspace=0.25,
+        )
+        if im0 is not None:
+            # Align colorbar height to the 3x3 grid bounding box.
+            from matplotlib.transforms import Bbox  # local import to avoid global dependency
+
+            grid_bbox = Bbox.union([ax.get_position() for ax in axes.ravel()])
+            cbar_width = 0.03
+            pad = 0.03
+            x0 = min(float(grid_bbox.x1) + pad, 0.98 - cbar_width)
+            cax = fig.add_axes([x0, float(grid_bbox.y0), cbar_width, float(grid_bbox.height)])
+            cb = fig.colorbar(im0, cax=cax)
+            cb.set_ticks(np.linspace(-0.5, 0.5, 5))
+
+        out_path = os.path.join(summary_dir, "outer_uv_input_sector_summary_top1_possign.png")
+        fig.savefig(out_path, dpi=150)
+        plt.close(fig)
+        print(f"Saved: {out_path}")
+        return
+
     # Determine mode: sector vs digit
     use_sector = args.sector is not None
     use_digit = args.digit is not None
@@ -312,7 +417,10 @@ def main() -> None:
         out_dir = os.path.join(save_dir, f"{prefix}_{idx}")
     os.makedirs(out_dir, exist_ok=True)
 
-    obj = torch.load(in_path, map_location="cpu")
+    # PyTorch 2.6+ defaults torch.load(weights_only=True), which can reject
+    # non-tensor objects (e.g., NumPy arrays) in our exported .pt. We trust
+    # locally-exported analysis files, so explicitly disable weights-only mode.
+    obj = torch.load(in_path, map_location="cpu", weights_only=False)
 
     C, H, W = _read_feature_shape(obj)
 
@@ -454,134 +562,34 @@ def main() -> None:
             print(f"Saved: {signed_out}")
 
     # -------------------------------------------------------------------------
-    # NEW: Visualize U_k ⊗ V_k input-part aggregated over channels
+    # Visualize U_k ⊗ V_k input-part aggregated over channels
+    #
+    # NOTE: This script assumes export_gawf_sector_basis.py was run with --export_uxv,
+    # and therefore the input .pt already contains the aggregated UxV matrices.
     # -------------------------------------------------------------------------
-    ckpt_path = obj.get("ckpt_path", None)
-    if ckpt_path is None:
-        print(
-            "[viz][warn] ckpt_path not found in input .pt; "
-            "skip U_k ⊗ V_k visualization."
-        )
-        return
-
-    ckpt_path = os.path.abspath(str(ckpt_path))
-    device = torch.device("cpu")
-    model = _build_model_from_ckpt(ckpt_path, device=device)
-
-    # Shapes and consistency checks
-    V = model.V.detach().cpu()
-    U = model.U.detach().cpu()
-    input_size_model = int(model.encoder_flatten_size)
-    rec = int(model.rnn.hidden_size)
-    input_size_from_feature = int(C * H * W)
-    if input_size_model != input_size_from_feature:
-        raise RuntimeError(
-            f"Inconsistent input size: encoder_flatten_size={input_size_model}, "
-            f"but C*H*W={input_size_from_feature} (C,H,W=({C},{H},{W}))."
+    if "uxv_input_abs_mean" not in obj or "uxv_input_signed_mean" not in obj:
+        raise KeyError(
+            "Missing UxV matrices in input .pt. Please re-run "
+            "export_gawf_sector_basis.py with --export_uxv to include "
+            "'uxv_input_abs_mean' and 'uxv_input_signed_mean'."
         )
 
-    feedback_dim, combined = V.shape
-    expected_combined = input_size_model + rec
-    if combined != expected_combined:
-        raise RuntimeError(
-            f"Unexpected V.shape={tuple(V.shape)}; expected "
-            f"(feedback_dim, input_size+recurrent_size)=(*, {expected_combined})."
-        )
-    if U.shape != (rec, feedback_dim):
-        raise RuntimeError(
-            f"Unexpected U.shape={tuple(U.shape)}; expected (rec, feedback_dim)=({rec}, {feedback_dim})."
-        )
+    abs_mat = _to_numpy_2d(obj["uxv_input_abs_mean"])
+    signed_mat = _to_numpy_2d(obj["uxv_input_signed_mean"])
+    rec = int(abs_mat.shape[1])
 
-    num_classes = int(model.num_classes)
-    num_pos = int(model.num_pos)
-    if feedback_dim != num_classes + num_pos:
-        raise RuntimeError(
-            f"Inconsistent feedback_dim: V.shape[0]={feedback_dim}, "
-            f"but num_classes+num_pos={num_classes + num_pos}."
-        )
+    # Apply optional channel reordering to digit-mode matrices.
+    if mode == "digit" and channel_order is not None:
+        apply_order = channel_order[::-1]
+        abs_mat = abs_mat[apply_order]
+        signed_mat = signed_mat[apply_order]
 
+    mat_h, mat_w = int(abs_mat.shape[0]), int(abs_mat.shape[1])
     if mode == "sector":
-        if not (0 <= idx < num_pos):
-            raise IndexError(
-                f"sector={idx} out of valid range [0, num_pos={num_pos}). "
-                f"(V.shape[0]={feedback_dim}, first {num_classes} rows are char logits, "
-                f"last {num_pos} rows are sector feedback.)"
-            )
-        row_idx = num_classes + idx
-    else:
-        if not (0 <= idx < num_classes):
-            raise IndexError(
-                f"digit={idx} out of valid range [0, num_classes={num_classes}). "
-                f"(V.shape[0]={feedback_dim}, first {num_classes} rows are char logits, "
-                f"last {num_pos} rows are sector feedback.)"
-            )
-        row_idx = idx
-
-    U_k = U[:, row_idx]  # (rec,)
-    V_k = V[row_idx]  # (input_size + rec,)
-
-    # Shape logging / asserts
-    print(f"[viz] U_k.shape={tuple(U_k.shape)} (expected ({rec},))")
-    print(
-        f"[viz] V_k.shape={tuple(V_k.shape)} (expected ({input_size_model + rec},))"
-    )
-
-    if U_k.shape[0] != rec:
-        raise RuntimeError(
-            f"U_k has wrong shape {tuple(U_k.shape)}; expected ({rec},)."
-        )
-    if V_k.shape[0] != input_size_model + rec:
-        raise RuntimeError(
-            f"V_k has wrong shape {tuple(V_k.shape)}; expected ({input_size_model + rec},)."
-        )
-
-    # Outer product: (input+rec, rec) with rows from V_k, cols from U_k
-    gate_k = torch.outer(V_k, U_k)  # (input_size+rec, rec)
-    print(
-        f"[viz] gate_k.shape={tuple(gate_k.shape)} "
-        f"(expected ({input_size_model + rec}, {rec}))"
-    )
-
-    # Input part only: first input_size rows
-    gate_input = gate_k[:input_size_model, :]  # (input_size, rec)
-    print(
-        f"[viz] gate_input.shape={tuple(gate_input.shape)} "
-        f"(expected ({input_size_model}, {rec}))"
-    )
-
-    # Reshape to (C,H,W,rec)
-    gate_input_4d = gate_input.view(C, H, W, rec)
-    print(
-        f"[viz] gate_input_4d.shape={tuple(gate_input_4d.shape)} "
-        f"(expected ({C}, {H}, {W}, {rec}))"
-    )
-
-    if mode == "sector":
-        # Sector: average over channels (dim=0) -> (H,W,rec), flatten to (HW, rec)
-        abs_mean_3d = gate_input_4d.abs().mean(dim=0)  # (H,W,rec)
-        signed_mean_3d = gate_input_4d.mean(dim=0)  # (H,W,rec)
-        HW = int(H * W)
-        abs_mat = abs_mean_3d.view(HW, rec).detach().cpu().numpy()
-        signed_mat = signed_mean_3d.view(HW, rec).detach().cpu().numpy()
-        mat_h, mat_w = HW, rec
         ylabel = "Spatial blocks (flattened H*W)"
-        shape_str = f"({HW},{rec})"
     else:
-        # Digit: average over (H,W) (dim 1,2) -> (C, rec); each row = one feature channel
-        abs_mat_2d = gate_input_4d.abs().mean(dim=(1, 2))  # (C, rec)
-        signed_mat_2d = gate_input_4d.mean(dim=(1, 2))  # (C, rec)
-
-        # 先在 PyTorch 端完成统计，再转成 numpy；然后仅通过索引重排行顺序。
-        abs_mat = abs_mat_2d.detach().cpu().numpy()
-        signed_mat = signed_mat_2d.detach().cpu().numpy()
-        if channel_order is not None:
-            apply_order = channel_order[::-1]
-            abs_mat = abs_mat[apply_order]
-            signed_mat = signed_mat[apply_order]
-
-        mat_h, mat_w = C, rec
         ylabel = "Feature channel"
-        shape_str = f"({C},{rec})"
+    shape_str = f"({mat_h},{mat_w})"
 
     print(f"[viz] final abs_mat.shape={abs_mat.shape} (expected ({mat_h}, {mat_w}))")
     print(f"[viz] final signed_mat.shape={signed_mat.shape} (expected ({mat_h}, {mat_w}))")
@@ -705,6 +713,75 @@ def main() -> None:
         fig.savefig(signed_uv_out, dpi=150)
         plt.close(fig)
     print(f"Saved: {signed_uv_out}")
+
+    # -------------------------------------------------------------------------
+    # Additional sector-only figure:
+    # Outer UV input-part RF gallery (top-9 recurrent units by abs-mean magnitude).
+    #
+    # Interpretation:
+    # - In sector mode, signed_mat has shape (H*W, rec) where H=W=6 => (36, 256).
+    # - For each recurrent unit j, reshape signed_mat[:, j] to a signed 6x6 RF.
+    # - Rank by abs_mean_j = mean(abs(RF_j)), but plot the signed RF.
+    # -------------------------------------------------------------------------
+    if mode == "sector":
+        if mat_h != 36:
+            print(
+                f"[viz][warn] skip outer UV RF gallery: expected mat_h=36 (6x6), got mat_h={mat_h}"
+            )
+        else:
+            rf_h, rf_w = 6, 6
+            rf_all = signed_mat.reshape(rf_h, rf_w, mat_w).transpose(2, 0, 1)  # (rec,6,6)
+            abs_mean = np.mean(np.abs(rf_all), axis=(1, 2))  # (rec,)
+            order = np.argsort(-abs_mean)  # desc
+            topk = 9
+            top_idx = order[:topk]
+            rf_top = rf_all[top_idx]  # (9,6,6) signed
+            vmax = float(np.max(np.abs(rf_top)))
+            if vmax == 0.0:
+                vmax = 1e-8
+            vmin = -vmax
+
+            fig, axes = plt.subplots(3, 3, figsize=(8.5, 8.0))
+            axes = np.asarray(axes).reshape(-1)
+            im0 = None
+            for i, (unit_idx, rf) in enumerate(zip(top_idx, rf_top, strict=True)):
+                ax = axes[i]
+                im0 = ax.imshow(
+                    rf,
+                    origin="lower",
+                    interpolation="nearest",
+                    aspect="equal",
+                    vmin=vmin,
+                    vmax=vmax,
+                    cmap="RdBu_r",
+                )
+                ax.set_xticks([])
+                ax.set_yticks([])
+                ax.set_title(f"unit={int(unit_idx)}\nabs_mean={float(abs_mean[unit_idx]):.4f}")
+
+            fig.suptitle(
+                "Outer UV input-part RF gallery | "
+                f"sector={idx} | top-9 units by abs mean",
+                y=0.995,
+            )
+
+            # Shared colorbar (dedicated axis to avoid overlapping subplots)
+            fig.subplots_adjust(
+                left=0.05,
+                right=0.88,
+                top=0.92,
+                bottom=0.05,
+                wspace=0.15,
+                hspace=0.25,
+            )
+            if im0 is not None:
+                cax = fig.add_axes([0.9, 0.18, 0.03, 0.64])
+                fig.colorbar(im0, cax=cax)
+
+            gallery_out = os.path.join(out_dir, "outer_uv_input_top9_rf_gallery.png")
+            fig.savefig(gallery_out, dpi=150)
+            plt.close(fig)
+            print(f"Saved: {gallery_out}")
 
     # Optionally save a simplified copy of the UxV signed-mean matrix
     # under save_dir/sector/ or save_dir/digit/ for quick browsing.
