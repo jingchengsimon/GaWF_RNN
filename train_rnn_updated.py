@@ -406,7 +406,7 @@ if __name__ == "__main__":
     dropouts = args.dropouts
 
     # Create results directory
-    results_dir = f"results/models/{args.result_suffix}"
+    results_dir = f"results/train_data/{args.result_suffix}"
     if not os.path.exists(results_dir):
         os.makedirs(results_dir, exist_ok=True)
         print(f"Created results directory: {results_dir}")

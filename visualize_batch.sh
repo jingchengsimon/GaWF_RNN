@@ -100,10 +100,10 @@ for pkl_file in "${PKL_FILES[@]}"; do
     
     # 调用 Python 脚本生成可视化（若有 epoch 范围则传入）
     if [ -n "$EPOCH_START" ] && [ -n "$EPOCH_END" ]; then
-        python viz_utils/viz_single_result.py "$pkl_file" --output_dir "$OUTPUT_DIR" \
+        python viz_utils/model_train_single_result.py "$pkl_file" --output_dir "$OUTPUT_DIR" \
             --epoch_start "$EPOCH_START" --epoch_end "$EPOCH_END"
     else
-        python viz_utils/viz_single_result.py "$pkl_file" --output_dir "$OUTPUT_DIR"
+        python viz_utils/model_train_single_result.py "$pkl_file" --output_dir "$OUTPUT_DIR"
     fi
     if [ $? -eq 0 ]; then
         ((success_count++))
