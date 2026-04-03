@@ -1,0 +1,98 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "aim3_rnn"
+version = "0.1.0"
+description = "CNN-RNN / GaWF model training and analysis for multi-character visual recognition"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0",
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "matplotlib>=3.7",
+    "scipy>=1.10",
+    "tqdm>=4.65",
+    "statsmodels>=0.14",
+]
+
+[project.optional-dependencies]
+dev = ["black", "ruff", "mypy"]
+viz = ["umap-learn>=0.5"]
+
+# ---------------------------------------------------------------------------
+# Black — code formatter
+# ---------------------------------------------------------------------------
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  source/         # stimulus generation, rarely edited
+)/
+'''
+
+# ---------------------------------------------------------------------------
+# Ruff — fast linter (replaces flake8 + isort + pyupgrade subset)
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",   # line too long — handled by Black
+    "B008",   # do not perform function calls in argument defaults
+    "SIM108", # ternary operator (readability preference)
+    "UP007",  # use X | Y for union types (keep Optional for clarity)
+    "B006",   # mutable argument default — project uses this intentionally in some places
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["utils", "utils_anal", "utils_viz"]
+force-sort-within-sections = true
+# Import order enforced by project convention:
+# stdlib → third-party → project (utils → utils_anal → utils_viz)
+
+[tool.ruff.lint.per-file-ignores]
+"source/*" = ["ALL"]   # stimulus generation scripts are standalone
+"utils_viz/paper_figs/*" = ["E402"]  # matplotlib.use() before imports
+
+# ---------------------------------------------------------------------------
+# mypy — static type checker
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true   # torch stubs not always available
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = ["source.*"]
+ignore_errors = true
+
+# ---------------------------------------------------------------------------
+# pytest (if tests are added)
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "--tb=short -q"

@@ -1,0 +1,113 @@
+---
+description: Architecture and module dependency constraints for aim3_RNN
+globs: ["**/*.py"]
+alwaysApply: true
+---
+
+# Architecture Constraints
+
+## Module Dependency DAG (strict, no cycles)
+
+```
+source/           ← no project imports
+utils/            ← torch, numpy, stdlib only; NO utils_anal, NO utils_viz imports
+  train_rnn_core      ← base classes
+  train_gawf_core     ← imports train_rnn_core
+  train_ann_core      ← standalone
+  train_helpers       ← stdlib + third-party only
+  train_acceleration  ← imports train_helpers
+  train_sector        ← imports torch only
+  train_predict_all_chars ← imports torch only
+  train_rnn_engine    ← imports all utils sub-modules
+train_model.py ← imports utils.*  (entry point)
+utils_anal/       ← imports utils.*, train_model (MC_RNN_Dataset)
+utils_viz/        ← imports utils_anal data (files), NOT utils_anal code directly
+```
+
+**Violations the agent must never introduce:**
+- `utils/` importing from `utils_anal/` or `utils_viz/`
+- `utils_anal/` importing from `utils_viz/`
+- Circular imports between any two modules
+
+**Import propagation:** If you rename, move, or delete a module or public API, update every affected `import` / call site across the repo in the same change (search, then fix downstream scripts).
+
+## CNN Encoder Shape Contract
+
+The encoder pipeline in `BaseConvSequenceModel` and `GaWFRNNConv` outputs:
+- After conv_reduce + pool_reduce: **(B*T, 32, 6, 6)**
+- `encoder_flatten_size` = **1152** (32 × 6 × 6)
+
+If the encoder shape must change, update ALL of the following:
+1. `encoder_flatten_size` in `BaseConvSequenceModel.__init__`
+2. `GaWFRNNConv.__init__` input_size
+3. `cnn_channel_stats.py` assumes 32 channels; update the 32-specific checks
+4. `V_basis.py` spatial dims (6, 6)
+5. Any `np.ndarray` shape assertions in analysis scripts
+
+## Dropout (`utils/train_rnn_core.py`, `train_gawf_core.py`, `train_ann_core.py`)
+- Constructor argument **`dropout`** (default **0**): same *p* for encoder **`F.dropout2d`** (two places) and middle **`F.dropout`** (RNN/GaWF/FFN path after nonlinearity).
+- **`DendriticANN`** internal layers keep their own `dropout` argument; `DendriticANNConv` passes **`dropout=0`** to that stack (CNN only uses the shared **`dropout`**).
+
+## GaWF Parameter Shapes (must not change silently)
+```
+U  : (hidden_size, fb_dim)         fb_dim = num_classes + num_pos
+V  : (fb_dim, input_size + hidden_size)
+V_ih = V[:, :input_size]
+V_hh = V[:, input_size:]
+trans_ih = U @ (fb * V_ih)        # (B, H, input_size)
+gate_tau = 0.5                     # fixed scalar
+```
+
+## Model Registration
+New model types must be added to `get_model_classes()` in `utils/train_helpers.py`.
+The key is the CLI `--model_types` string; value is the class.
+
+## Sector Grid
+3×3 grid → 9 sectors (0–8). Sector id = `row * 3 + col`.
+`num_pos` = 9 in sector mode, 0 in all-chars mode.
+
+## DataLoader Rules
+- `num_workers=0` when `use_mmap=True` (numpy mmap does not fork safely)
+- `drop_last=True` for train loader, `False` for val/eval loaders
+- Reproducibility: always pass `generator=torch.Generator().manual_seed(seed)`
+
+## Feedback Buffer
+`prev_feedback` is a `register_buffer` (not a parameter).
+- Reset by passing `reset_feedback=True` to `forward()`
+- Always detach before storing: `self.prev_feedback = fb.detach()`
+- Exclude from state_dict diff: filter `k != "prev_feedback"` on load
+
+## Training engine (`utils/train_rnn_engine.py`)
+
+`train_model.network_train` delegates to this module. Per-epoch flow (scheme A names):
+
+- `setup_training_components` — builds `components` dict (loaders, stepper, `metrics_mode`, metric arrays).
+- `begin_epoch` — GaWF feedback freeze (if any), online-train accumulator reset, train `tqdm`.
+- `train_batch` — one optimizer step; updates **online** train stats only (not fair curve).
+- `summarize_online_train` — optional log string from online batch stats (debug / progress only).
+- `eval_train_subset` — **fair** full pass on `train_eval_dl` (eval mode, same protocol as valid); writes `train_*` curves.
+- `eval_valid` — **fair** full pass on `val_dl`; writes `val_*` curves (honours `val_every`).
+- `evaluate_epoch` — core one-loader eval pass; wrapped by `eval_train_subset` and `eval_valid`. Reuse `components["metrics_mode"]` when calling from training.
+
+**Fair metrics:** Official train/val curve metrics must come from `eval_train_subset` / `eval_valid`, not from `summarize_online_train` / per-batch online averages.
+
+## Metrics Mode Pattern
+Training/eval metrics are dispatched through `MetricsMode` objects
+(`SingleCharMetricsMode`, `AllCharsMetricsMode`). New label modes must
+implement the same interface (init_epoch_train, update_train_batch, finalize_train_epoch,
+init_eval, update_eval_batch, finalize_eval, format_train_str, format_val_str,
+postfix_for_pbar, add_pos_to_result_dict).
+
+## Results Directory Structure
+```
+results/
+├── train_data/<result_suffix>/   ← .pkl, .pth, .json, train.log
+├── anal_data/<module>/           ← .npy, .npz, .json
+└── anal_figs/<module>/           ← .png
+```
+`<module>` matches the script name without extension (e.g. `gate_avg_allsector`,
+`cnn_channel`, `hidden_activation`).
+
+## Extended Reference
+Before making changes to utils_anal/ or utils_viz/, read `docs/ARCHITECTURE.md`
+for the full module responsibility table and data flow diagram.

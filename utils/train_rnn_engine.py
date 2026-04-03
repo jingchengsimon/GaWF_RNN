@@ -9,6 +9,9 @@ This module encapsulates the detailed implementation of:
 
 The goal is to keep the main training script's `network_train` function
 as a clear skeleton while the heavy logic lives here.
+
+Epoch loop naming (scheme A): `begin_epoch`, `train_batch`, `summarize_online_train`,
+`eval_train_subset`, `eval_valid` (both fair full-dataloader eval via `evaluate_epoch`).
 """
 
 from typing import Any, Dict, Tuple
@@ -28,11 +31,21 @@ from .train_acceleration import (
     run_forward_with_feedback,
     TrainStepper,
 )
-from .train_helpers import log_dataset_and_batch_info
+from .train_helpers import LoggingHelper
 from .train_predict_all_chars import build_loss_fn_all_chars, AllCharsMetricsMode
 from .train_sector import build_loss_fn_single, SingleCharMetricsMode
 from .train_gawf_core import GaWFRNNConv
 
+
+def _raise_unsupported_coord_engine(logger) -> None:
+    """Training engine does not implement single-char coordinate mode yet."""
+    msg = (
+        "Unsupported training configuration (predict_all_chars=False, use_sector=False). "
+        "Coordinate mode is not wired in the training engine."
+    )
+    if logger is not None:
+        logger.error(msg)
+    raise RuntimeError(msg)
 
 
 def get_loss_weights(predict_all_chars, use_sector):
@@ -56,21 +69,16 @@ def create_metrics_mode(
     use_sector: bool,
     max_chars: int | None,
     device: Any,
+    logger=None,
 ):
     """
     Factory for metrics mode, shared by training and evaluation.
     """
     if predict_all_chars:
         return AllCharsMetricsMode(max_chars, device)
-    elif use_sector:
+    if use_sector:
         return SingleCharMetricsMode(use_sector)
-    else:
-        msg = (
-            "No metrics mode created: unsupported configuration "
-            "(predict_all_chars=False, use_sector=False)."
-        )
-        print(msg)
-        raise RuntimeError(msg)
+    _raise_unsupported_coord_engine(logger)
 
 
 def setup_training_components(
@@ -87,7 +95,7 @@ def setup_training_components(
     use_tqdm: bool,
     seed: int,
     logger,
-    optim: str = "adam",
+    optim_name: str = "adam",
 ) -> Dict[str, Any]:
     """
     Build all training components:
@@ -111,11 +119,14 @@ def setup_training_components(
 
     accel_config = AccelerationConfig(use_acceleration=use_acceleration)
 
-    metrics_mode = create_metrics_mode(predict_all_chars, use_sector, max_chars, device)
+    metrics_mode = create_metrics_mode(
+        predict_all_chars, use_sector, max_chars, device, logger=logger
+    )
 
     autocast_fn, scaler, batch_size, num_workers, pin_memory = setup_acceleration(
         accel_config,
         device,
+        logger=logger,
     )
 
     is_gawf = isinstance(mdl, GaWFRNNConv)
@@ -130,66 +141,65 @@ def setup_training_components(
     )
     base_batch_size_for_logging = batch_size
 
-    # Optimizer: for GaWF, disable weight decay on U and V; base params use passed wd.
-    wd = weight_decay if weight_decay is not None else 0.0
-    has_big_hidden = getattr(mdl, "hidden_size", 0) >= 512
-
-    optim = (optim or "adam").lower()
-    if optim == "adamw":
-        OptimClass = torch.optim.AdamW
-    elif optim == "muon":
-        if hasattr(torch.optim, "Muon"):
-            OptimClass = torch.optim.Muon
-        else:
-            raise RuntimeError(
-                "Selected optimizer 'muon' but torch.optim.Muon is not available in this "
-                "PyTorch version. Please upgrade PyTorch or choose a different optimizer."
-            )
-    else:
-        OptimClass = torch.optim.Adam
-
-    # torch.optim.Muon only supports 2D parameters. Our models commonly include Conv2d
-    # (4D kernels) and bias vectors (1D), so proactively fall back to a safe optimizer.
-    if OptimClass is getattr(torch.optim, "Muon", None):
-        non_2d = []
-        for name, p in mdl.named_parameters():
-            if p is None:
-                continue
-            if p.dim() != 2:
-                non_2d.append((name, tuple(p.size())))
-                if len(non_2d) >= 5:
-                    break
-        if non_2d:
-            if logger is not None:
-                shown = ", ".join([f"{n}={s}" for n, s in non_2d])
-                logger.warning(
-                    "Requested optimizer 'muon' but found non-2D parameters (Muon only supports 2D). "
-                    "Falling back to AdamW. Examples: %s",
-                    shown,
-                )
+    def _build_optimizer():
+        """Optimizer: for GaWF, disable weight decay on U and V; base params use passed wd."""
+        wd = weight_decay if weight_decay is not None else 0.0
+        has_big_hidden = getattr(mdl, "hidden_size", 0) >= 512
+        name_l = (optim_name or "adam").lower()
+        if name_l == "adamw":
             OptimClass = torch.optim.AdamW
-
-    if is_gawf:
-        gawf_params = []
-        base_params = []
-        for name, param in mdl.named_parameters():
-            if "U" in name or "V" in name:
-                gawf_params.append(param)
+        elif name_l == "muon":
+            if hasattr(torch.optim, "Muon"):
+                OptimClass = torch.optim.Muon
             else:
-                base_params.append(param)
-        param_groups = [
-            {"params": base_params, "weight_decay": wd},
-            {"params": gawf_params, "weight_decay": 0.0},
-        ]
-        optim_kwargs = {"lr": lr}
-        if OptimClass in (torch.optim.Adam, torch.optim.AdamW) and has_big_hidden:
-            optim_kwargs["eps"] = 1e-6
-        optim = OptimClass(param_groups, **optim_kwargs)
-    else:
+                raise RuntimeError(
+                    "Selected optimizer 'muon' but torch.optim.Muon is not available in this "
+                    "PyTorch version. Please upgrade PyTorch or choose a different optimizer."
+                )
+        else:
+            OptimClass = torch.optim.Adam
+
+        if OptimClass is getattr(torch.optim, "Muon", None):
+            non_2d = []
+            for pname, p in mdl.named_parameters():
+                if p is None:
+                    continue
+                if p.dim() != 2:
+                    non_2d.append((pname, tuple(p.size())))
+                    if len(non_2d) >= 5:
+                        break
+            if non_2d:
+                if logger is not None:
+                    shown = ", ".join([f"{n}={s}" for n, s in non_2d])
+                    logger.warning(
+                        "Requested optimizer 'muon' but found non-2D parameters "
+                        "(Muon only supports 2D). Falling back to AdamW. Examples: %s",
+                        shown,
+                    )
+                OptimClass = torch.optim.AdamW
+
+        if is_gawf:
+            gawf_params = []
+            base_params = []
+            for pname, param in mdl.named_parameters():
+                if "U" in pname or "V" in pname:
+                    gawf_params.append(param)
+                else:
+                    base_params.append(param)
+            param_groups = [
+                {"params": base_params, "weight_decay": wd},
+                {"params": gawf_params, "weight_decay": 0.0},
+            ]
+            optim_kwargs = {"lr": lr}
+            if OptimClass in (torch.optim.Adam, torch.optim.AdamW) and has_big_hidden:
+                optim_kwargs["eps"] = 1e-6
+            return OptimClass(param_groups, **optim_kwargs)
         optim_kwargs = {"lr": lr, "weight_decay": wd}
         if OptimClass in (torch.optim.Adam, torch.optim.AdamW) and has_big_hidden:
             optim_kwargs["eps"] = 1e-6
-        optim = OptimClass(mdl.parameters(), **optim_kwargs)
+        return OptimClass(mdl.parameters(), **optim_kwargs)
+
+    optim = _build_optimizer()
     lr_base = lr
 
     criterion_char = nn.CrossEntropyLoss()
@@ -214,15 +224,10 @@ def setup_training_components(
             device,
         )
     else:
-        msg = (
-            "No loss function built: unsupported configuration "
-            "(predict_all_chars=False, use_sector=False)."
-        )
-        print(msg)
-        raise RuntimeError(msg)
+        _raise_unsupported_coord_engine(logger)
 
     if logger is not None:
-        log_dataset_and_batch_info(
+        LoggingHelper.log_dataset_and_batch_info(
             logger,
             train_data,
             val_data,
@@ -305,24 +310,33 @@ def evaluate_epoch(
     logger,
     use_feedback,
     desc: str = "Validation",
+    metrics_mode=None,
 ) -> Tuple:
     """
-    Run a full validation epoch and return metrics:
-    (acc_char, metric_pos) or (acc_char, metric_pos, loss_pos, loss_char).
+    One full pass in eval mode over ``data_loader`` (no_grad, shared metrics protocol).
+
+    Returns:
+        (acc_char, metric_pos, loss_pos, loss_char) with loss_* possibly None.
+
+    If ``metrics_mode`` is provided (e.g. ``components["metrics_mode"]``), it is reused
+    so train-subset and valid eval share one instance. Otherwise the mode is inferred
+    from the loader's underlying dataset (Subset-safe).
     """
-    ds = data_loader.dataset
-    # Some loaders (e.g., train_eval_dl) may wrap the real dataset in a Subset.
-    # Read flags from the underlying dataset to keep metrics mode consistent.
-    base_ds = getattr(ds, "dataset", ds)
-    predict_all_chars = getattr(base_ds, "predict_all_chars", False)
-    use_sector = getattr(base_ds, "use_sector", False)
-    max_chars = getattr(base_ds, "max_chars", 10)
-    eval_mode = create_metrics_mode(
-        predict_all_chars,
-        use_sector,
-        max_chars if predict_all_chars else None,
-        device,
-    )
+    if metrics_mode is not None:
+        eval_mode = metrics_mode
+    else:
+        ds = data_loader.dataset
+        base_ds = getattr(ds, "dataset", ds)
+        predict_all_chars = getattr(base_ds, "predict_all_chars", False)
+        use_sector = getattr(base_ds, "use_sector", False)
+        max_chars = getattr(base_ds, "max_chars", 10)
+        eval_mode = create_metrics_mode(
+            predict_all_chars,
+            use_sector,
+            max_chars if predict_all_chars else None,
+            device,
+            logger=logger,
+        )
     acc = eval_mode.init_eval()
 
     val_desc = desc
@@ -371,6 +385,107 @@ def evaluate_epoch(
         loss_pos, loss_char = None, None
         return acc_char, metric_pos, loss_pos, loss_char
     return result
+
+
+def eval_train_subset(
+    mdl: nn.Module,
+    components: Dict[str, Any],
+    epoch_ctx: Dict[str, Any],
+) -> str:
+    """
+    Fair eval on the train-eval subset DataLoader (same protocol as ``eval_valid``).
+    Writes ``train_*`` metric arrays for this epoch. Returns ``format_train_str`` line.
+    """
+    epoch = epoch_ctx["epoch"]
+    num_epochs = epoch_ctx["num_epochs"]
+    use_feedback = epoch_ctx["use_feedback_this_epoch"]
+    metrics_mode = components["metrics_mode"]
+    device = components["device"]
+    use_tqdm = components["use_tqdm"]
+    logger = components["logger"]
+    train_eval_dl = components["train_eval_dl"]
+
+    res = evaluate_epoch(
+        mdl=mdl,
+        data_loader=train_eval_dl,
+        device=device,
+        use_tqdm=use_tqdm,
+        logger=logger,
+        use_feedback=use_feedback,
+        desc="Train(eval-subset)",
+        metrics_mode=metrics_mode,
+    )
+    train_acc_char_arr = components["train_acc_char"]
+    train_metric_pos_arr = components["train_metric_pos"]
+    train_loss_pos_arr = components["train_loss_pos"]
+    train_loss_char_arr = components["train_loss_char"]
+
+    train_acc_char_arr[epoch], train_metric_pos_arr[epoch] = res[0], res[1]
+    if len(res) >= 3 and res[2] is not None and train_loss_pos_arr is not None:
+        train_loss_pos_arr[epoch] = res[2]
+    if len(res) >= 4 and res[3] is not None:
+        train_loss_char_arr[epoch] = res[3]
+
+    return metrics_mode.format_train_str(
+        epoch,
+        num_epochs,
+        train_acc_char_arr[epoch],
+        train_metric_pos_arr[epoch],
+    )
+
+
+def eval_valid(
+    mdl: nn.Module,
+    components: Dict[str, Any],
+    epoch_ctx: Dict[str, Any],
+    val_every: int = 1,
+) -> str:
+    """
+    Fair eval on the validation DataLoader (same protocol as ``eval_train_subset``).
+    Writes ``val_*`` metric arrays for this epoch (or copies previous when ``val_every`` skips).
+    Returns ``format_val_str`` line.
+    """
+    epoch = epoch_ctx["epoch"]
+    use_feedback = epoch_ctx["use_feedback_this_epoch"]
+    metrics_mode = components["metrics_mode"]
+    val_acc_char = components["val_acc_char"]
+    val_metric_pos = components["val_metric_pos"]
+    val_loss_pos = components["val_loss_pos"]
+    val_loss_char = components["val_loss_char"]
+    val_dl = components["val_dl"]
+    device = components["device"]
+    use_tqdm = components["use_tqdm"]
+    logger = components["logger"]
+
+    if epoch % val_every == 0:
+        val_res = evaluate_epoch(
+            mdl=mdl,
+            data_loader=val_dl,
+            device=device,
+            use_tqdm=use_tqdm,
+            logger=logger,
+            use_feedback=use_feedback,
+            desc="Validation",
+            metrics_mode=metrics_mode,
+        )
+        val_acc_char[epoch], val_metric_pos[epoch] = val_res[0], val_res[1]
+        if len(val_res) >= 3 and val_res[2] is not None and val_loss_pos is not None:
+            val_loss_pos[epoch] = val_res[2]
+        if len(val_res) >= 4 and val_res[3] is not None:
+            val_loss_char[epoch] = val_res[3]
+    else:
+        if epoch > 0:
+            val_acc_char[epoch] = val_acc_char[epoch - 1]
+            val_metric_pos[epoch] = val_metric_pos[epoch - 1]
+            if val_loss_pos is not None:
+                val_loss_pos[epoch] = val_loss_pos[epoch - 1]
+            if val_loss_char is not None:
+                val_loss_char[epoch] = val_loss_char[epoch - 1]
+
+    return metrics_mode.format_val_str(
+        val_acc_char[epoch],
+        val_metric_pos[epoch],
+    )
 
 
 def cleanup_dataloaders(state: Dict[str, Any]) -> None:
@@ -446,7 +561,7 @@ def use_feedback_this_epoch(epoch: int, is_gawf: bool, nofb: bool, fb_start_epoc
     return epoch >= fb_start_epoch
 
 
-def prepare_training_epoch(
+def begin_epoch(
     mdl: nn.Module,
     components: Dict[str, Any],
     epoch: int,
@@ -455,9 +570,9 @@ def prepare_training_epoch(
     fb_start_epoch: int,
 ) -> Dict[str, Any]:
     """
-    Prepare one training epoch:
+    Start one training epoch:
     - optionally freeze/unfreeze feedback parameters (GaWF nofb)
-    - init epoch metrics and tqdm progress bar
+    - init epoch online metrics accumulator and tqdm progress bar
     """
     is_gawf = components["is_gawf"]
     train_dl = components["train_dl"]
@@ -500,13 +615,11 @@ def prepare_training_epoch(
     }
 
 
-def train_one_batch(epoch_ctx: Dict[str, Any], batch_idx: int, batch):
+def train_batch(epoch_ctx: Dict[str, Any], batch_idx: int, batch):
     """
     Run one training batch:
-    - forward
-    - loss computation
-    - backward + optimizer step (inside TrainStepper)
-    - update training metrics and tqdm postfix
+    - forward, loss, backward + optimizer step (TrainStepper)
+    - update online-train metrics and tqdm postfix (not the fair eval curves)
     """
     components = epoch_ctx["components"]
     stepper = components["stepper"]
@@ -544,11 +657,10 @@ def train_one_batch(epoch_ctx: Dict[str, Any], batch_idx: int, batch):
     return current_loss, out_char, out_pos, labels_device
 
 
-def finalize_training_epoch(epoch_ctx: Dict[str, Any]) -> str:
+def summarize_online_train(epoch_ctx: Dict[str, Any]) -> str:
     """
-    Finalize online training metrics for one epoch and return a concise summary string.
-    This uses train-mode outputs accumulated during the epoch and is intended only
-    for monitoring; epoch-level arrays are filled from eval-mode metrics elsewhere.
+    Summarize online (per-batch) train metrics for logging only.
+    Fair train/valid curves come from ``eval_train_subset`` / ``eval_valid``.
     """
     components = epoch_ctx["components"]
     metrics_mode = epoch_ctx["metrics_mode"]
@@ -570,56 +682,4 @@ def finalize_training_epoch(epoch_ctx: Dict[str, Any]) -> str:
     if loss_char is not None:
         parts.append(f"loss_char={loss_char:.4f}")
     return ", ".join(parts)
-
-
-def run_validation_for_epoch(
-    mdl: nn.Module,
-    components: Dict[str, Any],
-    epoch: int,
-    use_feedback_this_epoch,
-    val_every: int = 1,
-) -> str:
-    """
-    Optionally run validation for this epoch and return formatted validation string.
-    """
-    metrics_mode = components["metrics_mode"]
-    val_acc_char = components["val_acc_char"]
-    val_metric_pos = components["val_metric_pos"]
-    val_loss_pos = components["val_loss_pos"]
-    val_loss_char = components["val_loss_char"]
-    val_dl = components["val_dl"]
-    device = components["device"]
-    use_tqdm = components["use_tqdm"]
-    logger = components["logger"]
-
-    if epoch % val_every == 0:
-        # Full validation pass in eval mode (internally uses no_grad()).
-        val_res = evaluate_epoch(
-            mdl=mdl,
-            data_loader=val_dl,
-            device=device,
-            use_tqdm=use_tqdm,
-            logger=logger,
-            use_feedback=use_feedback_this_epoch,
-            desc="Validation",
-        )
-        val_acc_char[epoch], val_metric_pos[epoch] = val_res[0], val_res[1]
-        if len(val_res) >= 3 and val_res[2] is not None and val_loss_pos is not None:
-            val_loss_pos[epoch] = val_res[2]
-        if len(val_res) >= 4 and val_res[3] is not None:
-            val_loss_char[epoch] = val_res[3]
-    else:
-        if epoch > 0:
-            val_acc_char[epoch] = val_acc_char[epoch - 1]
-            val_metric_pos[epoch] = val_metric_pos[epoch - 1]
-            if val_loss_pos is not None:
-                val_loss_pos[epoch] = val_loss_pos[epoch - 1]
-            if val_loss_char is not None:
-                val_loss_char[epoch] = val_loss_char[epoch - 1]
-
-    val_str = metrics_mode.format_val_str(
-        val_acc_char[epoch],
-        val_metric_pos[epoch],
-    )
-    return val_str
 

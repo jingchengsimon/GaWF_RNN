@@ -71,22 +71,33 @@ class AccelerationConfig:
             self.enable_memory_opt = False
             self.dataloader_prefetch_factor = 2
     
-    def summary(self):
-        """Print acceleration configuration summary."""
-        print("\n" + "="*60)
-        print("Acceleration Configuration:")
-        print(f"  Master switch (use_acceleration): {self.use_acceleration}")
+    def summary(self, logger=None):
+        """Log acceleration configuration summary."""
+        import logging
+
+        log = logger or logging.getLogger(__name__)
+        sep = "=" * 60
+        log.info(sep)
+        log.info("Acceleration Configuration:")
+        log.info("  Master switch (use_acceleration): %s", self.use_acceleration)
         if self.use_acceleration:
-            print(f"  - AMP (Automatic Mixed Precision): {self.enable_amp}")
-            print(f"  - DataLoader Optimization: {self.enable_dataloader_opt}")
-            print(f"  - Batch Size Auto Optimization: {self.enable_batch_auto}")
-            print(f"  - Gradient Scaling: {self.enable_gradient_scale}")
-            print(f"  - Gradient Accumulation: {self.enable_grad_accum} (steps={self.grad_accum_steps})")
-            print(f"  - Memory Optimization: {self.enable_memory_opt}")
-            print(f"  - DataLoader Prefetch Factor: {self.dataloader_prefetch_factor}")
+            log.info("  - AMP (Automatic Mixed Precision): %s", self.enable_amp)
+            log.info("  - DataLoader Optimization: %s", self.enable_dataloader_opt)
+            log.info("  - Batch Size Auto Optimization: %s", self.enable_batch_auto)
+            log.info("  - Gradient Scaling: %s", self.enable_gradient_scale)
+            log.info(
+                "  - Gradient Accumulation: %s (steps=%s)",
+                self.enable_grad_accum,
+                self.grad_accum_steps,
+            )
+            log.info("  - Memory Optimization: %s", self.enable_memory_opt)
+            log.info(
+                "  - DataLoader Prefetch Factor: %s",
+                self.dataloader_prefetch_factor,
+            )
         else:
-            print("  All acceleration features disabled")
-        print("="*60 + "\n")
+            log.info("  All acceleration features disabled")
+        log.info(sep)
 
 
 def init_acceleration_modules():
@@ -102,11 +113,9 @@ def init_acceleration_modules():
         return None, None, None
 
 
-def setup_acceleration(accel_config, device):
+def setup_acceleration(accel_config, device, logger=None):
     """
     Setup acceleration artifacts from config. No if-else on use_acceleration inside training loop.
-    is_gawf: if True, skip batch size search (caller sets this to avoid circular import).
-    use_mmap: if True, use mmap mode to load data.
     Returns: (autocast_fn, scaler, batch_size, num_workers, pin_memory).
     """
     if not accel_config.use_acceleration:
@@ -114,21 +123,32 @@ def setup_acceleration(accel_config, device):
 
     autocast_cls, GradScaler_cls, _ = init_acceleration_modules()
     if autocast_cls is None or GradScaler_cls is None:
-        print("Warning: Unable to import acceleration modules, using standard training")
+        if logger is not None:
+            logger.warning(
+                "Unable to import acceleration modules, using standard training"
+            )
         return (lambda _: nullcontext()), None, 32, 0, False
 
-    print("Enabling acceleration training...")
-    
+    if logger is not None:
+        logger.info("Enabling acceleration training...")
+
     batch_size, num_workers = 256, 0
-    
-    pin_memory = False #True if num_workers > 0 else False
+
+    pin_memory = False  # True if num_workers > 0 else False
     use_amp = _is_cuda(device) and accel_config.enable_amp
-    autocast_fn = (lambda d: autocast_cls(device_type=_device_type(d))) if use_amp else (lambda _: nullcontext())
+    autocast_fn = (
+        (lambda d: autocast_cls(device_type=_device_type(d))) if use_amp else (lambda _: nullcontext())
+    )
 
     scaler = GradScaler_cls("cuda") if _is_cuda(device) and accel_config.enable_gradient_scale else None
 
-    if _is_cuda(device) and scaler is not None:
-        print(f"Acceleration: batch_size={batch_size}, num_workers={num_workers}, pin_memory={pin_memory}, AMP=enabled")
+    if logger is not None and _is_cuda(device) and scaler is not None:
+        logger.info(
+            "Acceleration: batch_size=%s, num_workers=%s, pin_memory=%s, AMP=enabled",
+            batch_size,
+            num_workers,
+            pin_memory,
+        )
 
     return autocast_fn, scaler, batch_size, num_workers, pin_memory
 

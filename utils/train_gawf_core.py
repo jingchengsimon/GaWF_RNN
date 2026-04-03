@@ -17,7 +17,7 @@ class GaWFRNNConv(BaseConvSequenceModel):
         num_pos,
         kernel_size=3,
         device="cuda",
-        dropout_rate=0.3,
+        dropout=0.0,
         hidden_size=256,
         max_chars=15,
         predict_all_chars=False,
@@ -27,7 +27,7 @@ class GaWFRNNConv(BaseConvSequenceModel):
             num_pos,
             kernel_size=kernel_size,
             device=device,
-            dropout_rate=dropout_rate,
+            dropout=dropout,
             hidden_size=hidden_size,
             max_chars=15,
             predict_all_chars=False,
@@ -43,6 +43,7 @@ class GaWFRNNConv(BaseConvSequenceModel):
         combined_weight_size = input_size + hidden_size
         self.U = nn.Parameter(torch.randn(hidden_size, feedback_dim) * 0.01)
         self.V = nn.Parameter(torch.randn(feedback_dim, combined_weight_size) * 0.01)
+        self.gate_tau = 0.5
         self.LNormRNN = nn.LayerNorm(hidden_size)
         self.register_buffer("prev_feedback", None)
 
@@ -69,9 +70,8 @@ class GaWFRNNConv(BaseConvSequenceModel):
         V_hh = self.V[:, input_size:].unsqueeze(0)
         trans_ih = torch.matmul(self.U, fb_t * V_ih)
         trans_hh = torch.matmul(self.U, fb_t * V_hh)
-        tau = 0.5 # 2.0
-        gate_ih = torch.sigmoid(trans_ih / tau) 
-        gate_hh = torch.sigmoid(trans_hh / tau) 
+        gate_ih = torch.sigmoid(trans_ih / self.gate_tau)
+        gate_hh = torch.sigmoid(trans_hh / self.gate_tau)
         gated_weight_ih = gate_ih * weight_ih.unsqueeze(0)
         gated_weight_hh = gate_hh * weight_hh.unsqueeze(0)
         ih = torch.bmm(x_t.unsqueeze(1), gated_weight_ih.transpose(1, 2)).squeeze(1)
@@ -108,7 +108,7 @@ class GaWFRNNConv(BaseConvSequenceModel):
                 x_t = x[:, t, :]
                 fb_t = fb.clamp(-10, 10).unsqueeze(2)
                 gated_output = self.middle_gawf(x_t, h, fb_t)
-                gated_output = F.dropout(gated_output, p=0.5, training=self.training)
+                gated_output = F.dropout(gated_output, p=self.dropout, training=self.training)
                 char_t, pos_t = self.classifier(gated_output)
                 with torch.no_grad():
                     fb = torch.cat([char_t, pos_t], dim=-1)
@@ -121,7 +121,7 @@ class GaWFRNNConv(BaseConvSequenceModel):
             x, _ = self.rnn(x)
             x = self.LNormRNN(x)
             x = F.relu(x)
-            x = F.dropout(x, p=0.5, training=self.training)
+            x = F.dropout(x, p=self.dropout, training=self.training)
             char_out, pos_out = self.classifier(x)
 
         return char_out, pos_out

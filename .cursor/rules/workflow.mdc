@@ -1,0 +1,69 @@
+---
+description: Workflow and code-generation rules for aim3_RNN
+globs: ["**/*.py", "**/*.sh"]
+alwaysApply: true
+---
+
+# Workflow Rules
+
+**Import propagation:** Any edit that changes exports or module paths must include a repo-wide search and updates to all dependent imports (training, analysis, viz, notebooks, launchers) in the same patch.
+
+## Adding a New Analysis Script (`utils_anal/`)
+
+1. Copy the canonical structure from AGENT.md § 3.2.
+2. Reuse `build_model_from_ckpt` and `build_test_dataset` from
+   `utils_anal.anal_helpers` — do not reimplement model loading.
+3. Declare outputs in the module docstring with shape and dtype.
+4. Accumulate statistics in `float64`; cast to `float32` before `np.save`.
+5. Save a `*_meta_*.json` with the mandatory keys listed in AGENT.md § 4.
+6. Print progress every 200 samples.
+7. Raise `RuntimeError` if no frames match the filter condition.
+
+## Adding a New Visualisation Script (`utils_viz/`)
+
+1. Set `matplotlib.use("Agg")` before any pyplot import.
+2. Load reordering arrays (`sorted_npz_order.npy`, `channel_order_by_cosine_similarity.npy`)
+   with graceful fallback to natural order — never crash on missing reorder files.
+3. Use `fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.06)`.
+4. Call `plt.close(fig)` immediately after saving.
+5. Add `--vmax_*` CLI flags for color scale; auto-derive from data when not set.
+6. When plotting N+2 panels (N components + sum + full), use `n_cols=3` layout.
+
+## Adding a New Model
+
+1. Subclass `BaseConvSequenceModel` (or `BaseRNNConv` for RNN variants).
+2. Keep the CNN encoder unchanged (do not override `encoder()`).
+3. Implement only `middle(x)`.
+4. Register in `get_model_classes()` in `utils/train_helpers.py`.
+5. Add the new key to the CLI help string of `--model_types` in `build_arg_parser()`.
+
+## Hyperparameter Search
+
+1. Add new stage configs in `hparam_search.sh` under a labelled section
+   (e.g. `# Stage D: ...`).
+2. Use the combo format: `"model_type,hidden_size,lr,wd,dropout,stageD_label,seed"`.
+3. Log files go to `logs_hparam/`.
+4. Always enable `--use_acceleration` and `--use_sector_mode` unless explicitly testing otherwise.
+
+## Forbidden Shortcuts
+
+- Do not inline model construction in analysis scripts; always use the shared helpers.
+- Do not suppress `load_state_dict` warnings; always print missing/unexpected keys.
+- Do not hardcode absolute paths; use `--ckpt`, `--save_dir`, `--data_dir` CLI args
+  with sensible defaults pointing to `results/`.
+- Do not use `torch.cuda.empty_cache()` inside the training loop; only after the epoch loop ends.
+- Do not use `plt.show()` anywhere (headless environment).
+- Do not use `os.system()` to call other scripts; use subprocess or direct Python imports.
+
+## Code Review Checklist (agent self-check)
+
+Before finalising any generated code:
+- [ ] Imports updated everywhere after renames/moves/deletions (no stale `import` lines)
+- [ ] No wildcard imports
+- [ ] `parse_args` returns `argparse.Namespace`
+- [ ] `main()` exists and is guarded by `if __name__ == "__main__"`
+- [ ] All file writes guarded by `os.makedirs(..., exist_ok=True)`
+- [ ] Arrays cast to correct dtype before saving
+- [ ] No `print()` inside `utils/` training code (use `logger`)
+- [ ] No cross-package imports that violate the DAG in architecture.mdc
+- [ ] `plt.close(fig)` present after every `savefig`
