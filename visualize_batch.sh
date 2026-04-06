@@ -5,13 +5,13 @@
 # 批量可视化训练结果脚本
 # ============================================================
 # 功能：
-# 1. 遍历 results/<RESULT_SUFFIX>/ 目录下的所有 .pkl 文件
-# 2. 调用 viz_single_result.py 生成训练曲线图
-# 3. 保存到 results/visualization/ 目录
+# 1. 遍历 results/train_data/<RESULT_SUFFIX>/ 目录下的所有 .pkl 文件
+# 2. 调用 utils_viz/model_train_single_result.py 生成训练曲线图
+# 3. 保存到 results/train_figs/model_train_single_result/<RESULT_SUFFIX>/ 目录
 #
 # 使用方法：
-#   ./batch_visualize.sh [RESULT_SUFFIX]
-#   例如: ./batch_visualize.sh hparam_search_2
+#   ./visualize_batch.sh [RESULT_SUFFIX]
+#   例如: ./visualize_batch.sh hparam_search_2
 #
 # 如果不提供参数，将可视化所有结果目录
 # ============================================================
@@ -35,22 +35,22 @@ if [ $# -eq 0 ]; then
     echo "      $0 sector_40h 0 100        # 只绘制 epoch 0~99"
     echo ""
     echo "可用的结果目录:"
-    ls -d results/models/*/ 2>/dev/null | sed 's|results/models/||' | sed 's|/$||'
+    ls -d results/train_data/*/ 2>/dev/null | sed 's|results/train_data/||' | sed 's|/$||'
     exit 1
 fi
 
 RESULT_SUFFIX="$1"
 EPOCH_START="${2:-}"
 EPOCH_END="${3:-}"
-RESULTS_DIR="results/models/${RESULT_SUFFIX}"
-OUTPUT_DIR="results/visualization/${RESULT_SUFFIX}"
+RESULTS_DIR="results/train_data/${RESULT_SUFFIX}"
+OUTPUT_DIR="results/train_figs/${RESULT_SUFFIX}"
 
 # 检查结果目录是否存在
 if [ ! -d "$RESULTS_DIR" ]; then
     echo "错误：结果目录不存在 - $RESULTS_DIR"
     echo ""
     echo "可用的结果目录:"
-    ls -d results/models/*/ 2>/dev/null | sed 's|results/models/||' | sed 's|/$||'
+    ls -d results/train_data/*/ 2>/dev/null | sed 's|results/train_data/||' | sed 's|/$||'
     exit 1
 fi
 
