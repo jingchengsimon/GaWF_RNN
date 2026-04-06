@@ -17,7 +17,6 @@ dependencies:
     - torchvision==0.16.2
     - opencv-python==4.8.1.78
     - seaborn
-    - jupyterlab
     - networkx
     - pyyaml
     - requests
