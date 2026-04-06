@@ -269,10 +269,10 @@ def parse_hparams_from_filename(filename):
 def main():
     parser = argparse.ArgumentParser(description='可视化单个模型的训练曲线')
     parser.add_argument('pkl_path', type=str, help='结果pkl文件路径')
-    parser.add_argument('--output', type=str, default=None,
-                       help='输出图片路径（默认：results/anal_figs/model_train_single_result/<basename>.png）')
-    parser.add_argument('--output_dir', type=str, default='results/anal_figs/model_train_single_result',
-                       help='输出目录（默认：results/anal_figs/model_train_single_result）')
+    parser.add_argument('--output', type=str, default=None, 
+                       help='输出图片路径（默认：results/train_figs/<basename>.png）')
+    parser.add_argument('--output_dir', type=str, default='results/train_figs',
+                       help='输出目录（默认：results/train_figs）')
     parser.add_argument('--epoch_start', type=int, default=0,
                        help='绘制的起始 epoch（0-based，含）。默认 0')
     parser.add_argument('--epoch_end', type=int, default=None,
