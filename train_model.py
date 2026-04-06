@@ -421,11 +421,11 @@ if __name__ == "__main__":
             model_type.upper(), max_chars, dropout, hidden_size,
         )
        
-        # [COMPILE] compile model for speed (PyTorch 2.x)
-        try:
-            mdl = torch.compile(mdl)  # 可选：torch.compile(mdl, mode="max-autotune")
-        except Exception as e:
-            logger.warning("[COMPILE] torch.compile failed, fallback to eager: %s", e)
+        # # [COMPILE] compile model for speed (PyTorch 2.x)
+        # try:
+        #     mdl = torch.compile(mdl)  # 可选：torch.compile(mdl, mode="max-autotune")
+        # except Exception as e:
+        #     logger.warning("[COMPILE] torch.compile failed, fallback to eager: %s", e)
 
         # Train model
         logger.info("Starting training...")
