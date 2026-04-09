@@ -109,9 +109,15 @@ def visualize_training_curves(pkl_path, output_path, hparams=None, epoch_start=0
         print(f"Train char acc max: {max_train_char:.2f}%")
     if max_val_char is not None:
         print(f"Val char acc max: {max_val_char:.2f}%")
-    
-    # 创建图形：sector 模式为 2 行（acc 一行 + loss 一行），其余为 1 行 2 列
-    nrows = 2 if is_sector else 1
+
+    has_transition_metrics = (
+        is_sector
+        and results.get("glob_train_acc_char") is not None
+        and len(np.asarray(results["glob_train_acc_char"])) > 0
+    )
+
+    # 创建图形：sector 模式为 2 行（acc + loss）；若含 glob / fg_switch 窗口指标则为 4 行
+    nrows = 4 if has_transition_metrics else (2 if is_sector else 1)
     ncols = 2
     fig = plt.figure(figsize=(12, 5 * nrows))
     
@@ -126,8 +132,12 @@ def visualize_training_curves(pkl_path, output_path, hparams=None, epoch_start=0
             title_parts.append(f"lr={format_number(hparams['lr'], is_lr_or_wd=True)}")
         if 'wd' in hparams:
             title_parts.append(f"wd={format_number(hparams['wd'], is_lr_or_wd=True)}")
-        if 'dropout' in hparams:
+        if 'rnn_dropout' in hparams:
+            title_parts.append(f"rnn_dropout={format_number(hparams['rnn_dropout'])}")
+        elif 'dropout' in hparams:
             title_parts.append(f"dropout={format_number(hparams['dropout'])}")
+        if 'cnn_dropout' in hparams:
+            title_parts.append(f"cnn_dropout={format_number(hparams['cnn_dropout'])}")
         if title_parts:
             plt.suptitle(' | '.join(title_parts), fontsize=14, fontweight='bold')
     
@@ -214,7 +224,117 @@ def visualize_training_curves(pkl_path, output_path, hparams=None, epoch_start=0
         else:
             plt.axis("off")
             plt.title("Sector position loss (not in this run)", fontsize=13)
-    
+
+    # sector + 严格全局 acc + fg_switch 前后窗 acc（第三、四行）
+    if has_transition_metrics:
+        plt.subplot(nrows, ncols, 5)
+        plt.plot(
+            epoch_indices,
+            results["glob_train_acc_char"][plot_start:plot_end],
+            label="train glob (char)",
+            linewidth=2,
+        )
+        plt.plot(
+            epoch_indices,
+            results["glob_val_acc_char"][plot_start:plot_end],
+            label="val glob (char)",
+            linewidth=2,
+        )
+        plt.xlabel("Epoch", fontsize=12)
+        plt.ylabel("Accuracy (%)", fontsize=12)
+        plt.title("Character accuracy (global frame)", fontsize=13)
+        plt.ylim(-5, 105)
+        plt.legend(fontsize=9)
+        plt.grid(alpha=0.3)
+
+        plt.subplot(nrows, ncols, 6)
+        plt.plot(
+            epoch_indices,
+            results["glob_train_acc_pos"][plot_start:plot_end],
+            label="train glob (sector)",
+            linewidth=2,
+        )
+        plt.plot(
+            epoch_indices,
+            results["glob_val_acc_pos"][plot_start:plot_end],
+            label="val glob (sector)",
+            linewidth=2,
+        )
+        plt.xlabel("Epoch", fontsize=12)
+        plt.ylabel("Accuracy (%)", fontsize=12)
+        plt.title("Sector accuracy (global frame)", fontsize=13)
+        plt.ylim(40, 105)
+        plt.legend(fontsize=9)
+        plt.grid(alpha=0.3)
+
+        plt.subplot(nrows, ncols, 7)
+        plt.plot(
+            epoch_indices,
+            results["fg_switch_pre5_train_acc_char"][plot_start:plot_end],
+            label="train pre5",
+            linewidth=2,
+        )
+        plt.plot(
+            epoch_indices,
+            results["fg_switch_pre5_val_acc_char"][plot_start:plot_end],
+            label="val pre5",
+            linewidth=2,
+            linestyle="--",
+        )
+        plt.plot(
+            epoch_indices,
+            results["fg_switch_post5_train_acc_char"][plot_start:plot_end],
+            label="train post5",
+            linewidth=2,
+        )
+        plt.plot(
+            epoch_indices,
+            results["fg_switch_post5_val_acc_char"][plot_start:plot_end],
+            label="val post5",
+            linewidth=2,
+            linestyle="--",
+        )
+        plt.xlabel("Epoch", fontsize=12)
+        plt.ylabel("Accuracy (%)", fontsize=12)
+        plt.title("Fg switch windows — character", fontsize=13)
+        plt.ylim(-5, 105)
+        plt.legend(fontsize=8, loc="best")
+        plt.grid(alpha=0.3)
+
+        plt.subplot(nrows, ncols, 8)
+        plt.plot(
+            epoch_indices,
+            results["fg_switch_pre5_train_acc_pos"][plot_start:plot_end],
+            label="train pre5",
+            linewidth=2,
+        )
+        plt.plot(
+            epoch_indices,
+            results["fg_switch_pre5_val_acc_pos"][plot_start:plot_end],
+            label="val pre5",
+            linewidth=2,
+            linestyle="--",
+        )
+        plt.plot(
+            epoch_indices,
+            results["fg_switch_post5_train_acc_pos"][plot_start:plot_end],
+            label="train post5",
+            linewidth=2,
+        )
+        plt.plot(
+            epoch_indices,
+            results["fg_switch_post5_val_acc_pos"][plot_start:plot_end],
+            label="val post5",
+            linewidth=2,
+            linestyle="--",
+        )
+        plt.xlabel("Epoch", fontsize=12)
+        plt.ylabel("Accuracy (%)", fontsize=12)
+        plt.title("Fg switch windows — sector", fontsize=13)
+        plt.ylim(40, 105)
+        plt.legend(fontsize=8, loc="best")
+        plt.grid(alpha=0.3)
+
     plt.tight_layout()
     
     # 保存图片
@@ -258,11 +378,21 @@ def parse_hparams_from_filename(filename):
     if wd_match:
         hparams['wd'] = float(wd_match.group(1))
     
-    # 提取 dropout (在文件扩展名前停止)
-    do_match = re.search(r'_do([\d.]+)(?:_|\.)', filename)
-    if do_match:
-        hparams['dropout'] = float(do_match.group(1))
-    
+    # cnn / rnn dropout (checkpoint stem); legacy _do = single shared p
+    cdo_match = re.search(r'_cdo([\d.]+)(?:_|\.|$)', filename)
+    if cdo_match:
+        hparams['cnn_dropout'] = float(cdo_match.group(1))
+    rdo_match = re.search(r'_rdo([\d.]+)(?:_|\.|$)', filename)
+    if rdo_match:
+        hparams['rnn_dropout'] = float(rdo_match.group(1))
+    do_match = re.search(r'_do([\d.]+)(?:_|\.|$)', filename)
+    if do_match and 'rnn_dropout' not in hparams:
+        v = float(do_match.group(1))
+        hparams['dropout'] = v
+        hparams['rnn_dropout'] = v
+        if 'cnn_dropout' not in hparams:
+            hparams['cnn_dropout'] = v
+
     return hparams
 
 

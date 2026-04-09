@@ -193,7 +193,7 @@ for combo in "${COMBINATIONS[@]}"; do
 
   # 如果是 dry-run，只打印将要执行的命令，不实际launch
   if [ "$DRY_RUN" = "true" ]; then
-    echo "[DRY-RUN] Would launch on GPU $gpu: python train_model.py --model_types $model_type --hidden_sizes $hidden_size --lrs $lr --weight_decays $wd --dropout $drop --num_epochs $NUM_EPOCHS --result_suffix $RESULT_SUFFIX --seed ${seed} --use_acceleration True > $LOG_FILE 2>&1"
+    echo "[DRY-RUN] Would launch on GPU $gpu: python train_model.py --model_types $model_type --hidden_sizes $hidden_size --lrs $lr --weight_decays $wd --cnn_dropout $drop --num_epochs $NUM_EPOCHS --result_suffix $RESULT_SUFFIX --seed ${seed} --use_acceleration True > $LOG_FILE 2>&1"
   else
     (
       export CUDA_VISIBLE_DEVICES="$gpu"
@@ -207,7 +207,7 @@ for combo in "${COMBINATIONS[@]}"; do
         --num_epochs "$NUM_EPOCHS" \
         --lrs "$lr" \
         --weight_decays "$wd" \
-        --dropout "$drop" \
+        --cnn_dropout "$drop" \
         --seed "$seed" \
         --use_acceleration \
         --use_sector_mode \

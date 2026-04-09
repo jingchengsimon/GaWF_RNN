@@ -117,7 +117,8 @@ training loop), `run_forward_with_feedback`.
 ### `utils/train_sector.py`
 Owns all metric and loss logic for single-char + sector/coordinate mode:
 `loss_char_single`, `loss_pos_single`, `batch_metric_*`, `eval_accumulate_batch_*`,
-`finalize_metrics_single`, `build_loss_fn_single`, `SingleCharMetricsMode`.
+`finalize_metrics_single`, `build_loss_fn_single`, `SingleCharMetricsMode`,
+and fg-switch window helpers: `compute_fg_transition_masks`, `single_char_global_eval_*`.
 
 ### `utils/train_predict_all_chars.py`
 Same pattern as `train_sector.py` but for all-chars mode (greedy matching).
@@ -132,7 +133,7 @@ state_dict filtering (`prev_feedback`), test split dataset construction.
 
 ### `utils_viz/model_train_single_result.py`
 Contains `parse_hparams_from_filename()` — used by analysis scripts to extract
-`hidden_size`, `dropout`, `lr`, `wd` from checkpoint filenames. Import when
+`hidden_size`, `cnn_dropout`, `rnn_dropout` (and legacy `dropout` / `_do` for old stems), `lr`, `wd` from checkpoint filenames. Import when
 rebuilding a model from a checkpoint filename alone.
 
 ---
@@ -191,4 +192,5 @@ add_pos_to_result_dict(base, ...) -> dict
 `device`, `train_dl`, `train_eval_dl`, `val_dl`, `stepper`, `metrics_mode`,
 `train_acc_char`, `val_acc_char`, `train_metric_pos`, `val_metric_pos`,
 `train_loss_pos`, `val_loss_pos`, `train_loss_char`, `val_loss_char`,
+`glob_*`, `fg_switch_pre5_*`, `fg_switch_post5_*` (sector single-char only, when TSV has `fg_switch`),
 `stop_flag`, `use_tqdm`, `logger`.

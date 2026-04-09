@@ -87,6 +87,8 @@ that assume spatial dimensions (6,6) and 32 feature channels.
 | coordinate | `(B, T, 3)` float32 | fg digit | x coord | y coord |
 | predict_all_chars | `(B, T, max_chars)` int64 | chars in order; -1 = pad | — |
 
+**Sector fair-eval extensions (single-char only):** label TSV may include `fg_switch` (0/1). The dataset derives per-frame **pre5** / **post5** masks (see `utils/train_sector.compute_fg_transition_masks`) and, when present, training pickles store strict **global** accuracies (`glob_*`) and fg-switch-window accuracies (`fg_switch_pre5_*`, `fg_switch_post5_*`) alongside the legacy batch-mean curves. `predict_all_chars` runs are unchanged.
+
 ---
 
 ## 3. Coding Conventions
@@ -146,9 +148,10 @@ if __name__ == "__main__":
 | `--sector` | int 0–8 | Target sector index |
 | `--digit` | int 0–9 | Target foreground digit |
 | `--agg` | str `space\|feature` | Input axis aggregation mode |
-| `--dropout` | float+ | `train_model.py` only: dropout *p* for CNN (`dropout2d`) and middle path; repeat for grid (default `[0]`) |
+| `--cnn_dropout` | float+ | `train_model.py` only: CNN encoder `dropout2d` *p*; repeat for grid (default `[0]`) |
+| `--rnn_dropout` | float | `train_model.py` only: middle-path dropout *p* after ReLU (RNN/GaWF/FFN); single value (default `0.5`) |
 
-**Do not rename existing analysis/visualisation arguments** when extending those scripts. For `train_model.py` hyperparameter search, use **`--dropout`** (singular), not `--dropouts`.
+**Do not rename existing analysis/visualisation arguments** when extending those scripts. For `train_model.py` hyperparameter search, use **`--cnn_dropout`** (grid) and **`--rnn_dropout`** (single), not legacy `--dropout` / `--dropouts`.
 
 ### 3.4 Device & dtype Handling
 ```python
@@ -232,7 +235,7 @@ When plotting N components + sum + full (N+2 panels), use `n_cols=3`,
 ## 7. Hyperparameter Search (`hparam_search.sh`)
 
 - Shell: **zsh** with `setopt KSH_ARRAYS`.
-- Combo format: `"model_type,hidden_size,lr,wd,dropout,stage_label,seed"` (7 fields, comma-separated).
+- Combo format: `"model_type,hidden_size,lr,wd,cnn_dropout,stage_label,seed"` (7 fields, comma-separated). Set **`rnn_dropout`** separately in the launch command if it must differ from the default.
 - Log files: `logs_hparam/job{N}_{model}_{stage}_s{seed}.log`.
 - Always pass `--use_acceleration` and `--use_sector_mode` flags.
 - Result suffix encodes the sweep stage, e.g. `lr_search_sector`.

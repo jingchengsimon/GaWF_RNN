@@ -215,7 +215,8 @@ def compute_hidden_activations(
     all_labels: list[np.ndarray] = []
 
     with torch.no_grad():
-        for batch_idx, (frames, labels) in enumerate(data_loader):
+        for batch_idx, batch in enumerate(data_loader):
+            frames, labels = batch[0], batch[1]
             frames = frames.to(device=device, dtype=torch.float32)
             digits = labels[..., 0].to(device="cpu", dtype=torch.int64)
 
@@ -233,7 +234,7 @@ def compute_hidden_activations(
                 fb_t = fb.clamp(-10, 10).unsqueeze(2)
                 gated_output = model.middle_gawf(x_t, h, fb_t)
                 gated_output = F.dropout(
-                    gated_output, p=model.dropout, training=model.training
+                    gated_output, p=model.rnn_dropout, training=model.training
                 )
                 char_t, pos_t = model.classifier(gated_output)
                 with torch.no_grad():

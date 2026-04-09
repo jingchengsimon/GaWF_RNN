@@ -8,6 +8,8 @@ alwaysApply: true
 
 **Import propagation:** Any edit that changes exports or module paths must include a repo-wide search and updates to all dependent imports (training, analysis, viz, notebooks, launchers) in the same patch.
 
+**Doc alignment:** Script changes that affect training/analysis behavior, CLI names, defaults, or checkpoint naming must update the relevant `.cursor/rules/*.mdc` files and repository docs (`AGENT.md`, `docs/ARCHITECTURE.md`, `docs/CONVENTIONS.md`, and other referenced `.md`) in the **same** patch when those files document the touched surface. **Renames or default-value changes only:** update naming tables and constraint text immediately; **no** human confirmation step. **New features** (new flags, modes, pipelines, or public APIs): before editing constraint or doc files, output the proposed additions (prompt-ready snippets) for **human confirmation**; apply `.mdc` / `.md` updates only after approval.
+
 ## Adding a New Analysis Script (`utils_anal/`)
 
 1. Copy the canonical structure from AGENT.md § 3.2.
@@ -41,7 +43,7 @@ alwaysApply: true
 
 1. Add new stage configs in `hparam_search.sh` under a labelled section
    (e.g. `# Stage D: ...`).
-2. Use the combo format: `"model_type,hidden_size,lr,wd,dropout,stageD_label,seed"`.
+2. Use the combo format: `"model_type,hidden_size,lr,wd,cnn_dropout,stageD_label,seed"` (set **`rnn_dropout`** separately in the launch command if needed).
 3. Log files go to `logs_hparam/`.
 4. Always enable `--use_acceleration` and `--use_sector_mode` unless explicitly testing otherwise.
 

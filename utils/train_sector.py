@@ -2,6 +2,9 @@
 Encapsulates training and evaluation logic for use_sector vs coordinate (single-char + position).
 Avoids scattered if-else in the main training script.
 """
+from typing import Dict, Tuple
+
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -45,6 +48,110 @@ def batch_loss_char_single(out_char, labels):
     labels_char = labels[:, :, 0].long().view(-1)
     outputs_char = out_char.reshape(-1, out_char.shape[-1])
     return F.cross_entropy(outputs_char, labels_char, reduction="mean").item()
+
+
+def compute_fg_transition_masks(fg_switch: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Build per-frame pre5 / post5 masks from a global ``fg_switch`` sequence (1 = fg switch frame).
+
+    - post5: frames ``[s, s+4]`` for each switch ``s`` (5 frames including switch).
+    - pre5: frames ``[s-5, s-1]`` for each switch ``s`` (5 frames before switch, excluding ``s``).
+    - If consecutive switches ``s_prev, s_curr`` satisfy ``s_curr - s_prev < 10``, every frame ``t``
+      with ``s_prev < t < s_curr`` is excluded from both pre5 and post5.
+    - Where ``post5`` and ``pre5`` would overlap (different switches), **post5 wins** (frame is
+      counted only in post5 for global metrics).
+    """
+    fg_switch = np.asarray(fg_switch).astype(np.int32)
+    num_frames = int(fg_switch.shape[0])
+    fg = fg_switch != 0
+    switches = np.where(fg)[0].tolist()
+
+    forbidden = np.zeros(num_frames, dtype=bool)
+    for i in range(1, len(switches)):
+        s_prev, s_curr = switches[i - 1], switches[i]
+        if s_curr - s_prev < 10:
+            for t in range(s_prev + 1, s_curr):
+                if 0 <= t < num_frames:
+                    forbidden[t] = True
+
+    post5_nom = np.zeros(num_frames, dtype=bool)
+    pre5_nom = np.zeros(num_frames, dtype=bool)
+    for s in switches:
+        for t in range(s, min(s + 5, num_frames)):
+            post5_nom[t] = True
+        for t in range(max(0, s - 5), s):
+            pre5_nom[t] = True
+
+    post5 = post5_nom & ~forbidden
+    pre5 = pre5_nom & ~forbidden
+    pre5 = pre5 & ~post5
+    return pre5, post5
+
+
+def single_char_global_eval_init() -> Dict[str, int]:
+    """Counters for strict global accuracy (all frames + pre5 / post5 subsets)."""
+    return {
+        "char_correct": 0,
+        "char_total": 0,
+        "pos_correct": 0,
+        "pos_total": 0,
+        "pre5_char_correct": 0,
+        "pre5_char_total": 0,
+        "pre5_pos_correct": 0,
+        "pre5_pos_total": 0,
+        "post5_char_correct": 0,
+        "post5_char_total": 0,
+        "post5_pos_correct": 0,
+        "post5_pos_total": 0,
+    }
+
+
+def single_char_global_eval_update(
+    state: Dict[str, int],
+    out_char: torch.Tensor,
+    out_pos: torch.Tensor,
+    labels: torch.Tensor,
+    pre5_mask: torch.Tensor,
+    post5_mask: torch.Tensor,
+) -> Dict[str, int]:
+    """Accumulate per-batch strict counts for global / pre5 / post5 accuracies."""
+    pred_char = torch.argmax(out_char, dim=2) == labels[:, :, 0].long()
+    pred_pos = torch.argmax(out_pos, dim=2) == labels[:, :, 1].long()
+    pre5 = pre5_mask.bool()
+    post5 = post5_mask.bool()
+
+    char_total = int(pred_char.numel())
+    state["char_correct"] += int(pred_char.sum().item())
+    state["char_total"] += char_total
+    state["pos_correct"] += int(pred_pos.sum().item())
+    state["pos_total"] += char_total
+
+    state["pre5_char_correct"] += int((pred_char & pre5).sum().item())
+    state["pre5_char_total"] += int(pre5.sum().item())
+    state["pre5_pos_correct"] += int((pred_pos & pre5).sum().item())
+    state["pre5_pos_total"] += int(pre5.sum().item())
+
+    state["post5_char_correct"] += int((pred_char & post5).sum().item())
+    state["post5_char_total"] += int(post5.sum().item())
+    state["post5_pos_correct"] += int((pred_pos & post5).sum().item())
+    state["post5_pos_total"] += int(post5.sum().item())
+    return state
+
+
+def _pct(correct: int, total: int) -> float:
+    return 100.0 * float(correct) / float(total) if total > 0 else 0.0
+
+
+def single_char_global_eval_finalize(state: Dict[str, int]) -> Dict[str, float]:
+    """Return percentage accuracies for one eval pass."""
+    return {
+        "glob_acc_char": _pct(state["char_correct"], state["char_total"]),
+        "glob_acc_pos": _pct(state["pos_correct"], state["pos_total"]),
+        "fg_switch_pre5_acc_char": _pct(state["pre5_char_correct"], state["pre5_char_total"]),
+        "fg_switch_pre5_acc_pos": _pct(state["pre5_pos_correct"], state["pre5_pos_total"]),
+        "fg_switch_post5_acc_char": _pct(state["post5_char_correct"], state["post5_char_total"]),
+        "fg_switch_post5_acc_pos": _pct(state["post5_pos_correct"], state["post5_pos_total"]),
+    }
 
 
 def eval_accumulate_batch_single(out_char, out_pos, labels):

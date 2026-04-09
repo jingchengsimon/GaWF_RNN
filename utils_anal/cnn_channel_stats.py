@@ -144,7 +144,8 @@ def compute_activations(
     all_labels = []
 
     with torch.no_grad():
-        for batch_idx, (frames, labels) in enumerate(data_loader):
+        for batch_idx, batch in enumerate(data_loader):
+            frames, labels = batch[0], batch[1]
             # frames: (B, T, C, H, W)
             # labels: (B, T, 2) -> use labels[..., 0] as fg digit
             frames = frames.to(device=device, dtype=torch.float32)

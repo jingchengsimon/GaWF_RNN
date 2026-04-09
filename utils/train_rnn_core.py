@@ -17,14 +17,16 @@ class BaseConvSequenceModel(nn.Module):
         num_pos,
         kernel_size=3,
         device="cuda",
-        dropout=0.0,
+        cnn_dropout=0.0,
+        rnn_dropout=0.5,
         hidden_size=256,
         max_chars=15,
         predict_all_chars=False,
     ):
         super(BaseConvSequenceModel, self).__init__()
         self.device = device
-        self.dropout = dropout
+        self.cnn_dropout = cnn_dropout
+        self.rnn_dropout = rnn_dropout
         self.max_chars = max_chars
         self.predict_all_chars = predict_all_chars
 
@@ -75,7 +77,7 @@ class BaseConvSequenceModel(nn.Module):
         x = self.MP1(x)
         x = self.LNorm1(x)
         x = F.relu(x)
-        x = F.dropout2d(x, p=self.dropout, training=self.training)
+        x = F.dropout2d(x, p=self.cnn_dropout, training=self.training)
         x = self.conv2(x)
         x = self.MP2(x)
         x = self.LNorm2(x)
@@ -83,7 +85,7 @@ class BaseConvSequenceModel(nn.Module):
         x = self.conv_reduce(x)
         x = F.relu(x)
         x = self.pool_reduce(x)
-        x = F.dropout2d(x, p=self.dropout, training=self.training)
+        x = F.dropout2d(x, p=self.cnn_dropout, training=self.training)
         return x
 
     def classifier(self, x):
@@ -120,7 +122,8 @@ class BaseRNNConv(BaseConvSequenceModel):
         rnn_class=nn.RNN,
         kernel_size=3,
         device="cuda",
-        dropout=0.0,
+        cnn_dropout=0.0,
+        rnn_dropout=0.5,
         hidden_size=256,
         max_chars=15,
         predict_all_chars=False,
@@ -130,7 +133,8 @@ class BaseRNNConv(BaseConvSequenceModel):
             num_pos,
             kernel_size=kernel_size,
             device=device,
-            dropout=dropout,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
             hidden_size=hidden_size,
             max_chars=max_chars,
             predict_all_chars=predict_all_chars,
@@ -148,7 +152,7 @@ class BaseRNNConv(BaseConvSequenceModel):
         x = self.rnn(x)[0]
         x = self.LNormRNN(x)
         x = F.relu(x)
-        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = F.dropout(x, p=self.rnn_dropout, training=self.training)
         return x
 
 
@@ -159,7 +163,8 @@ class RNNConv(BaseRNNConv):
         num_pos,
         kernel_size=3,
         device="cuda",
-        dropout=0.0,
+        cnn_dropout=0.0,
+        rnn_dropout=0.5,
         hidden_size=256,
         max_chars=15,
         predict_all_chars=False,
@@ -170,7 +175,8 @@ class RNNConv(BaseRNNConv):
             rnn_class=nn.RNN,
             kernel_size=kernel_size,
             device=device,
-            dropout=dropout,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
             hidden_size=hidden_size,
             max_chars=max_chars,
             predict_all_chars=predict_all_chars,
@@ -184,7 +190,8 @@ class GRUConv(BaseRNNConv):
         num_pos,
         kernel_size=3,
         device="cuda",
-        dropout=0.0,
+        cnn_dropout=0.0,
+        rnn_dropout=0.5,
         hidden_size=256,
         max_chars=15,
         predict_all_chars=False,
@@ -195,7 +202,8 @@ class GRUConv(BaseRNNConv):
             rnn_class=nn.GRU,
             kernel_size=kernel_size,
             device=device,
-            dropout=dropout,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
             hidden_size=hidden_size,
             max_chars=max_chars,
             predict_all_chars=predict_all_chars,
@@ -209,7 +217,8 @@ class LSTMConv(BaseRNNConv):
         num_pos,
         kernel_size=3,
         device="cuda",
-        dropout=0.0,
+        cnn_dropout=0.0,
+        rnn_dropout=0.5,
         hidden_size=256,
         max_chars=15,
         predict_all_chars=False,
@@ -220,7 +229,8 @@ class LSTMConv(BaseRNNConv):
             rnn_class=nn.LSTM,
             kernel_size=kernel_size,
             device=device,
-            dropout=dropout,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
             hidden_size=hidden_size,
             max_chars=max_chars,
             predict_all_chars=predict_all_chars,

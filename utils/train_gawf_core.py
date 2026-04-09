@@ -17,7 +17,8 @@ class GaWFRNNConv(BaseConvSequenceModel):
         num_pos,
         kernel_size=3,
         device="cuda",
-        dropout=0.0,
+        cnn_dropout=0.0,
+        rnn_dropout=0.5,
         hidden_size=256,
         max_chars=15,
         predict_all_chars=False,
@@ -27,7 +28,8 @@ class GaWFRNNConv(BaseConvSequenceModel):
             num_pos,
             kernel_size=kernel_size,
             device=device,
-            dropout=dropout,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
             hidden_size=hidden_size,
             max_chars=15,
             predict_all_chars=False,
@@ -108,7 +110,7 @@ class GaWFRNNConv(BaseConvSequenceModel):
                 x_t = x[:, t, :]
                 fb_t = fb.clamp(-10, 10).unsqueeze(2)
                 gated_output = self.middle_gawf(x_t, h, fb_t)
-                gated_output = F.dropout(gated_output, p=self.dropout, training=self.training)
+                gated_output = F.dropout(gated_output, p=self.rnn_dropout, training=self.training)
                 char_t, pos_t = self.classifier(gated_output)
                 with torch.no_grad():
                     fb = torch.cat([char_t, pos_t], dim=-1)
@@ -121,7 +123,7 @@ class GaWFRNNConv(BaseConvSequenceModel):
             x, _ = self.rnn(x)
             x = self.LNormRNN(x)
             x = F.relu(x)
-            x = F.dropout(x, p=self.dropout, training=self.training)
+            x = F.dropout(x, p=self.rnn_dropout, training=self.training)
             char_out, pos_out = self.classifier(x)
 
         return char_out, pos_out

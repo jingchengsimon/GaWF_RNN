@@ -10,11 +10,12 @@ class BaseMergeConvModel(nn.Module):
     Subclasses must implement middle(x) where x is (B, encoder_flatten_size).
     Encoder output is fixed to (64, 12, 12) feature maps (\"large\" configuration).
     """
-    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', dropout=0.0,
-                 hidden_size=256, max_chars=15, predict_all_chars=False):
+    def __init__(self, num_classes, num_pos, kernel_size=3, device='cuda', cnn_dropout=0.0,
+                 rnn_dropout=0.5, hidden_size=256, max_chars=15, predict_all_chars=False):
         super(BaseMergeConvModel, self).__init__()
         self.device = device
-        self.dropout = dropout
+        self.cnn_dropout = cnn_dropout
+        self.rnn_dropout = rnn_dropout
         self.max_chars = max_chars
         self.predict_all_chars = predict_all_chars
         self._input_channels = None
@@ -51,12 +52,12 @@ class BaseMergeConvModel(nn.Module):
         x = self.MP1(x)
         x = self.LNorm1(x)
         x = F.relu(x)
-        x = F.dropout2d(x, p=self.dropout, training=self.training)
+        x = F.dropout2d(x, p=self.cnn_dropout, training=self.training)
         x = self.conv2(x)
         x = self.MP2(x)
         x = self.LNorm2(x)
         x = F.relu(x)
-        x = F.dropout2d(x, p=self.dropout, training=self.training)
+        x = F.dropout2d(x, p=self.cnn_dropout, training=self.training)
         return x
 
     def classifier(self, x):
@@ -160,7 +161,8 @@ class DendriticANNConv(BaseMergeConvModel):
         num_pos,
         kernel_size=3,
         device="cuda",
-        dropout=0.0,
+        cnn_dropout=0.0,
+        rnn_dropout=0.5,
         hidden_size=256,
         max_chars=15,
         predict_all_chars=False,
@@ -173,7 +175,8 @@ class DendriticANNConv(BaseMergeConvModel):
             num_pos,
             kernel_size=kernel_size,
             device=device,
-            dropout=dropout,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
             hidden_size=hidden_size,
             max_chars=max_chars,
             predict_all_chars=predict_all_chars,
@@ -198,7 +201,8 @@ class FeedForwardConv(BaseMergeConvModel):
         num_pos,
         kernel_size=3,
         device="cuda",
-        dropout=0.0,
+        cnn_dropout=0.0,
+        rnn_dropout=0.5,
         hidden_size=256,
         max_chars=15,
         predict_all_chars=False,
@@ -209,7 +213,8 @@ class FeedForwardConv(BaseMergeConvModel):
             num_pos,
             kernel_size=kernel_size,
             device=device,
-            dropout=dropout,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
             hidden_size=ffn_hidden_size,
             max_chars=max_chars,
             predict_all_chars=predict_all_chars,
@@ -219,6 +224,6 @@ class FeedForwardConv(BaseMergeConvModel):
     def middle(self, x):
         x = self.fc1(x)
         x = F.relu(x)
-        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = F.dropout(x, p=self.rnn_dropout, training=self.training)
         return x
 

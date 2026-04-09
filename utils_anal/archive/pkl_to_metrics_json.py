@@ -32,26 +32,43 @@ if str(_REPO_ROOT) not in sys.path:
 from utils.train_helpers import PathHelper, summarize_experiment_metrics
 
 
-# Stem pattern: model_type + mode (sector|coord|allchars) + optional _acc + _hN + _lr... + _wd... + _do... + optional _nofb|_fbN
-_STEM_RE = re.compile(
+# New stem: ..._cdo{X}_rdo{Y}_... ; legacy: ..._do{X}_...
+_STEM_RE_LEGACY = re.compile(
     r"^(\w+)_(sector|coord|allchars)(_acc)?_h(\d+)_lr([\d.]+)_wd([\d.]+)_do([\d.]+)(_nofb|_fb\d+)?$",
+    re.IGNORECASE,
+)
+_STEM_RE_CDO_RDO = re.compile(
+    r"^(\w+)_(sector|coord|allchars)(_acc)?_h(\d+)_lr([\d.]+)_wd([\d.]+)_cdo([\d.]+)_rdo([\d.]+)(_nofb|_fb\d+)?$",
     re.IGNORECASE,
 )
 
 
 def parse_stem(stem: str) -> dict | None:
     """Parse results stem into kwargs for summarize_experiment_metrics. Returns None if no match."""
-    m = _STEM_RE.match(stem.strip())
+    s = stem.strip()
+    m = _STEM_RE_CDO_RDO.match(s)
+    if m:
+        return {
+            "model_type": m.group(1).lower(),
+            "dataset_mode": m.group(2).lower(),
+            "hidden_size": int(m.group(4)),
+            "lr": float(m.group(5)),
+            "weight_decay": float(m.group(6)),
+            "cnn_dropout": float(m.group(7)),
+            "rnn_dropout": float(m.group(8)),
+        }
+    m = _STEM_RE_LEGACY.match(s)
     if not m:
         return None
-    model_type, dataset_mode, _acc, hidden_size, lr, wd, do = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5), m.group(6), m.group(7)
+    do = float(m.group(7))
     return {
-        "model_type": model_type.lower(),
-        "dataset_mode": dataset_mode.lower(),
-        "hidden_size": int(hidden_size),
-        "lr": float(lr),
-        "weight_decay": float(wd),
-        "dropout": float(do),
+        "model_type": m.group(1).lower(),
+        "dataset_mode": m.group(2).lower(),
+        "hidden_size": int(m.group(4)),
+        "lr": float(m.group(5)),
+        "weight_decay": float(m.group(6)),
+        "cnn_dropout": do,
+        "rnn_dropout": do,
     }
 
 
@@ -132,7 +149,8 @@ def main() -> None:
                 "hidden_size": 0,
                 "lr": 0.0,
                 "weight_decay": 0.0,
-                "dropout": 0.0,
+                "cnn_dropout": 0.0,
+                "rnn_dropout": 0.5,
             }
         if args.dataset_mode is not None:
             parsed["dataset_mode"] = args.dataset_mode
@@ -153,7 +171,8 @@ def main() -> None:
             hidden_size=parsed["hidden_size"],
             lr=parsed["lr"],
             weight_decay=parsed["weight_decay"],
-            dropout=parsed["dropout"],
+            cnn_dropout=parsed["cnn_dropout"],
+            rnn_dropout=parsed["rnn_dropout"],
             optimizer=args.optimizer,
         )
         out_path = str(Path(pkl_path).with_suffix("")) + "_metrics.json"

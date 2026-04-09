@@ -81,7 +81,8 @@ class LoggingHelper:
         hidden_sizes,
         lrs,
         weight_decays,
-        dropout,
+        cnn_dropout,
+        rnn_dropout,
     ):
         sep = "=" * LoggingHelper.BANNER_LEN
         logger.info(sep)
@@ -92,10 +93,11 @@ class LoggingHelper:
             hidden_sizes,
         )
         logger.info(
-            "Learning rates: %s | Weight decays: %s | Dropout: %s",
+            "Learning rates: %s | Weight decays: %s | CNN dropout (grid): %s | RNN dropout: %s",
             lrs,
             weight_decays,
-            dropout,
+            cnn_dropout,
+            rnn_dropout,
         )
         logger.info(sep)
 
@@ -108,18 +110,20 @@ class LoggingHelper:
         hidden_size,
         lr,
         weight_decay,
-        dropout,
+        cnn_dropout,
+        rnn_dropout,
     ):
         sep = "=" * LoggingHelper.BANNER_LEN
         logger.info(
-            "Experiment %s/%s: %s | hidden_size=%s | lr=%s | weight_decay=%s | dropout=%s",
+            "Experiment %s/%s: %s | hidden_size=%s | lr=%s | weight_decay=%s | cnn_dropout=%s | rnn_dropout=%s",
             experiment_num,
             total_experiments,
             model_type.upper(),
             hidden_size,
             lr,
             weight_decay,
-            dropout,
+            cnn_dropout,
+            rnn_dropout,
         )
         logger.info(sep)
 
@@ -715,12 +719,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Optimizer (optim) to use: 'adam', 'adamw', or 'muon' (default: 'adam')",
     )
     parser.add_argument(
-        "--dropout",
-        dest="dropout",
+        "--cnn_dropout",
+        dest="cnn_dropout",
         type=float,
         nargs="+",
         default=[0.0],
-        help="Dropout p for CNN (dropout2d) and middle (linear/RNN path); repeat for grid search (default: [0])",
+        help="Dropout p for CNN encoder (dropout2d); repeat for grid search (default: [0])",
+    )
+    parser.add_argument(
+        "--rnn_dropout",
+        type=float,
+        default=0.5,
+        help="Dropout p after RNN/GaWF/FFN middle (after ReLU); used in checkpoint suffix rdo (default: 0.5)",
     )
     parser.add_argument(
         "--seed",
@@ -810,7 +820,8 @@ def summarize_experiment_metrics(
     hidden_size: int,
     lr: float,
     weight_decay: float,
-    dropout: float,
+    cnn_dropout: float,
+    rnn_dropout: float,
     optimizer: str,
 ) -> Dict[str, Any]:
     """
@@ -868,6 +879,35 @@ def summarize_experiment_metrics(
         or (gap_pos is not None and gap_pos > 10.0)
     )
 
+    glob_train_acc_char = results.get("glob_train_acc_char")
+    glob_val_acc_char = results.get("glob_val_acc_char")
+    glob_train_acc_pos = results.get("glob_train_acc_pos")
+    glob_val_acc_pos = results.get("glob_val_acc_pos")
+    final_glob_train_char = SummaryStatsHelper.safe_last(glob_train_acc_char)
+    final_glob_val_char = SummaryStatsHelper.safe_last(glob_val_acc_char)
+    final_glob_train_pos = SummaryStatsHelper.safe_last(glob_train_acc_pos)
+    final_glob_val_pos = SummaryStatsHelper.safe_last(glob_val_acc_pos)
+    final_fg_pre5_train_char = SummaryStatsHelper.safe_last(
+        results.get("fg_switch_pre5_train_acc_char")
+    )
+    final_fg_pre5_val_char = SummaryStatsHelper.safe_last(results.get("fg_switch_pre5_val_acc_char"))
+    final_fg_post5_train_char = SummaryStatsHelper.safe_last(
+        results.get("fg_switch_post5_train_acc_char")
+    )
+    final_fg_post5_val_char = SummaryStatsHelper.safe_last(
+        results.get("fg_switch_post5_val_acc_char")
+    )
+    final_fg_pre5_train_pos = SummaryStatsHelper.safe_last(
+        results.get("fg_switch_pre5_train_acc_pos")
+    )
+    final_fg_pre5_val_pos = SummaryStatsHelper.safe_last(results.get("fg_switch_pre5_val_acc_pos"))
+    final_fg_post5_train_pos = SummaryStatsHelper.safe_last(
+        results.get("fg_switch_post5_train_acc_pos")
+    )
+    final_fg_post5_val_pos = SummaryStatsHelper.safe_last(
+        results.get("fg_switch_post5_val_acc_pos")
+    )
+
     metric_summary: Dict[str, Any] = {
         "model_type": model_type,
         "dataset_suffix": dataset_suffix,
@@ -876,7 +916,8 @@ def summarize_experiment_metrics(
         "hidden_size": hidden_size,
         "lr": lr,
         "weight_decay": weight_decay,
-        "dropout": dropout,
+        "cnn_dropout": cnn_dropout,
+        "rnn_dropout": rnn_dropout,
         "optimizer": optimizer,
         "actual_epochs": actual_epochs,
         "best_train_acc_char": best_train_acc_char,
@@ -900,6 +941,18 @@ def summarize_experiment_metrics(
         "final_train_acc_pos": final_train_acc_pos,
         "final_val_acc_char": final_val_acc_char,
         "final_val_acc_pos": final_val_acc_pos,
+        "final_glob_train_acc_char": final_glob_train_char,
+        "final_glob_val_acc_char": final_glob_val_char,
+        "final_glob_train_acc_pos": final_glob_train_pos,
+        "final_glob_val_acc_pos": final_glob_val_pos,
+        "final_fg_switch_pre5_train_acc_char": final_fg_pre5_train_char,
+        "final_fg_switch_pre5_val_acc_char": final_fg_pre5_val_char,
+        "final_fg_switch_post5_train_acc_char": final_fg_post5_train_char,
+        "final_fg_switch_post5_val_acc_char": final_fg_post5_val_char,
+        "final_fg_switch_pre5_train_acc_pos": final_fg_pre5_train_pos,
+        "final_fg_switch_pre5_val_acc_pos": final_fg_pre5_val_pos,
+        "final_fg_switch_post5_train_acc_pos": final_fg_post5_train_pos,
+        "final_fg_switch_post5_val_acc_pos": final_fg_post5_val_pos,
     }
 
     return metric_summary

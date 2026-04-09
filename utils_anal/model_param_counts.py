@@ -27,14 +27,16 @@ def build_models(
     num_pos: int = 9,
     device: str = "cpu",
     kernel_size: int = 5,
-    dropout: float = 0.0,
+    cnn_dropout: float = 0.0,
+    rnn_dropout: float = 0.5,
 ):
     common = dict(
         num_classes=num_classes,
         num_pos=num_pos,
         kernel_size=kernel_size,
         device=device,
-        dropout=dropout,
+        cnn_dropout=cnn_dropout,
+        rnn_dropout=rnn_dropout,
         max_chars=15,
         predict_all_chars=False,
     )
@@ -90,10 +92,16 @@ def parse_args() -> argparse.Namespace:
         help="Kernel size for conv layers (default: 5).",
     )
     parser.add_argument(
-        "--dropout",
+        "--cnn_dropout",
         type=float,
         default=0.0,
-        help="Dropout p when constructing models; applies to CNN and middle path (default: 0).",
+        help="CNN encoder dropout p (default: 0).",
+    )
+    parser.add_argument(
+        "--rnn_dropout",
+        type=float,
+        default=0.5,
+        help="Middle-path dropout p after ReLU (default: 0.5).",
     )
     parser.add_argument(
         "--num_classes",
@@ -122,7 +130,8 @@ def main():
         num_pos=args.num_pos,
         device=args.device,
         kernel_size=args.kernel_size,
-        dropout=args.dropout,
+        cnn_dropout=args.cnn_dropout,
+        rnn_dropout=args.rnn_dropout,
     )
 
     print(
@@ -135,7 +144,8 @@ def main():
         f" num_pos={args.num_pos},"
         f" kernel_size={args.kernel_size},"
         f" device={args.device},"
-        f" dropout={args.dropout}"
+        f" cnn_dropout={args.cnn_dropout},"
+        f" rnn_dropout={args.rnn_dropout}"
     )
     print("-" * 72)
 

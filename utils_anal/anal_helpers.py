@@ -76,7 +76,10 @@ def build_model_from_ckpt(
     hparams = parse_hparams_from_filename(ckpt_basename)
 
     hidden_size = hparams.get("hidden_size", 256)
-    dropout = float(hparams.get("dropout", 0.0))
+    cnn_dropout = float(hparams.get("cnn_dropout", 0.0))
+    rnn_dropout = float(
+        hparams.get("rnn_dropout", hparams.get("dropout", 0.5))
+    )
 
     num_classes = 10
 
@@ -85,7 +88,8 @@ def build_model_from_ckpt(
         num_pos=num_pos,
         kernel_size=5,
         device=str(device),
-        dropout=dropout,
+        cnn_dropout=cnn_dropout,
+        rnn_dropout=rnn_dropout,
         hidden_size=hidden_size,
         max_chars=15,
         predict_all_chars=(num_pos == 0),

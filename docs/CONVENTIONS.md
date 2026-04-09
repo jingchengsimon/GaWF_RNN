@@ -18,13 +18,18 @@
 | `hh` | Hidden-to-Hidden | RNN recurrent weight |
 | `hparam` | Hyperparameter | Used in log/result dir names |
 | `wd` | Weight decay | CLI `--weight_decays` (`train_model.py`) |
-| `do` | Dropout probability *p* | CLI `--dropout` (`train_model.py`); filename `_do{value}` |
+| `cdo` | CNN dropout probability *p* | CLI `--cnn_dropout` (`train_model.py`); filename `_cdo{value}` |
+| `rdo` | RNN/middle-path dropout *p* | CLI `--rnn_dropout` (`train_model.py`); filename `_rdo{value}` |
+| `do` | (Legacy) unified dropout *p* | Old stems only: `_do{value}`; maps to both paths when parsing |
 | `lr` | Learning rate | CLI and filename |
 | `h` | Hidden size | Filename suffix, e.g. `h256` |
 | `acc` | Acceleration / accuracy | Context-dependent (filename: acceleration) |
 | `sector` | 3×3 spatial sector | Label mode name |
 | `coord` | Coordinate regression | Label mode name |
 | `allchars` | Predict all characters | Label mode name |
+| `glob` | Global (sum correct / sum frames) | Training metrics vs batch-mean curves |
+| `fg_switch` | Foreground switch flag / window | Label column; pre5/post5 eval windows |
+| `pre5` / `post5` | Five frames before / around fg switch | Transition-window accuracy (sector eval) |
 | `agg` | Aggregation | `space` or `feature` axis collapse |
 | `trans` | Transformation matrix | `trans_ih`, `trans_hh` |
 | `outer` | Outer product component | Rank-1 decomposition term |
@@ -54,9 +59,11 @@
 
 ### Checkpoint filenames
 ```
-{model_type}_{label_mode}{acc_suffix}_h{hidden}_lr{lr}_wd{wd}_do{do}{fb_suffix}_model.pth
+{model_type}_{label_mode}{acc_suffix}_h{hidden}_lr{lr}_wd{wd}_cdo{cdo}_rdo{rdo}{fb_suffix}_model.pth
 ```
-Example: `gawf_sector_acc_h256_lr0.0005_wd0.0001_do0_fb50_model.pth`
+Example: `gawf_sector_acc_h256_lr0.0005_wd0.0001_cdo0_rdo0.5_fb50_model.pth`
+
+Legacy (pre-split): `..._do{value}_...` — still supported by `parse_hparams_from_filename` for old checkpoints.
 
 ### Analysis output tags
 ```

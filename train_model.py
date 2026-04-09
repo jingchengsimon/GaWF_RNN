@@ -25,6 +25,8 @@ from utils.train_helpers import (
     summarize_experiment_metrics,
 )
 
+from utils.train_sector import compute_fg_transition_masks
+
 from utils.train_rnn_engine import (
     setup_training_components,
     cleanup_dataloaders,
@@ -51,7 +53,8 @@ class MC_RNN_Dataset(Dataset):
         """
         Args:
             data (np.ndarray): Array of shape (num_frames_total, height, width); supports float32 for faster loading.
-            labels (np.ndarray): DataFrame with columns ['fg_char_id', 'fg_char_x', 'fg_char_y', 'bg_char_ids']
+            labels (DataFrame): columns include ``fg_char_id``, ``fg_char_x``, ``fg_char_y``, ``bg_char_ids``;
+                optional ``fg_switch`` (0/1 per frame) for transition-window eval in sector mode.
             frame_num (int): Number of frames to stack for input as multichannel image
             chan_num (int): Number of channels in the input images. Each channel is a previous frame.
             use_sector (bool): If True, map (x, y) position to sector id 0-(num_sectors-1)
@@ -104,6 +107,17 @@ class MC_RNN_Dataset(Dataset):
             else:
                 # Coordinate mode: one-time float32 conversion for labels.
                 self.labels_coord = self.labels.astype(np.float32, copy=False)
+
+        # fg_switch + transition masks (sector, single-char only; used for fair eval metrics).
+        if "fg_switch" in labels.columns:
+            self.fg_switch = labels["fg_switch"].values.astype(np.int32, copy=False)
+        else:
+            self.fg_switch = np.zeros(self.data.shape[0], dtype=np.int32)
+        if not predict_all_chars and use_sector:
+            self.pre5_mask_global, self.post5_mask_global = compute_fg_transition_masks(self.fg_switch)
+        else:
+            self.pre5_mask_global = None
+            self.post5_mask_global = None
 
     def __len__(self):
         return (self.data.shape[0] - self.chan_num) // self.frame_num
@@ -159,6 +173,11 @@ class MC_RNN_Dataset(Dataset):
             else:
                 labels = self.labels_coord[start_idx:end_idx].copy()
 
+        if self.pre5_mask_global is not None:
+            pre5_win = self.pre5_mask_global[start_idx:end_idx]
+            post5_win = self.post5_mask_global[start_idx:end_idx]
+            return stacked_frames, labels, pre5_win, post5_win
+
         return stacked_frames, labels
 
 
@@ -176,7 +195,6 @@ def network_train(
     lr=0.001,
     use_acceleration=False,
     weight_decay=None,
-    dropout=None,
     rnn_diag_lambda=1e-4,
     use_mmap=False,
     use_tqdm=True,
@@ -274,7 +292,7 @@ def network_train(
         "actual_epochs": actual_epochs,
     }
 
-    return metrics_mode.add_pos_to_result_dict(
+    out = metrics_mode.add_pos_to_result_dict(
         base,
         train_metric_pos,
         val_metric_pos,
@@ -284,6 +302,28 @@ def network_train(
         train_loss_char=train_loss_char,
         val_loss_char=val_loss_char,
     )
+    if components.get("glob_train_acc_char") is not None:
+        out["glob_train_acc_char"] = components["glob_train_acc_char"][:actual_epochs]
+        out["glob_val_acc_char"] = components["glob_val_acc_char"][:actual_epochs]
+        out["glob_train_acc_pos"] = components["glob_train_acc_pos"][:actual_epochs]
+        out["glob_val_acc_pos"] = components["glob_val_acc_pos"][:actual_epochs]
+        out["fg_switch_pre5_train_acc_char"] = components["fg_switch_pre5_train_acc_char"][
+            :actual_epochs
+        ]
+        out["fg_switch_pre5_val_acc_char"] = components["fg_switch_pre5_val_acc_char"][:actual_epochs]
+        out["fg_switch_pre5_train_acc_pos"] = components["fg_switch_pre5_train_acc_pos"][
+            :actual_epochs
+        ]
+        out["fg_switch_pre5_val_acc_pos"] = components["fg_switch_pre5_val_acc_pos"][:actual_epochs]
+        out["fg_switch_post5_train_acc_char"] = components["fg_switch_post5_train_acc_char"][
+            :actual_epochs
+        ]
+        out["fg_switch_post5_val_acc_char"] = components["fg_switch_post5_val_acc_char"][:actual_epochs]
+        out["fg_switch_post5_train_acc_pos"] = components["fg_switch_post5_train_acc_pos"][
+            :actual_epochs
+        ]
+        out["fg_switch_post5_val_acc_pos"] = components["fg_switch_post5_val_acc_pos"][:actual_epochs]
+    return out
 
 if __name__ == "__main__":
     parser = build_arg_parser()
@@ -362,11 +402,12 @@ if __name__ == "__main__":
     hidden_sizes = args.hidden_sizes
     lrs = args.lrs
     wds = args.wds
-    dropout_grid = args.dropout
+    cnn_dropout_grid = args.cnn_dropout
+    rnn_dropout = args.rnn_dropout
 
-    # Build hyperparameter combinations: (model_type, hidden_size, lr, weight_decay, dropout)
+    # Build hyperparameter combinations: (model_type, hidden_size, lr, weight_decay, cnn_dropout)
     experiment_configs = list(
-        product(model_types, hidden_sizes, lrs, wds, dropout_grid)
+        product(model_types, hidden_sizes, lrs, wds, cnn_dropout_grid)
     )
 
     # Training loop over all hyperparameter combinations
@@ -380,10 +421,11 @@ if __name__ == "__main__":
         hidden_sizes,
         lrs,
         wds,
-        dropout_grid,
+        cnn_dropout_grid,
+        rnn_dropout,
     )
 
-    for model_type, hidden_size, lr, weight_decay, dropout in experiment_configs:
+    for model_type, hidden_size, lr, weight_decay, cnn_dropout in experiment_configs:
         experiment_num += 1
         LoggingHelper.log_experiment_start(
             logger,
@@ -393,7 +435,8 @@ if __name__ == "__main__":
             hidden_size,
             lr,
             weight_decay,
-            dropout,
+            cnn_dropout,
+            rnn_dropout,
         )
 
         if predict_all_chars:
@@ -410,15 +453,16 @@ if __name__ == "__main__":
                 num_pos=num_pos,
                 kernel_size=5,
                 device=device,
-                dropout=dropout,
+                cnn_dropout=cnn_dropout,
+                rnn_dropout=rnn_dropout,
                 hidden_size=hidden_size,
                 max_chars=max_chars,
                 predict_all_chars=predict_all_chars,
             )
 
         logger.info(
-            "Created %s model (predict_all_chars=True, max_chars=%s, dropout=%s, hidden_size=%s, cnn_feature_size=large)",
-            model_type.upper(), max_chars, dropout, hidden_size,
+            "Created %s model (predict_all_chars=True, max_chars=%s, cnn_dropout=%s, rnn_dropout=%s, hidden_size=%s, cnn_feature_size=large)",
+            model_type.upper(), max_chars, cnn_dropout, rnn_dropout, hidden_size,
         )
        
         # # [COMPILE] compile model for speed (PyTorch 2.x)
@@ -440,7 +484,6 @@ if __name__ == "__main__":
             lr=lr,
             use_acceleration=use_acceleration,
             weight_decay=weight_decay,
-            dropout=dropout,
             rnn_diag_lambda=1e-4,
             use_mmap=args.use_mmap,
             use_tqdm=use_tqdm,
@@ -459,7 +502,7 @@ if __name__ == "__main__":
         )
         mode_suffix = "allchars" if predict_all_chars else ("sector" if use_sector_mode else "coord")
         acc_suffix = "_acc" if use_acceleration else ""
-        hp_suffix = f"_lr{lr}_wd{weight_decay}_do{dropout}"
+        hp_suffix = f"_lr{lr}_wd{weight_decay}_cdo{cnn_dropout}_rdo{rnn_dropout}"
         # nofb/fb_start_epoch in result path: nofb only -> _nofb; nofb + fb_start_epoch -> _fb{N} only
         if args.nofb:
             if args.fb_start_epoch >= 999999:
@@ -484,7 +527,8 @@ if __name__ == "__main__":
             hidden_size=hidden_size,
             lr=lr,
             weight_decay=weight_decay,
-            dropout=dropout,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
             optimizer=args.optim,
         )
         metrics_path = os.path.join(results_dir, f"{results_stem}_metrics.json")

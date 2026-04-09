@@ -45,8 +45,8 @@ If the encoder shape must change, update ALL of the following:
 5. Any `np.ndarray` shape assertions in analysis scripts
 
 ## Dropout (`utils/train_rnn_core.py`, `train_gawf_core.py`, `train_ann_core.py`)
-- Constructor argument **`dropout`** (default **0**): same *p* for encoder **`F.dropout2d`** (two places) and middle **`F.dropout`** (RNN/GaWF/FFN path after nonlinearity).
-- **`DendriticANN`** internal layers keep their own `dropout` argument; `DendriticANNConv` passes **`dropout=0`** to that stack (CNN only uses the shared **`dropout`**).
+- Constructor arguments **`cnn_dropout`** (default **0**) and **`rnn_dropout`** (default **0.5**): **`cnn_dropout`** for encoder **`F.dropout2d`** (two places); **`rnn_dropout`** for middle **`F.dropout`** (RNN/GaWF/FFN path after nonlinearity).
+- **`DendriticANN`** internal layers keep their own `dropout` argument; `DendriticANNConv` passes **`dropout=0`** to that stack (CNN uses **`cnn_dropout`**; middle path uses **`rnn_dropout`** via the merge base).
 
 ## GaWF Parameter Shapes (must not change silently)
 ```
@@ -90,6 +90,8 @@ The key is the CLI `--model_types` string; value is the class.
 - `evaluate_epoch` — core one-loader eval pass; wrapped by `eval_train_subset` and `eval_valid`. Reuse `components["metrics_mode"]` when calling from training.
 
 **Fair metrics:** Official train/val curve metrics must come from `eval_train_subset` / `eval_valid`, not from `summarize_online_train` / per-batch online averages.
+
+**Sector + single-char:** When label TSV includes `fg_switch`, `evaluate_epoch` also accumulates strict **global** accuracies (`glob_*`) and fg-switch **pre5/post5** window accuracies (`fg_switch_pre5_*`, `fg_switch_post5_*`) into `components` and the results pickle (legacy batch-mean `train_acc_*` / `val_acc_*` unchanged).
 
 ## Metrics Mode Pattern
 Training/eval metrics are dispatched through `MetricsMode` objects

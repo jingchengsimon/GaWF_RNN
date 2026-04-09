@@ -14,7 +14,7 @@ Epoch loop naming (scheme A): `begin_epoch`, `train_batch`, `summarize_online_tr
 `eval_train_subset`, `eval_valid` (both fair full-dataloader eval via `evaluate_epoch`).
 """
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import gc
 import signal
@@ -33,7 +33,13 @@ from .train_acceleration import (
 )
 from .train_helpers import LoggingHelper
 from .train_predict_all_chars import build_loss_fn_all_chars, AllCharsMetricsMode
-from .train_sector import build_loss_fn_single, SingleCharMetricsMode
+from .train_sector import (
+    SingleCharMetricsMode,
+    build_loss_fn_single,
+    single_char_global_eval_finalize,
+    single_char_global_eval_init,
+    single_char_global_eval_update,
+)
 from .train_gawf_core import GaWFRNNConv
 
 
@@ -261,6 +267,34 @@ def setup_training_components(
     train_loss_pos = np.zeros(num_epochs) if use_sector else None
     val_loss_pos = np.zeros(num_epochs) if use_sector else None
 
+    extend_transition_metrics = use_sector and not predict_all_chars
+    if extend_transition_metrics:
+        glob_train_acc_char = np.zeros(num_epochs)
+        glob_val_acc_char = np.zeros(num_epochs)
+        glob_train_acc_pos = np.zeros(num_epochs)
+        glob_val_acc_pos = np.zeros(num_epochs)
+        fg_switch_pre5_train_acc_char = np.zeros(num_epochs)
+        fg_switch_pre5_val_acc_char = np.zeros(num_epochs)
+        fg_switch_pre5_train_acc_pos = np.zeros(num_epochs)
+        fg_switch_pre5_val_acc_pos = np.zeros(num_epochs)
+        fg_switch_post5_train_acc_char = np.zeros(num_epochs)
+        fg_switch_post5_val_acc_char = np.zeros(num_epochs)
+        fg_switch_post5_train_acc_pos = np.zeros(num_epochs)
+        fg_switch_post5_val_acc_pos = np.zeros(num_epochs)
+    else:
+        glob_train_acc_char = None
+        glob_val_acc_char = None
+        glob_train_acc_pos = None
+        glob_val_acc_pos = None
+        fg_switch_pre5_train_acc_char = None
+        fg_switch_pre5_val_acc_char = None
+        fg_switch_pre5_train_acc_pos = None
+        fg_switch_pre5_val_acc_pos = None
+        fg_switch_post5_train_acc_char = None
+        fg_switch_post5_val_acc_char = None
+        fg_switch_post5_train_acc_pos = None
+        fg_switch_post5_val_acc_pos = None
+
     # Stop flag & signal handlers for graceful shutdown
     stop_flag = init_stop_flag()
     register_stop_handlers(num_workers=num_workers, stop_flag=stop_flag, logger=logger)
@@ -299,6 +333,18 @@ def setup_training_components(
         "logger": logger,
         "use_tqdm": use_tqdm,
         "stop_flag": stop_flag,
+        "glob_train_acc_char": glob_train_acc_char,
+        "glob_val_acc_char": glob_val_acc_char,
+        "glob_train_acc_pos": glob_train_acc_pos,
+        "glob_val_acc_pos": glob_val_acc_pos,
+        "fg_switch_pre5_train_acc_char": fg_switch_pre5_train_acc_char,
+        "fg_switch_pre5_val_acc_char": fg_switch_pre5_val_acc_char,
+        "fg_switch_pre5_train_acc_pos": fg_switch_pre5_train_acc_pos,
+        "fg_switch_pre5_val_acc_pos": fg_switch_pre5_val_acc_pos,
+        "fg_switch_post5_train_acc_char": fg_switch_post5_train_acc_char,
+        "fg_switch_post5_val_acc_char": fg_switch_post5_val_acc_char,
+        "fg_switch_post5_train_acc_pos": fg_switch_post5_train_acc_pos,
+        "fg_switch_post5_val_acc_pos": fg_switch_post5_val_acc_pos,
     }
 
 
@@ -316,7 +362,9 @@ def evaluate_epoch(
     One full pass in eval mode over ``data_loader`` (no_grad, shared metrics protocol).
 
     Returns:
-        (acc_char, metric_pos, loss_pos, loss_char) with loss_* possibly None.
+        ``(acc_char, metric_pos, loss_pos, loss_char)`` with loss_* possibly None; or the same
+        tuple plus a fifth element ``extra_stats`` (dict of strict global / fg_switch window
+        accuracies) when sector single-char eval batches include pre5/post5 masks.
 
     If ``metrics_mode`` is provided (e.g. ``components["metrics_mode"]``), it is reused
     so train-subset and valid eval share one instance. Otherwise the mode is inferred
@@ -338,6 +386,8 @@ def evaluate_epoch(
             logger=logger,
         )
     acc = eval_mode.init_eval()
+    glob_state = None
+    extend_global = isinstance(eval_mode, SingleCharMetricsMode) and eval_mode.use_sector
 
     val_desc = desc
     if logger is not None:
@@ -378,13 +428,75 @@ def evaluate_epoch(
             else:
                 acc = eval_mode.update_eval_batch(acc, out_char, labels, out_pos)
 
+            if (
+                extend_global
+                and labels is not None
+                and isinstance(batch, (list, tuple))
+                and len(batch) >= 4
+            ):
+                if glob_state is None:
+                    glob_state = single_char_global_eval_init()
+                pre5_m = batch[2].to(device=device, dtype=torch.bool)
+                post5_m = batch[3].to(device=device, dtype=torch.bool)
+                glob_state = single_char_global_eval_update(
+                    glob_state, out_char, out_pos, labels, pre5_m, post5_m
+                )
+
     result = eval_mode.finalize_eval(acc, len(data_loader))
+    extra_stats = None
+    if glob_state is not None:
+        extra_stats = single_char_global_eval_finalize(glob_state)
+
     # Normalize to (acc_char, metric_pos, loss_pos, loss_char) where loss_* may be None.
     if len(result) == 2:
         acc_char, metric_pos = result
         loss_pos, loss_char = None, None
+    else:
+        acc_char, metric_pos, loss_pos, loss_char = result
+
+    if extra_stats is not None:
+        return acc_char, metric_pos, loss_pos, loss_char, extra_stats
+    if len(result) == 2:
         return acc_char, metric_pos, loss_pos, loss_char
-    return result
+    return (acc_char, metric_pos, loss_pos, loss_char)
+
+
+def _assign_transition_epoch_metrics(
+    components: Dict[str, Any],
+    epoch: int,
+    extra_stats: Optional[Dict[str, float]],
+    split: str,
+) -> None:
+    """Write strict global / fg_switch window accuracies into ``components`` arrays."""
+    if extra_stats is None or components.get("glob_train_acc_char") is None:
+        return
+    if split == "train":
+        components["glob_train_acc_char"][epoch] = extra_stats["glob_acc_char"]
+        components["glob_train_acc_pos"][epoch] = extra_stats["glob_acc_pos"]
+        components["fg_switch_pre5_train_acc_char"][epoch] = extra_stats["fg_switch_pre5_acc_char"]
+        components["fg_switch_pre5_train_acc_pos"][epoch] = extra_stats["fg_switch_pre5_acc_pos"]
+        components["fg_switch_post5_train_acc_char"][epoch] = extra_stats["fg_switch_post5_acc_char"]
+        components["fg_switch_post5_train_acc_pos"][epoch] = extra_stats["fg_switch_post5_acc_pos"]
+    else:
+        components["glob_val_acc_char"][epoch] = extra_stats["glob_acc_char"]
+        components["glob_val_acc_pos"][epoch] = extra_stats["glob_acc_pos"]
+        components["fg_switch_pre5_val_acc_char"][epoch] = extra_stats["fg_switch_pre5_acc_char"]
+        components["fg_switch_pre5_val_acc_pos"][epoch] = extra_stats["fg_switch_pre5_acc_pos"]
+        components["fg_switch_post5_val_acc_char"][epoch] = extra_stats["fg_switch_post5_acc_char"]
+        components["fg_switch_post5_val_acc_pos"][epoch] = extra_stats["fg_switch_post5_acc_pos"]
+
+
+def _copy_transition_epoch_metrics(components: Dict[str, Any], epoch: int) -> None:
+    """Copy transition metrics from ``epoch - 1`` (used when ``val_every`` skips validation)."""
+    if components.get("glob_val_acc_char") is None or epoch <= 0:
+        return
+    prev = epoch - 1
+    components["glob_val_acc_char"][epoch] = components["glob_val_acc_char"][prev]
+    components["glob_val_acc_pos"][epoch] = components["glob_val_acc_pos"][prev]
+    components["fg_switch_pre5_val_acc_char"][epoch] = components["fg_switch_pre5_val_acc_char"][prev]
+    components["fg_switch_pre5_val_acc_pos"][epoch] = components["fg_switch_pre5_val_acc_pos"][prev]
+    components["fg_switch_post5_val_acc_char"][epoch] = components["fg_switch_post5_val_acc_char"][prev]
+    components["fg_switch_post5_val_acc_pos"][epoch] = components["fg_switch_post5_val_acc_pos"][prev]
 
 
 def eval_train_subset(
@@ -420,11 +532,19 @@ def eval_train_subset(
     train_loss_pos_arr = components["train_loss_pos"]
     train_loss_char_arr = components["train_loss_char"]
 
-    train_acc_char_arr[epoch], train_metric_pos_arr[epoch] = res[0], res[1]
-    if len(res) >= 3 and res[2] is not None and train_loss_pos_arr is not None:
-        train_loss_pos_arr[epoch] = res[2]
-    if len(res) >= 4 and res[3] is not None:
-        train_loss_char_arr[epoch] = res[3]
+    if len(res) == 5:
+        train_acc_char_arr[epoch], train_metric_pos_arr[epoch] = res[0], res[1]
+        if train_loss_pos_arr is not None and res[2] is not None:
+            train_loss_pos_arr[epoch] = res[2]
+        if res[3] is not None:
+            train_loss_char_arr[epoch] = res[3]
+        _assign_transition_epoch_metrics(components, epoch, res[4], "train")
+    else:
+        train_acc_char_arr[epoch], train_metric_pos_arr[epoch] = res[0], res[1]
+        if len(res) >= 3 and res[2] is not None and train_loss_pos_arr is not None:
+            train_loss_pos_arr[epoch] = res[2]
+        if len(res) >= 4 and res[3] is not None:
+            train_loss_char_arr[epoch] = res[3]
 
     return metrics_mode.format_train_str(
         epoch,
@@ -468,11 +588,19 @@ def eval_valid(
             desc="Validation",
             metrics_mode=metrics_mode,
         )
-        val_acc_char[epoch], val_metric_pos[epoch] = val_res[0], val_res[1]
-        if len(val_res) >= 3 and val_res[2] is not None and val_loss_pos is not None:
-            val_loss_pos[epoch] = val_res[2]
-        if len(val_res) >= 4 and val_res[3] is not None:
-            val_loss_char[epoch] = val_res[3]
+        if len(val_res) == 5:
+            val_acc_char[epoch], val_metric_pos[epoch] = val_res[0], val_res[1]
+            if val_loss_pos is not None and val_res[2] is not None:
+                val_loss_pos[epoch] = val_res[2]
+            if val_res[3] is not None:
+                val_loss_char[epoch] = val_res[3]
+            _assign_transition_epoch_metrics(components, epoch, val_res[4], "val")
+        else:
+            val_acc_char[epoch], val_metric_pos[epoch] = val_res[0], val_res[1]
+            if len(val_res) >= 3 and val_res[2] is not None and val_loss_pos is not None:
+                val_loss_pos[epoch] = val_res[2]
+            if len(val_res) >= 4 and val_res[3] is not None:
+                val_loss_char[epoch] = val_res[3]
     else:
         if epoch > 0:
             val_acc_char[epoch] = val_acc_char[epoch - 1]
@@ -481,6 +609,7 @@ def eval_valid(
                 val_loss_pos[epoch] = val_loss_pos[epoch - 1]
             if val_loss_char is not None:
                 val_loss_char[epoch] = val_loss_char[epoch - 1]
+            _copy_transition_epoch_metrics(components, epoch)
 
     return metrics_mode.format_val_str(
         val_acc_char[epoch],

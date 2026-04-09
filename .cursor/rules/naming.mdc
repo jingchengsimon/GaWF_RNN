@@ -15,7 +15,7 @@ alwaysApply: true
 | Analysis scripts | `utils_anal/export_<what>.py` or `utils_anal/<what>_tuning.py` | `export_gate_avg.py`, `hidden_unit_tuning.py` |
 | Visualisation scripts | `utils_viz/<what>.py` | `gate_avg_allsector.py`, `cnn_channel.py` |
 | Paper figures | `utils_viz/paper_figs/<fig_id>.py` | `fig1.py` |
-| Checkpoints | `results/train_data/<suffix>/<model>_<mode>_<hparams>_model.pth` | `gawf_sector_acc_h256_lr0.0005_wd0.0001_do0_fb50_model.pth` |
+| Checkpoints | `results/train_data/<suffix>/<model>_<mode>_<hparams>_model.pth` | `gawf_sector_acc_h256_lr0.0005_wd0.0001_cdo0_rdo0.5_fb50_model.pth` |
 | Analysis data | `results/anal_data/<module>/<descriptor>_<tag>.npy` | `avg_outer_ih_allcomp_sector3_space.npy` |
 | Analysis figures | `results/anal_figs/<module>/<mode><idx>_<agg>_<descriptor>.png` | `sector3_space_avg_gate_allcomp.png` |
 | Metadata JSON | `results/anal_data/<module>/<descriptor>_meta_<tag>.json` | `avg_gate_meta_allcomp_sector3_space.json` |
@@ -71,11 +71,11 @@ Symmetry: `eval_train_subset(mdl, components, epoch_ctx)` and `eval_valid(mdl, c
 ## CLI Arguments
 Use the exact names from Section 3.3 of AGENT.md. Never invent synonyms
 (e.g. do not use `--output` instead of `--save_dir`, or `--checkpoint` instead of `--ckpt`).
-For `train_model.py`, the dropout sweep flag is **`--dropout`** (one or more floats, default `[0]`); model code uses the identifier **`dropout`** (not `dropout_rate` / `dropouts`).
+For `train_model.py`, CNN dropout sweep is **`--cnn_dropout`** (one or more floats, default `[0]`); middle-path dropout is **`--rnn_dropout`** (single float, default **0.5**). Checkpoint suffix: **`cdo`** = cnn, **`rdo`** = rnn.
 
 ## Checkpoint Filename Abbreviations
 `h` = hidden_size, `lr` = learning rate, `wd` = weight_decay,
-`do` = dropout, `fb` = fb_start_epoch, `acc` = use_acceleration,
+`cdo` = cnn_dropout, `rdo` = rnn_dropout, `fb` = fb_start_epoch, `acc` = use_acceleration,
 `sector` / `coord` / `allchars` = label mode.
 
 ## Extended Reference  
