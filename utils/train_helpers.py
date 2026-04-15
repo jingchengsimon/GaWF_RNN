@@ -794,11 +794,29 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--data_suffix",
         type=str,
-        default="",
+        default="40h-float32",
         help=(
             "Suffix appended to stimulus_reg-* file names. "
             "Example: 'cplx' -> 'stimulus_reg-train-cplx.npy'. "
             "Default: empty string (no suffix)."
+        ),
+    )
+    parser.add_argument(
+        "--eval_data_suffix",
+        type=str,
+        default="",
+        help=(
+            "Suffix for validation split only (stimulus_reg-validation-<suffix>). "
+            "Empty means use the same suffix as --data_suffix."
+        ),
+    )
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=15,
+        help=(
+            "Early stopping patience on validation character accuracy (fair eval). "
+            "0 disables early stopping. Default: 15."
         ),
     )
     parser.add_argument(
@@ -954,5 +972,21 @@ def summarize_experiment_metrics(
         "final_fg_switch_post5_train_acc_pos": final_fg_post5_train_pos,
         "final_fg_switch_post5_val_acc_pos": final_fg_post5_val_pos,
     }
+
+    for k in (
+        "eval_dataset_suffix",
+        "train_acc_at_best_val",
+        "val_acc_at_best",
+        "overfit_gap",
+        "best_epoch_val_acc_1based",
+        "early_stop_epoch_1based",
+        "stopped_by_patience",
+    ):
+        if k in results and results[k] is not None:
+            v = results[k]
+            if k == "overfit_gap" and v is not None:
+                metric_summary[k] = SummaryStatsHelper.round2(v)
+            else:
+                metric_summary[k] = v
 
     return metric_summary

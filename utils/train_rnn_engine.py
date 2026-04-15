@@ -102,6 +102,7 @@ def setup_training_components(
     seed: int,
     logger,
     optim_name: str = "adam",
+    run_label: str = "",
 ) -> Dict[str, Any]:
     """
     Build all training components:
@@ -299,6 +300,8 @@ def setup_training_components(
     stop_flag = init_stop_flag()
     register_stop_handlers(num_workers=num_workers, stop_flag=stop_flag, logger=logger)
 
+    run_label_stripped = (run_label or "").strip()
+
     return {
         "device": device,
         "accel_config": accel_config,
@@ -332,6 +335,7 @@ def setup_training_components(
         "max_chars": max_chars,
         "logger": logger,
         "use_tqdm": use_tqdm,
+        "run_label": run_label_stripped,
         "stop_flag": stop_flag,
         "glob_train_acc_char": glob_train_acc_char,
         "glob_val_acc_char": glob_val_acc_char,
@@ -357,6 +361,7 @@ def evaluate_epoch(
     use_feedback,
     desc: str = "Validation",
     metrics_mode=None,
+    run_label: str = "",
 ) -> Tuple:
     """
     One full pass in eval mode over ``data_loader`` (no_grad, shared metrics protocol).
@@ -389,7 +394,9 @@ def evaluate_epoch(
     glob_state = None
     extend_global = isinstance(eval_mode, SingleCharMetricsMode) and eval_mode.use_sector
 
-    val_desc = desc
+    lbl = (run_label or "").strip()
+    prefix = f"[{lbl}] " if lbl else ""
+    val_desc = f"{prefix}{desc}"
     if logger is not None:
         logger.info(val_desc)
     valid_pbar = tqdm(
@@ -526,6 +533,7 @@ def eval_train_subset(
         use_feedback=use_feedback,
         desc="Train(eval-subset)",
         metrics_mode=metrics_mode,
+        run_label=components.get("run_label") or "",
     )
     train_acc_char_arr = components["train_acc_char"]
     train_metric_pos_arr = components["train_metric_pos"]
@@ -587,6 +595,7 @@ def eval_valid(
             use_feedback=use_feedback,
             desc="Validation",
             metrics_mode=metrics_mode,
+            run_label=components.get("run_label") or "",
         )
         if len(val_res) == 5:
             val_acc_char[epoch], val_metric_pos[epoch] = val_res[0], val_res[1]
@@ -720,7 +729,9 @@ def begin_epoch(
     epoch_acc = metrics_mode.init_epoch_train()
     num_batches_total = len(train_dl)
 
-    train_desc = f"Epoch {epoch + 1}/{num_epochs} [Train]"
+    lbl = (components.get("run_label") or "").strip()
+    prefix = f"[{lbl}] " if lbl else ""
+    train_desc = f"{prefix}Epoch {epoch + 1}/{num_epochs} [Train]"
     if logger is not None:
         logger.info(train_desc)
     train_pbar = tqdm(

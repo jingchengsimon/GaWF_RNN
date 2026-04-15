@@ -9,6 +9,7 @@ Smoke-test (run 1 epoch, minimal config):
 """
 import os
 import sys
+import time
 from itertools import product
 import numpy as np
 import torch
@@ -203,6 +204,8 @@ def network_train(
     seed=42,
     logger=None,
     optim: str = "adam",
+    patience: int = 0,
+    run_label: str = "",
 ):
     """
     Train model, supports sector mode and coordinate mode.
@@ -225,11 +228,19 @@ def network_train(
         seed=seed,
         logger=logger,
         optim_name=optim,
+        run_label=run_label,
     )
 
     val_every = 1  # run full validation only every N epochs
+    epoch = -1
+    best_val_acc = float("-inf")
+    best_epoch_idx = 0
+    best_state = None
+    epochs_without_improvement = 0
+    stopped_by_patience = False
     try:
         for epoch in range(num_epochs):
+            epoch_wall_start = time.perf_counter()
             mdl.train()
 
             epoch_ctx = begin_epoch(
@@ -258,7 +269,40 @@ def network_train(
                 if train_online_summary:
                     msg += f" | Train(online): {train_online_summary}"
                 logger.info(msg)
-  
+                wall = time.perf_counter() - epoch_wall_start
+                lbl = (components.get("run_label") or "").strip()
+                prefix = f"[{lbl}] " if lbl else ""
+                logger.info(
+                    "%sEpoch %s/%s wall_time_sec=%.2f (train + fair train-eval + fair val)",
+                    prefix,
+                    epoch + 1,
+                    num_epochs,
+                    wall,
+                )
+
+            val_acc = float(components["val_acc_char"][epoch])
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
+                best_epoch_idx = epoch
+                best_state = {
+                    k: v.detach().cpu().clone() for k, v in mdl.state_dict().items()
+                }
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+
+            if patience > 0 and epochs_without_improvement >= patience:
+                stopped_by_patience = True
+                if logger is not None:
+                    logger.info(
+                        "Early stopping at epoch %s (1-based), best val epoch: %s, "
+                        "best val acc (char): %.6f",
+                        epoch + 1,
+                        best_epoch_idx + 1,
+                        best_val_acc,
+                    )
+                break
+
     except (KeyboardInterrupt, SystemExit):
         # Handle interruption gracefully
         if logger is not None:
@@ -271,8 +315,36 @@ def network_train(
     if components["device"] == "cuda" or (isinstance(components["device"], str) and components["device"].startswith("cuda:")):
         torch.cuda.empty_cache()
 
-    # If early stopping triggered, only return actual trained epochs (epoch starts from 0, so actually trained epoch+1 epochs)
-    actual_epochs = epoch + 1
+    # Epochs actually completed (epoch is last finished epoch index, or -1 if none).
+    actual_epochs = epoch + 1 if epoch >= 0 else 0
+
+    if best_state is not None and actual_epochs > 0:
+        load_dev = next(mdl.parameters()).device
+        mdl.load_state_dict(
+            {k: v.to(load_dev, non_blocking=True) for k, v in best_state.items()},
+            strict=True,
+        )
+
+    if actual_epochs <= 0:
+        train_acc_at_best = float("nan")
+        val_acc_at_best = float("nan")
+        overfit_gap = float("nan")
+    else:
+        train_acc_at_best = float(components["train_acc_char"][best_epoch_idx])
+        val_acc_at_best = float(components["val_acc_char"][best_epoch_idx])
+        overfit_gap = train_acc_at_best - val_acc_at_best
+    if logger is not None and actual_epochs > 0:
+        logger.info(
+            "Training summary: early_stop_epoch=%s, best_val_epoch=%s, "
+            "train_acc@best=%.6f, val_acc@best=%.6f, overfit_gap=%.6f, "
+            "stopped_by_patience=%s",
+            actual_epochs,
+            best_epoch_idx + 1,
+            train_acc_at_best,
+            val_acc_at_best,
+            overfit_gap,
+            stopped_by_patience,
+        )
 
     # Slice metrics from components for the actually trained epochs
     train_acc_char = components["train_acc_char"]
@@ -290,6 +362,12 @@ def network_train(
         "val_acc_char": val_acc_char[:actual_epochs],
         "model": mdl.to("cpu"),
         "actual_epochs": actual_epochs,
+        "train_acc_at_best_val": train_acc_at_best,
+        "val_acc_at_best": val_acc_at_best,
+        "overfit_gap": overfit_gap,
+        "best_epoch_val_acc_1based": best_epoch_idx + 1 if actual_epochs > 0 else 0,
+        "early_stop_epoch_1based": actual_epochs,
+        "stopped_by_patience": stopped_by_patience,
     }
 
     out = metrics_mode.add_pos_to_result_dict(
@@ -329,13 +407,19 @@ if __name__ == "__main__":
     parser = build_arg_parser()
     args = parser.parse_args()
 
-    # GPU selection before any CUDA init (matches previous module-level behavior)
-    cuda_index = pick_cuda_device_index()
-    if cuda_index is not None:
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(cuda_index)
-        device = "cuda"
+    # GPU selection before any CUDA init. If the launcher already set
+    # CUDA_VISIBLE_DEVICES, respect it (logical cuda:0 is that device).
+    cuda_visible_preset = bool(os.environ.get("CUDA_VISIBLE_DEVICES", "").strip())
+    if cuda_visible_preset:
+        cuda_index = None
+        device = "cuda" if torch.cuda.is_available() else "cpu"
     else:
-        device = "cpu"
+        cuda_index = pick_cuda_device_index()
+        if cuda_index is not None:
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(cuda_index)
+            device = "cuda"
+        else:
+            device = "cpu"
 
     set_seed(args.seed)
 
@@ -353,15 +437,31 @@ if __name__ == "__main__":
     log_file = os.path.join(results_dir, "train.log")
     logger = LoggingHelper.setup_logger("train", log_file=log_file)
 
-    if cuda_index is not None:
+    if cuda_visible_preset:
+        logger.info(
+            "Using preset CUDA_VISIBLE_DEVICES=%s (device=%s)",
+            os.environ.get("CUDA_VISIBLE_DEVICES"),
+            device,
+        )
+    elif cuda_index is not None:
         logger.info("Using CUDA device: %s", cuda_index)
     logger.info("Random seed set to: %s", args.seed)
     logger.info("Created or using results directory: %s", results_dir)
 
     base_path = PathHelper.get_base_path(override=args.data_dir or None, logger=logger)
-    stim_train_path, label_train_path, stim_val_path, label_val_path = PathHelper.prepare_data_paths(
-        base_path, data_suffix=args.data_suffix, splits=("train", "valid"), logger=logger
+    eval_suffix = (args.eval_data_suffix or "").strip() or args.data_suffix
+    stim_train_path, label_train_path = PathHelper.prepare_data_paths(
+        base_path, data_suffix=args.data_suffix, splits=("train",), logger=logger
     )
+    stim_val_path, label_val_path = PathHelper.prepare_data_paths(
+        base_path, data_suffix=eval_suffix, splits=("valid",), logger=logger
+    )
+    if eval_suffix != args.data_suffix:
+        logger.info(
+            "Train suffix=%s, validation suffix=%s (shared eval set across scales).",
+            args.data_suffix,
+            eval_suffix,
+        )
     stims_train, lbls_train, stims_val, lbls_val = PathHelper.load_raw_data(
         stim_train_path,
         label_train_path,
@@ -476,6 +576,7 @@ if __name__ == "__main__":
         logger.info("Acceleration training enabled" if use_acceleration else "Using standard training method")
         
 
+        run_label = f"{args.result_suffix}|e{experiment_num:03d}|{model_type}"
         results = network_train(
             mdl,
             train_ds,
@@ -492,6 +593,8 @@ if __name__ == "__main__":
             seed=args.seed,
             logger=logger,
             optim=args.optim,
+            patience=args.patience,
+            run_label=run_label,
         )
 
         # Save training results
@@ -518,6 +621,7 @@ if __name__ == "__main__":
 
         # Build and save concise metrics summary for this experiment
         dataset_mode = mode_suffix
+        results["eval_dataset_suffix"] = eval_suffix
         metric_summary = summarize_experiment_metrics(
             results,
             model_type=model_type,

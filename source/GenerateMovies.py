@@ -13,11 +13,14 @@ import cv2
 import numpy as np
 import numpy.lib.format as npfmt
 
+import argparse
 import torchvision
 import csv
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Literal, Tuple
 from tqdm import tqdm
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # --- Configuration ---
 
@@ -44,6 +47,9 @@ class StimulusConfig:
     # Output Settings
     output_dir: str = "stimulus_output"
     num_videos: int = 5
+    # "full": mp4 + stimulus npy/tsv + mnist_images/mnist_labels npy;
+    # "simple": stimulus npy and tsv only.
+    output_mode: Literal["full", "simple"] = "full"
 
     # MNIST sample range (by index, not digit)
     mnist_sample_start: int = 0
@@ -129,9 +135,15 @@ def load_mnist_data(config=None):
         mnist_digits[label].append(arr)
         selected_images.append(arr)
         selected_labels.append(label)
-    # Save selected images and labels as numpy arrays
-    np.save(os.path.join(config.output_dir, f'mnist_images_{config.suffix}.npy'), np.stack(selected_images))
-    np.save(os.path.join(config.output_dir, f'mnist_labels_{config.suffix}.npy'), np.array(selected_labels))
+    if config is not None and getattr(config, "output_mode", "full") == "full":
+        np.save(
+            os.path.join(config.output_dir, f"mnist_images_{config.suffix}.npy"),
+            np.stack(selected_images),
+        )
+        np.save(
+            os.path.join(config.output_dir, f"mnist_labels_{config.suffix}.npy"),
+            np.array(selected_labels),
+        )
     print(f"MNIST data loaded and processed. Samples used: {sample_start}-{sample_end-1}")
     return mnist_digits
 
@@ -178,18 +190,23 @@ def paste_character(frame: np.ndarray, char: MovingCharacter):
 
 # --- MODIFIED FUNCTION ---
 def generate_stimulus_video(config: StimulusConfig, mnist_data: dict):
-    """Generates a single video file and its corresponding TSV log."""
+    """Generates stimulus npy + tsv; optionally mp4 when output_mode is full."""
     
     # --- Initialization ---
     suffix = config.suffix
+    write_mp4 = config.output_mode == "full"
     video_filename = f"stimulus_{suffix}.mp4"
     tsv_filename = f"stimulus_{suffix}.tsv"
     video_path = os.path.join(config.output_dir, video_filename)
     tsv_path = os.path.join(config.output_dir, tsv_filename)
     npy_path = os.path.join(config.output_dir, f"stimulus_{suffix}.npy")
 
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_writer = cv2.VideoWriter(video_path, fourcc, config.fps, (config.width, config.height))
+    video_writer = None
+    if write_mp4:
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        video_writer = cv2.VideoWriter(
+            video_path, fourcc, config.fps, (config.width, config.height)
+        )
 
     tsv_file = open(tsv_path, 'w', newline='')
     tsv_writer = csv.writer(tsv_file, delimiter='\t')
@@ -299,34 +316,57 @@ def generate_stimulus_video(config: StimulusConfig, mnist_data: dict):
             bg_switch_flag
         ])
 
-        # --- Write to Video File (OpenCV only accepts uint8/uint16) ---
-        video_writer.write(cv2.cvtColor(frame.astype(np.uint8), cv2.COLOR_GRAY2BGR))
-    
-    # np.save(npy_path, npy_data)
+        if video_writer is not None:
+            video_writer.write(cv2.cvtColor(frame.astype(np.uint8), cv2.COLOR_GRAY2BGR))
 
     # --- Cleanup ---
-    video_writer.release()
+    if video_writer is not None:
+        video_writer.release()
     tsv_file.close()
-    print(f"Successfully generated {video_path}, {tsv_path}, and {npy_path}")
+    if write_mp4:
+        print(f"Successfully generated {video_path}, {tsv_path}, and {npy_path}")
+    else:
+        print(f"Successfully generated {tsv_path}, and {npy_path}")
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Generate moving MNIST stimulus sequences.")
+    p.add_argument(
+        "--output-mode",
+        choices=("full", "simple"),
+        default="simple",
+        help="full: mp4 + stimulus npy/tsv + mnist npy; simple: stimulus npy + tsv only.",
+    )
+    p.add_argument(
+        "--hour",
+        type=int,
+        default=10,
+        metavar="H",
+        help="Hours of train stimulus (suffix becomes Hh-float32; train duration = 14400*H seconds).",
+    )
+    return p.parse_args()
 
 
 def main():
     """Main function to orchestrate stimulus generation."""
+    args = parse_args()
     ## Normal data
-    data_suffix = "40h_float32"
+    data_hour_length = args.hour
+    data_suffix = f"{data_hour_length}h-float32"
     config = StimulusConfig(
         width=96,
         height=96,
-        duration_seconds=14400 * 10, # 40 hours
+        duration_seconds=14400 * data_hour_length, 
         fps=24,
         fg_speeds=[1,0, 2.0, 3.0, 4.0, 6.0, 8.0], #[1.0, 2.0, 4.0],
         bg_char_counts=[1, 2, 4, 8, 12], #[1, 2, 4],
         bg_mean_speeds=[1.0, 2.0, 4.0, 6.0, 8.0], #[1.0, 2.0, 4.0],
         mean_switch_interval_seconds=1.0,
-        output_dir=os.path.join('..', 'stimuli'),
+        output_dir=os.path.join(PROJECT_ROOT, "stimuli"),
         mnist_sample_start=0,
         mnist_sample_end=40000,
-        suffix="reg-train-" + data_suffix
+        suffix="reg-train-" + data_suffix,
+        output_mode=args.output_mode,
     )
     os.makedirs(config.output_dir, exist_ok=True)
     mnist_data = load_mnist_data(config)
