@@ -13,12 +13,25 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT"
 
-echo "=== Phase 1: GAWF grid (4h/10h/20h only), 2 jobs in parallel ==="
+echo "=== Phase 1: GAWF grid (4h/10h/20h), dynamic 20h on first free GPU ==="
 CUDA_VISIBLE_DEVICES=0 bash "$SCRIPT_DIR/phase1_gawf_search_4h.sh" &
+pid_4h=$!
 CUDA_VISIBLE_DEVICES=1 bash "$SCRIPT_DIR/phase1_gawf_search_10h.sh" &
-wait
-CUDA_VISIBLE_DEVICES=0 bash "$SCRIPT_DIR/phase1_gawf_search_20h.sh"
-wait
+pid_10h=$!
+
+wait -n "$pid_4h" "$pid_10h"
+if ! kill -0 "$pid_4h" 2>/dev/null; then
+  gpu_for_20h=0
+  remaining_pid="$pid_10h"
+else
+  gpu_for_20h=1
+  remaining_pid="$pid_4h"
+fi
+
+CUDA_VISIBLE_DEVICES="$gpu_for_20h" bash "$SCRIPT_DIR/phase1_gawf_search_20h.sh" &
+pid_20h=$!
+wait "$remaining_pid"
+wait "$pid_20h"
 
 bash "$SCRIPT_DIR/run_phase1_aggregate.sh"
 

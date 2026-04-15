@@ -356,7 +356,7 @@ def main():
     config = StimulusConfig(
         width=96,
         height=96,
-        duration_seconds=14400 * data_hour_length, 
+        duration_seconds=3600 * data_hour_length, 
         fps=24,
         fg_speeds=[1,0, 2.0, 3.0, 4.0, 6.0, 8.0], #[1.0, 2.0, 4.0],
         bg_char_counts=[1, 2, 4, 8, 12], #[1, 2, 4],
