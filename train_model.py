@@ -114,6 +114,10 @@ class MC_RNN_Dataset(Dataset):
             self.fg_switch = labels["fg_switch"].values.astype(np.int32, copy=False)
         else:
             self.fg_switch = np.zeros(self.data.shape[0], dtype=np.int32)
+        if "bg_switch" in labels.columns:
+            self.bg_switch = labels["bg_switch"].values.astype(np.int32, copy=False)
+        else:
+            self.bg_switch = np.zeros(self.data.shape[0], dtype=np.int32)
         if not predict_all_chars and use_sector:
             self.pre5_mask_global, self.post5_mask_global = compute_fg_transition_masks(self.fg_switch)
         else:

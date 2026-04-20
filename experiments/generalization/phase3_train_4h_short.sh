@@ -8,6 +8,17 @@ H="$SCRIPT_DIR/artifacts/phase2_final_hparams_short.json"
 SK=4h
 DS=4h-float32
 TAG=_short
+SCRATCH_DATA="/scratch/${USER}/stimuli"
+
+if [[ -d "$SCRATCH_DATA" ]]; then
+  DATA_DIR="$SCRATCH_DATA"
+elif [[ -d "$ROOT/stimuli" ]]; then
+  DATA_DIR="$ROOT/stimuli"
+else
+  echo "Data directory not found. Checked: $SCRATCH_DATA and $ROOT/stimuli" >&2
+  exit 1
+fi
+echo "[$SK short] Using data_dir: $DATA_DIR"
 
 RNN_LR=$(python -c "import json; h=json.load(open('$H')); print(h['$SK']['rnn']['lr'])")
 RNN_WD=$(python -c "import json; h=json.load(open('$H')); print(h['$SK']['rnn']['weight_decay'])")
@@ -19,7 +30,7 @@ GAWF_LR=$(python -c "import json; h=json.load(open('$H')); print(h['$SK']['gawf'
 GAWF_WD=$(python -c "import json; h=json.load(open('$H')); print(h['$SK']['gawf']['weight_decay'])")
 
 COMMON=(--data_suffix "$DS" --eval_data_suffix 40h-float32 --cnn_dropout 0.0 --rnn_dropout 0.5
-  --num_epochs 50 --patience 8 --use_acceleration --use_sector_mode)
+  --num_epochs 50 --patience 8 --use_acceleration --use_sector_mode --data_dir "$DATA_DIR")
 
 CUDA_VISIBLE_DEVICES=0 python train_model.py "${COMMON[@]}" \
   --model_types rnn --hidden_sizes 275 \

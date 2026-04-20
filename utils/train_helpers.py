@@ -7,7 +7,7 @@ and experiment metrics summaries (SummaryStatsHelper).
 import argparse
 import logging
 import os
-from typing import Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 import json
 import pickle
 import random
@@ -476,6 +476,33 @@ class SummaryStatsHelper:
         return float(round(x, 2))
 
 
+def _enum_cuda_device_indices() -> Optional[List[int]]:
+    """Return visible GPU index list, or None if nvidia-smi probe failed."""
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if out.returncode != 0:
+            return None
+        indices = []
+        for line in out.stdout.strip().splitlines():
+            s = line.strip()
+            if not s:
+                continue
+            try:
+                indices.append(int(s))
+            except ValueError:
+                continue
+        return indices if indices else None
+    except Exception:
+        return None
+
+
 def _gpu_has_train_rnn_process(gpu_index: int) -> bool:
     """
     Return True if the given GPU has a Python process running train_model (this script).
@@ -505,6 +532,45 @@ def _gpu_has_train_rnn_process(gpu_index: int) -> bool:
         return False
 
 
+def _gpu_has_python_compute_process(gpu_index: int) -> bool:
+    """
+    True if any compute process on this GPU looks like Python (Linux ``/proc/<pid>/cmdline``).
+    Used by analysis scripts to avoid a busy GPU when another card is free.
+    """
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            [
+                "nvidia-smi",
+                "-i",
+                str(gpu_index),
+                "--query-compute-apps=pid",
+                "--format=csv,noheader",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if out.returncode != 0:
+            return False
+        lines = [x.strip() for x in out.stdout.strip().splitlines() if x.strip()]
+        for line in lines:
+            if not line.isdigit():
+                continue
+            pid = int(line)
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    cmd = f.read().decode("utf-8", errors="ignore").replace("\x00", " ")
+                if "python" in cmd.lower():
+                    return True
+            except (FileNotFoundError, PermissionError, ValueError):
+                continue
+        return False
+    except Exception:
+        return False
+
+
 def pick_cuda_device_index() -> Optional[int]:
     """
     Choose a CUDA device index: prefer a GPU that has no Python train_model task.
@@ -512,39 +578,35 @@ def pick_cuda_device_index() -> Optional[int]:
     Call this before any torch.cuda init and set CUDA_VISIBLE_DEVICES to the returned index.
     Returns None if no NVIDIA GPU is visible (or nvidia-smi is unavailable).
     """
-    import subprocess
-    try:
-        out = subprocess.run(
-            ["nvidia-smi", "--query-gpu=index", "--format=csv,noheader"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if out.returncode != 0:
-            return None
-        indices = []
-        for line in out.stdout.strip().splitlines():
-            s = line.strip()
-            if not s:
-                continue
-            try:
-                indices.append(int(s))
-            except ValueError:
-                continue
-        if not indices:
-            return None
-        if len(indices) == 1:
-            idx = indices[0]
-            # Single GPU: either use it or nothing else is available anyway
-            return idx
-        # Multi-GPU: prefer one without train_model running
-        for idx in indices:
-            if not _gpu_has_train_rnn_process(idx):
-                return idx
-        # If all have train_model, just fall back to the first
-        return indices[0]
-    except Exception:
+    indices = _enum_cuda_device_indices()
+    if not indices:
         return None
+    if len(indices) == 1:
+        return indices[0]
+    for idx in indices:
+        if not _gpu_has_train_rnn_process(idx):
+            return idx
+    return indices[0]
+
+
+def pick_cuda_device_index_prefer_no_python() -> Optional[int]:
+    """
+    Prefer a GPU with **no** Python process among its compute apps (see
+    ``_gpu_has_python_compute_process``). If all visible GPUs run Python, fall back to
+    the first index. Single-GPU systems always return that index.
+
+    Call before ``torch`` allocates CUDA tensors; set ``CUDA_VISIBLE_DEVICES`` to the
+    returned index (same pattern as ``train_model.py``).
+    """
+    indices = _enum_cuda_device_indices()
+    if not indices:
+        return None
+    if len(indices) == 1:
+        return indices[0]
+    for idx in indices:
+        if not _gpu_has_python_compute_process(idx):
+            return idx
+    return indices[0]
 
 
 def create_datasets(

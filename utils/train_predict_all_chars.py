@@ -1,10 +1,90 @@
 """
 Encapsulates training and evaluation logic for predict_all_chars mode.
 Avoids scattered if-else in the main training script.
+
+BG-only multiset: loss and metrics use ``labels[:, :, 1:]`` (slots >= 0) only;
+foreground slot 0 is ignored.
 """
-from collections import Counter
+from __future__ import annotations
+
+from typing import Optional
+
 import torch
 import torch.nn.functional as F
+
+
+def _bg_true_chars_1d(labels_1d: torch.Tensor) -> torch.Tensor:
+    """Return valid background class ids for one frame (slot 0 = fg excluded)."""
+    bg = labels_1d[1:]
+    return bg[bg >= 0]
+
+
+def _greedy_match_bg_indices(
+    frame_probs: torch.Tensor,
+    valid_true_chars: torch.Tensor,
+    max_slots: int,
+) -> tuple[torch.Tensor, torch.Tensor] | None:
+    """
+    Greedy slot-to-class assignment (same rule as legacy: pick unused slot with
+    highest prob for each GT class in order).
+
+    Args:
+        frame_probs: (max_slots, num_classes) softmax rows
+        valid_true_chars: (K,) int64 class ids on same device as frame_probs
+        max_slots: S (must match frame_probs.size(0))
+
+    Returns:
+        (idx_buf, tgt_buf) each (K,) long, or None if K == 0.
+    """
+    k = int(valid_true_chars.numel())
+    if k == 0:
+        return None
+    device = frame_probs.device
+    used_mask = torch.zeros(max_slots, dtype=torch.bool, device=device)
+    idx_buf = torch.empty(k, dtype=torch.long, device=device)
+    tgt_buf = torch.empty(k, dtype=torch.long, device=device)
+    for i in range(k):
+        cid = valid_true_chars[i].long()
+        char_p = frame_probs[:, cid].masked_fill(used_mask, -1.0)
+        best = torch.argmax(char_p)
+        idx_buf[i] = best
+        tgt_buf[i] = cid
+        used_mask[best] = True
+    return idx_buf, tgt_buf
+
+
+def bg_multiset_frame_exact(
+    frame_logits: torch.Tensor,
+    labels_1d: torch.Tensor,
+    device: torch.device,
+) -> Optional[bool]:
+    """
+    One-frame exact multiset match for **background** digits only.
+
+    Args:
+        frame_logits: (max_chars, num_classes)
+        labels_1d: (max_chars,) int; slot 0 = fg (ignored for GT)
+        device: unused; kept for call-site compatibility.
+
+    Returns:
+        None if there is no bg digit in GT (frame skipped for bg metrics).
+        True/False if at least one bg digit exists.
+    """
+    _ = device
+    valid_true_chars = _bg_true_chars_1d(labels_1d)
+    if valid_true_chars.numel() == 0:
+        return None
+
+    pred_probs = F.softmax(frame_logits, dim=-1)
+    max_slots = int(frame_logits.shape[0])
+    pair = _greedy_match_bg_indices(pred_probs, valid_true_chars, max_slots)
+    if pair is None:
+        return None
+    idx_buf, tgt_buf = pair
+    pred_digits = torch.argmax(frame_logits[idx_buf], dim=-1)
+    gt_sorted = torch.sort(tgt_buf)[0]
+    pr_sorted = torch.sort(pred_digits)[0]
+    return bool(torch.equal(gt_sorted, pr_sorted))
 
 
 def loss_char_all_chars(out_char, labels, criterion_char, max_chars, device):
@@ -13,45 +93,35 @@ def loss_char_all_chars(out_char, labels, criterion_char, max_chars, device):
     out_char: (B, T, max_chars, num_classes), labels: (B, T, max_chars).
     Returns: loss_char (scalar tensor), loss_pos is always 0 in this mode.
     """
-    batch_size, frame_num, max_chars_pred, num_classes = out_char.shape
+    _ = max_chars
+    batch_size, frame_num, max_chars_pred, _ = out_char.shape
     pred_probs = F.softmax(out_char, dim=-1)
-    total_loss = 0.0
+    total_loss_sum: torch.Tensor | None = None
     total_valid_chars = 0
 
     for b in range(batch_size):
         for t in range(frame_num):
-            true_chars = labels[b, t]
-            valid_mask = true_chars >= 0
-            valid_true_chars = true_chars[valid_mask]
-            if len(valid_true_chars) == 0:
+            valid_true_chars = _bg_true_chars_1d(labels[b, t])
+            if valid_true_chars.numel() == 0:
                 continue
 
             frame_probs = pred_probs[b, t]
             frame_logits = out_char[b, t]
-            used_mask = torch.zeros(max_chars, dtype=torch.bool, device=device)
-            matched_pred_indices = []
-            matched_true_chars = []
-
-            for true_char_id in valid_true_chars:
-                char_probs = frame_probs[:, true_char_id].clone()
-                char_probs = char_probs.masked_fill(used_mask, -1.0)
-                best_pred_idx = torch.argmax(char_probs).item()
-                matched_pred_indices.append(best_pred_idx)
-                matched_true_chars.append(true_char_id)
-                used_mask[best_pred_idx] = True
-
-            if len(matched_pred_indices) > 0:
-                matched_pred_indices_tensor = torch.tensor(matched_pred_indices, device=device)
-                matched_true_chars_tensor = torch.tensor(matched_true_chars, dtype=torch.long, device=device)
-                matched_logits = frame_logits[matched_pred_indices_tensor]
-                batch_loss = criterion_char(matched_logits, matched_true_chars_tensor)
-                total_loss += batch_loss
-                total_valid_chars += len(matched_pred_indices)
+            pair = _greedy_match_bg_indices(
+                frame_probs, valid_true_chars, max_chars_pred
+            )
+            if pair is None:
+                continue
+            idx_buf, tgt_buf = pair
+            matched_logits = frame_logits[idx_buf]
+            batch_loss = criterion_char(matched_logits, tgt_buf)
+            total_loss_sum = batch_loss if total_loss_sum is None else total_loss_sum + batch_loss
+            total_valid_chars += int(idx_buf.numel())
 
     if total_valid_chars == 0:
         loss_char = torch.tensor(0.0, device=device)
     else:
-        loss_char = total_loss / total_valid_chars
+        loss_char = total_loss_sum / float(total_valid_chars)  # type: ignore[operator]
     loss_pos = torch.tensor(0.0, device=device)
     return loss_char, loss_pos
 
@@ -68,28 +138,11 @@ def batch_metrics_all_chars(out_char, labels, max_chars, device):
 
     for b in range(batch_size):
         for t in range(frame_num):
-            true_chars = labels[b, t]
-            valid_mask = true_chars >= 0
-            valid_true_chars = true_chars[valid_mask]
-            if len(valid_true_chars) == 0:
+            ex = bg_multiset_frame_exact(out_char[b, t], labels[b, t], device)
+            if ex is None:
                 continue
             batch_frames_eval += 1
-
-            frame_probs = pred_probs[b, t]
-            frame_logits = out_char[b, t]
-            used_mask = torch.zeros(max_chars, dtype=torch.bool, device=device)
-            matched_pred_chars = []
-
-            for true_char_id in valid_true_chars:
-                char_probs = frame_probs[:, int(true_char_id)].clone()
-                char_probs = char_probs.masked_fill(used_mask, -1.0)
-                best_pred_idx = torch.argmax(char_probs).item()
-                pred_char = torch.argmax(frame_logits[best_pred_idx]).item()
-                matched_pred_chars.append(pred_char)
-                used_mask[best_pred_idx] = True
-
-            gt_chars = [int(c.item()) if isinstance(c, torch.Tensor) else int(c) for c in valid_true_chars]
-            if Counter(matched_pred_chars) == Counter(gt_chars):
+            if ex:
                 batch_exact += 1
 
     return batch_exact, batch_frames_eval
@@ -107,28 +160,11 @@ def eval_accumulate_batch_all_chars(out_char, labels, device):
 
     for b in range(batch_size):
         for t in range(frame_num):
-            true_chars = labels[b, t]
-            valid_mask = true_chars >= 0
-            valid_true_chars = true_chars[valid_mask]
-            if len(valid_true_chars) == 0:
+            ex = bg_multiset_frame_exact(out_char[b, t], labels[b, t], device)
+            if ex is None:
                 continue
             batch_frames_eval += 1
-
-            frame_probs = pred_probs[b, t]
-            frame_logits = out_char[b, t]
-            used_mask = torch.zeros(frame_logits.shape[0], dtype=torch.bool, device=device)
-            matched_pred_chars = []
-
-            for true_char_id in valid_true_chars:
-                char_probs = frame_probs[:, int(true_char_id)].clone()
-                char_probs = char_probs.masked_fill(used_mask, -1.0)
-                best_pred_idx = torch.argmax(char_probs).item()
-                pred_char = torch.argmax(frame_logits[best_pred_idx]).item()
-                matched_pred_chars.append(pred_char)
-                used_mask[best_pred_idx] = True
-
-            gt_chars = [int(c.item()) for c in valid_true_chars]
-            if Counter(matched_pred_chars) == Counter(gt_chars):
+            if ex:
                 batch_exact += 1
 
     return batch_exact, batch_frames_eval

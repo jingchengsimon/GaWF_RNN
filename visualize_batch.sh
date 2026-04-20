@@ -26,13 +26,17 @@ PROJECT_ROOT="$SCRIPT_DIR"
 cd "$PROJECT_ROOT" || exit 1
 
 # 解析命令行参数
-# 用法: $0 <RESULT_SUFFIX> [epoch_start] [epoch_end]
-# 例如: $0 sector_40h           # 绘制全部 epoch
-#       $0 sector_40h 0 100     # 只绘制 epoch 0~99（共 100 个）
+# 用法:
+#   $0 <RESULT_SUFFIX> [epoch_start] [epoch_end] [--compare] [--models m1 m2 ...]
+# 例如:
+#   $0 sector_40h_adamw_0409
+#   $0 sector_40h_adamw_0409 0 100
+#   $0 sector_40h_adamw_0409 --compare --models gawf rnn
 if [ $# -eq 0 ]; then
-    echo "用法: $0 <RESULT_SUFFIX> [epoch_start] [epoch_end]"
-    echo "示例: $0 hparam_search_2           # 绘制全部 epoch"
-    echo "      $0 sector_40h 0 100        # 只绘制 epoch 0~99"
+    echo "用法: $0 <RESULT_SUFFIX> [epoch_start] [epoch_end] [--compare] [--models m1 m2 ...]"
+    echo "示例: $0 hparam_search_2"
+    echo "      $0 sector_40h_adamw_0409 0 100"
+    echo "      $0 sector_40h_adamw_0409 --compare --models gawf rnn"
     echo ""
     echo "可用的结果目录:"
     ls -d results/train_data/*/ 2>/dev/null | sed 's|results/train_data/||' | sed 's|/$||'
@@ -40,8 +44,45 @@ if [ $# -eq 0 ]; then
 fi
 
 RESULT_SUFFIX="$1"
-EPOCH_START="${2:-}"
-EPOCH_END="${3:-}"
+shift
+EPOCH_START=""
+EPOCH_END=""
+DO_COMPARE=0
+COMPARE_MODELS=("gawf" "rnn")
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --compare)
+            DO_COMPARE=1
+            shift
+            ;;
+        --models)
+            shift
+            COMPARE_MODELS=()
+            while [ $# -gt 0 ] && [[ "$1" != --* ]]; do
+                COMPARE_MODELS+=("$1")
+                shift
+            done
+            if [ ${#COMPARE_MODELS[@]} -eq 0 ]; then
+                echo "错误：--models 后至少需要一个模型名"
+                exit 1
+            fi
+            ;;
+        *)
+            # 兼容旧参数风格：前两个非选项参数作为 epoch_start / epoch_end
+            if [ -z "$EPOCH_START" ]; then
+                EPOCH_START="$1"
+            elif [ -z "$EPOCH_END" ]; then
+                EPOCH_END="$1"
+            else
+                echo "错误：无法识别的参数 $1"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
 RESULTS_DIR="results/train_data/${RESULT_SUFFIX}"
 OUTPUT_DIR="results/train_figs/${RESULT_SUFFIX}"
 
@@ -66,6 +107,12 @@ if [ -n "$EPOCH_START" ] && [ -n "$EPOCH_END" ]; then
     echo "绘制范围: epoch $EPOCH_START ~ $(( EPOCH_END - 1 )) (不含 $EPOCH_END)"
 else
     echo "绘制范围: 全部 epoch"
+fi
+if [ "$DO_COMPARE" -eq 1 ]; then
+    echo "Compare: 开启"
+    echo "Compare models: ${COMPARE_MODELS[*]}"
+else
+    echo "Compare: 关闭"
 fi
 echo "============================================================"
 echo ""
@@ -114,6 +161,27 @@ for pkl_file in "${PKL_FILES[@]}"; do
     fi
     echo ""
 done
+
+# 可选：额外生成 compare 图（不会替代单模型图）
+if [ "$DO_COMPARE" -eq 1 ]; then
+    echo "============================================================"
+    echo "生成 compare 图"
+    echo "============================================================"
+    compare_cmd=(python utils_viz/model_train_compare_result.py --result_suffix "$RESULT_SUFFIX" --models "${COMPARE_MODELS[@]}")
+    if [ -n "$EPOCH_START" ]; then
+        compare_cmd+=(--epoch_start "$EPOCH_START")
+    fi
+    if [ -n "$EPOCH_END" ]; then
+        compare_cmd+=(--epoch_end "$EPOCH_END")
+    fi
+    "${compare_cmd[@]}"
+    if [ $? -eq 0 ]; then
+        echo "Compare 图生成成功"
+    else
+        echo "Compare 图生成失败"
+    fi
+    echo ""
+fi
 
 echo "============================================================"
 echo "批量可视化完成"

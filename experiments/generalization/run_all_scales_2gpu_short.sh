@@ -15,7 +15,7 @@ cd "$ROOT"
 
 echo "=== Phase 1 short: GAWF grid (4h/10h/20h), dynamic 20h on first free GPU ==="
 CUDA_VISIBLE_DEVICES=0 bash "$SCRIPT_DIR/phase1_gawf_search_4h_short.sh" &
-pid_4h=$!
+pid_4h=$!f04
 CUDA_VISIBLE_DEVICES=1 bash "$SCRIPT_DIR/phase1_gawf_search_10h_short.sh" &
 pid_10h=$!
 
