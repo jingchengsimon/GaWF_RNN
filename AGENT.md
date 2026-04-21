@@ -39,7 +39,9 @@ labels encode foreground digit identity and 2-D position (sector or coordinate).
 │   ├── train_data/<suffix>/ # Checkpoints (.pth) + metrics (.pkl, .json)
 │   ├── anal_data/<module>/  # Analysis outputs (.npy, .npz, .json)
 │   └── anal_figs/<module>/  # Figure outputs (.png)
-├── train_model.py     # CLI training entry-point
+├── train_model.py           # CLI training entry-point
+├── plot_generalization.py   # Generalization figures (gap + train/val acc vs scale)
+├── experiments/generalization/  # Shell launchers + collect_results.py (see §8)
 ├── hparam_search.sh         # Hyperparameter sweep launcher (zsh)
 └── visualize_batch.sh       # Batch visualisation launcher (zsh)
 ```
@@ -150,6 +152,9 @@ if __name__ == "__main__":
 | `--agg` | str `space\|feature` | Input axis aggregation mode |
 | `--cnn_dropout` | float+ | `train_model.py` only: CNN encoder `dropout2d` *p*; repeat for grid (default `[0]`) |
 | `--rnn_dropout` | float | `train_model.py` only: middle-path dropout *p* after ReLU (RNN/GaWF/FFN); single value (default `0.5`) |
+| `--data_suffix` | str | Suffix for **train** (and default val): `stimulus_reg-train-<suffix>.npy` / `stimulus_reg-validation-<suffix>` |
+| `--eval_data_suffix` | str | Suffix for **validation only**; empty → same as `--data_suffix` (use for train/val scale mismatch, e.g. 4h train + 40h val) |
+| `--patience` | int | Early stopping on fair **`val_acc_char`** after each epoch; **`0` disables**; best weights restored before save (default `15`) |
 
 **Do not rename existing analysis/visualisation arguments** when extending those scripts. For `train_model.py` hyperparameter search, use **`--cnn_dropout`** (grid) and **`--rnn_dropout`** (single), not legacy `--dropout` / `--dropouts`.
 
@@ -242,7 +247,49 @@ When plotting N components + sum + full (N+2 panels), use `n_cols=3`,
 
 ---
 
-## 8. Paths & Environment
+## 8. Generalization experiment launchers (`experiments/generalization/`)
+
+Orchestration for **train-scale vs fixed 40h validation** studies. Training always via **`train_model.py`**. Helper **`experiments/generalization/collect_results.py`** (stdlib only) aggregates `*_metrics.json`; figures via **`plot_generalization.py`** at repo root.
+
+### 8.1 Training flags used by these launchers
+
+- **`--eval_data_suffix`** — e.g. `40h-float32` so validation uses `stimulus_reg-validation-40h-float32.*` while **`--data_suffix`** sets train hours (`4h-float32`, …).
+- **`--patience`** — early stop on fair val char accuracy; **`0`** = run full **`--num_epochs`**.
+- **Multi-job logs** — tqdm / logger lines are prefixed with `[result_suffix|eNNN|model_type]`.
+- **GPU** — if **`CUDA_VISIBLE_DEVICES`** is already set, `train_model.py` does **not** override it (supports parallel launchers).
+
+### 8.2 Full pipeline (`run_all_scales_2gpu.sh`)
+
+1. **Phase 1** — Per scale (4h/10h/20h/40h train): GAWF-only LR×WD grid → `results/train_data/gen_phase1_gawf_<scale>/`; val on 40h.
+2. **`run_phase1_aggregate.sh`** — `collect_results.py phase1` → `experiments/generalization/artifacts/phase1_best.json`.
+3. **Phase 2** — `phase2_lr_check_*.sh` + `collect_results.py phase2` → **`artifacts/phase2_final_hparams.json`**.
+4. **Phase 3** — `phase3_train_*.sh` (four models × scale) + `collect_results.py phase3` → **`artifacts/phase3_summary_<scale>.csv`**.
+5. **`plot_generalization.py`** — reads four `phase3_summary_*.csv`; writes **`results/anal_figs/generalization/overfit_gap_vs_scale.*`**, **`train_acc_vs_scale.*`**, **`val_acc_vs_scale.*`**.
+
+### 8.3 Short pipeline (`run_all_scales_2gpu_short.sh`)
+
+- **Phase 1** — Only **4h, 10h, 20h**; reduced grid (LR `1e-4 3e-4 5e-4`, WD `1e-4 1e-3`); **`gen_phase1_short_gawf_<scale>`**; epoch/patience defaults are set in `*_short.sh` (currently **`--num_epochs 50 --patience 8`**).
+- **`run_phase1_aggregate_short.sh`** — `phase1_short` (three dirs + **`--preset_40h_dir`** default `results/train_data/sector_40h_adamw`) → **`phase1_best_short.json`**; **`emit_hparams_shared`** → **`phase2_final_hparams_short.json`** (all four models **share** GAWF-optimal lr/wd per scale).
+- **No Phase 2.**
+- **Phase 3** — `phase3_train_{4h,10h,20h}_short.sh` + `phase3 --out_tag _short`; **40h** rows from **`import_phase3_40h_short.sh`** (`phase3_import`, no retrain).
+- **`plot_generalization.py --csv_tag _short`** → `*_short` figure stems.
+
+### 8.4 `collect_results.py` subcommands
+
+| Command | Output |
+|---------|--------|
+| `phase1` | `phase1_best.json` (four Phase-1 dirs) |
+| `phase1_short` | `phase1_best_short.json` |
+| `emit_hparams_shared` | `phase2_final_hparams_short.json` |
+| `phase2` | updates `phase2_final_hparams.json` |
+| `phase3` | `phase3_summary_<scale>[out_tag].csv` |
+| `phase3_import` | one scale CSV from a single metrics directory (preset 40h) |
+
+Legacy metrics without `train_acc_at_best_val` / `val_acc_at_best`: CSV uses `best_train_acc_char` / `best_val_acc_char` fallbacks.
+
+---
+
+## 9. Paths & Environment
 
 ```
 # Data resolution order (train_helpers.PathHelper.get_base_path):
@@ -262,11 +309,11 @@ results/anal_figs/<module>/
 ```
 
 Conda env: `aim3_rnn`  (activate before running any script)
-GPU allocation: `CUDA_VISIBLE_DEVICES` set by `pick_cuda_device_index()` at import time.
+GPU allocation: if **`CUDA_VISIBLE_DEVICES`** is unset, `train_model.py` may set it via `pick_cuda_device_index()`; **preset `CUDA_VISIBLE_DEVICES` is preserved** (parallel launchers).
 
 ---
 
-## 9. Forbidden Patterns
+## 10. Forbidden Patterns
 
 - ❌ Do not import from `utils_viz/` inside `utils/` or `utils_anal/`.
 - ❌ Do not import from `utils_anal/` inside `utils/`.
@@ -280,7 +327,7 @@ GPU allocation: `CUDA_VISIBLE_DEVICES` set by `pick_cuda_device_index()` at impo
 
 ---
 
-## 10. Quick Checklist for New Scripts
+## 11. Quick Checklist for New Scripts
 
 Before submitting any new `utils_anal/` or `utils_viz/` script, verify:
 

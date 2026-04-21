@@ -1,0 +1,30 @@
+{
+  "4h": {
+    "scale": "4h",
+    "lr": 0.001,
+    "weight_decay": 0.001,
+    "val_acc_at_best": 70.80405130982399,
+    "metrics_path": "results/train_data/gen_phase1_gawf_4h/gawf_sector_acc_h256_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json"
+  },
+  "10h": {
+    "scale": "10h",
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "val_acc_at_best": 78.57862263917923,
+    "metrics_path": "results/train_data/gen_phase1_gawf_10h/gawf_sector_acc_h256_lr0.001_wd0.0001_cdo0.0_rdo0.5_metrics.json"
+  },
+  "20h": {
+    "scale": "20h",
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "val_acc_at_best": 85.01020222902298,
+    "metrics_path": "results/train_data/gen_phase1_gawf_20h/gawf_sector_acc_h256_lr0.001_wd0.0001_cdo0.0_rdo0.5_metrics.json"
+  },
+  "40h": {
+    "scale": "40h",
+    "lr": 0.0005,
+    "weight_decay": 0.0001,
+    "val_acc_at_best": 88.91034871339798,
+    "metrics_path": "/G/MIMOlab/Codes/aim3_RNN/results/train_data/sector_40h_adamw_0409/gawf_sector_acc_h256_lr0.0005_wd0.0001_cdo0.0_rdo0.5_metrics.json"
+  }
+}

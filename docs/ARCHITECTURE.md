@@ -7,6 +7,8 @@ aim3_RNN/
 │
 ├── train_model.py     ← CLI entry-point: parse args, load data, loop over hparam combos
 │                               Owns MC_RNN_Dataset and network_train()
+├── plot_generalization.py ← Generalization CSV → gap / train / val acc vs scale (repo root)
+├── experiments/generalization/ ← Shell launchers + collect_results.py (orchestration only)
 │
 ├── utils/                   ← Training pipeline (imported by train_model only)
 │   ├── train_rnn_core.py    ← Model base classes and standard RNN variants
@@ -193,4 +195,18 @@ add_pos_to_result_dict(base, ...) -> dict
 `train_acc_char`, `val_acc_char`, `train_metric_pos`, `val_metric_pos`,
 `train_loss_pos`, `val_loss_pos`, `train_loss_char`, `val_loss_char`,
 `glob_*`, `fg_switch_pre5_*`, `fg_switch_post5_*` (sector single-char only, when TSV has `fg_switch`),
-`stop_flag`, `use_tqdm`, `logger`.
+`stop_flag`, `use_tqdm`, `logger`, `run_label` (optional prefix for tqdm/log lines in multi-job runs).
+
+---
+
+## 6. Generalization experiment orchestration
+
+**Location:** `experiments/generalization/` (shell + **`collect_results.py`**, stdlib only).
+
+**Role:** Launch **`train_model.py`** for train-scale vs **fixed 40h validation** protocols; aggregate `*_metrics.json` into **`experiments/generalization/artifacts/`** (`phase1_best*.json`, `phase2_final_hparams*.json`, `phase3_summary_*.csv`); plot via **`plot_generalization.py`** → **`results/anal_figs/generalization/`**.
+
+**Dependency rule:** No imports from `utils/` inside `collect_results.py` beyond what a normal script would use; training logic stays in `utils/` + `train_model.py`.
+
+**Pipelines:** **Full** (`run_all_scales_2gpu.sh`: Phase 1 → aggregate → Phase 2 LR sanity → Phase 3) vs **short** (`run_all_scales_2gpu_short.sh`: smaller Phase 1 grid, no Phase 2, 40h preset import, `_short` artifacts). See **`AGENT.md` §8** and **`workflow.mdc`** (Generalization experiment pipeline).
+
+**Doc maintenance:** Human-requested edits to `.cursor/rules` should update **`AGENT.md`** and this file in the same change unless scoped otherwise (`workflow.mdc` **Doc alignment**).

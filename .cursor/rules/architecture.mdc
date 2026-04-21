@@ -110,6 +110,10 @@ results/
 `<module>` matches the script name without extension (e.g. `gate_avg_allsector`,
 `cnn_channel`, `hidden_activation`).
 
+**Generalization runs** also use `results/train_data/gen_phase1_gawf_*`, `gen_phase1_short_*`, `gen_phase3_*`, etc.; aggregated CSV/JSON lives under **`experiments/generalization/artifacts/`**; figures under **`results/anal_figs/generalization/`** (see `workflow.mdc` § Generalization experiment pipeline).
+
 ## Extended Reference
 Before making changes to utils_anal/ or utils_viz/, read `docs/ARCHITECTURE.md`
 for the full module responsibility table and data flow diagram.
+
+**Human-requested rule changes:** If the user asks to edit this file (or any `.cursor/rules/*.mdc`), update **`AGENT.md`** and **`docs/ARCHITECTURE.md`** in the same change unless they explicitly exclude them (see `workflow.mdc` **Doc alignment**).

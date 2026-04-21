@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
+# Override NUM_EPOCHS / CSV_TAG via environment (see phase3_short_env.inc.sh).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT"
+# shellcheck source=phase3_short_env.inc.sh
+source "$SCRIPT_DIR/phase3_short_env.inc.sh"
 H="$SCRIPT_DIR/artifacts/phase2_final_hparams_short.json"
 SK=10h
 DS=10h-float32
-TAG=_short
 SCRATCH_DATA="/scratch/${USER}/stimuli"
 
 if [[ -d "$SCRATCH_DATA" ]]; then
@@ -29,31 +31,30 @@ GAWF_LR=$(python -c "import json; h=json.load(open('$H')); print(h['$SK']['gawf'
 GAWF_WD=$(python -c "import json; h=json.load(open('$H')); print(h['$SK']['gawf']['weight_decay'])")
 
 COMMON=(--data_suffix "$DS" --eval_data_suffix 40h-float32 --cnn_dropout 0.0 --rnn_dropout 0.5
-  --num_epochs 50 --patience 8 --use_acceleration --use_sector_mode --data_dir "$DATA_DIR")
+  --num_epochs "$NUM_EPOCHS" --patience 8 --use_acceleration --use_sector_mode --data_dir "$DATA_DIR")
 
 CUDA_VISIBLE_DEVICES=0 python train_model.py "${COMMON[@]}" \
   --model_types rnn --hidden_sizes 275 \
   --lrs "$RNN_LR" --wds "$RNN_WD" \
-  --result_suffix "gen_phase3_short_${SK}_rnn" &
+  --result_suffix "gen_phase3_short_${SK}_rnn_ep${NUM_EPOCHS}" &
 CUDA_VISIBLE_DEVICES=1 python train_model.py "${COMMON[@]}" \
   --model_types lstm --hidden_sizes 80 \
   --lrs "$LSTM_LR" --wds "$LSTM_WD" \
-  --result_suffix "gen_phase3_short_${SK}_lstm" &
+  --result_suffix "gen_phase3_short_${SK}_lstm_ep${NUM_EPOCHS}" &
 wait
 
 CUDA_VISIBLE_DEVICES=0 python train_model.py "${COMMON[@]}" \
   --model_types gru --hidden_sizes 105 \
   --lrs "$GRU_LR" --wds "$GRU_WD" \
-  --result_suffix "gen_phase3_short_${SK}_gru" &
+  --result_suffix "gen_phase3_short_${SK}_gru_ep${NUM_EPOCHS}" &
 CUDA_VISIBLE_DEVICES=1 python train_model.py "${COMMON[@]}" \
   --model_types gawf --hidden_sizes 256 \
-  --nofb --fb_start_epoch 50 \
   --lrs "$GAWF_LR" --wds "$GAWF_WD" \
-  --result_suffix "gen_phase3_short_${SK}_gawf" &
+  --result_suffix "gen_phase3_short_${SK}_gawf_ep${NUM_EPOCHS}" &
 wait
 
 python experiments/generalization/collect_results.py phase3 --scale "$SK" --out_tag "$TAG" \
-  "results/train_data/gen_phase3_short_${SK}_rnn" \
-  "results/train_data/gen_phase3_short_${SK}_lstm" \
-  "results/train_data/gen_phase3_short_${SK}_gru" \
-  "results/train_data/gen_phase3_short_${SK}_gawf"
+  "results/train_data/gen_phase3_short_${SK}_rnn_ep${NUM_EPOCHS}" \
+  "results/train_data/gen_phase3_short_${SK}_lstm_ep${NUM_EPOCHS}" \
+  "results/train_data/gen_phase3_short_${SK}_gru_ep${NUM_EPOCHS}" \
+  "results/train_data/gen_phase3_short_${SK}_gawf_ep${NUM_EPOCHS}"

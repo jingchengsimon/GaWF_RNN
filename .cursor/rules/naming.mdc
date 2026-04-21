@@ -19,6 +19,12 @@ alwaysApply: true
 | Analysis data | `results/anal_data/<module>/<descriptor>_<tag>.npy` | `avg_outer_ih_allcomp_sector3_space.npy` |
 | Analysis figures | `results/anal_figs/<module>/<mode><idx>_<agg>_<descriptor>.png` | `sector3_space_avg_gate_allcomp.png` |
 | Metadata JSON | `results/anal_data/<module>/<descriptor>_meta_<tag>.json` | `avg_gate_meta_allcomp_sector3_space.json` |
+| Generalization launchers | `experiments/generalization/<phase>_<...>.sh` | `phase1_gawf_search_4h_short.sh`, `run_all_scales_2gpu_short.sh` |
+| Generalization aggregation | `experiments/generalization/collect_results.py` | Subcommands: `phase1`, `phase1_short`, `emit_hparams_shared`, `phase2`, `phase3`, `phase3_import` |
+| Generalization tables | `experiments/generalization/artifacts/phase3_summary_<scale>.csv` | Optional **`_short`**: `phase3_summary_4h_short.csv` |
+| Generalization hparams JSON | `experiments/generalization/artifacts/phase1_best.json`, `phase2_final_hparams.json` | Short variants: `*_short.json` |
+| Generalization figures | `results/anal_figs/generalization/<metric>_vs_scale[ _short].{pdf,png}` | `overfit_gap_vs_scale`, `train_acc_vs_scale`, `val_acc_vs_scale` |
+| Generalization plot entry | `plot_generalization.py` (repo root) | Flags: `--artifact_dir`, `--csv_tag`, `--out_dir` |
 
 ## Training engine functions (`utils/train_rnn_engine.py`)
 
@@ -80,3 +86,5 @@ For `train_model.py`, CNN dropout sweep is **`--cnn_dropout`** (one or more floa
 
 ## Extended Reference  
 For the complete abbreviation table, read `docs/CONVENTIONS.md`.
+
+**Human-requested rule changes:** Editing this file (or other `.mdc` rules) should normally accompany updates to **`AGENT.md`** and **`docs/ARCHITECTURE.md`** in the same patch unless the user opts out—see `workflow.mdc` **Doc alignment**.

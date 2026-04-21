@@ -7,7 +7,9 @@ Produces (per run):
   - Train char acc vs scale
   - Val char acc vs scale
 
-Use --csv_tag _short for the short pipeline (phase3_summary_{scale}_short.csv).
+Use --csv_tag for the CSV suffix produced by collect_results.py (e.g. _short_ep50
+for phase3_summary_{scale}_short_ep50.csv). Short pipeline default base is _short;
+epoch is appended in the bash scripts as _ep${NUM_EPOCHS}.
 Full pipeline: default csv_tag "" -> phase3_summary_{scale}.csv
 """
 from __future__ import annotations
@@ -99,7 +101,7 @@ def main() -> None:
         "--csv_tag",
         type=str,
         default="",
-        help='CSV suffix e.g. "_short" -> phase3_summary_4h_short.csv (default: "")',
+        help='CSV suffix e.g. "_short_ep50" -> phase3_summary_4h_short_ep50.csv (default: "")',
     )
     ap.add_argument(
         "--out_dir",

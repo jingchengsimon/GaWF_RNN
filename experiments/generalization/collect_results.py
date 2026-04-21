@@ -310,7 +310,7 @@ def main() -> None:
         "--out_tag",
         type=str,
         default="",
-        help="Suffix before .csv (e.g. _short -> phase3_summary_4h_short.csv)",
+        help="Suffix before .csv (e.g. _short_ep50 -> phase3_summary_4h_short_ep50.csv)",
     )
     p3.add_argument(
         "metrics_dirs",
@@ -368,7 +368,7 @@ def main() -> None:
         "--out_tag",
         type=str,
         default="_short",
-        help="default _short for short pipeline",
+        help="CSV suffix (e.g. _short_ep50); must match phase3_train --out_tag / plot --csv_tag",
     )
     pi.set_defaults(func=cmd_phase3_import_dir)
 
