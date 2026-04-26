@@ -7,7 +7,6 @@ aim3_RNN/
 │
 ├── train_model.py     ← CLI entry-point: parse args, load data, loop over hparam combos
 │                               Owns MC_RNN_Dataset and network_train()
-├── plot_generalization.py ← Generalization CSV → gap / train / val acc vs scale (repo root)
 ├── experiments/generalization/ ← Shell launchers + collect_results.py (orchestration only)
 │
 ├── utils/                   ← Training pipeline (imported by train_model only)
@@ -45,6 +44,7 @@ aim3_RNN/
 │   ├── dimred_reducer.py    ← Shared dimensionality reduction wrapper
 │   ├── pop_act_umap.py      ← UMAP population activity plots
 │   ├── sample_fg+bg_frames_sample.py ← Stimulus frame examples
+│   ├── plot_generalization.py ← Phase-3 CSV → char/sector gap + train/val acc vs scale (PNG; optional PDF)
 │   └── paper_figs/          ← Publication figures (fig1.py, metrics_best_acc_bars.py)
 │
 └── source/                  ← Stimulus generation (independent, rarely modified)
@@ -203,10 +203,10 @@ add_pos_to_result_dict(base, ...) -> dict
 
 **Location:** `experiments/generalization/` (shell + **`collect_results.py`**, stdlib only).
 
-**Role:** Launch **`train_model.py`** for train-scale vs **fixed 40h validation** protocols; aggregate `*_metrics.json` into **`experiments/generalization/artifacts/`** (`phase1_best*.json`, `phase2_final_hparams*.json`, `phase3_summary_*.csv`); plot via **`plot_generalization.py`** → **`results/anal_figs/generalization/`**.
+**Role:** Launch **`train_model.py`** for train-scale vs **fixed 40h validation** protocols; aggregate `*_metrics.json` into **`experiments/generalization/artifacts/`** (`phase1_best*.json`, `phase2_final_hparams*.json`, `phase3_summary_*.csv` with char and sector columns); plot via **`utils_viz/plot_generalization.py`** → **`results/anal_figs/generalization/`** (char/sector 1x2 panels; default PNG; **`--save-pdf`** for PDF).
 
 **Dependency rule:** No imports from `utils/` inside `collect_results.py` beyond what a normal script would use; training logic stays in `utils/` + `train_model.py`.
 
-**Pipelines:** **Full** (`run_all_scales_2gpu.sh`: Phase 1 → aggregate → Phase 2 LR sanity → Phase 3) vs **short** (`run_all_scales_2gpu_short.sh`: smaller Phase 1 grid, no Phase 2, 40h preset import, `_short` artifacts). See **`AGENT.md` §8** and **`workflow.mdc`** (Generalization experiment pipeline).
+**Pipelines:** **`run_all_scales_2gpu.sh [short|full]`** (default **short**): **short** = smaller Phase 1 (four scales, including 40h), no Phase 2, inlined `collect_results` + `emit_hparams_shared`, `phase2_final_hparams_short.json`, CSV tag **`_short_ep${NUM_EPOCHS}`**; **full** = larger Phase 1 → inlined **`collect_results.py phase1`** → **`phase2_lr_check.sh`** per scale → `phase2_final_hparams.json` → Phase 3. Per-phase training launchers: **`experiments/generalization/phase1_gawf_search.sh`**, **`phase2_lr_check.sh`**, **`phase3_train_scale.sh`**. Ad-hoc aggregate / local-Phase3-only tools live under **`experiments/archive/`** (not used by the default `run_all` flow). See **`AGENT.md` section 8** and **`workflow.mdc`**.
 
 **Doc maintenance:** Human-requested edits to `.cursor/rules` should update **`AGENT.md`** and this file in the same change unless scoped otherwise (`workflow.mdc` **Doc alignment**).

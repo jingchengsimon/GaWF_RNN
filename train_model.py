@@ -333,10 +333,26 @@ def network_train(
         train_acc_at_best = float("nan")
         val_acc_at_best = float("nan")
         overfit_gap = float("nan")
+        train_acc_sector_at_best = float("nan")
+        val_acc_sector_at_best = float("nan")
+        overfit_gap_sector = float("nan")
+        best_epoch_sector_idx = -1
     else:
         train_acc_at_best = float(components["train_acc_char"][best_epoch_idx])
         val_acc_at_best = float(components["val_acc_char"][best_epoch_idx])
         overfit_gap = train_acc_at_best - val_acc_at_best
+        train_pos_arr = components["train_metric_pos"][:actual_epochs]
+        val_pos_arr = components["val_metric_pos"][:actual_epochs]
+        if len(val_pos_arr) and not np.all(np.isnan(val_pos_arr)):
+            best_epoch_sector_idx = int(np.nanargmax(val_pos_arr))
+            train_acc_sector_at_best = float(train_pos_arr[best_epoch_sector_idx])
+            val_acc_sector_at_best = float(val_pos_arr[best_epoch_sector_idx])
+            overfit_gap_sector = train_acc_sector_at_best - val_acc_sector_at_best
+        else:
+            train_acc_sector_at_best = float("nan")
+            val_acc_sector_at_best = float("nan")
+            overfit_gap_sector = float("nan")
+            best_epoch_sector_idx = -1
     if logger is not None and actual_epochs > 0:
         logger.info(
             "Training summary: early_stop_epoch=%s, best_val_epoch=%s, "
@@ -370,6 +386,12 @@ def network_train(
         "val_acc_at_best": val_acc_at_best,
         "overfit_gap": overfit_gap,
         "best_epoch_val_acc_1based": best_epoch_idx + 1 if actual_epochs > 0 else 0,
+        "train_acc_sector_at_best_val_sector": train_acc_sector_at_best,
+        "val_acc_sector_at_best": val_acc_sector_at_best,
+        "overfit_gap_sector": overfit_gap_sector,
+        "best_epoch_val_acc_sector_1based": (
+            best_epoch_sector_idx + 1 if best_epoch_sector_idx >= 0 else 0
+        ),
         "early_stop_epoch_1based": actual_epochs,
         "stopped_by_patience": stopped_by_patience,
     }

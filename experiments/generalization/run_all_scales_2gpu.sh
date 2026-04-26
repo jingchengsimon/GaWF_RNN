@@ -1,54 +1,96 @@
 #!/usr/bin/env bash
 #
-# End-to-end generalization pipeline (all scales, all models): no manual LR/WD decisions.
-# Phase 1 GAWF searches run with feedback enabled from epoch 1 (num_epochs=100).
-# Requires 2× GPUs. Phase 1 and Phase 2 use both cards in parallel where safe; Phase 3
-# runs one scale at a time (each scale already uses both GPUs for four models).
+# End-to-end generalization: Phase 1 → (Phase 2 only if full) → Phase 3 → plot.
+# First argument selects pipeline: **short** (default) or **full**.
+#
+# - **short** — smaller Phase 1 grid + 4 scales (4/10/20/40h GAWF); no Phase 2; uses
+#   phase2_final_hparams_short.json; short Phase3/CSV tag is ${CSV_TAG}_ep${NUM_EPOCHS} (default _short_ep${NUM_EPOCHS}).
+# - **full** — larger Phase 1 + 4 scales; Phase 2 LR sanity; phase2_final_hparams.json;
+#   plot --csv_tag _ep${NUM_EPOCHS}.
 #
 # Usage (from repo root):
 #   bash experiments/generalization/run_all_scales_2gpu.sh
+#   bash experiments/generalization/run_all_scales_2gpu.sh short
+#   bash experiments/generalization/run_all_scales_2gpu.sh full
+#   NUM_EPOCHS=50 bash ...   # override (Phase 3 epoch count / tags)
 #
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT"
 
-echo "=== Phase 1: GAWF grid (4h/10h/20h), dynamic 20h on first free GPU ==="
-CUDA_VISIBLE_DEVICES=0 bash "$SCRIPT_DIR/phase1_gawf_search_4h.sh" &
-pid_4h=$!
-CUDA_VISIBLE_DEVICES=1 bash "$SCRIPT_DIR/phase1_gawf_search_10h.sh" &
-pid_10h=$!
-
-wait -n "$pid_4h" "$pid_10h"
-if ! kill -0 "$pid_4h" 2>/dev/null; then
-  gpu_for_20h=0
-  remaining_pid="$pid_10h"
-else
-  gpu_for_20h=1
-  remaining_pid="$pid_4h"
+PIPELINE="${1:-short}"
+if [[ ! "$PIPELINE" =~ ^(short|full)$ ]]; then
+  echo "Usage: $0 [short|full]   (default: short)" >&2
+  exit 1
 fi
 
-CUDA_VISIBLE_DEVICES="$gpu_for_20h" bash "$SCRIPT_DIR/phase1_gawf_search_20h.sh" &
-pid_20h=$!
-wait "$remaining_pid"
-wait "$pid_20h"
+P1_MODE="$PIPELINE"
 
-bash "$SCRIPT_DIR/run_phase1_aggregate.sh"
+phase1_two_by_two() {
+  echo "=== Phase 1 ($P1_MODE): GAWF grid 4h/10h/20h/40h (2+2 on GPUs) ==="
+  CUDA_VISIBLE_DEVICES=0 bash "$SCRIPT_DIR/phase1_gawf_search.sh" 4h "$P1_MODE" & _p1=$!
+  CUDA_VISIBLE_DEVICES=1 bash "$SCRIPT_DIR/phase1_gawf_search.sh" 10h "$P1_MODE" & _p2=$!
+  wait "$_p1" "$_p2"
+  CUDA_VISIBLE_DEVICES=0 bash "$SCRIPT_DIR/phase1_gawf_search.sh" 20h "$P1_MODE" & _p3=$!
+  CUDA_VISIBLE_DEVICES=1 bash "$SCRIPT_DIR/phase1_gawf_search.sh" 40h "$P1_MODE" & _p4=$!
+  wait "$_p3" "$_p4"
+}
 
-echo "=== Phase 2: RNN/LSTM/GRU LR check (4 scales), 2 scales in parallel ==="
-CUDA_VISIBLE_DEVICES=0 bash "$SCRIPT_DIR/phase2_lr_check_4h.sh" &
-CUDA_VISIBLE_DEVICES=1 bash "$SCRIPT_DIR/phase2_lr_check_10h.sh" &
-wait
-CUDA_VISIBLE_DEVICES=0 bash "$SCRIPT_DIR/phase2_lr_check_20h.sh" &
-CUDA_VISIBLE_DEVICES=1 bash "$SCRIPT_DIR/phase2_lr_check_40h.sh" &
-wait
+if [[ "$PIPELINE" == full ]]; then
+  export NUM_EPOCHS="${NUM_EPOCHS:-100}"
 
-echo "=== Phase 3: final 4 models × scale (one scale at a time,2 GPUs inside) ==="
-bash "$SCRIPT_DIR/phase3_train_4h.sh"
-bash "$SCRIPT_DIR/phase3_train_10h.sh"
-bash "$SCRIPT_DIR/phase3_train_20h.sh"
-bash "$SCRIPT_DIR/phase3_train_40h.sh"
+  phase1_two_by_two
 
-echo "=== Plot (overfit_gap, train_acc, val_acc vs scale) ==="
-python "$ROOT/plot_generalization.py"
-echo "Done. Figures: results/anal_figs/generalization/overfit_gap_vs_scale.*, train_acc_vs_scale.*, val_acc_vs_scale.*"
+  echo "=== Phase 1 aggregate -> artifacts/phase1_best.json ==="
+  python "$ROOT/experiments/generalization/collect_results.py" phase1 \
+    "results/train_data/gen_phase1_gawf_4h" \
+    "results/train_data/gen_phase1_gawf_10h" \
+    "results/train_data/gen_phase1_gawf_20h" \
+    "results/train_data/gen_phase1_gawf_40h"
+
+  echo "=== Phase 2: RNN/LSTM/GRU LR check (4 scales), 2 scales in parallel ==="
+  CUDA_VISIBLE_DEVICES=0 bash "$SCRIPT_DIR/phase2_lr_check.sh" 4h &
+  CUDA_VISIBLE_DEVICES=1 bash "$SCRIPT_DIR/phase2_lr_check.sh" 10h &
+  wait
+  CUDA_VISIBLE_DEVICES=0 bash "$SCRIPT_DIR/phase2_lr_check.sh" 20h &
+  CUDA_VISIBLE_DEVICES=1 bash "$SCRIPT_DIR/phase2_lr_check.sh" 40h &
+  wait
+
+  echo "=== Phase 3 (full): 4 models × 4h,10h,20h,40h (phase3_train_scale.sh … full) ==="
+  bash "$SCRIPT_DIR/phase3_train_scale.sh" 4h full
+  bash "$SCRIPT_DIR/phase3_train_scale.sh" 10h full
+  bash "$SCRIPT_DIR/phase3_train_scale.sh" 20h full
+  bash "$SCRIPT_DIR/phase3_train_scale.sh" 40h full
+
+  echo "=== Plot (overfit_gap, train_acc, val_acc vs scale) ==="
+  python "$ROOT/utils_viz/plot_generalization.py" --csv_tag "_ep${NUM_EPOCHS}"
+  echo "Done. Figures: results/anal_figs/generalization/overfit_gap_vs_scale_ep${NUM_EPOCHS}*.png, ... (add --save-pdf for PDF too); csv_tag=_ep${NUM_EPOCHS}"
+else
+  export NUM_EPOCHS="${NUM_EPOCHS:-100}"
+  export CSV_TAG="${CSV_TAG:-_short}"
+
+  phase1_two_by_two
+
+  echo "=== Phase 1 aggregate -> phase1_best_short.json + phase2_final_hparams_short.json ==="
+  python "$ROOT/experiments/generalization/collect_results.py" phase1 \
+    "results/train_data/gen_phase1_short_gawf_4h" \
+    "results/train_data/gen_phase1_short_gawf_10h" \
+    "results/train_data/gen_phase1_short_gawf_20h" \
+    "results/train_data/gen_phase1_short_gawf_40h" \
+    --out "$ROOT/experiments/generalization/artifacts/phase1_best_short.json"
+  python "$ROOT/experiments/generalization/collect_results.py" emit_hparams_shared \
+    --phase1_best "$ROOT/experiments/generalization/artifacts/phase1_best_short.json" \
+    --out "$ROOT/experiments/generalization/artifacts/phase2_final_hparams_short.json"
+
+  echo "=== Phase 3 (short): 4 models × 4h,10h,20h,40h (phase3_train_scale.sh … short) ==="
+  bash "$SCRIPT_DIR/phase3_train_scale.sh" 4h short
+  bash "$SCRIPT_DIR/phase3_train_scale.sh" 10h short
+  bash "$SCRIPT_DIR/phase3_train_scale.sh" 20h short
+  bash "$SCRIPT_DIR/phase3_train_scale.sh" 40h short
+
+  echo "=== Plot (gap + train/val acc) ==="
+  TAG="${CSV_TAG}_ep${NUM_EPOCHS}"
+  python "$ROOT/utils_viz/plot_generalization.py" --csv_tag "$TAG"
+  echo "Done. Figures: results/anal_figs/generalization/*${TAG#_}.* (gap, train_acc, val_acc)."
+fi

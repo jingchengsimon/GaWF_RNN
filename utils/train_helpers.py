@@ -1041,12 +1041,16 @@ def summarize_experiment_metrics(
         "val_acc_at_best",
         "overfit_gap",
         "best_epoch_val_acc_1based",
+        "train_acc_sector_at_best_val_sector",
+        "val_acc_sector_at_best",
+        "overfit_gap_sector",
+        "best_epoch_val_acc_sector_1based",
         "early_stop_epoch_1based",
         "stopped_by_patience",
     ):
         if k in results and results[k] is not None:
             v = results[k]
-            if k == "overfit_gap" and v is not None:
+            if k in ("overfit_gap", "overfit_gap_sector") and v is not None:
                 metric_summary[k] = SummaryStatsHelper.round2(v)
             else:
                 metric_summary[k] = v

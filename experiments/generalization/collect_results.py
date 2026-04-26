@@ -50,7 +50,7 @@ def phase1_best(metrics_dir: str, scale_key: str) -> Dict[str, Any]:
 
 
 def cmd_phase1_aggregate(args: argparse.Namespace) -> None:
-    """Write artifacts/phase1_best.json from four Phase-1 result directories."""
+    """Write phase1 JSON from four Phase-1 result directories (4h,10h,20h,40h order)."""
     os.chdir(_repo_root())
     scales = ["4h", "10h", "20h", "40h"]
     if len(args.metrics_dirs) != len(scales):
@@ -60,9 +60,8 @@ def cmd_phase1_aggregate(args: argparse.Namespace) -> None:
     out: Dict[str, Any] = {}
     for scale, mdir in zip(scales, args.metrics_dirs):
         out[scale] = phase1_best(mdir, scale)
-    art = os.path.join(os.path.dirname(__file__), "artifacts")
-    os.makedirs(art, exist_ok=True)
-    dst = os.path.join(art, "phase1_best.json")
+    dst = os.path.abspath(args.out)
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
     with open(dst, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2)
     print(f"Wrote {dst}")
@@ -154,24 +153,42 @@ def cmd_phase2_summary(args: argparse.Namespace) -> None:
 
 def _metrics_row_to_phase3_csv_row(scale: str, m: Dict[str, Any]) -> Dict[str, Any]:
     mt = m.get("model_type")
-    train_acc = m.get("train_acc_at_best_val")
-    if train_acc is None:
-        train_acc = m.get("best_train_acc_char")
-    val_acc = m.get("val_acc_at_best")
-    if val_acc is None:
-        val_acc = m.get("best_val_acc_char")
-    og = m.get("overfit_gap")
-    if og is None and train_acc is not None and val_acc is not None:
-        og = float(train_acc) - float(val_acc)
+    train_acc_char = m.get("train_acc_at_best_val")
+    if train_acc_char is None:
+        train_acc_char = m.get("best_train_acc_char")
+    val_acc_char = m.get("val_acc_at_best")
+    if val_acc_char is None:
+        val_acc_char = m.get("best_val_acc_char")
+    og_char = m.get("overfit_gap")
+    if og_char is None and train_acc_char is not None and val_acc_char is not None:
+        og_char = float(train_acc_char) - float(val_acc_char)
+
+    train_acc_sector = m.get("train_acc_sector_at_best_val_sector")
+    if train_acc_sector is None:
+        train_acc_sector = m.get("best_train_acc_pos")
+    val_acc_sector = m.get("val_acc_sector_at_best")
+    if val_acc_sector is None:
+        val_acc_sector = m.get("best_val_acc_pos")
+    og_sector = m.get("overfit_gap_sector")
+    if og_sector is None and train_acc_sector is not None and val_acc_sector is not None:
+        og_sector = float(train_acc_sector) - float(val_acc_sector)
     return {
         "scale": scale,
         "model": mt,
         "lr": m.get("lr"),
         "wd": m.get("weight_decay"),
         "early_stop_epoch": m.get("early_stop_epoch_1based", m.get("actual_epochs")),
-        "train_acc": train_acc,
-        "val_acc": val_acc,
-        "overfit_gap": og,
+        # Backward-compatible aliases for the original char plots.
+        "train_acc": train_acc_char,
+        "val_acc": val_acc_char,
+        "overfit_gap": og_char,
+        "train_acc_char": train_acc_char,
+        "val_acc_char": val_acc_char,
+        "overfit_gap_char": og_char,
+        "train_acc_sector": train_acc_sector,
+        "val_acc_sector": val_acc_sector,
+        "overfit_gap_sector": og_sector,
+        "best_epoch_val_acc_sector_1based": m.get("best_epoch_val_acc_sector_1based"),
         "stopped_by_patience": m.get("stopped_by_patience"),
     }
 
@@ -287,11 +304,17 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Collect generalization experiment metrics")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    p1 = sub.add_parser("phase1", help="Aggregate Phase 1 GAWF grid (four dirs -> phase1_best.json)")
+    p1 = sub.add_parser("phase1", help="Aggregate Phase 1 GAWF grid (four dirs -> phase1 JSON)")
     p1.add_argument(
         "metrics_dirs",
         nargs=4,
-        help="Dirs: gen_phase1_gawf_4h, _10h, _20h, _40h (in that order)",
+        help="Dirs: 4h, 10h, 20h, 40h Phase-1 result folders (e.g. gen_phase1_gawf_* or gen_phase1_short_gawf_*) in that order",
+    )
+    p1.add_argument(
+        "--out",
+        type=str,
+        default="",
+        help="Output JSON path (default: experiments/generalization/artifacts/phase1_best.json)",
     )
     p1.set_defaults(func=cmd_phase1_aggregate)
 
@@ -310,18 +333,18 @@ def main() -> None:
         "--out_tag",
         type=str,
         default="",
-        help="Suffix before .csv (e.g. _short_ep50 -> phase3_summary_4h_short_ep50.csv)",
+        help="Suffix before .csv (e.g. _short_ep100 -> phase3_summary_4h_short_ep100.csv)",
     )
     p3.add_argument(
         "metrics_dirs",
         nargs="+",
-        help="One or more result dirs for that scale (e.g. four model-specific suffixes)",
+        help="Result dir(s) for that scale: typically one shared dir (gen_phase3_*_epN with all models' *_metrics.json) or legacy four per-model dirs",
     )
     p3.set_defaults(func=cmd_phase3_table)
 
     p1s = sub.add_parser(
         "phase1_short",
-        help="Short pipeline: 3 Phase-1 dirs + 40h preset (GAWF metrics folder) -> phase1_best_short.json",
+        help="Legacy: 3 Phase-1 dirs + 40h preset dir -> phase1_best_short.json (prefer `phase1` with 4 dirs + --out for new runs)",
     )
     p1s.add_argument(
         "metrics_dirs",
@@ -368,15 +391,16 @@ def main() -> None:
         "--out_tag",
         type=str,
         default="_short",
-        help="CSV suffix (e.g. _short_ep50); must match phase3_train --out_tag / plot --csv_tag",
+        help="CSV suffix (e.g. _short_ep100); must match phase3_train --out_tag / plot --csv_tag",
     )
     pi.set_defaults(func=cmd_phase3_import_dir)
 
+    art_dir = os.path.join(os.path.dirname(__file__), "artifacts")
     args = p.parse_args()
+    if args.cmd == "phase1" and not getattr(args, "out", None):
+        args.out = os.path.join(art_dir, "phase1_best.json")
     if args.cmd == "phase1_short" and not args.out:
-        args.out = os.path.join(
-            os.path.dirname(__file__), "artifacts", "phase1_best_short.json"
-        )
+        args.out = os.path.join(art_dir, "phase1_best_short.json")
     args.func(args)
 
 

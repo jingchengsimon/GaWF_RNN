@@ -34,13 +34,13 @@ labels encode foreground digit identity and 2-D position (sector or coordinate).
 │   └── train_predict_all_chars.py  # Loss / metrics for all-chars mode
 ├── utils_anal/              # Post-training analysis scripts (export_*.py, …)
 ├── utils_viz/               # Visualisation scripts (gate_avg*.py, …)
+│   ├── plot_generalization.py  # Generalization figures (char/sector gap + train/val acc vs scale)
 │   └── paper_figs/          # Publication-quality figures
 ├── results/
 │   ├── train_data/<suffix>/ # Checkpoints (.pth) + metrics (.pkl, .json)
 │   ├── anal_data/<module>/  # Analysis outputs (.npy, .npz, .json)
 │   └── anal_figs/<module>/  # Figure outputs (.png)
 ├── train_model.py           # CLI training entry-point
-├── plot_generalization.py   # Generalization figures (gap + train/val acc vs scale)
 ├── experiments/generalization/  # Shell launchers + collect_results.py (see §8)
 ├── hparam_search.sh         # Hyperparameter sweep launcher (zsh)
 └── visualize_batch.sh       # Batch visualisation launcher (zsh)
@@ -249,7 +249,7 @@ When plotting N components + sum + full (N+2 panels), use `n_cols=3`,
 
 ## 8. Generalization experiment launchers (`experiments/generalization/`)
 
-Orchestration for **train-scale vs fixed 40h validation** studies. Training always via **`train_model.py`**. Helper **`experiments/generalization/collect_results.py`** (stdlib only) aggregates `*_metrics.json`; figures via **`plot_generalization.py`** at repo root.
+Orchestration for **train-scale vs fixed 40h validation** studies. Training always via **`train_model.py`**. Helper **`experiments/generalization/collect_results.py`** (stdlib only) aggregates `*_metrics.json`; figures via **`utils_viz/plot_generalization.py`** (char/sector 1x2 panels; default PNG; **`--save-pdf`** for PDF too).
 
 ### 8.1 Training flags used by these launchers
 
@@ -258,34 +258,32 @@ Orchestration for **train-scale vs fixed 40h validation** studies. Training alwa
 - **Multi-job logs** — tqdm / logger lines are prefixed with `[result_suffix|eNNN|model_type]`.
 - **GPU** — if **`CUDA_VISIBLE_DEVICES`** is already set, `train_model.py` does **not** override it (supports parallel launchers).
 
-### 8.2 Full pipeline (`run_all_scales_2gpu.sh`)
+### 8.2 `run_all_scales_2gpu.sh [short|full]` (default **short**)
 
-1. **Phase 1** — Per scale (4h/10h/20h/40h train): GAWF-only LR×WD grid → `results/train_data/gen_phase1_gawf_<scale>/`; val on 40h.
-2. **`run_phase1_aggregate.sh`** — `collect_results.py phase1` → `experiments/generalization/artifacts/phase1_best.json`.
-3. **Phase 2** — `phase2_lr_check_*.sh` + `collect_results.py phase2` → **`artifacts/phase2_final_hparams.json`**.
-4. **Phase 3** — `phase3_train_*.sh` (four models × scale) + `collect_results.py phase3` → **`artifacts/phase3_summary_<scale>.csv`**.
-5. **`plot_generalization.py`** — reads four `phase3_summary_*.csv`; writes **`results/anal_figs/generalization/overfit_gap_vs_scale.*`**, **`train_acc_vs_scale.*`**, **`val_acc_vs_scale.*`**.
+One entry: **`bash experiments/generalization/run_all_scales_2gpu.sh`**, **`… short`**, or **`… full`** (no separate `*_short.sh` wrapper).
 
-### 8.3 Short pipeline (`run_all_scales_2gpu_short.sh`)
+- **short** — **Phase 1** — `phase1_gawf_search.sh <4h|10h|20h|40h> short` (reduced grid; **`gen_phase1_short_gawf_*`**; **40h** is trained and searched like the other scales, val **40h**). Then **`run_all` inlines** `collect_results.py phase1` (four short dirs) + **`emit_hparams_shared`**. **No Phase 2.** **Phase 3** — `phase3_train_scale.sh` each scale **`short`**; all four models share **`results/train_data/gen_phase3_short_<scale>_ep<N>`** (one folder per scale+epoch). **Plot** — **`--csv_tag`** = **`${CSV_TAG}_ep${NUM_EPOCHS}`** (default **`_short_ep100`**).
 
-- **Phase 1** — Only **4h, 10h, 20h**; reduced grid (LR `1e-4 3e-4 5e-4`, WD `1e-4 1e-3`); **`gen_phase1_short_gawf_<scale>`**; epoch/patience defaults are set in `*_short.sh` (currently **`--num_epochs 50 --patience 8`**).
-- **`run_phase1_aggregate_short.sh`** — `phase1_short` (three dirs + **`--preset_40h_dir`** default `results/train_data/sector_40h_adamw`) → **`phase1_best_short.json`**; **`emit_hparams_shared`** → **`phase2_final_hparams_short.json`** (all four models **share** GAWF-optimal lr/wd per scale).
-- **No Phase 2.**
-- **Phase 3** — `phase3_train_{4h,10h,20h}_short.sh` + `phase3 --out_tag _short`; **40h** rows from **`import_phase3_40h_short.sh`** (`phase3_import`, no retrain).
-- **`plot_generalization.py --csv_tag _short`** → `*_short` figure stems.
+- **full** — **Phase 1** — `phase1_gawf_search.sh` … **`full`**. **Aggregate** in **`run_all`**: `collect_results.py phase1` → **`phase1_best.json`**. **Phase 2** — `phase2_lr_check.sh` (two GPUs) → **`phase2_final_hparams.json`**. **Phase 3** — `phase3_train_scale.sh` … **`full`** → shared **`results/train_data/gen_phase3_<scale>_ep<N>`**. **Plot** — **`--csv_tag _ep${NUM_EPOCHS}`** (default **`NUM_EPOCHS=100`**).
 
-### 8.4 `collect_results.py` subcommands
+- **Legacy Phase3 layout** (separate folder per model) — run **`python experiments/generalization/merge_phase3_result_dirs.py --apply`** once to merge **`train_data`** and **`train_figs`** into the new naming.
+
+- **Offline / ad-hoc** (not used by default orchestration) — `experiments/archive/run_phase1_aggregate.sh [short|full]`, `experiments/archive/run_local_phase3.sh [short|full|…]`.
+
+- **`collect_results.py phase1_short`**: legacy **three** Phase-1 dirs + **`--preset_40h_dir`**; use if you do not have a local **`gen_phase1_short_gawf_40h`** (or `gen_phase1_gawf_40h`) run.
+
+### 8.3 `collect_results.py` subcommands
 
 | Command | Output |
 |---------|--------|
-| `phase1` | `phase1_best.json` (four Phase-1 dirs) |
-| `phase1_short` | `phase1_best_short.json` |
+| `phase1` | Four Phase-1 dirs in scale order; default **`--out`** `phase1_best.json`, or pass **`--out phase1_best_short.json`** for short runs |
+| `phase1_short` | *Legacy:* three dirs + preset 40h → `phase1_best_short.json` |
 | `emit_hparams_shared` | `phase2_final_hparams_short.json` |
 | `phase2` | updates `phase2_final_hparams.json` |
-| `phase3` | `phase3_summary_<scale>[out_tag].csv` |
-| `phase3_import` | one scale CSV from a single metrics directory (preset 40h) |
+| `phase3` | `phase3_summary_<scale>[out_tag].csv` with char aliases plus sector columns (`train_acc_sector`, `val_acc_sector`, `overfit_gap_sector`) |
+| `phase3_import` | one scale CSV from a single metrics directory (optional; e.g. legacy 40h import) |
 
-Legacy metrics without `train_acc_at_best_val` / `val_acc_at_best`: CSV uses `best_train_acc_char` / `best_val_acc_char` fallbacks.
+Legacy metrics without `train_acc_at_best_val` / `val_acc_at_best`: CSV uses `best_train_acc_char` / `best_val_acc_char` fallbacks; legacy Phase3 JSON without sector-at-best fields can be backfilled from `.pkl` via `experiments/archive/backfill_phase3_sector_metrics.py --apply`.
 
 ---
 

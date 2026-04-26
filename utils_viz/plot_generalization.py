@@ -3,14 +3,16 @@
 Plot generalization summaries from Phase 3 CSVs under experiments/generalization/artifacts/.
 
 Produces (per run):
-  - Overfit gap vs dataset scale
-  - Train char acc vs scale
-  - Val char acc vs scale
+  - Overfit gap vs dataset scale (char + sector panels)
+  - Train accuracy vs scale (char + sector panels)
+  - Val accuracy vs scale (char + sector panels)
 
-Use --csv_tag for the CSV suffix produced by collect_results.py (e.g. _short_ep50
-for phase3_summary_{scale}_short_ep50.csv). Short pipeline default base is _short;
-epoch is appended in the bash scripts as _ep${NUM_EPOCHS}.
-Full pipeline: default csv_tag "" -> phase3_summary_{scale}.csv
+Use --csv_tag for the CSV suffix produced by collect_results.py, e.g.
+  _short_ep100 -> phase3_summary_{scale}_short_ep100.csv (short pipeline),
+  _ep100 -> phase3_summary_{scale}_ep100.csv (full pipeline, profile=full; see phase3_train_scale.sh).
+Epoch is _ep${NUM_EPOCHS}; default NUM_EPOCHS=100 unless overridden.
+
+By default only PNG is written; pass --save-pdf to also emit PDF.
 """
 from __future__ import annotations
 
@@ -36,7 +38,7 @@ STYLES = {
 
 
 def _repo_root() -> str:
-    return os.path.dirname(os.path.abspath(__file__))
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def load_rows_for_scales(artifact_dir: str, csv_tag: str) -> List[Dict[str, str]]:
@@ -58,7 +60,8 @@ def build_scale_model_map(
     for r in rows:
         scale = r["scale"]
         model = r["model"]
-        by_scale_model[scale][model] = float(r[value_key])
+        raw = r.get(value_key)
+        by_scale_model[scale][model] = float(raw) if raw not in (None, "") else float("nan")
     return by_scale_model
 
 
@@ -66,10 +69,11 @@ def plot_lines(
     by_scale_model: Dict[str, Dict[str, float]],
     ylabel: str,
     title: str,
-    out_path_base: str,
+    ax,
+    *,
+    show_legend: bool,
 ) -> None:
     x = list(range(len(SCALE_ORDER)))
-    fig, ax = plt.subplots(figsize=(6.5, 4.2))
     for m in MODELS:
         ys = [by_scale_model[s].get(m, float("nan")) for s in SCALE_ORDER]
         st = STYLES[m]
@@ -80,14 +84,35 @@ def plot_lines(
     ax.set_xlabel("Dataset scale (train hours)")
     ax.set_ylabel(ylabel)
     ax.set_title(title)
-    ax.legend(frameon=True)
+    if show_legend:
+        ax.legend(frameon=True)
     ax.grid(True, alpha=0.3)
 
+
+def plot_metric_pair(
+    char_map: Dict[str, Dict[str, float]],
+    sector_map: Dict[str, Dict[str, float]],
+    char_ylabel: str,
+    sector_ylabel: str,
+    title: str,
+    out_path_base: str,
+    *,
+    save_pdf: bool,
+) -> None:
+    fig, axes = plt.subplots(1, 2, figsize=(12.0, 4.2), sharey=False)
+    plot_lines(char_map, char_ylabel, "Char", axes[0], show_legend=True)
+    plot_lines(sector_map, sector_ylabel, "Sector", axes[1], show_legend=False)
+    fig.suptitle(title)
+
     os.makedirs(os.path.dirname(out_path_base), exist_ok=True)
-    fig.savefig(out_path_base + ".pdf", bbox_inches="tight", pad_inches=0.06)
     fig.savefig(out_path_base + ".png", dpi=150, bbox_inches="tight", pad_inches=0.06)
+    if save_pdf:
+        fig.savefig(out_path_base + ".pdf", bbox_inches="tight", pad_inches=0.06)
     plt.close(fig)
-    print(f"Saved {out_path_base}.pdf / .png")
+    if save_pdf:
+        print(f"Saved {out_path_base}.png / .pdf")
+    else:
+        print(f"Saved {out_path_base}.png")
 
 
 def main() -> None:
@@ -101,12 +126,17 @@ def main() -> None:
         "--csv_tag",
         type=str,
         default="",
-        help='CSV suffix e.g. "_short_ep50" -> phase3_summary_4h_short_ep50.csv (default: "")',
+        help='CSV suffix e.g. "_short_ep100" -> phase3_summary_4h_short_ep100.csv (default: "")',
     )
     ap.add_argument(
         "--out_dir",
         default="",
         help="Figure output directory (default: results/anal_figs/generalization)",
+    )
+    ap.add_argument(
+        "--save-pdf",
+        action="store_true",
+        help="Also write PDF alongside PNG (default: PNG only).",
     )
     args = ap.parse_args()
     root = _repo_root()
@@ -125,28 +155,42 @@ def main() -> None:
     if not rows:
         raise SystemExit(f"No rows loaded from {art} (tag={args.csv_tag!r})")
 
-    gap_map = build_scale_model_map(rows, "overfit_gap")
-    plot_lines(
-        gap_map,
-        ylabel="Overfit gap (train acc − val acc @ best val epoch)",
+    save_pdf = bool(args.save_pdf)
+
+    gap_char_map = build_scale_model_map(rows, "overfit_gap_char")
+    gap_sector_map = build_scale_model_map(rows, "overfit_gap_sector")
+    plot_metric_pair(
+        gap_char_map,
+        gap_sector_map,
+        char_ylabel="Overfit gap (@ best val char epoch)",
+        sector_ylabel="Overfit gap (@ best val sector epoch)",
         title="Generalization: overfit gap vs train set size",
         out_path_base=os.path.join(out_dir, f"overfit_gap_vs_scale{mid}"),
+        save_pdf=save_pdf,
     )
 
-    train_map = build_scale_model_map(rows, "train_acc")
-    plot_lines(
-        train_map,
-        ylabel="Train char accuracy (%)",
-        title="Train accuracy vs train set size (best-val-epoch where available)",
+    train_char_map = build_scale_model_map(rows, "train_acc_char")
+    train_sector_map = build_scale_model_map(rows, "train_acc_sector")
+    plot_metric_pair(
+        train_char_map,
+        train_sector_map,
+        char_ylabel="Train char accuracy (%)",
+        sector_ylabel="Train sector accuracy (%)",
+        title="Train accuracy vs train set size",
         out_path_base=os.path.join(out_dir, f"train_acc_vs_scale{mid}"),
+        save_pdf=save_pdf,
     )
 
-    val_map = build_scale_model_map(rows, "val_acc")
-    plot_lines(
-        val_map,
-        ylabel="Validation char accuracy (%)",
-        title="Validation accuracy vs train set size (best-val-epoch where available)",
+    val_char_map = build_scale_model_map(rows, "val_acc_char")
+    val_sector_map = build_scale_model_map(rows, "val_acc_sector")
+    plot_metric_pair(
+        val_char_map,
+        val_sector_map,
+        char_ylabel="Validation char accuracy (%)",
+        sector_ylabel="Validation sector accuracy (%)",
+        title="Validation accuracy vs train set size",
         out_path_base=os.path.join(out_dir, f"val_acc_vs_scale{mid}"),
+        save_pdf=save_pdf,
     )
 
 
