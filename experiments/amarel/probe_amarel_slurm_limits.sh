@@ -12,7 +12,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-ART_DIR="$ROOT/artifacts/amarel_probe"
+ART_DIR="$ROOT/experiments/amarel/artifacts/amarel_probe"
 
 PARTITION="${PARTITION:-${SLURM_PARTITION:-}}"
 ACCOUNT="${ACCOUNT:-${SLURM_ACCOUNT:-}}"

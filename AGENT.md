@@ -310,6 +310,11 @@ Amarel helpers live in `experiments/amarel/`: `probe_amarel_slurm_limits.sh`,
 tasks per batch, and array concurrency `%96`; batch submission waits for each
 batch before submitting the next to respect submit limits. Failed or missing
 tasks are recorded and rerun explicitly; there is no automatic retry loop.
+Amarel Slurm stdout/stderr and submission logs live under
+`experiments/amarel/artifacts/`. For launch validation before the full 1024-run
+campaign, use `submit_hparam_4h_5epoch_test.sh` and
+`check_hparam_4h_5epoch_test_status.sh`; this runs the 4h slice of the same
+grid for 5 epochs.
 
 ---
 

@@ -55,7 +55,7 @@
 | `results/anal_figs/<module>/` | Figures | module = script basename |
 | `logs_hparam/` | Hparam sweep logs | always at project root |
 | `experiments/generalization/artifacts/gen_hparam_full_grid/` | Full-grid hparam summaries and status | `hparam_best.*`, `hparam_full_grid_status.*`, `failed_task_ids.txt` |
-| `artifacts/amarel_logs/hparam_full_grid/` | Amarel full-grid Slurm logs | one stdout/stderr pair per array task |
+| `experiments/amarel/artifacts/<run>/` | Amarel Slurm logs | one stdout/stderr pair per array task; e.g. `hparam_full_grid`, `hparam_4h_5epoch_test` |
 
 ## 2.1 Experiment Script Conventions
 
@@ -63,6 +63,7 @@
 |----------|---------|---------|
 | Full-grid hparam utility | `experiments/generalization/hparam_full_grid.py` | Subcommands: `emit-task`, `validate`, `status`, `summarize` |
 | Amarel launchers | `experiments/amarel/*hparam_full_grid*.sh` | `submit_hparam_full_grid_batches.sh`, `rerun_hparam_full_grid_failed.sh` |
+| Amarel smoke-test launchers | `experiments/amarel/*hparam_4h_5epoch_test*.sh` | 4h-only, 5-epoch hparam submission/status check |
 | Amarel probe | `experiments/amarel/probe_amarel_slurm_limits.sh` | Slurm `sbatch --test-only` probe |
 
 ## 3. File Suffix Conventions

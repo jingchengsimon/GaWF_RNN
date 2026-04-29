@@ -227,5 +227,7 @@ launchers: **`experiments/generalization/phase1_gawf_search.sh`**,
 **`phase2_lr_check.sh`**, **`phase3_train_scale.sh`**. Ad-hoc aggregate /
 local-Phase3-only tools live under **`experiments/archive/`** (not used by the
 default `run_all` flow). See **`AGENT.md` section 8** and **`workflow.mdc`**.
+Amarel logs for full and smoke-test submissions are written under
+**`experiments/amarel/artifacts/`**.
 
 **Doc maintenance:** Human-requested edits to `.cursor/rules` should update **`AGENT.md`** and this file in the same change unless scoped otherwise (`workflow.mdc` **Doc alignment**).

@@ -16,7 +16,7 @@ ARRAY_CONCURRENCY="${ARRAY_CONCURRENCY:-96}"
 POLL_SECONDS="${POLL_SECONDS:-300}"
 RUN_SCRIPT="$SCRIPT_DIR/run_hparam_full_grid_array.sh"
 RERUN_DIR="$OUT_DIR/rerun_lists"
-RERUN_LOG_DIR="$ROOT/artifacts/amarel_logs/hparam_full_grid"
+RERUN_LOG_DIR="$ROOT/experiments/amarel/artifacts/hparam_full_grid"
 RERUN_LOG="$RERUN_LOG_DIR/rerun_$(date +%Y%m%d_%H%M%S).log"
 
 mkdir -p "$RERUN_DIR" "$RERUN_LOG_DIR"

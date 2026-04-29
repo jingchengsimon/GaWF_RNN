@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=aim3-hparam
+#SBATCH --job-name=aim3-hpa-test
 #SBATCH --partition=gpu-redhat
 #SBATCH --account=general
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
-#SBATCH --time=72:00:00
-#SBATCH --output=experiments/amarel/artifacts/hparam_full_grid/%A_%a.out
-#SBATCH --error=experiments/amarel/artifacts/hparam_full_grid/%A_%a.err
+#SBATCH --time=12:00:00
+#SBATCH --output=experiments/amarel/artifacts/hparam_4h_5epoch_test/%A_%a.out
+#SBATCH --error=experiments/amarel/artifacts/hparam_4h_5epoch_test/%A_%a.err
 
-# Run one full-grid hparam task. Submit via submit_hparam_full_grid_batches.sh.
+# Run one 4h/5-epoch hparam smoke-test task.
 
 set -euo pipefail
 
@@ -17,26 +17,43 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT"
 
-mkdir -p experiments/amarel/artifacts/hparam_full_grid
-mkdir -p experiments/generalization/artifacts/gen_hparam_full_grid/status
+MODELS=(rnn lstm gru gawf)
+HIDDEN_SIZES=(64 128 256 512)
+LRS=(0.0001 0.0005 0.001 0.005)
+WDS=(0.0 1e-05 0.0001 0.001)
+TOTAL_TASKS=256
+NUM_EPOCHS=5
+PATIENCE=15
+SEED=42
+CNN_DROPOUT=0.0
+RNN_DROPOUT=0.5
+RESULT_ROOT_SUFFIX="gen_hparam_4h_5epoch_test"
 
-if [[ -n "${TASK_ID_FILE:-}" ]]; then
-  if [[ -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then
-    echo "TASK_ID_FILE requires SLURM_ARRAY_TASK_ID" >&2
-    exit 2
-  fi
-  TASK_ID="$(sed -n "$((SLURM_ARRAY_TASK_ID + 1))p" "$TASK_ID_FILE")"
-else
-  TASK_OFFSET="${TASK_OFFSET:-0}"
-  TASK_ID="$((TASK_OFFSET + ${SLURM_ARRAY_TASK_ID:-0}))"
-fi
+mkdir -p experiments/amarel/artifacts/hparam_4h_5epoch_test
+mkdir -p experiments/generalization/artifacts/${RESULT_ROOT_SUFFIX}/status
 
-if [[ -z "$TASK_ID" ]]; then
-  echo "Empty TASK_ID resolved from TASK_ID_FILE=${TASK_ID_FILE:-<unset>}" >&2
+TASK_OFFSET="${TASK_OFFSET:-0}"
+TASK_ID="$((TASK_OFFSET + ${SLURM_ARRAY_TASK_ID:-0}))"
+if [[ "$TASK_ID" -lt 0 || "$TASK_ID" -ge "$TOTAL_TASKS" ]]; then
+  echo "TASK_ID must be in [0, $((TOTAL_TASKS - 1))], got $TASK_ID" >&2
   exit 2
 fi
 
-STATUS_DIR="$ROOT/experiments/generalization/artifacts/gen_hparam_full_grid/status"
+wd_idx=$((TASK_ID % 4))
+lr_idx=$(((TASK_ID / 4) % 4))
+hidden_idx=$(((TASK_ID / 16) % 4))
+model_idx=$(((TASK_ID / 64) % 4))
+
+MODEL_TYPE="${MODELS[$model_idx]}"
+HIDDEN_SIZE="${HIDDEN_SIZES[$hidden_idx]}"
+LR="${LRS[$lr_idx]}"
+WD="${WDS[$wd_idx]}"
+DATA_SUFFIX="4h-float32"
+EVAL_DATA_SUFFIX="40h-float32"
+RESULT_SUFFIX="${RESULT_ROOT_SUFFIX}/task_$(printf '%04d' "$TASK_ID")"
+RESULT_STEM="${MODEL_TYPE}_sector_acc_h${HIDDEN_SIZE}_lr${LR}_wd${WD}_cdo${CNN_DROPOUT}_rdo${RNN_DROPOUT}"
+METRICS_PATH="$ROOT/results/train_data/${RESULT_SUFFIX}/${RESULT_STEM}_metrics.json"
+STATUS_DIR="$ROOT/experiments/generalization/artifacts/${RESULT_ROOT_SUFFIX}/status"
 DONE_FILE="$STATUS_DIR/task_$(printf '%04d' "$TASK_ID").done"
 FAIL_FILE="$STATUS_DIR/task_$(printf '%04d' "$TASK_ID").fail"
 
@@ -45,7 +62,6 @@ if [[ -n "${AIM3_SETUP_CMD:-}" ]]; then
 elif command -v conda >/dev/null 2>&1; then
   CONDA_BASE="$(conda info --base 2>/dev/null || true)"
   if [[ -n "$CONDA_BASE" && -f "$CONDA_BASE/etc/profile.d/conda.sh" ]]; then
-    # Continue if the env is already active or if local Python is configured differently.
     source "$CONDA_BASE/etc/profile.d/conda.sh"
     conda activate "${AIM3_CONDA_ENV:-aim3_rnn}" || true
   fi
@@ -64,15 +80,13 @@ else
   exit 2
 fi
 
-eval "$(python experiments/generalization/hparam_full_grid.py emit-task --task-id "$TASK_ID" --root "$ROOT")"
-
-echo "[$(date -Is)] task_id=$TASK_ID scale=$SCALE model=$MODEL_TYPE h=$HIDDEN_SIZE lr=$LR wd=$WD"
+echo "[$(date -Is)] test_task_id=$TASK_ID model=$MODEL_TYPE h=$HIDDEN_SIZE lr=$LR wd=$WD"
 echo "data_dir=$DATA_DIR"
 echo "result_suffix=$RESULT_SUFFIX"
 echo "metrics_path=$METRICS_PATH"
 
-if python experiments/generalization/hparam_full_grid.py validate --task-id "$TASK_ID" --root "$ROOT" >/dev/null 2>&1; then
-  echo "Task $TASK_ID already complete; skipping."
+if [[ -f "$METRICS_PATH" ]]; then
+  echo "Test task $TASK_ID already has metrics; skipping."
   {
     echo "status=skipped_existing"
     echo "task_id=$TASK_ID"
@@ -108,7 +122,6 @@ if [[ "$train_rc" -ne 0 ]]; then
     echo "status=train_failed"
     echo "task_id=$TASK_ID"
     echo "exit_code=$train_rc"
-    echo "scale=$SCALE"
     echo "model=$MODEL_TYPE"
     echo "hidden_size=$HIDDEN_SIZE"
     echo "lr=$LR"
@@ -119,11 +132,10 @@ if [[ "$train_rc" -ne 0 ]]; then
   exit "$train_rc"
 fi
 
-if python experiments/generalization/hparam_full_grid.py validate --task-id "$TASK_ID" --root "$ROOT" --json; then
+if [[ -f "$METRICS_PATH" ]]; then
   {
     echo "status=done"
     echo "task_id=$TASK_ID"
-    echo "scale=$SCALE"
     echo "model=$MODEL_TYPE"
     echo "hidden_size=$HIDDEN_SIZE"
     echo "lr=$LR"
@@ -134,13 +146,8 @@ if python experiments/generalization/hparam_full_grid.py validate --task-id "$TA
   rm -f "$FAIL_FILE"
 else
   {
-    echo "status=validation_failed"
+    echo "status=missing_metrics"
     echo "task_id=$TASK_ID"
-    echo "scale=$SCALE"
-    echo "model=$MODEL_TYPE"
-    echo "hidden_size=$HIDDEN_SIZE"
-    echo "lr=$LR"
-    echo "weight_decay=$WD"
     echo "metrics_path=$METRICS_PATH"
     echo "timestamp=$(date -Is)"
   } > "$FAIL_FILE"
