@@ -41,7 +41,8 @@ labels encode foreground digit identity and 2-D position (sector or coordinate).
 │   ├── anal_data/<module>/  # Analysis outputs (.npy, .npz, .json)
 │   └── anal_figs/<module>/  # Figure outputs (.png)
 ├── train_model.py           # CLI training entry-point
-├── experiments/generalization/  # Shell launchers + collect_results.py (see §8)
+├── experiments/generalization/  # Generalization launchers + hparam_full_grid.py (see §8)
+├── experiments/amarel/          # Amarel/Slurm submission, probe, status, and rerun helpers
 ├── hparam_search.sh         # Hyperparameter sweep launcher (zsh)
 └── visualize_batch.sh       # Batch visualisation launcher (zsh)
 ```
@@ -284,6 +285,31 @@ One entry: **`bash experiments/generalization/run_all_scales_2gpu.sh`**, **`… 
 | `phase3_import` | one scale CSV from a single metrics directory (optional; e.g. legacy 40h import) |
 
 Legacy metrics without `train_acc_at_best_val` / `val_acc_at_best`: CSV uses `best_train_acc_char` / `best_val_acc_char` fallbacks; legacy Phase3 JSON without sector-at-best fields can be backfilled from `.pkl` via `experiments/archive/backfill_phase3_sector_metrics.py --apply`.
+
+### 8.4 Single-stage full-grid hparam search
+
+`experiments/generalization/hparam_full_grid.py` defines the 1024-run grid:
+4 scales (`4h`, `10h`, `20h`, `40h`) × 4 models (`rnn`, `lstm`, `gru`, `gawf`) ×
+hidden sizes (`64`, `128`, `256`, `512`) × LR (`1e-4`, `5e-4`, `1e-3`, `5e-3`) ×
+WD (`0`, `1e-5`, `1e-4`, `1e-3`). All runs use sector mode, acceleration,
+`cnn_dropout=0.0`, `rnn_dropout=0.5`, `num_epochs=100`, `patience=15`, `seed=42`,
+and fixed **40h validation** via `--eval_data_suffix 40h-float32`. Each task writes
+to `results/train_data/gen_hparam_full_grid/task_<id>/`.
+
+Best hparams are selected per scale × model by highest **`val_acc_at_best`** (char);
+sector metrics are reported from the same selected run. `hparam_full_grid.py summarize`
+writes `hparam_best.{json,csv}`, `hparam_best_summary.md`, all-trial CSV, and
+`phase3_summary_<scale>_hparam_full_grid.csv` so `utils_viz/plot_generalization.py`
+can draw overfit gap, train acc, and validation acc for char and sector.
+
+Amarel helpers live in `experiments/amarel/`: `probe_amarel_slurm_limits.sh`,
+`submit_hparam_full_grid_batches.sh`, `run_hparam_full_grid_array.sh`,
+`check_hparam_full_grid_status.sh`, `rerun_hparam_full_grid_failed.sh`, and
+`summarize_hparam_full_grid.sh`. The default Amarel settings are `gpu-redhat`,
+`account=general`, `gpu:1`, `cpus-per-task=4`, `mem=16G`, `time=72:00:00`, 200
+tasks per batch, and array concurrency `%96`; batch submission waits for each
+batch before submitting the next to respect submit limits. Failed or missing
+tasks are recorded and rerun explicitly; there is no automatic retry loop.
 
 ---
 

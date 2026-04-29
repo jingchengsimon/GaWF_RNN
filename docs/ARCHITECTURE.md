@@ -7,7 +7,8 @@ aim3_RNN/
 │
 ├── train_model.py     ← CLI entry-point: parse args, load data, loop over hparam combos
 │                               Owns MC_RNN_Dataset and network_train()
-├── experiments/generalization/ ← Shell launchers + collect_results.py (orchestration only)
+├── experiments/generalization/ ← Generalization launchers + hparam aggregation
+├── experiments/amarel/ ← Amarel/Slurm probe, submit, status, and rerun helpers
 │
 ├── utils/                   ← Training pipeline (imported by train_model only)
 │   ├── train_rnn_core.py    ← Model base classes and standard RNN variants
@@ -201,12 +202,30 @@ add_pos_to_result_dict(base, ...) -> dict
 
 ## 6. Generalization experiment orchestration
 
-**Location:** `experiments/generalization/` (shell + **`collect_results.py`**, stdlib only).
+**Location:** `experiments/generalization/` (shell + **`collect_results.py`** +
+**`hparam_full_grid.py`**, stdlib only) and Amarel submission wrappers under
+`experiments/amarel/`.
 
-**Role:** Launch **`train_model.py`** for train-scale vs **fixed 40h validation** protocols; aggregate `*_metrics.json` into **`experiments/generalization/artifacts/`** (`phase1_best*.json`, `phase2_final_hparams*.json`, `phase3_summary_*.csv` with char and sector columns); plot via **`utils_viz/plot_generalization.py`** → **`results/anal_figs/generalization/`** (char/sector 1x2 panels; default PNG; **`--save-pdf`** for PDF).
+**Role:** Launch **`train_model.py`** for train-scale vs **fixed 40h validation**
+protocols; aggregate `*_metrics.json` into **`experiments/generalization/artifacts/`**
+(`phase1_best*.json`, `phase2_final_hparams*.json`, `hparam_best.*`,
+`phase3_summary_*.csv` with char and sector columns); plot via
+**`utils_viz/plot_generalization.py`** → **`results/anal_figs/generalization/`**
+(char/sector 1x2 panels; default PNG; **`--save-pdf`** for PDF).
 
 **Dependency rule:** No imports from `utils/` inside `collect_results.py` beyond what a normal script would use; training logic stays in `utils/` + `train_model.py`.
 
-**Pipelines:** **`run_all_scales_2gpu.sh [short|full]`** (default **short**): **short** = smaller Phase 1 (four scales, including 40h), no Phase 2, inlined `collect_results` + `emit_hparams_shared`, `phase2_final_hparams_short.json`, CSV tag **`_short_ep${NUM_EPOCHS}`**; **full** = larger Phase 1 → inlined **`collect_results.py phase1`** → **`phase2_lr_check.sh`** per scale → `phase2_final_hparams.json` → Phase 3. Per-phase training launchers: **`experiments/generalization/phase1_gawf_search.sh`**, **`phase2_lr_check.sh`**, **`phase3_train_scale.sh`**. Ad-hoc aggregate / local-Phase3-only tools live under **`experiments/archive/`** (not used by the default `run_all` flow). See **`AGENT.md` section 8** and **`workflow.mdc`**.
+**Pipelines:** **`run_all_scales_2gpu.sh [short|full]`** (default **short**):
+**short** = smaller Phase 1 (four scales, including 40h), no Phase 2, inlined
+`collect_results` + `emit_hparams_shared`, `phase2_final_hparams_short.json`,
+CSV tag **`_short_ep${NUM_EPOCHS}`**; **full** = larger Phase 1 → inlined
+**`collect_results.py phase1`** → **`phase2_lr_check.sh`** per scale →
+`phase2_final_hparams.json` → Phase 3. The single-stage full-grid search is
+defined by **`hparam_full_grid.py`** and run on Amarel with
+**`experiments/amarel/submit_hparam_full_grid_batches.sh`**. Per-phase training
+launchers: **`experiments/generalization/phase1_gawf_search.sh`**,
+**`phase2_lr_check.sh`**, **`phase3_train_scale.sh`**. Ad-hoc aggregate /
+local-Phase3-only tools live under **`experiments/archive/`** (not used by the
+default `run_all` flow). See **`AGENT.md` section 8** and **`workflow.mdc`**.
 
 **Doc maintenance:** Human-requested edits to `.cursor/rules` should update **`AGENT.md`** and this file in the same change unless scoped otherwise (`workflow.mdc` **Doc alignment**).

@@ -21,8 +21,11 @@ alwaysApply: true
 | Metadata JSON | `results/anal_data/<module>/<descriptor>_meta_<tag>.json` | `avg_gate_meta_allcomp_sector3_space.json` |
 | Generalization launchers | `experiments/generalization/<phase>_<...>.sh` | `phase1_gawf_search.sh`, `phase2_lr_check.sh`, `phase3_train_scale.sh`, `run_all_scales_2gpu.sh` (`[short\|full]`, default short) |
 | Generalization aggregation | `experiments/generalization/collect_results.py` | Subcommands: `phase1`, `phase1_short`, `emit_hparams_shared`, `phase2`, `phase3`, `phase3_import` |
+| Full-grid hparam utility | `experiments/generalization/hparam_full_grid.py` | Subcommands: `emit-task`, `validate`, `status`, `summarize` |
+| Amarel launchers | `experiments/amarel/*hparam_full_grid*.sh` | `submit_hparam_full_grid_batches.sh`, `rerun_hparam_full_grid_failed.sh` |
+| Amarel probe | `experiments/amarel/probe_amarel_slurm_limits.sh` | Slurm `sbatch --test-only` probe |
 | Generalization tables | `experiments/generalization/artifacts/phase3_summary_<scale>.csv` | Optional **`_short`**: `phase3_summary_4h_short.csv` |
-| Generalization hparams JSON | `experiments/generalization/artifacts/phase1_best.json`, `phase2_final_hparams.json` | Short variants: `*_short.json` |
+| Generalization hparams JSON | `experiments/generalization/artifacts/phase1_best.json`, `phase2_final_hparams.json` | Short variants: `*_short.json`; full-grid best: `gen_hparam_full_grid/hparam_best.json` |
 | Generalization figures | `results/anal_figs/generalization/<metric>_vs_scale[ _short].{pdf,png}` | `overfit_gap_vs_scale`, `train_acc_vs_scale`, `val_acc_vs_scale` |
 | Generalization plot entry | `utils_viz/plot_generalization.py` | Flags: `--artifact_dir`, `--csv_tag`, `--out_dir`, `--save-pdf` |
 
