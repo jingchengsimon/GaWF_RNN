@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Submit the 1024-task full-grid search in <=200-task batches.
 #
-# From ~/aim3_runner:
-#   bash experiments/amarel/submit_hparam_full_grid_batches.sh
+# From ~/FAW_RNN/experiments/amarel:
+#   bash submit_hparam_full_grid_batches.sh
+#   bash submit_hparam_full_grid_batches.sh --scale 10
+#   bash submit_hparam_full_grid_batches.sh -scale 20
 #
 # The script waits for each batch to finish before submitting the next one so
 # the user's QOSMaxSubmitJobPerUserLimit is not exceeded.
@@ -13,13 +15,71 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT"
 
-TOTAL_TASKS="${TOTAL_TASKS:-1024}"
 BATCH_SIZE="${BATCH_SIZE:-200}"
 ARRAY_CONCURRENCY="${ARRAY_CONCURRENCY:-96}"
 POLL_SECONDS="${POLL_SECONDS:-300}"
 RUN_SCRIPT="$SCRIPT_DIR/run_hparam_full_grid_array.sh"
 SUBMIT_LOG_DIR="$ROOT/experiments/amarel/artifacts/hparam_full_grid"
 SUBMIT_LOG="$SUBMIT_LOG_DIR/submissions_$(date +%Y%m%d_%H%M%S).log"
+SCALE="all"
+START_TASK=""
+END_TASK=""
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bash submit_hparam_full_grid_batches.sh [--scale 4|10|20|40|all]
+  bash submit_hparam_full_grid_batches.sh [-scale 4|10|20|40|all]
+
+Defaults:
+  batch size = 200, array concurrency = 96, full range = 0-1023.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --scale|-scale)
+      SCALE="$2"
+      shift 2
+      ;;
+    --start-task)
+      START_TASK="$2"
+      shift 2
+      ;;
+    --end-task)
+      END_TASK="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+scale_to_range() {
+  case "$1" in
+    4|4h) echo "0 255" ;;
+    10|10h) echo "256 511" ;;
+    20|20h) echo "512 767" ;;
+    40|40h) echo "768 1023" ;;
+    all|"") echo "0 1023" ;;
+    *)
+      echo "Invalid scale: $1 (expected 4, 10, 20, 40, or all)" >&2
+      return 2
+      ;;
+  esac
+}
+
+read -r default_start default_end <<< "$(scale_to_range "$SCALE")"
+START_TASK="${START_TASK:-$default_start}"
+END_TASK="${END_TASK:-$default_end}"
+TOTAL_TASKS=$((END_TASK - START_TASK + 1))
 
 mkdir -p "$SUBMIT_LOG_DIR"
 
@@ -45,15 +105,17 @@ fi
 log "AIM3 full-grid hparam submission"
 log "timestamp=$(date -Is)"
 log "root=$ROOT"
+log "scale=$SCALE"
+log "task_range=${START_TASK}-${END_TASK}"
 log "total_tasks=$TOTAL_TASKS"
 log "batch_size=$BATCH_SIZE"
 log "array_concurrency=$ARRAY_CONCURRENCY"
 log "run_script=$RUN_SCRIPT"
 log "submit_log=$SUBMIT_LOG"
 
-start=0
-while [[ "$start" -lt "$TOTAL_TASKS" ]]; do
-  remaining=$((TOTAL_TASKS - start))
+start="$START_TASK"
+while [[ "$start" -le "$END_TASK" ]]; do
+  remaining=$((END_TASK - start + 1))
   if [[ "$remaining" -lt "$BATCH_SIZE" ]]; then
     count="$remaining"
   else

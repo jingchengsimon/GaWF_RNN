@@ -1,0 +1,75 @@
+2026-04-29 15:56:17 | INFO | Using preset CUDA_VISIBLE_DEVICES=1 (device=cuda)
+2026-04-29 15:56:17 | INFO | Random seed set to: 42
+2026-04-29 15:56:17 | INFO | Created or using results directory: results/train_data/gen_local_hparam_4h_5epoch_test
+2026-04-29 15:56:17 | INFO | Using base path (override): /G/MIMOlab/Codes/aim3_RNN/stimuli
+2026-04-29 15:56:17 | INFO | Checking data paths...
+2026-04-29 15:56:17 | INFO | Base path: /G/MIMOlab/Codes/aim3_RNN/stimuli
+2026-04-29 15:56:17 | INFO |   OK train stim: /G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-train-4h-float32.npy
+2026-04-29 15:56:17 | INFO |   OK train label: /G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-train-4h-float32.tsv
+2026-04-29 15:56:17 | INFO | Checking data paths...
+2026-04-29 15:56:17 | INFO | Base path: /G/MIMOlab/Codes/aim3_RNN/stimuli
+2026-04-29 15:56:17 | INFO |   OK val stim: /G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-validation-40h-float32.npy
+2026-04-29 15:56:17 | INFO |   OK val label: /G/MIMOlab/Codes/aim3_RNN/stimuli/stimulus_reg-validation-40h-float32.tsv
+2026-04-29 15:56:17 | INFO | Train suffix=4h-float32, validation suffix=40h-float32 (shared eval set across scales).
+2026-04-29 15:56:17 | INFO | Loading data (train, valid)...
+2026-04-29 15:56:17 | INFO |   Loaded training stimuli (mmap): (345600, 96, 96)
+2026-04-29 15:56:17 | INFO |   Loaded validation stimuli (mmap): (57600, 96, 96)
+2026-04-29 15:56:17 | INFO |   Loaded training labels: (345600, 8)
+2026-04-29 15:56:17 | INFO |   Loaded validation labels: (57600, 8)
+2026-04-29 15:56:17 | INFO | Creating datasets...
+2026-04-29 15:56:17 | INFO | Using sector mode (3x3 grid, 9 sectors)
+2026-04-29 15:56:17 | INFO | ============================================================
+2026-04-29 15:56:17 | INFO | Starting training loop: 1 experiments
+2026-04-29 15:56:17 | INFO | Models: ['gawf'] | Hidden sizes: [256]
+2026-04-29 15:56:17 | INFO | Learning rates: [0.0005] | Weight decays: [0.0001] | CNN dropout (grid): [0.0] | RNN dropout: 0.5
+2026-04-29 15:56:17 | INFO | ============================================================
+2026-04-29 15:56:17 | INFO | Experiment 1/1: GAWF | hidden_size=256 | lr=0.0005 | weight_decay=0.0001 | cnn_dropout=0.0 | rnn_dropout=0.5
+2026-04-29 15:56:17 | INFO | ============================================================
+2026-04-29 15:56:17 | INFO | Created GAWF model (predict_all_chars=True, max_chars=15, cnn_dropout=0.0, rnn_dropout=0.5, hidden_size=256, cnn_feature_size=large)
+2026-04-29 15:56:17 | INFO | Starting training...
+2026-04-29 15:56:17 | INFO | Acceleration training enabled
+2026-04-29 15:56:17 | INFO | Enabling acceleration training...
+2026-04-29 15:56:17 | INFO | Acceleration: batch_size=256, num_workers=0, pin_memory=False, AMP=enabled
+2026-04-29 15:56:18 | INFO | Dataset Information:
+2026-04-29 15:56:18 | INFO |   Training dataset size: 10799 samples
+2026-04-29 15:56:18 | INFO |   Validation dataset size: 1799 samples
+2026-04-29 15:56:18 | INFO |   Batch size per step: 256
+2026-04-29 15:56:18 | INFO |   Effective batch size (with grad accum): 256
+2026-04-29 15:56:18 | INFO |   Number of batches per epoch: 42
+2026-04-29 15:56:18 | INFO |   use_sector: True, predict_all_chars: False
+2026-04-29 15:56:18 | INFO |   acceleration: True, workers: 0, pin_memory: False
+2026-04-29 15:56:18 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Epoch 1/5 [Train]
+2026-04-29 15:57:20 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Train(eval-subset)
+2026-04-29 15:57:24 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Validation
+2026-04-29 15:57:28 | INFO | Epoch 1/5 - Train (char, sector): (11.06%, 43.01%) Validation (char, sector): (11.12%, 41.98%) | Train(online): acc_char=10.26, metric_pos=34.5197, loss_pos=1.7281, loss_char=2.3774
+2026-04-29 15:57:28 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Epoch 1/5 wall_time_sec=70.37 (train + fair train-eval + fair val)
+2026-04-29 15:57:28 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Epoch 2/5 [Train]
+2026-04-29 15:58:28 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Train(eval-subset)
+2026-04-29 15:58:32 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Validation
+2026-04-29 15:58:37 | INFO | Epoch 2/5 - Train (char, sector): (11.69%, 60.11%) Validation (char, sector): (10.80%, 59.95%) | Train(online): acc_char=10.89, metric_pos=49.6733, loss_pos=1.3486, loss_char=2.3457
+2026-04-29 15:58:37 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Epoch 2/5 wall_time_sec=68.11 (train + fair train-eval + fair val)
+2026-04-29 15:58:37 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Epoch 3/5 [Train]
+2026-04-29 15:59:37 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Train(eval-subset)
+2026-04-29 15:59:41 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Validation
+2026-04-29 15:59:45 | INFO | Epoch 3/5 - Train (char, sector): (14.60%, 73.40%) Validation (char, sector): (12.44%, 73.66%) | Train(online): acc_char=11.75, metric_pos=63.3356, loss_pos=1.0344, loss_char=2.3249
+2026-04-29 15:59:45 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Epoch 3/5 wall_time_sec=68.22 (train + fair train-eval + fair val)
+2026-04-29 15:59:45 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Epoch 4/5 [Train]
+2026-04-29 16:00:44 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Train(eval-subset)
+2026-04-29 16:00:48 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Validation
+2026-04-29 16:00:52 | INFO | Epoch 4/5 - Train (char, sector): (17.23%, 77.64%) Validation (char, sector): (14.16%, 76.47%) | Train(online): acc_char=12.94, metric_pos=71.0353, loss_pos=0.8471, loss_char=2.3038
+2026-04-29 16:00:52 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Epoch 4/5 wall_time_sec=67.57 (train + fair train-eval + fair val)
+2026-04-29 16:00:52 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Epoch 5/5 [Train]
+2026-04-29 16:01:52 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Train(eval-subset)
+2026-04-29 16:01:56 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Validation
+2026-04-29 16:02:00 | INFO | Epoch 5/5 - Train (char, sector): (19.11%, 80.14%) Validation (char, sector): (16.12%, 78.46%) | Train(online): acc_char=14.55, metric_pos=74.1900, loss_pos=0.7631, loss_char=2.2790
+2026-04-29 16:02:00 | INFO | [gen_local_hparam_4h_5epoch_test|e001|gawf] Epoch 5/5 wall_time_sec=67.40 (train + fair train-eval + fair val)
+2026-04-29 16:02:00 | INFO | Training summary: early_stop_epoch=5, best_val_epoch=5, train_acc@best=19.111633, val_acc@best=16.119821, overfit_gap=2.991812, stopped_by_patience=False
+2026-04-29 16:02:00 | INFO | Saving results for GAWF (hidden_size=256)...
+2026-04-29 16:02:00 | INFO | Model has position prediction layer (num_pos=9)
+2026-04-29 16:02:00 | INFO | Model state dict saved to: results/train_data/gen_local_hparam_4h_5epoch_test/gawf_sector_acc_h256_lr0.0005_wd0.0001_cdo0.0_rdo0.5_model.pth
+2026-04-29 16:02:00 | INFO | Results saved to: results/train_data/gen_local_hparam_4h_5epoch_test/gawf_sector_acc_h256_lr0.0005_wd0.0001_cdo0.0_rdo0.5.pkl
+2026-04-29 16:02:00 | INFO | Wrote metrics summary to results/train_data/gen_local_hparam_4h_5epoch_test/gawf_sector_acc_h256_lr0.0005_wd0.0001_cdo0.0_rdo0.5_metrics.json
+2026-04-29 16:02:00 | INFO | Experiment 1/1 completed!
+2026-04-29 16:02:00 | INFO | ============================================================
+2026-04-29 16:02:00 | INFO | All 1 experiments completed! Results saved to: results/train_data/gen_local_hparam_4h_5epoch_test/
+2026-04-29 16:02:00 | INFO | ============================================================

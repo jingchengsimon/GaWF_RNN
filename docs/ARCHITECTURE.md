@@ -230,5 +230,8 @@ default `run_all` flow). See **`AGENT.md` section 8** and **`workflow.mdc`**.
 Amarel logs for full and smoke-test submissions are written under
 **`experiments/amarel/artifacts/`**; the 4h/5-epoch smoke test runs only the four
 model families at fixed `hidden_size=256`, `lr=5e-4`, `wd=1e-4`.
+Local two-GPU launchers live under **`experiments/local/`** and reuse the same
+`hparam_full_grid.py` task-id mapping while replacing Slurm arrays with local
+`CUDA_VISIBLE_DEVICES` process scheduling.
 
 **Doc maintenance:** Human-requested edits to `.cursor/rules` should update **`AGENT.md`** and this file in the same change unless scoped otherwise (`workflow.mdc` **Doc alignment**).

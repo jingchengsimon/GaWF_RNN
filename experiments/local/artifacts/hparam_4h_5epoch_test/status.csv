@@ -1,0 +1,5 @@
+model,valid,reason,metrics_path
+rnn,1,ok,/G/MIMOlab/Codes/aim3_RNN/results/train_data/gen_local_hparam_4h_5epoch_test/rnn_sector_acc_h256_lr0.0005_wd0.0001_cdo0.0_rdo0.5_metrics.json
+lstm,1,ok,/G/MIMOlab/Codes/aim3_RNN/results/train_data/gen_local_hparam_4h_5epoch_test/lstm_sector_acc_h256_lr0.0005_wd0.0001_cdo0.0_rdo0.5_metrics.json
+gru,1,ok,/G/MIMOlab/Codes/aim3_RNN/results/train_data/gen_local_hparam_4h_5epoch_test/gru_sector_acc_h256_lr0.0005_wd0.0001_cdo0.0_rdo0.5_metrics.json
+gawf,1,ok,/G/MIMOlab/Codes/aim3_RNN/results/train_data/gen_local_hparam_4h_5epoch_test/gawf_sector_acc_h256_lr0.0005_wd0.0001_cdo0.0_rdo0.5_metrics.json

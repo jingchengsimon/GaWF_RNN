@@ -25,6 +25,7 @@ alwaysApply: true
 | Amarel launchers | `experiments/amarel/*hparam_full_grid*.sh` | `submit_hparam_full_grid_batches.sh`, `rerun_hparam_full_grid_failed.sh` |
 | Amarel smoke-test launchers | `experiments/amarel/*hparam_4h_5epoch_test*.sh` | 4h-only, 5-epoch hparam submission/status check |
 | Amarel probe | `experiments/amarel/probe_amarel_slurm_limits.sh` | Slurm `sbatch --test-only` probe |
+| Local hparam launchers | `experiments/local/*hparam*.sh` | `run_hparam_full_grid_2gpu.sh --scale 4`, local 2-GPU runs |
 | Generalization tables | `experiments/generalization/artifacts/phase3_summary_<scale>.csv` | Optional **`_short`**: `phase3_summary_4h_short.csv` |
 | Generalization hparams JSON | `experiments/generalization/artifacts/phase1_best.json`, `phase2_final_hparams.json` | Short variants: `*_short.json`; full-grid best: `gen_hparam_full_grid/hparam_best.json` |
 | Generalization figures | `results/anal_figs/generalization/<metric>_vs_scale[ _short].{pdf,png}` | `overfit_gap_vs_scale`, `train_acc_vs_scale`, `val_acc_vs_scale` |
