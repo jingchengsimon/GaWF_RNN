@@ -315,9 +315,10 @@ Amarel Slurm stdout/stderr and submission logs live under
 campaign, use `submit_hparam_4h_5epoch_test.sh` and
 `check_hparam_4h_5epoch_test_status.sh`; this runs only four 4h/5-epoch jobs
 (`rnn`, `lstm`, `gru`, `gawf`) at `hidden_size=256`, `lr=5e-4`, `wd=1e-4`.
-`submit_hparam_full_grid_batches.sh --scale <4|10|20|40|all>` submits only the
-selected scale's 256-task slice when requested. Local two-GPU debugging uses
-`experiments/local/run_hparam_full_grid_2gpu.sh --scale <4|10|20|40|all>`,
+`submit_hparam_full_grid_batches.sh --scale <4|10|20|40|all ...>` submits only
+the selected scale slices when requested, e.g. `--scale 10 20 40` skips 4h.
+Local two-GPU debugging uses
+`experiments/local/run_hparam_full_grid_2gpu.sh --scale <4|10|20|40|all ...>`,
 which reuses the same `hparam_full_grid.py` task mapping but runs at most two
 training processes concurrently via `CUDA_VISIBLE_DEVICES`.
 

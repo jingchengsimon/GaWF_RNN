@@ -65,7 +65,7 @@
 | Amarel launchers | `experiments/amarel/*hparam_full_grid*.sh` | `submit_hparam_full_grid_batches.sh`, `rerun_hparam_full_grid_failed.sh` |
 | Amarel smoke-test launchers | `experiments/amarel/*hparam_4h_5epoch_test*.sh` | 4h-only, 5-epoch, 4-model fixed-hparam submission/status check |
 | Amarel probe | `experiments/amarel/probe_amarel_slurm_limits.sh` | Slurm `sbatch --test-only` probe |
-| Local hparam launchers | `experiments/local/*hparam*.sh` | `run_hparam_full_grid_2gpu.sh --scale 4`, local 2-GPU smoke/full-grid runs |
+| Local hparam launchers | `experiments/local/*hparam*.sh` | `run_hparam_full_grid_2gpu.sh --scale 10 20 40`, local 2-GPU smoke/full-grid runs |
 
 ## 3. File Suffix Conventions
 

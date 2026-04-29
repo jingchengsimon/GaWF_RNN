@@ -4,7 +4,7 @@
 # From ~/FAW_RNN/experiments/amarel:
 #   bash submit_hparam_full_grid_batches.sh
 #   bash submit_hparam_full_grid_batches.sh --scale 10
-#   bash submit_hparam_full_grid_batches.sh -scale 20
+#   bash submit_hparam_full_grid_batches.sh --scale 10 20 40
 #
 # The script waits for each batch to finish before submitting the next one so
 # the user's QOSMaxSubmitJobPerUserLimit is not exceeded.
@@ -21,15 +21,15 @@ POLL_SECONDS="${POLL_SECONDS:-300}"
 RUN_SCRIPT="$SCRIPT_DIR/run_hparam_full_grid_array.sh"
 SUBMIT_LOG_DIR="$ROOT/experiments/amarel/artifacts/hparam_full_grid"
 SUBMIT_LOG="$SUBMIT_LOG_DIR/submissions_$(date +%Y%m%d_%H%M%S).log"
-SCALE="all"
+SCALES=(all)
 START_TASK=""
 END_TASK=""
 
 usage() {
   cat <<'EOF'
 Usage:
-  bash submit_hparam_full_grid_batches.sh [--scale 4|10|20|40|all]
-  bash submit_hparam_full_grid_batches.sh [-scale 4|10|20|40|all]
+  bash submit_hparam_full_grid_batches.sh [--scale 4|10|20|40|all ...]
+  bash submit_hparam_full_grid_batches.sh [-scale 10 20 40]
 
 Defaults:
   batch size = 200, array concurrency = 96, full range = 0-1023.
@@ -39,8 +39,16 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --scale|-scale)
-      SCALE="$2"
-      shift 2
+      SCALES=()
+      shift
+      while [[ $# -gt 0 && "$1" != -* ]]; do
+        SCALES+=("$1")
+        shift
+      done
+      if [[ "${#SCALES[@]}" -eq 0 ]]; then
+        echo "--scale requires at least one value" >&2
+        exit 2
+      fi
       ;;
     --start-task)
       START_TASK="$2"
@@ -76,12 +84,30 @@ scale_to_range() {
   esac
 }
 
-read -r default_start default_end <<< "$(scale_to_range "$SCALE")"
-START_TASK="${START_TASK:-$default_start}"
-END_TASK="${END_TASK:-$default_end}"
-TOTAL_TASKS=$((END_TASK - START_TASK + 1))
+TASK_IDS=()
+if [[ -n "$START_TASK" || -n "$END_TASK" ]]; then
+  if [[ -z "$START_TASK" || -z "$END_TASK" ]]; then
+    echo "--start-task and --end-task must be provided together" >&2
+    exit 2
+  fi
+  for ((task_id = START_TASK; task_id <= END_TASK; task_id++)); do
+    TASK_IDS+=("$task_id")
+  done
+else
+  for scale in "${SCALES[@]}"; do
+    read -r range_start range_end <<< "$(scale_to_range "$scale")"
+    for ((task_id = range_start; task_id <= range_end; task_id++)); do
+      TASK_IDS+=("$task_id")
+    done
+  done
+fi
+TOTAL_TASKS="${#TASK_IDS[@]}"
+TASK_LIST_DIR="$ROOT/experiments/amarel/artifacts/hparam_full_grid/task_lists"
+TASK_LIST_FILE="$TASK_LIST_DIR/tasks_$(date +%Y%m%d_%H%M%S).txt"
 
 mkdir -p "$SUBMIT_LOG_DIR"
+mkdir -p "$TASK_LIST_DIR"
+printf '%s\n' "${TASK_IDS[@]}" > "$TASK_LIST_FILE"
 
 log() {
   printf '%s\n' "$*" | tee -a "$SUBMIT_LOG"
@@ -105,17 +131,22 @@ fi
 log "AIM3 full-grid hparam submission"
 log "timestamp=$(date -Is)"
 log "root=$ROOT"
-log "scale=$SCALE"
-log "task_range=${START_TASK}-${END_TASK}"
+log "scales=${SCALES[*]}"
+log "task_list=$TASK_LIST_FILE"
+if [[ "$TOTAL_TASKS" -gt 0 ]]; then
+  log "task_range=${TASK_IDS[0]}-${TASK_IDS[$((TOTAL_TASKS - 1))]}"
+else
+  log "task_range=<empty>"
+fi
 log "total_tasks=$TOTAL_TASKS"
 log "batch_size=$BATCH_SIZE"
 log "array_concurrency=$ARRAY_CONCURRENCY"
 log "run_script=$RUN_SCRIPT"
 log "submit_log=$SUBMIT_LOG"
 
-start="$START_TASK"
-while [[ "$start" -le "$END_TASK" ]]; do
-  remaining=$((END_TASK - start + 1))
+start=0
+while [[ "$start" -lt "$TOTAL_TASKS" ]]; do
+  remaining=$((TOTAL_TASKS - start))
   if [[ "$remaining" -lt "$BATCH_SIZE" ]]; then
     count="$remaining"
   else
@@ -129,14 +160,14 @@ while [[ "$start" -le "$END_TASK" ]]; do
   fi
 
   log ""
-  log "Submitting task_id ${start}-${end} as array 0-${array_last}%${throttle}"
+  log "Submitting task-list rows ${start}-${end} as array 0-${array_last}%${throttle}"
   job_id="$(
     sbatch --parsable \
-      --export=ALL,AIM3_ROOT="$ROOT",TASK_OFFSET="$start" \
+      --export=ALL,AIM3_ROOT="$ROOT",TASK_ID_FILE="$TASK_LIST_FILE",TASK_FILE_OFFSET="$start" \
       --array="0-${array_last}%${throttle}" \
       "$RUN_SCRIPT"
   )"
-  log "Submitted job_id=$job_id for task_id ${start}-${end}"
+  log "Submitted job_id=$job_id for task-list rows ${start}-${end}"
   wait_for_job "$job_id"
   start=$((end + 1))
 done

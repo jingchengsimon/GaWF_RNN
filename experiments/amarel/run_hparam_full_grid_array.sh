@@ -28,7 +28,8 @@ if [[ -n "${TASK_ID_FILE:-}" ]]; then
     echo "TASK_ID_FILE requires SLURM_ARRAY_TASK_ID" >&2
     exit 2
   fi
-  TASK_ID="$(sed -n "$((SLURM_ARRAY_TASK_ID + 1))p" "$TASK_ID_FILE")"
+  TASK_FILE_OFFSET="${TASK_FILE_OFFSET:-0}"
+  TASK_ID="$(sed -n "$((TASK_FILE_OFFSET + SLURM_ARRAY_TASK_ID + 1))p" "$TASK_ID_FILE")"
 else
   TASK_OFFSET="${TASK_OFFSET:-0}"
   TASK_ID="$((TASK_OFFSET + ${SLURM_ARRAY_TASK_ID:-0}))"
