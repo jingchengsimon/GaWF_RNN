@@ -313,8 +313,8 @@ tasks are recorded and rerun explicitly; there is no automatic retry loop.
 Amarel Slurm stdout/stderr and submission logs live under
 `experiments/amarel/artifacts/`. For launch validation before the full 1024-run
 campaign, use `submit_hparam_4h_5epoch_test.sh` and
-`check_hparam_4h_5epoch_test_status.sh`; this runs the 4h slice of the same
-grid for 5 epochs.
+`check_hparam_4h_5epoch_test_status.sh`; this runs only four 4h/5-epoch jobs
+(`rnn`, `lstm`, `gru`, `gawf`) at `hidden_size=256`, `lr=5e-4`, `wd=1e-4`.
 
 ---
 

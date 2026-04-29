@@ -9,7 +9,7 @@
 #SBATCH --output=experiments/amarel/artifacts/hparam_4h_5epoch_test/%A_%a.out
 #SBATCH --error=experiments/amarel/artifacts/hparam_4h_5epoch_test/%A_%a.err
 
-# Run one 4h/5-epoch hparam smoke-test task.
+# Run one 4h/5-epoch smoke-test task.
 
 set -euo pipefail
 
@@ -21,10 +21,10 @@ fi
 cd "$ROOT"
 
 MODELS=(rnn lstm gru gawf)
-HIDDEN_SIZES=(64 128 256 512)
-LRS=(0.0001 0.0005 0.001 0.005)
-WDS=(0.0 1e-05 0.0001 0.001)
-TOTAL_TASKS=256
+TOTAL_TASKS=4
+HIDDEN_SIZE=256
+LR=0.0005
+WD=0.0001
 NUM_EPOCHS=5
 PATIENCE=15
 SEED=42
@@ -42,15 +42,7 @@ if [[ "$TASK_ID" -lt 0 || "$TASK_ID" -ge "$TOTAL_TASKS" ]]; then
   exit 2
 fi
 
-wd_idx=$((TASK_ID % 4))
-lr_idx=$(((TASK_ID / 4) % 4))
-hidden_idx=$(((TASK_ID / 16) % 4))
-model_idx=$(((TASK_ID / 64) % 4))
-
-MODEL_TYPE="${MODELS[$model_idx]}"
-HIDDEN_SIZE="${HIDDEN_SIZES[$hidden_idx]}"
-LR="${LRS[$lr_idx]}"
-WD="${WDS[$wd_idx]}"
+MODEL_TYPE="${MODELS[$TASK_ID]}"
 DATA_SUFFIX="4h-float32"
 EVAL_DATA_SUFFIX="40h-float32"
 RESULT_SUFFIX="${RESULT_ROOT_SUFFIX}/task_$(printf '%04d' "$TASK_ID")"

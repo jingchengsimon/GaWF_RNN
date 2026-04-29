@@ -8,10 +8,10 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT"
 
 MODELS=(rnn lstm gru gawf)
-HIDDEN_SIZES=(64 128 256 512)
-LRS=(0.0001 0.0005 0.001 0.005)
-WDS=(0.0 1e-05 0.0001 0.001)
-TOTAL_TASKS=256
+TOTAL_TASKS=4
+HIDDEN_SIZE=256
+LR=0.0005
+WD=0.0001
 RESULT_ROOT_SUFFIX="gen_hparam_4h_5epoch_test"
 OUT_DIR="experiments/generalization/artifacts/${RESULT_ROOT_SUFFIX}"
 STATUS_CSV="$OUT_DIR/hparam_4h_5epoch_test_status.csv"
@@ -23,15 +23,10 @@ echo "task_id,model,hidden_size,lr,weight_decay,valid,reason,metrics_path" > "$S
 
 valid_count=0
 for ((task_id = 0; task_id < TOTAL_TASKS; task_id++)); do
-  wd_idx=$((task_id % 4))
-  lr_idx=$(((task_id / 4) % 4))
-  hidden_idx=$(((task_id / 16) % 4))
-  model_idx=$(((task_id / 64) % 4))
-
-  model="${MODELS[$model_idx]}"
-  hidden="${HIDDEN_SIZES[$hidden_idx]}"
-  lr="${LRS[$lr_idx]}"
-  wd="${WDS[$wd_idx]}"
+  model="${MODELS[$task_id]}"
+  hidden="$HIDDEN_SIZE"
+  lr="$LR"
+  wd="$WD"
   result_suffix="${RESULT_ROOT_SUFFIX}/task_$(printf '%04d' "$task_id")"
   stem="${model}_sector_acc_h${hidden}_lr${lr}_wd${wd}_cdo0.0_rdo0.5"
   metrics_path="$ROOT/results/train_data/${result_suffix}/${stem}_metrics.json"

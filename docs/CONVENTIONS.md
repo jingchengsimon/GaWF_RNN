@@ -63,7 +63,7 @@
 |----------|---------|---------|
 | Full-grid hparam utility | `experiments/generalization/hparam_full_grid.py` | Subcommands: `emit-task`, `validate`, `status`, `summarize` |
 | Amarel launchers | `experiments/amarel/*hparam_full_grid*.sh` | `submit_hparam_full_grid_batches.sh`, `rerun_hparam_full_grid_failed.sh` |
-| Amarel smoke-test launchers | `experiments/amarel/*hparam_4h_5epoch_test*.sh` | 4h-only, 5-epoch hparam submission/status check |
+| Amarel smoke-test launchers | `experiments/amarel/*hparam_4h_5epoch_test*.sh` | 4h-only, 5-epoch, 4-model fixed-hparam submission/status check |
 | Amarel probe | `experiments/amarel/probe_amarel_slurm_limits.sh` | Slurm `sbatch --test-only` probe |
 
 ## 3. File Suffix Conventions

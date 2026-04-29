@@ -4,7 +4,7 @@
 # From ~/aim3_runner:
 #   bash experiments/amarel/submit_hparam_4h_5epoch_test.sh
 #
-# Grid size: 4 models x 4 hidden sizes x 4 LRs x 4 WDs = 256 tasks.
+# Grid size: 4 models x one fixed hparam setting = 4 tasks.
 
 set -euo pipefail
 
@@ -12,9 +12,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT"
 
-TOTAL_TASKS="${TOTAL_TASKS:-256}"
-BATCH_SIZE="${BATCH_SIZE:-200}"
-ARRAY_CONCURRENCY="${ARRAY_CONCURRENCY:-96}"
+TOTAL_TASKS="${TOTAL_TASKS:-4}"
+BATCH_SIZE="${BATCH_SIZE:-4}"
+ARRAY_CONCURRENCY="${ARRAY_CONCURRENCY:-4}"
 POLL_SECONDS="${POLL_SECONDS:-300}"
 RUN_SCRIPT="$SCRIPT_DIR/run_hparam_4h_5epoch_test_array.sh"
 SUBMIT_LOG_DIR="$ROOT/experiments/amarel/artifacts/hparam_4h_5epoch_test"
@@ -47,6 +47,7 @@ log "root=$ROOT"
 log "total_tasks=$TOTAL_TASKS"
 log "batch_size=$BATCH_SIZE"
 log "array_concurrency=$ARRAY_CONCURRENCY"
+log "fixed_hparams=hidden_size=256,lr=0.0005,wd=0.0001"
 log "run_script=$RUN_SCRIPT"
 log "submit_log=$SUBMIT_LOG"
 
