@@ -76,7 +76,7 @@ while [[ "$start" -lt "$total" ]]; do
   log "Submitting rerun chunk $chunk_idx with $count task(s): $chunk_file"
   job_id="$(
     sbatch --parsable \
-      --export=ALL,TASK_ID_FILE="$chunk_file" \
+      --export=ALL,AIM3_ROOT="$ROOT",TASK_ID_FILE="$chunk_file" \
       --array="0-${array_last}%${throttle}" \
       "$RUN_SCRIPT"
   )"

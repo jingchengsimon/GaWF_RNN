@@ -14,11 +14,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ROOT="${AIM3_ROOT:-${SLURM_SUBMIT_DIR:-}}"
+if [[ -z "$ROOT" || ! -f "$ROOT/train_model.py" ]]; then
+  ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+fi
 cd "$ROOT"
 
-mkdir -p experiments/amarel/artifacts/hparam_full_grid
-mkdir -p experiments/generalization/artifacts/gen_hparam_full_grid/status
+mkdir -p "$ROOT/experiments/amarel/artifacts/hparam_full_grid"
+mkdir -p "$ROOT/experiments/generalization/artifacts/gen_hparam_full_grid/status"
 
 if [[ -n "${TASK_ID_FILE:-}" ]]; then
   if [[ -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then

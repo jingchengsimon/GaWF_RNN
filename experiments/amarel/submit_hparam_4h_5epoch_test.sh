@@ -69,7 +69,7 @@ while [[ "$start" -lt "$TOTAL_TASKS" ]]; do
   log "Submitting test task_id ${start}-${end} as array 0-${array_last}%${throttle}"
   job_id="$(
     sbatch --parsable \
-      --export=ALL,TASK_OFFSET="$start" \
+      --export=ALL,AIM3_ROOT="$ROOT",TASK_OFFSET="$start" \
       --array="0-${array_last}%${throttle}" \
       "$RUN_SCRIPT"
   )"

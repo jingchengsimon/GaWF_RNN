@@ -14,7 +14,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ROOT="${AIM3_ROOT:-${SLURM_SUBMIT_DIR:-}}"
+if [[ -z "$ROOT" || ! -f "$ROOT/train_model.py" ]]; then
+  ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+fi
 cd "$ROOT"
 
 MODELS=(rnn lstm gru gawf)
@@ -29,8 +32,8 @@ CNN_DROPOUT=0.0
 RNN_DROPOUT=0.5
 RESULT_ROOT_SUFFIX="gen_hparam_4h_5epoch_test"
 
-mkdir -p experiments/amarel/artifacts/hparam_4h_5epoch_test
-mkdir -p experiments/generalization/artifacts/${RESULT_ROOT_SUFFIX}/status
+mkdir -p "$ROOT/experiments/amarel/artifacts/hparam_4h_5epoch_test"
+mkdir -p "$ROOT/experiments/generalization/artifacts/${RESULT_ROOT_SUFFIX}/status"
 
 TASK_OFFSET="${TASK_OFFSET:-0}"
 TASK_ID="$((TASK_OFFSET + ${SLURM_ARRAY_TASK_ID:-0}))"
