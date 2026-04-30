@@ -21,6 +21,9 @@ logs_hparam/
 *.mp4
 *.tsv
 
+# 实验结果 artifacts
+experiments/*/artifacts/
+
 *.pth
 *.pkl
 
