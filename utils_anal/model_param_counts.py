@@ -32,8 +32,8 @@ def build_models(
     hidden_lstm: int,
     hidden_gru: int,
     hidden_gawf: int,
-    hidden_mamba: int,
-    hidden_ssm: int,
+    mamba_d_model: int,
+    ssm_d_model: int,
     mamba_num_layers: int = 1,
     mamba_d_state: int = 16,
     mamba_d_conv: int = 4,
@@ -64,7 +64,7 @@ def build_models(
         "gru": GRUConv(hidden_size=hidden_gru, **common),
         "gawf": GaWFRNNConv(hidden_size=hidden_gawf, **common),
         "ssm": SSMConv(
-            hidden_size=hidden_ssm,
+            ssm_d_model=ssm_d_model,
             ssm_num_layers=ssm_num_layers,
             ssm_state_size=ssm_state_size,
             **common,
@@ -73,7 +73,7 @@ def build_models(
     if MambaConv is not None:
         try:
             models["mamba"] = MambaConv(
-                hidden_size=hidden_mamba,
+                mamba_d_model=mamba_d_model,
                 mamba_num_layers=mamba_num_layers,
                 mamba_d_state=mamba_d_state,
                 mamba_d_conv=mamba_d_conv,
@@ -114,16 +114,16 @@ def parse_args() -> argparse.Namespace:
         help="Hidden size for GaWFRNNConv (default: 256).",
     )
     parser.add_argument(
-        "--hidden_mamba",
+        "--mamba_d_model",
         type=int,
-        default=256,
-        help="Hidden size / d_model for MambaConv (default: 256).",
+        default=170,
+        help="Mamba sequence width d_model (default: 170).",
     )
     parser.add_argument(
-        "--hidden_ssm",
+        "--ssm_d_model",
         type=int,
         default=256,
-        help="Hidden size for SSMConv (default: 256).",
+        help="SSM sequence feature width d_model (default: 256).",
     )
     parser.add_argument(
         "--mamba_num_layers",
@@ -158,8 +158,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ssm_state_size",
         type=int,
-        default=None,
-        help="Diagonal SSM state size; default None uses hidden_ssm.",
+        default=189,
+        help="Diagonal SSM state size (default: 189).",
     )
     parser.add_argument(
         "--device",
@@ -209,8 +209,8 @@ def main():
         hidden_lstm=args.hidden_lstm,
         hidden_gru=args.hidden_gru,
         hidden_gawf=args.hidden_gawf,
-        hidden_mamba=args.hidden_mamba,
-        hidden_ssm=args.hidden_ssm,
+        mamba_d_model=args.mamba_d_model,
+        ssm_d_model=args.ssm_d_model,
         mamba_num_layers=args.mamba_num_layers,
         mamba_d_state=args.mamba_d_state,
         mamba_d_conv=args.mamba_d_conv,
@@ -231,8 +231,8 @@ def main():
         f" hidden_lstm={args.hidden_lstm},"
         f" hidden_gru={args.hidden_gru},"
         f" hidden_gawf={args.hidden_gawf},"
-        f" hidden_mamba={args.hidden_mamba},"
-        f" hidden_ssm={args.hidden_ssm},"
+        f" mamba_d_model={args.mamba_d_model},"
+        f" ssm_d_model={args.ssm_d_model},"
         f" mamba_num_layers={args.mamba_num_layers},"
         f" mamba_d_state={args.mamba_d_state},"
         f" mamba_d_conv={args.mamba_d_conv},"

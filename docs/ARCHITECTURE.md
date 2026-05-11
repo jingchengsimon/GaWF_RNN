@@ -14,6 +14,8 @@ aim3_RNN/
 │   ├── train_rnn_core.py    ← Model base classes and standard RNN variants
 │   ├── train_gawf_core.py   ← GaWF feedback model
 │   ├── train_ann_core.py    ← ANN/Dendritic model variants
+│   ├── train_mamba_core.py  ← Mamba sequence model adapter
+│   ├── train_ssm_core.py    ← Diagonal SSM sequence model
 │   ├── train_helpers.py     ← I/O, logging, arg parsing, seeding, path resolution
 │   ├── train_rnn_engine.py  ← Training step orchestration (setup, train, evaluate)
 │   ├── train_acceleration.py← AMP, grad scaler, DataLoader builder, TrainStepper

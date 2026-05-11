@@ -5,6 +5,9 @@ import torch.nn.functional as F
 from .train_rnn_core import BaseConvSequenceModel
 
 
+MAMBA_DEFAULT_D_MODEL = 170
+
+
 def _get_mamba_block(block_type: str):
     try:
         from mamba_ssm import Mamba
@@ -40,7 +43,7 @@ class MambaRNNWrapper(nn.Module):
     def __init__(
         self,
         input_size: int,
-        hidden_size: int,
+        d_model: int,
         num_layers: int = 1,
         batch_first: bool = True,
         dropout: float = 0.0,
@@ -58,21 +61,22 @@ class MambaRNNWrapper(nn.Module):
         if num_layers < 1:
             raise ValueError("num_layers must be >= 1")
 
-        self.hidden_size = hidden_size
+        self.hidden_size = d_model
+        self.d_model = d_model
         self.num_layers = num_layers
         self.batch_first = batch_first
         self.residual = residual
 
         self.input_proj = (
-            nn.Linear(input_size, hidden_size)
-            if input_size != hidden_size
+            nn.Linear(input_size, d_model)
+            if input_size != d_model
             else nn.Identity()
         )
         block_cls = _get_mamba_block(block_type)
         self.layers = nn.ModuleList(
             [
                 block_cls(
-                    d_model=hidden_size,
+                    d_model=d_model,
                     d_state=d_state,
                     d_conv=d_conv,
                     expand=expand,
@@ -119,7 +123,7 @@ class MambaConv(BaseConvSequenceModel):
         device="cuda",
         cnn_dropout=0.0,
         rnn_dropout=0.5,
-        hidden_size=256,
+        mamba_d_model=MAMBA_DEFAULT_D_MODEL,
         max_chars=15,
         predict_all_chars=False,
         mamba_num_layers=1,
@@ -137,13 +141,14 @@ class MambaConv(BaseConvSequenceModel):
             device=device,
             cnn_dropout=cnn_dropout,
             rnn_dropout=rnn_dropout,
-            hidden_size=hidden_size,
+            hidden_size=mamba_d_model,
             max_chars=max_chars,
             predict_all_chars=predict_all_chars,
         )
+        self.mamba_d_model = mamba_d_model
         self.rnn = MambaRNNWrapper(
             input_size=self.encoder_flatten_size,
-            hidden_size=hidden_size,
+            d_model=mamba_d_model,
             num_layers=mamba_num_layers,
             batch_first=True,
             dropout=mamba_dropout,
@@ -153,7 +158,7 @@ class MambaConv(BaseConvSequenceModel):
             block_type=mamba_block_type,
             residual=mamba_residual,
         )
-        self.LNormRNN = nn.LayerNorm(hidden_size)
+        self.LNormRNN = nn.LayerNorm(mamba_d_model)
         self.to(self.device)
 
     def middle(self, x):

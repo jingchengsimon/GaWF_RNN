@@ -5,6 +5,10 @@ import torch.nn.functional as F
 from .train_rnn_core import BaseConvSequenceModel
 
 
+SSM_DEFAULT_D_MODEL = 256
+SSM_DEFAULT_STATE_SIZE = 189
+
+
 class DiagonalSSMLayer(nn.Module):
     """
     Real-valued diagonal state-space layer with an nn.RNN-like sequence contract.
@@ -16,7 +20,7 @@ class DiagonalSSMLayer(nn.Module):
 
     def __init__(
         self,
-        hidden_size: int,
+        d_model: int,
         state_size: int,
         min_decay: float = 0.1,
         max_decay: float = 0.99,
@@ -26,15 +30,15 @@ class DiagonalSSMLayer(nn.Module):
         if not 0.0 < min_decay < max_decay < 1.0:
             raise ValueError("Expected 0 < min_decay < max_decay < 1")
 
-        self.hidden_size = hidden_size
+        self.d_model = d_model
         self.state_size = state_size
         self.min_decay = min_decay
         self.max_decay = max_decay
         self.activation = activation
 
-        self.in_proj = nn.Linear(hidden_size, state_size)
-        self.out_proj = nn.Linear(state_size, hidden_size)
-        self.skip_scale = nn.Parameter(torch.ones(hidden_size))
+        self.in_proj = nn.Linear(d_model, state_size)
+        self.out_proj = nn.Linear(state_size, d_model)
+        self.skip_scale = nn.Parameter(torch.ones(d_model))
 
         init_decay = torch.linspace(min_decay, max_decay, state_size)
         init_logit = torch.logit((init_decay - min_decay) / (max_decay - min_decay))
@@ -86,7 +90,7 @@ class SSMRNNWrapper(nn.Module):
     def __init__(
         self,
         input_size: int,
-        hidden_size: int,
+        d_model: int,
         num_layers: int = 1,
         batch_first: bool = True,
         dropout: float = 0.0,
@@ -104,21 +108,22 @@ class SSMRNNWrapper(nn.Module):
         if num_layers < 1:
             raise ValueError("num_layers must be >= 1")
 
-        self.hidden_size = hidden_size
+        self.hidden_size = d_model
+        self.d_model = d_model
         self.num_layers = num_layers
         self.batch_first = batch_first
         self.residual = residual
-        state_size = hidden_size if state_size is None else state_size
+        state_size = d_model if state_size is None else state_size
 
         self.input_proj = (
-            nn.Linear(input_size, hidden_size)
-            if input_size != hidden_size
+            nn.Linear(input_size, d_model)
+            if input_size != d_model
             else nn.Identity()
         )
         self.layers = nn.ModuleList(
             [
                 DiagonalSSMLayer(
-                    hidden_size=hidden_size,
+                    d_model=d_model,
                     state_size=state_size,
                     min_decay=min_decay,
                     max_decay=max_decay,
@@ -166,12 +171,12 @@ class SSMConv(BaseConvSequenceModel):
         device="cuda",
         cnn_dropout=0.0,
         rnn_dropout=0.5,
-        hidden_size=256,
+        ssm_d_model=SSM_DEFAULT_D_MODEL,
         max_chars=15,
         predict_all_chars=False,
         ssm_num_layers=1,
         ssm_dropout=0.0,
-        ssm_state_size=None,
+        ssm_state_size=SSM_DEFAULT_STATE_SIZE,
         ssm_min_decay=0.1,
         ssm_max_decay=0.99,
         ssm_activation="silu",
@@ -184,13 +189,15 @@ class SSMConv(BaseConvSequenceModel):
             device=device,
             cnn_dropout=cnn_dropout,
             rnn_dropout=rnn_dropout,
-            hidden_size=hidden_size,
+            hidden_size=ssm_d_model,
             max_chars=max_chars,
             predict_all_chars=predict_all_chars,
         )
+        self.ssm_d_model = ssm_d_model
+        self.ssm_state_size = ssm_state_size
         self.rnn = SSMRNNWrapper(
             input_size=self.encoder_flatten_size,
-            hidden_size=hidden_size,
+            d_model=ssm_d_model,
             num_layers=ssm_num_layers,
             batch_first=True,
             dropout=ssm_dropout,
@@ -200,7 +207,7 @@ class SSMConv(BaseConvSequenceModel):
             activation=ssm_activation,
             residual=ssm_residual,
         )
-        self.LNormRNN = nn.LayerNorm(hidden_size)
+        self.LNormRNN = nn.LayerNorm(ssm_d_model)
         self.to(self.device)
 
     def middle(self, x):

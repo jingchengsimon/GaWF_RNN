@@ -710,8 +710,16 @@ def worker_init_fn(worker_id, seed):
     torch.manual_seed(seed + worker_id)
 
 
-def get_model_classes(rnn_conv_class, lstm_conv_class, gru_conv_class, 
-                      gawf_rnn_conv_class, feedforward_conv_class, dendritic_ann_conv_class):
+def get_model_classes(
+    rnn_conv_class,
+    lstm_conv_class,
+    gru_conv_class,
+    gawf_rnn_conv_class,
+    feedforward_conv_class,
+    dendritic_ann_conv_class,
+    mamba_conv_class=None,
+    ssm_conv_class=None,
+):
     """Return mapping from model type name to model class.
     
     Args:
@@ -725,7 +733,7 @@ def get_model_classes(rnn_conv_class, lstm_conv_class, gru_conv_class,
     Returns:
         Dictionary mapping model type names to model classes
     """
-    return {
+    model_classes = {
         "rnn": rnn_conv_class,
         "lstm": lstm_conv_class,
         "gru": gru_conv_class,
@@ -733,6 +741,11 @@ def get_model_classes(rnn_conv_class, lstm_conv_class, gru_conv_class,
         "ffn": feedforward_conv_class,
         "dann": dendritic_ann_conv_class,
     }
+    if mamba_conv_class is not None:
+        model_classes["mamba"] = mamba_conv_class
+    if ssm_conv_class is not None:
+        model_classes["ssm"] = ssm_conv_class
+    return model_classes
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -743,7 +756,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=str,
         nargs="+",
         default=["rnn"],
-        choices=["rnn", "lstm", "gru", "gawf", "ffn", "dann"],
+        choices=["rnn", "lstm", "gru", "gawf", "ffn", "dann", "mamba", "ssm"],
         help='Model types to train (default: ["rnn"])',
     )
     parser.add_argument(
@@ -752,6 +765,27 @@ def build_arg_parser() -> argparse.ArgumentParser:
         nargs="+",
         default=[256],
         help="Hidden sizes to test (default: [256])",
+    )
+    parser.add_argument(
+        "--mamba_d_models",
+        type=int,
+        nargs="+",
+        default=[170],
+        help="Mamba d_model values to test (default: [170]).",
+    )
+    parser.add_argument(
+        "--ssm_d_models",
+        type=int,
+        nargs="+",
+        default=[256],
+        help="SSM sequence feature width d_model values to test (default: [256]).",
+    )
+    parser.add_argument(
+        "--ssm_state_sizes",
+        type=int,
+        nargs="+",
+        default=[189],
+        help="SSM latent state sizes to test (default: [189]).",
     )
     parser.add_argument(
         "--num_epochs",

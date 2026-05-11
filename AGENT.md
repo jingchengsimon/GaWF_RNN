@@ -153,6 +153,9 @@ if __name__ == "__main__":
 | `--agg` | str `space\|feature` | Input axis aggregation mode |
 | `--cnn_dropout` | float+ | `train_model.py` only: CNN encoder `dropout2d` *p*; repeat for grid (default `[0]`) |
 | `--rnn_dropout` | float | `train_model.py` only: middle-path dropout *p* after ReLU (RNN/GaWF/FFN); single value (default `0.5`) |
+| `--mamba_d_models` | int+ | `train_model.py` only: Mamba sequence width `d_model`; repeat for grid (default `[170]`) |
+| `--ssm_d_models` | int+ | `train_model.py` only: SSM sequence feature width `d_model`; repeat for grid (default `[256]`) |
+| `--ssm_state_sizes` | int+ | `train_model.py` only: diagonal SSM latent state size; repeat for grid (default `[189]`) |
 | `--data_suffix` | str | Suffix for **train** (and default val): `stimulus_reg-train-<suffix>.npy` / `stimulus_reg-validation-<suffix>` |
 | `--eval_data_suffix` | str | Suffix for **validation only**; empty → same as `--data_suffix` (use for train/val scale mismatch, e.g. 4h train + 40h val) |
 | `--patience` | int | Early stopping on fair **`val_acc_char`** after each epoch; **`0` disables**; best weights restored before save (default `15`) |

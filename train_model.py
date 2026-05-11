@@ -42,6 +42,8 @@ from utils.train_rnn_engine import (
 from utils.train_rnn_core import RNNConv, GRUConv, LSTMConv
 from utils.train_gawf_core import GaWFRNNConv
 from utils.train_ann_core import DendriticANNConv, FeedForwardConv
+from utils.train_mamba_core import MambaConv
+from utils.train_ssm_core import SSMConv
 
 
 torch.set_num_threads(4)
@@ -522,19 +524,68 @@ if __name__ == "__main__":
         GaWFRNNConv,
         FeedForwardConv,
         DendriticANNConv,
+        MambaConv,
+        SSMConv,
     )
 
     model_types = args.model_types
     hidden_sizes = args.hidden_sizes
+    mamba_d_models = args.mamba_d_models
+    ssm_d_models = args.ssm_d_models
+    ssm_state_sizes = args.ssm_state_sizes
     lrs = args.lrs
     wds = args.wds
     cnn_dropout_grid = args.cnn_dropout
     rnn_dropout = args.rnn_dropout
 
-    # Build hyperparameter combinations: (model_type, hidden_size, lr, weight_decay, cnn_dropout)
-    experiment_configs = list(
-        product(model_types, hidden_sizes, lrs, wds, cnn_dropout_grid)
-    )
+    # Build hyperparameter combinations with model-specific width/state names.
+    experiment_configs = []
+    for model_type in model_types:
+        if model_type == "mamba":
+            for mamba_d_model, lr, weight_decay, cnn_dropout in product(
+                mamba_d_models, lrs, wds, cnn_dropout_grid
+            ):
+                experiment_configs.append(
+                    {
+                        "model_type": model_type,
+                        "model_width": mamba_d_model,
+                        "width_label": "dmodel",
+                        "ssm_state_size": None,
+                        "lr": lr,
+                        "weight_decay": weight_decay,
+                        "cnn_dropout": cnn_dropout,
+                    }
+                )
+        elif model_type == "ssm":
+            for ssm_d_model, ssm_state_size, lr, weight_decay, cnn_dropout in product(
+                ssm_d_models, ssm_state_sizes, lrs, wds, cnn_dropout_grid
+            ):
+                experiment_configs.append(
+                    {
+                        "model_type": model_type,
+                        "model_width": ssm_d_model,
+                        "width_label": "dmodel",
+                        "ssm_state_size": ssm_state_size,
+                        "lr": lr,
+                        "weight_decay": weight_decay,
+                        "cnn_dropout": cnn_dropout,
+                    }
+                )
+        else:
+            for hidden_size, lr, weight_decay, cnn_dropout in product(
+                hidden_sizes, lrs, wds, cnn_dropout_grid
+            ):
+                experiment_configs.append(
+                    {
+                        "model_type": model_type,
+                        "model_width": hidden_size,
+                        "width_label": "h",
+                        "ssm_state_size": None,
+                        "lr": lr,
+                        "weight_decay": weight_decay,
+                        "cnn_dropout": cnn_dropout,
+                    }
+                )
 
     # Training loop over all hyperparameter combinations
     total_experiments = len(experiment_configs)
@@ -551,14 +602,21 @@ if __name__ == "__main__":
         rnn_dropout,
     )
 
-    for model_type, hidden_size, lr, weight_decay, cnn_dropout in experiment_configs:
+    for config in experiment_configs:
+        model_type = config["model_type"]
+        model_width = config["model_width"]
+        width_label = config["width_label"]
+        ssm_state_size = config["ssm_state_size"]
+        lr = config["lr"]
+        weight_decay = config["weight_decay"]
+        cnn_dropout = config["cnn_dropout"]
         experiment_num += 1
         LoggingHelper.log_experiment_start(
             logger,
             experiment_num,
             total_experiments,
             model_type,
-            hidden_size,
+            model_width,
             lr,
             weight_decay,
             cnn_dropout,
@@ -574,6 +632,13 @@ if __name__ == "__main__":
             continue
 
         ModelClass = model_classes[model_type]
+        model_kwargs = {}
+        width_kwarg = "hidden_size"
+        if model_type == "mamba":
+            width_kwarg = "mamba_d_model"
+        elif model_type == "ssm":
+            width_kwarg = "ssm_d_model"
+            model_kwargs["ssm_state_size"] = ssm_state_size
         mdl = ModelClass(
                 num_classes=10,
                 num_pos=num_pos,
@@ -581,14 +646,18 @@ if __name__ == "__main__":
                 device=device,
                 cnn_dropout=cnn_dropout,
                 rnn_dropout=rnn_dropout,
-                hidden_size=hidden_size,
+                **{width_kwarg: model_width},
                 max_chars=max_chars,
                 predict_all_chars=predict_all_chars,
+                **model_kwargs,
             )
 
+        width_desc = f"{width_label}={model_width}"
+        if model_type == "ssm":
+            width_desc = f"ssm_d_model={model_width}, ssm_state_size={ssm_state_size}"
         logger.info(
-            "Created %s model (predict_all_chars=True, max_chars=%s, cnn_dropout=%s, rnn_dropout=%s, hidden_size=%s, cnn_feature_size=large)",
-            model_type.upper(), max_chars, cnn_dropout, rnn_dropout, hidden_size,
+            "Created %s model (predict_all_chars=%s, max_chars=%s, cnn_dropout=%s, rnn_dropout=%s, %s, cnn_feature_size=large)",
+            model_type.upper(), predict_all_chars, max_chars, cnn_dropout, rnn_dropout, width_desc,
         )
        
         # # [COMPILE] compile model for speed (PyTorch 2.x)
@@ -625,9 +694,9 @@ if __name__ == "__main__":
 
         # Save training results
         logger.info(
-            "Saving results for %s (hidden_size=%s)...",
+            "Saving results for %s (%s)...",
             model_type.upper(),
-            hidden_size,
+            width_desc,
         )
         mode_suffix = "allchars" if predict_all_chars else ("sector" if use_sector_mode else "coord")
         acc_suffix = "_acc" if use_acceleration else ""
@@ -640,7 +709,10 @@ if __name__ == "__main__":
                 fb_path_suffix = f"_fb{args.fb_start_epoch}"
         else:
             fb_path_suffix = ""
-        results_stem = f"{model_type}_{mode_suffix}{acc_suffix}_h{hidden_size}{hp_suffix}{fb_path_suffix}"
+        width_suffix = f"_{width_label}{model_width}"
+        if model_type == "ssm":
+            width_suffix = f"_dmodel{model_width}_state{ssm_state_size}"
+        results_stem = f"{model_type}_{mode_suffix}{acc_suffix}{width_suffix}{hp_suffix}{fb_path_suffix}"
         results_path = os.path.join(results_dir, results_stem)
 
         PathHelper.save_results(results, results_path, logger=logger)
@@ -654,13 +726,18 @@ if __name__ == "__main__":
             dataset_suffix=args.data_suffix,
             dataset_mode=dataset_mode,
             num_epochs=args.num_epochs,
-            hidden_size=hidden_size,
+            hidden_size=model_width,
             lr=lr,
             weight_decay=weight_decay,
             cnn_dropout=cnn_dropout,
             rnn_dropout=rnn_dropout,
             optimizer=args.optim,
         )
+        if model_type == "mamba":
+            metric_summary["mamba_d_model"] = model_width
+        elif model_type == "ssm":
+            metric_summary["ssm_d_model"] = model_width
+            metric_summary["ssm_state_size"] = ssm_state_size
         metrics_path = os.path.join(results_dir, f"{results_stem}_metrics.json")
         PathHelper.save_metrics_summary(metric_summary, metrics_path, logger=logger)
 

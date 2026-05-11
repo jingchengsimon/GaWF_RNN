@@ -11,6 +11,8 @@
 | `ann` | Artificial Neural Network (feedforward) | Model type key |
 | `dann` | Dendritic ANN | `DendriticANNConv` |
 | `ffn` | Feedforward Network | `FeedForwardConv` |
+| `mamba` | Mamba SSM block | Model type key |
+| `ssm` | State Space Model | Model type key |
 | `cnn` | Convolutional Neural Network | Encoder stage |
 | `fb` | Feedback | Feedback vector / buffer |
 | `fb_dim` | Feedback dimension | `num_classes + num_pos` |
@@ -23,6 +25,8 @@
 | `do` | (Legacy) unified dropout *p* | Old stems only: `_do{value}`; maps to both paths when parsing |
 | `lr` | Learning rate | CLI and filename |
 | `h` | Hidden size | Filename suffix, e.g. `h256` |
+| `dmodel` | Mamba/SSM sequence width | Filename suffix for `mamba` / `ssm`, e.g. `dmodel170` |
+| `state` | SSM latent state size | Filename suffix for `ssm`, e.g. `state189` |
 | `acc` | Acceleration / accuracy | Context-dependent (filename: acceleration) |
 | `sector` | 3×3 spatial sector | Label mode name |
 | `coord` | Coordinate regression | Label mode name |
@@ -74,6 +78,12 @@
 {model_type}_{label_mode}{acc_suffix}_h{hidden}_lr{lr}_wd{wd}_cdo{cdo}_rdo{rdo}{fb_suffix}_model.pth
 ```
 Example: `gawf_sector_acc_h256_lr0.0005_wd0.0001_cdo0_rdo0.5_fb50_model.pth`
+
+Mamba and SSM stems use model-native width/state names instead of `h`:
+```
+mamba_{label_mode}{acc_suffix}_dmodel{d_model}_lr{lr}_wd{wd}_cdo{cdo}_rdo{rdo}_model.pth
+ssm_{label_mode}{acc_suffix}_dmodel{d_model}_state{state_size}_lr{lr}_wd{wd}_cdo{cdo}_rdo{rdo}_model.pth
+```
 
 Legacy (pre-split): `..._do{value}_...` — still supported by `parse_hparams_from_filename` for old checkpoints.
 
