@@ -194,7 +194,11 @@ def build_loss_fn_single(mdl, criterion_char, criterion_pos, loss_weights, rnn_d
     def loss_fn(out_char, out_pos, labels):
         loss_char = loss_char_single(out_char, labels, criterion_char)
         loss_pos = loss_pos_single(out_pos, labels, criterion_pos)
-        if hasattr(mdl, 'rnn') and mdl.rnn is not None:
+        if (
+            hasattr(mdl, "rnn")
+            and mdl.rnn is not None
+            and hasattr(mdl.rnn, "weight_hh_l0")
+        ):
             rnn_hh_diag = mdl.rnn.weight_hh_l0.diagonal().abs().mean()
         else:
             rnn_hh_diag = torch.tensor(0.0, device=device)

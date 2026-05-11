@@ -185,7 +185,11 @@ def build_loss_fn_all_chars(mdl, criterion_char, max_chars, device, loss_weights
     """Build a single loss_fn(out_char, out_pos, labels) for all-chars mode (includes RNN diag and weights)."""
     def loss_fn(out_char, out_pos, labels):
         loss_char, loss_pos = loss_char_all_chars(out_char, labels, criterion_char, max_chars, device)
-        if hasattr(mdl, 'rnn') and mdl.rnn is not None:
+        if (
+            hasattr(mdl, "rnn")
+            and mdl.rnn is not None
+            and hasattr(mdl.rnn, "weight_hh_l0")
+        ):
             rnn_hh_diag = mdl.rnn.weight_hh_l0.diagonal().abs().mean()
         else:
             rnn_hh_diag = torch.tensor(0.0, device=device)
