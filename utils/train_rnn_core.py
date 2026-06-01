@@ -44,7 +44,7 @@ class BaseConvSequenceModel(nn.Module):
         reduced_h, reduced_w = out_h // 2, out_w // 2
         self.conv_reduce = nn.Conv2d(out_ch, reduced_ch, kernel_size=1)
         self.pool_reduce = nn.AdaptiveAvgPool2d((reduced_h, reduced_w))
-
+        
         # self.encoder_flatten_size = out_ch * out_h * out_w
         self.encoder_flatten_size = reduced_ch * reduced_h * reduced_w
 
