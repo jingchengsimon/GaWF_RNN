@@ -138,6 +138,8 @@ def visualize_training_curves(pkl_path, output_path, hparams=None, epoch_start=0
             title_parts.append(f"dropout={format_number(hparams['dropout'])}")
         if 'cnn_dropout' in hparams:
             title_parts.append(f"cnn_dropout={format_number(hparams['cnn_dropout'])}")
+        if 'feedback_dim' in hparams:
+            title_parts.append(f"dz={hparams['feedback_dim']}")
         if title_parts:
             plt.suptitle(' | '.join(title_parts), fontsize=14, fontweight='bold')
     
@@ -360,12 +362,25 @@ def parse_hparams_from_filename(filename):
         hparams['model_type'] = 'GRU'
     elif filename.startswith('gawf_'):
         hparams['model_type'] = 'GaWF'
+    elif filename.startswith('mamba_'):
+        hparams['model_type'] = 'MAMBA'
+    elif filename.startswith('ssm_'):
+        hparams['model_type'] = 'SSM'
     
     # 提取 hidden_size
     import re
     h_match = re.search(r'_h(\d+)', filename)
     if h_match:
         hparams['hidden_size'] = int(h_match.group(1))
+    dmodel_match = re.search(r'_dmodel(\d+)', filename)
+    if dmodel_match:
+        hparams['d_model'] = int(dmodel_match.group(1))
+    state_match = re.search(r'_state(\d+)', filename)
+    if state_match:
+        hparams['state_size'] = int(state_match.group(1))
+    dz_match = re.search(r'_dz(\d+)', filename)
+    if dz_match:
+        hparams['feedback_dim'] = int(dz_match.group(1))
     
     # 提取 lr (支持科学计数法，如 1e-4)
     # 使用贪婪匹配 + 只在下划线处停止

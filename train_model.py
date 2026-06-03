@@ -533,6 +533,7 @@ if __name__ == "__main__":
     mamba_d_models = args.mamba_d_models
     ssm_d_models = args.ssm_d_models
     ssm_state_sizes = args.ssm_state_sizes
+    feedback_dim = args.feedback_dim
     lrs = args.lrs
     wds = args.wds
     cnn_dropout_grid = args.cnn_dropout
@@ -639,6 +640,8 @@ if __name__ == "__main__":
         elif model_type == "ssm":
             width_kwarg = "ssm_d_model"
             model_kwargs["ssm_state_size"] = ssm_state_size
+        elif model_type == "gawf":
+            model_kwargs["feedback_dim"] = feedback_dim
         mdl = ModelClass(
                 num_classes=10,
                 num_pos=num_pos,
@@ -655,6 +658,8 @@ if __name__ == "__main__":
         width_desc = f"{width_label}={model_width}"
         if model_type == "ssm":
             width_desc = f"ssm_d_model={model_width}, ssm_state_size={ssm_state_size}"
+        elif model_type == "gawf" and feedback_dim is not None:
+            width_desc = f"{width_desc}, dz={feedback_dim}"
         logger.info(
             "Created %s model (predict_all_chars=%s, max_chars=%s, cnn_dropout=%s, rnn_dropout=%s, %s, cnn_feature_size=large)",
             model_type.upper(), predict_all_chars, max_chars, cnn_dropout, rnn_dropout, width_desc,
@@ -712,7 +717,10 @@ if __name__ == "__main__":
         width_suffix = f"_{width_label}{model_width}"
         if model_type == "ssm":
             width_suffix = f"_dmodel{model_width}_state{ssm_state_size}"
-        results_stem = f"{model_type}_{mode_suffix}{acc_suffix}{width_suffix}{hp_suffix}{fb_path_suffix}"
+        dz_suffix = ""
+        if model_type == "gawf" and feedback_dim is not None:
+            dz_suffix = f"_dz{feedback_dim}"
+        results_stem = f"{model_type}_{mode_suffix}{acc_suffix}{width_suffix}{hp_suffix}{dz_suffix}{fb_path_suffix}"
         results_path = os.path.join(results_dir, results_stem)
 
         PathHelper.save_results(results, results_path, logger=logger)
@@ -738,6 +746,10 @@ if __name__ == "__main__":
         elif model_type == "ssm":
             metric_summary["ssm_d_model"] = model_width
             metric_summary["ssm_state_size"] = ssm_state_size
+        elif model_type == "gawf":
+            metric_summary["feedback_dim"] = (
+                int(mdl.feedback_dim) if hasattr(mdl, "feedback_dim") else None
+            )
         metrics_path = os.path.join(results_dir, f"{results_stem}_metrics.json")
         PathHelper.save_metrics_summary(metric_summary, metrics_path, logger=logger)
 

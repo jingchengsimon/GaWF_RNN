@@ -829,6 +829,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Dropout p after RNN/GaWF/FFN middle (after ReLU); used in checkpoint suffix rdo (default: 0.5)",
     )
     parser.add_argument(
+        "--feedback_dim",
+        "--dz",
+        type=int,
+        default=None,
+        help=(
+            "GaWFRNN only: feedback context dimension dz. "
+            "If omitted, use legacy feedback dim (num_classes + num_pos)."
+        ),
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,

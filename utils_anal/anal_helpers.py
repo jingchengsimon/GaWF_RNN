@@ -136,6 +136,11 @@ def build_model_from_ckpt(
         "gru": GRUConv,
     }
     model_cls = model_class_map[model_key]
+    model_kwargs = {}
+    if model_key == "gawf":
+        parsed_feedback_dim = hparams.get("feedback_dim")
+        if parsed_feedback_dim is not None:
+            model_kwargs["feedback_dim"] = int(parsed_feedback_dim)
 
     model = model_cls(
         num_classes=num_classes,
@@ -147,6 +152,7 @@ def build_model_from_ckpt(
         hidden_size=hidden_size,
         max_chars=15,
         predict_all_chars=(num_pos == 0),
+        **model_kwargs,
     )
     state_dict = torch.load(ckpt_path, map_location=device, weights_only=False)
     state_dict = {k: v for k, v in state_dict.items() if k != "prev_feedback"}

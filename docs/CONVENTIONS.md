@@ -15,7 +15,7 @@
 | `ssm` | State Space Model | Model type key |
 | `cnn` | Convolutional Neural Network | Encoder stage |
 | `fb` | Feedback | Feedback vector / buffer |
-| `fb_dim` | Feedback dimension | `num_classes + num_pos` |
+| `fb_dim` | Feedback dimension | `dz` (GaWF hyperparameter); legacy default `num_classes + num_pos` |
 | `ih` | Input-to-Hidden | RNN weight matrix |
 | `hh` | Hidden-to-Hidden | RNN recurrent weight |
 | `hparam` | Hyperparameter | Used in log/result dir names |
@@ -27,6 +27,7 @@
 | `h` | Hidden size | Filename suffix, e.g. `h256` |
 | `dmodel` | Mamba/SSM sequence width | Filename suffix for `mamba` / `ssm`, e.g. `dmodel170` |
 | `state` | SSM latent state size | Filename suffix for `ssm`, e.g. `state189` |
+| `dz` | GaWF feedback context dimension | Optional filename suffix for `gawf`, e.g. `dz32` |
 | `acc` | Acceleration / accuracy | Context-dependent (filename: acceleration) |
 | `sector` | 3×3 spatial sector | Label mode name |
 | `coord` | Coordinate regression | Label mode name |
@@ -75,9 +76,13 @@
 
 ### Checkpoint filenames
 ```
-{model_type}_{label_mode}{acc_suffix}_h{hidden}_lr{lr}_wd{wd}_cdo{cdo}_rdo{rdo}{fb_suffix}_model.pth
+{model_type}_{label_mode}{acc_suffix}_h{hidden}_lr{lr}_wd{wd}_cdo{cdo}_rdo{rdo}{dz_suffix}{fb_suffix}_model.pth
 ```
-Example: `gawf_sector_acc_h256_lr0.0005_wd0.0001_cdo0_rdo0.5_fb50_model.pth`
+Example: `gawf_sector_acc_h256_lr0.0005_wd0.0001_cdo0_rdo0.5_dz32_fb50_model.pth`
+
+GaWF `dz` suffix is optional:
+- with explicit feedback dim: `_dz{value}`
+- legacy behavior (no explicit feedback dim): omit `_dz`
 
 Mamba and SSM stems use model-native width/state names instead of `h`:
 ```

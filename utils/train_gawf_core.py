@@ -22,6 +22,7 @@ class GaWFRNNConv(BaseConvSequenceModel):
         hidden_size=256,
         max_chars=15,
         predict_all_chars=False,
+        feedback_dim=None,
     ):
         super(GaWFRNNConv, self).__init__(
             num_classes,
@@ -37,14 +38,22 @@ class GaWFRNNConv(BaseConvSequenceModel):
         self.num_classes = num_classes
         self.num_pos = num_pos
         self.hidden_size = hidden_size
+        self.output_feedback_dim = num_classes + num_pos
+        self.feedback_dim = (
+            self.output_feedback_dim if feedback_dim is None else int(feedback_dim)
+        )
+        if self.feedback_dim <= 0:
+            raise ValueError(f"feedback_dim must be > 0, got {self.feedback_dim}")
         input_size = self.encoder_flatten_size
         self.rnn = nn.RNN(input_size=input_size, hidden_size=hidden_size, num_layers=1, batch_first=True)
         # self._init_recurrent_module(self.rnn)
 
-        feedback_dim = num_classes + num_pos
         combined_weight_size = input_size + hidden_size
-        self.U = nn.Parameter(torch.randn(hidden_size, feedback_dim) * 0.01)
-        self.V = nn.Parameter(torch.randn(feedback_dim, combined_weight_size) * 0.01)
+        self.U = nn.Parameter(torch.randn(hidden_size, self.feedback_dim) * 0.01)
+        self.V = nn.Parameter(torch.randn(self.feedback_dim, combined_weight_size) * 0.01)
+        self.proj_out = None
+        if feedback_dim is not None:
+            self.proj_out = nn.Linear(self.output_feedback_dim, self.feedback_dim)
         self.gate_tau = 0.5
         self.LNormRNN = nn.LayerNorm(hidden_size)
         self.register_buffer("prev_feedback", None)
@@ -59,8 +68,17 @@ class GaWFRNNConv(BaseConvSequenceModel):
         return
 
     def set_feedback_frozen(self, freeze: bool):
-        for p in (self.U, self.V):
+        params = [self.U, self.V]
+        if self.proj_out is not None:
+            params.extend(self.proj_out.parameters())
+        for p in params:
             p.requires_grad = not freeze
+
+    def _compute_feedback(self, char_t, pos_t):
+        y_t = torch.cat([char_t, pos_t], dim=-1)
+        if self.proj_out is None:
+            return y_t
+        return self.proj_out(y_t)
 
     def middle_gawf(self, x_t, h_prev, fb_t):
         input_size = x_t.size(-1)
@@ -95,9 +113,8 @@ class GaWFRNNConv(BaseConvSequenceModel):
         x = x.view(batch_size, frame_num, -1)
 
         if use_feedback:
-            fb_dim = self.num_classes + self.num_pos
             if reset_feedback or self.prev_feedback is None:
-                fb = torch.zeros(batch_size, fb_dim, device=x.device, dtype=torch.float32)
+                fb = torch.zeros(batch_size, self.feedback_dim, device=x.device, dtype=torch.float32)
             else:
                 fb = self.prev_feedback.to(device=x.device, dtype=torch.float32)
 
@@ -112,12 +129,15 @@ class GaWFRNNConv(BaseConvSequenceModel):
                 gated_output = self.middle_gawf(x_t, h, fb_t)
                 gated_output = F.dropout(gated_output, p=self.rnn_dropout, training=self.training)
                 char_t, pos_t = self.classifier(gated_output)
-                with torch.no_grad():
-                    fb = torch.cat([char_t, pos_t], dim=-1)
+                if self.proj_out is None:
+                    with torch.no_grad():
+                        fb = self._compute_feedback(char_t, pos_t)
+                else:
+                    fb = self._compute_feedback(char_t, pos_t)
                 h = gated_output
                 char_out[:, t, :], pos_out[:, t, :] = char_t, pos_t
 
-            self.prev_feedback = fb.detach()
+            self.prev_feedback = fb.detach().to(dtype=torch.float32)
         else:
             self.prev_feedback = None
             x, _ = self.rnn(x)

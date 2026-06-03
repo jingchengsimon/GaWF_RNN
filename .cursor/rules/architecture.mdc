@@ -50,8 +50,9 @@ If the encoder shape must change, update ALL of the following:
 
 ## GaWF Parameter Shapes (must not change silently)
 ```
-U  : (hidden_size, fb_dim)         fb_dim = num_classes + num_pos
+U  : (hidden_size, fb_dim)         fb_dim = dz (feedback hyperparameter)
 V  : (fb_dim, input_size + hidden_size)
+proj_out (optional): (num_classes + num_pos) -> (fb_dim)
 V_ih = V[:, :input_size]
 V_hh = V[:, input_size:]
 trans_ih = U @ (fb * V_ih)        # (B, H, input_size)

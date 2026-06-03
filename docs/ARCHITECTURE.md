@@ -134,11 +134,13 @@ Same pattern as `train_sector.py` but for all-chars mode (greedy matching).
 from utils_anal.export_gate_sample import build_model_from_ckpt, build_test_dataset
 ```
 These two functions handle: hparam parsing from filename, GaWFRNNConv instantiation,
-state_dict filtering (`prev_feedback`), test split dataset construction.
+state_dict filtering (`prev_feedback`), GaWF feedback dim parsing (`_dz*`),
+and test split dataset construction.
 
 ### `utils_viz/model_train_single_result.py`
 Contains `parse_hparams_from_filename()` — used by analysis scripts to extract
-`hidden_size`, `cnn_dropout`, `rnn_dropout` (and legacy `dropout` / `_do` for old stems), `lr`, `wd` from checkpoint filenames. Import when
+`hidden_size`, `feedback_dim` (from `_dz*` when present), `cnn_dropout`, `rnn_dropout`
+(and legacy `dropout` / `_do` for old stems), `lr`, `wd` from checkpoint filenames. Import when
 rebuilding a model from a checkpoint filename alone.
 
 ---

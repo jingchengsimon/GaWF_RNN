@@ -46,6 +46,7 @@ def build_models(
     kernel_size: int = 5,
     cnn_dropout: float = 0.0,
     rnn_dropout: float = 0.5,
+    feedback_dim: int | None = None,
 ):
     common = dict(
         num_classes=num_classes,
@@ -62,7 +63,7 @@ def build_models(
         "rnn": RNNConv(hidden_size=hidden_rnn, **common),
         "lstm": LSTMConv(hidden_size=hidden_lstm, **common),
         "gru": GRUConv(hidden_size=hidden_gru, **common),
-        "gawf": GaWFRNNConv(hidden_size=hidden_gawf, **common),
+        "gawf": GaWFRNNConv(hidden_size=hidden_gawf, feedback_dim=feedback_dim, **common),
         "ssm": SSMConv(
             ssm_d_model=ssm_d_model,
             ssm_num_layers=ssm_num_layers,
@@ -198,6 +199,13 @@ def parse_args() -> argparse.Namespace:
         default=9,
         help="Number of position outputs (default: 9, sector mode).",
     )
+    parser.add_argument(
+        "--feedback_dim",
+        "--dz",
+        type=int,
+        default=None,
+        help="GaWFRNN feedback context dimension dz (default: legacy num_classes + num_pos).",
+    )
     return parser.parse_args()
 
 
@@ -219,6 +227,7 @@ def main():
         ssm_state_size=args.ssm_state_size,
         num_classes=args.num_classes,
         num_pos=args.num_pos,
+        feedback_dim=args.feedback_dim,
         device=args.device,
         kernel_size=args.kernel_size,
         cnn_dropout=args.cnn_dropout,
@@ -241,6 +250,7 @@ def main():
         f" ssm_state_size={args.ssm_state_size},"
         f" num_classes={args.num_classes},"
         f" num_pos={args.num_pos},"
+        f" feedback_dim={args.feedback_dim},"
         f" kernel_size={args.kernel_size},"
         f" device={args.device},"
         f" cnn_dropout={args.cnn_dropout},"
