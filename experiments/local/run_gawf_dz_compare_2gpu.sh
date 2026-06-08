@@ -2,7 +2,7 @@
 # Run a local 2-GPU GaWF feedback-dimension comparison.
 #
 # Default experiment:
-#   scale=40h, model=gawf, hidden=256, lr=0.005, wd=0.001
+#   scale=40h, model=gawf, hidden=256, lr=0.0005, wd=0.0001
 #   conditions: legacy + dz 8/16/32/64
 #   feedback is off until epoch 50 via --nofb --fb_start_epoch 50.
 #
@@ -14,7 +14,7 @@
 #   GPU0=0 GPU1=1
 #   DZ_VALUES="8 16 32 64"
 #   NUM_EPOCHS=100 PATIENCE=15 FB_START_EPOCH=50
-#   HIDDEN_SIZE=256 LR=0.005 WD=0.001
+#   HIDDEN_SIZE=256 LR=0.0005 WD=0.0001
 
 set -euo pipefail
 
@@ -33,8 +33,8 @@ GPU0="${GPU0:-0}"
 GPU1="${GPU1:-1}"
 DZ_VALUES="${DZ_VALUES:-8 16 32 64}"
 HIDDEN_SIZE="${HIDDEN_SIZE:-256}"
-LR="${LR:-0.005}"
-WD="${WD:-0.001}"
+LR="${LR:-0.0005}"
+WD="${WD:-0.0001}"
 CNN_DROPOUT="${CNN_DROPOUT:-0.0}"
 RNN_DROPOUT="${RNN_DROPOUT:-0.5}"
 NUM_EPOCHS="${NUM_EPOCHS:-100}"
@@ -48,15 +48,15 @@ Usage:
   bash experiments/local/run_gawf_dz_compare_2gpu.sh [--dry-run]
 
 Runs GaWF legacy plus explicit dz values on two local GPUs.
-Defaults use the current provisional 40h GaWF best hparams:
-  hidden_size=256, lr=0.005, wd=0.001
+Defaults use the prior 40h GaWF hparams:
+  hidden_size=256, lr=0.0005, wd=0.0001
 
 Environment overrides:
   SCALE=40h
   DZ_VALUES="8 16 32 64"
   GPU0=0 GPU1=1
   AIM3_DATA_DIR=/path/to/stimuli
-  HIDDEN_SIZE=256 LR=0.005 WD=0.001
+  HIDDEN_SIZE=256 LR=0.0005 WD=0.0001
   NUM_EPOCHS=100 PATIENCE=15 FB_START_EPOCH=50
   RESULT_SUFFIX=gawf_dz_compare_40h_fb50
 EOF
