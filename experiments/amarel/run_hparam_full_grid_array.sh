@@ -5,6 +5,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
+#SBATCH --exclude=gpu018,gpu043
 #SBATCH --time=72:00:00
 #SBATCH --output=experiments/amarel/artifacts/hparam_full_grid/%A_%a.out
 #SBATCH --error=experiments/amarel/artifacts/hparam_full_grid/%A_%a.err
@@ -54,6 +55,8 @@ elif command -v conda >/dev/null 2>&1; then
     conda activate "${AIM3_CONDA_ENV:-aim3_rnn}" || true
   fi
 fi
+
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 if [[ -n "${AIM3_DATA_DIR:-}" ]]; then
   DATA_DIR="$AIM3_DATA_DIR"
