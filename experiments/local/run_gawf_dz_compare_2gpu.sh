@@ -2,9 +2,9 @@
 # Run a local 2-GPU GaWF feedback-dimension comparison.
 #
 # Default experiment:
-#   scale=40h, model=gawf, hidden=256, lr=0.0005, wd=0.0001
+#   scale=40h, model=gawf, hidden=256, lr=0.005, wd=0.001
 #   conditions: legacy + dz 8/16/32/64
-#   feedback is off until epoch 50 via --nofb --fb_start_epoch 50.
+#   feedback is enabled from the first epoch, matching full-grid GaWF training.
 #
 # From repo root:
 #   bash experiments/local/run_gawf_dz_compare_2gpu.sh
@@ -13,8 +13,8 @@
 #   AIM3_DATA_DIR=/path/to/stimuli
 #   GPU0=0 GPU1=1
 #   DZ_VALUES="8 16 32 64"
-#   NUM_EPOCHS=100 PATIENCE=15 FB_START_EPOCH=50
-#   HIDDEN_SIZE=256 LR=0.0005 WD=0.0001
+#   NUM_EPOCHS=100 PATIENCE=15
+#   HIDDEN_SIZE=256 LR=0.005 WD=0.001
 
 set -euo pipefail
 
@@ -25,22 +25,21 @@ cd "$ROOT"
 SCALE="${SCALE:-40h}"
 DATA_SUFFIX="${DATA_SUFFIX:-${SCALE}-float32}"
 EVAL_DATA_SUFFIX="${EVAL_DATA_SUFFIX:-40h-float32}"
-RESULT_SUFFIX="${RESULT_SUFFIX:-gawf_dz_compare_${SCALE}_fb${FB_START_EPOCH:-50}}"
-LOG_DIR="${LOG_DIR:-$ROOT/experiments/local/artifacts/gawf_dz_compare_${SCALE}_fb${FB_START_EPOCH:-50}}"
+RESULT_SUFFIX="${RESULT_SUFFIX:-gawf_dz_compare_${SCALE}_fullfb}"
+LOG_DIR="${LOG_DIR:-$ROOT/experiments/local/artifacts/gawf_dz_compare_${SCALE}_fullfb}"
 STATUS_DIR="$LOG_DIR/status"
 
 GPU0="${GPU0:-0}"
 GPU1="${GPU1:-1}"
 DZ_VALUES="${DZ_VALUES:-8 16 32 64}"
 HIDDEN_SIZE="${HIDDEN_SIZE:-256}"
-LR="${LR:-0.0005}"
-WD="${WD:-0.0001}"
+LR="${LR:-0.005}"
+WD="${WD:-0.001}"
 CNN_DROPOUT="${CNN_DROPOUT:-0.0}"
 RNN_DROPOUT="${RNN_DROPOUT:-0.5}"
 NUM_EPOCHS="${NUM_EPOCHS:-100}"
 PATIENCE="${PATIENCE:-15}"
 SEED="${SEED:-42}"
-FB_START_EPOCH="${FB_START_EPOCH:-50}"
 
 usage() {
   cat <<'EOF'
@@ -48,17 +47,17 @@ Usage:
   bash experiments/local/run_gawf_dz_compare_2gpu.sh [--dry-run]
 
 Runs GaWF legacy plus explicit dz values on two local GPUs.
-Defaults use the prior 40h GaWF hparams:
-  hidden_size=256, lr=0.0005, wd=0.0001
+Defaults use the current 40h GaWF full-grid hparams:
+  hidden_size=256, lr=0.005, wd=0.001
 
 Environment overrides:
   SCALE=40h
   DZ_VALUES="8 16 32 64"
   GPU0=0 GPU1=1
   AIM3_DATA_DIR=/path/to/stimuli
-  HIDDEN_SIZE=256 LR=0.0005 WD=0.0001
-  NUM_EPOCHS=100 PATIENCE=15 FB_START_EPOCH=50
-  RESULT_SUFFIX=gawf_dz_compare_40h_fb50
+  HIDDEN_SIZE=256 LR=0.005 WD=0.001
+  NUM_EPOCHS=100 PATIENCE=15
+  RESULT_SUFFIX=gawf_dz_compare_40h_fullfb
 EOF
 }
 
@@ -120,20 +119,20 @@ metrics_path_for_condition() {
     dz_suffix="_dz${condition#dz}"
   fi
   printf '%s\n' \
-    "$ROOT/results/train_data/$RESULT_SUFFIX/$condition/gawf_sector_acc_h${HIDDEN_SIZE}_lr${LR}_wd${WD}_cdo${CNN_DROPOUT}_rdo${RNN_DROPOUT}${dz_suffix}_fb${FB_START_EPOCH}_metrics.json"
+    "$ROOT/results/train_data/$RESULT_SUFFIX/$condition/gawf_sector_acc_h${HIDDEN_SIZE}_lr${LR}_wd${WD}_cdo${CNN_DROPOUT}_rdo${RNN_DROPOUT}${dz_suffix}_metrics.json"
 }
 
 run_one() {
   local gpu="$1"
   local condition="$2"
-  local log_prefix="$LOG_DIR/${condition}_h${HIDDEN_SIZE}_lr${LR}_wd${WD}_fb${FB_START_EPOCH}"
+  local log_prefix="$LOG_DIR/${condition}_h${HIDDEN_SIZE}_lr${LR}_wd${WD}_fullfb"
   local done_file="$STATUS_DIR/${condition}.done"
   local fail_file="$STATUS_DIR/${condition}.fail"
   local metrics_path
   metrics_path="$(metrics_path_for_condition "$condition")"
 
   if [[ -f "$metrics_path" ]]; then
-    echo "[$(date -Is)] skip condition=$condition existing metrics=$metrics_path"
+    echo "[$(ts)] skip condition=$condition existing metrics=$metrics_path"
     {
       echo "status=skipped_existing"
       echo "condition=$condition"
@@ -160,8 +159,6 @@ run_one() {
     --seed "$SEED"
     --use_acceleration
     --use_sector_mode
-    --nofb
-    --fb_start_epoch "$FB_START_EPOCH"
     --result_suffix "$RESULT_SUFFIX/$condition"
   )
   if [[ "$condition" != legacy ]]; then
@@ -228,7 +225,7 @@ echo "result_suffix=$RESULT_SUFFIX"
 echo "conditions=${CONDITIONS[*]}"
 echo "gpu_ids=$GPU0,$GPU1"
 echo "fixed_hparams=hidden_size=$HIDDEN_SIZE,lr=$LR,wd=$WD,cnn_dropout=$CNN_DROPOUT,rnn_dropout=$RNN_DROPOUT"
-echo "num_epochs=$NUM_EPOCHS patience=$PATIENCE seed=$SEED fb_start_epoch=$FB_START_EPOCH"
+echo "num_epochs=$NUM_EPOCHS patience=$PATIENCE seed=$SEED feedback=full"
 echo "log_dir=$LOG_DIR"
 
 idx=0
