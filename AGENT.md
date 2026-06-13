@@ -352,6 +352,34 @@ results/anal_figs/<module>/
 Conda env: `aim3_rnn`  (activate before running any script)
 GPU allocation: if **`CUDA_VISIBLE_DEVICES`** is unset, `train_model.py` may set it via `pick_cuda_device_index()`; **preset `CUDA_VISIBLE_DEVICES` is preserved** (parallel launchers).
 
+### 9.1 Amarel Interactive Command Format
+
+For remote diagnostics, prefer running commands directly over the configured SSH
+aliases instead of asking the user to paste commands manually:
+
+- `ssh amarel` for Amarel (`js3269@amarel.rutgers.edu`)
+- `ssh sjc-remote` for the user's remote terminal (`sjc@172.26.48.213`)
+
+These hosts are expected to use SSH ControlMaster connection reuse. If the master
+connection is active, run remote checks directly from Codex. If SSH requires
+interactive authentication and Codex cannot proceed, then provide the user a
+single pasteable heredoc block as a fallback.
+
+When providing fallback commands intended to be pasted into an interactive
+Amarel or remote shell, wrap the full command block in a single heredoc:
+
+```bash
+bash <<'EOF'
+# commands go here
+EOF
+```
+
+Do not split related Amarel diagnostics into separate command snippets. Provide
+one combined heredoc block so it can be pasted and run as a single unit. This is
+especially important for multi-line checks using loops, shell variables, or
+quoted patterns; interactive Amarel/tmux sessions may otherwise execute pasted
+commands line-by-line before the full block is entered.
+
 ---
 
 ## 10. Forbidden Patterns

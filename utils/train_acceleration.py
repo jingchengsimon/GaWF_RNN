@@ -3,10 +3,13 @@ Acceleration-related utilities for training.
 Contains AccelerationConfig, setup_acceleration, build_loaders, run_forward_with_feedback, TrainStepper.
 Device/dtype helpers for CUDA/MPS/CPU compatibility (MPS does not support float64).
 """
-import torch
+import os
 from contextlib import nullcontext
 from functools import partial
+
+import torch
 from torch.utils.data import DataLoader, Subset
+
 from .train_helpers import worker_init_fn
 
 
@@ -132,9 +135,9 @@ def setup_acceleration(accel_config, device, logger=None):
     if logger is not None:
         logger.info("Enabling acceleration training...")
 
-    batch_size, num_workers = 256, 0
-
-    pin_memory = False  # True if num_workers > 0 else False
+    batch_size = int(os.environ.get("AIM3_BATCH_SIZE", "256"))
+    num_workers = int(os.environ.get("AIM3_NUM_WORKERS", "0"))
+    pin_memory = os.environ.get("AIM3_PIN_MEMORY", "0").lower() in ("1", "true", "yes")
     use_amp = _is_cuda(device) and accel_config.enable_amp
     autocast_fn = (
         (lambda d: autocast_cls(device_type=_device_type(d))) if use_amp else (lambda _: nullcontext())
