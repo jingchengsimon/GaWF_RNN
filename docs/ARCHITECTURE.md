@@ -112,6 +112,8 @@ Owns the training loop internals: `setup_training_components` (builds all
 components dict), `begin_epoch`, `train_batch`, `summarize_online_train`,
 `eval_train_subset`, `eval_valid` (both wrap `evaluate_epoch` for fair full-loader eval),
 and core `evaluate_epoch`. The `network_train` skeleton in `train_model.py` only calls these.
+GaWF-family handling covers both `GaWFRNNConv` and `MultiLayerGaWFRNNConv` for feedback
+scheduling, feedback freezing, and no-weight-decay U/V optimizer grouping.
 
 ### `utils/train_acceleration.py`
 Owns: `AccelerationConfig` (all AMP/grad-accum flags), `setup_acceleration`
@@ -133,14 +135,15 @@ Same pattern as `train_sector.py` but for all-chars mode (greedy matching).
 ```python
 from utils_anal.export_gate_sample import build_model_from_ckpt, build_test_dataset
 ```
-These two functions handle: hparam parsing from filename, GaWFRNNConv instantiation,
-state_dict filtering (`prev_feedback`), GaWF feedback dim parsing (`_dz*`),
+These two functions handle: hparam parsing from filename, GaWFRNNConv / multi-layer
+GaWF instantiation, state_dict filtering (`prev_feedback`), GaWF feedback dim parsing (`_dz*`),
 and test split dataset construction.
 
 ### `utils_viz/model_train_single_result.py`
 Contains `parse_hparams_from_filename()` — used by analysis scripts to extract
-`hidden_size`, `feedback_dim` (from `_dz*` when present), `cnn_dropout`, `rnn_dropout`
-(and legacy `dropout` / `_do` for old stems), `lr`, `wd` from checkpoint filenames. Import when
+`hidden_size`, `feedback_dim` (from `_dz*` when present), `gawf_layers` (from `_L*`),
+`cnn_dropout`, `rnn_dropout` (and legacy `dropout` / `_do` for old stems), `lr`, `wd`
+from checkpoint filenames. Import when
 rebuilding a model from a checkpoint filename alone.
 
 ---

@@ -83,6 +83,12 @@ that assume spatial dimensions (6,6) and 32 feature channels.
 - Gate: `sigmoid(U @ (fb * V) / gate_tau)`, `gate_tau = 0.5`
 - U shape: `(hidden_size, fb_dim)`, V shape: `(fb_dim, input_size + hidden_size)`
 - `prev_feedback` is a runtime buffer (not a parameter); **skip it** when loading state_dicts.
+- Multi-layer GaWF uses separate CLI model type `gawf_multi` and class
+  `MultiLayerGaWFRNNConv`; default `--gawf_layers 2`, default `dz=8`.
+  It does not reuse single-layer legacy feedback. Each recurrent layer has its own
+  U/V pair (`U_layers`, `V_layers`); non-final layers receive projected feedback
+  from the previous timestep's upper-layer hidden state, and the final layer receives
+  projected feedback from previous logits.
 
 ### 2.4 Label Format
 | Mode | `labels` shape | `labels[..., 0]` | `labels[..., 1]` |
@@ -157,7 +163,8 @@ if __name__ == "__main__":
 | `--mamba_d_models` | int+ | `train_model.py` only: Mamba sequence width `d_model`; repeat for grid (default `[170]`) |
 | `--ssm_d_models` | int+ | `train_model.py` only: SSM sequence feature width `d_model`; repeat for grid (default `[256]`) |
 | `--ssm_state_sizes` | int+ | `train_model.py` only: diagonal SSM latent state size; repeat for grid (default `[189]`) |
-| `--feedback_dim` / `--dz` | int | `train_model.py` only, GaWF: feedback context dimension `dz`; default `None` keeps legacy `num_classes + num_pos` |
+| `--feedback_dim` / `--dz` | int | `train_model.py` only, GaWF: feedback context dimension `dz`; default `None` keeps single-layer legacy `num_classes + num_pos`, while `gawf_multi` defaults to `8` |
+| `--gawf_layers` | int | `train_model.py` only, `gawf_multi`: recurrent layer count; default `2`, must be `>=2` |
 | `--data_suffix` | str | Suffix for **train** (and default val): `stimulus_reg-train-<suffix>.npy` / `stimulus_reg-validation-<suffix>` |
 | `--eval_data_suffix` | str | Suffix for **validation only**; empty → same as `--data_suffix` (use for train/val scale mismatch, e.g. 4h train + 40h val) |
 | `--patience` | int | Early stopping on fair **`val_acc_char`** after each epoch; **`0` disables**; best weights restored before save (default `15`) |
@@ -187,7 +194,9 @@ Always print `missing_keys` and `unexpected_keys` after loading.
 Analysis outputs follow: `<descriptor>_<tag>.npy` where `tag = f"{mode}{idx}_{agg}"`.
 Figures follow: `<mode><idx>_<agg>_<descriptor>.png`.
 Metadata JSON follows: `<descriptor>_meta_<tag>.json`.
-GaWF checkpoints may include optional `_dz{value}` when `--feedback_dim` is explicitly set.
+Single-layer GaWF checkpoints may include optional `_dz{value}` when `--feedback_dim`
+is explicitly set. Multi-layer GaWF checkpoints use prefix `gawf_multi_` and include
+`_L{layers}` plus `_dz{value}`.
 
 ---
 

@@ -12,7 +12,7 @@ from typing import Dict, Tuple
 import torch
 
 from train_model import MC_RNN_Dataset
-from utils.train_gawf_core import GaWFRNNConv
+from utils.train_gawf_core import GaWFRNNConv, MultiLayerGaWFRNNConv
 from utils.train_rnn_core import GRUConv, LSTMConv, RNNConv
 from utils.train_helpers import PathHelper, create_datasets
 from utils_viz.model_train_single_result import parse_hparams_from_filename
@@ -102,6 +102,7 @@ def build_train_dataset_allchars(args: argparse.Namespace) -> MC_RNN_Dataset:
 
 _HPARAM_MODEL_TO_KEY: Dict[str, str] = {
     "GaWF": "gawf",
+    "GaWFMulti": "gawf_multi",
     "RNN": "rnn",
     "LSTM": "lstm",
     "GRU": "gru",
@@ -131,16 +132,19 @@ def build_model_from_ckpt(
     model_key = _HPARAM_MODEL_TO_KEY.get(model_name, "gawf")
     model_class_map = {
         "gawf": GaWFRNNConv,
+        "gawf_multi": MultiLayerGaWFRNNConv,
         "rnn": RNNConv,
         "lstm": LSTMConv,
         "gru": GRUConv,
     }
     model_cls = model_class_map[model_key]
     model_kwargs = {}
-    if model_key == "gawf":
+    if model_key in ("gawf", "gawf_multi"):
         parsed_feedback_dim = hparams.get("feedback_dim")
         if parsed_feedback_dim is not None:
             model_kwargs["feedback_dim"] = int(parsed_feedback_dim)
+        if model_key == "gawf_multi":
+            model_kwargs["num_layers"] = int(hparams.get("gawf_layers", 2))
 
     model = model_cls(
         num_classes=num_classes,
@@ -188,7 +192,7 @@ def build_rnn_allchars_model_from_sector_ckpt(
     num_classes = 10
     model_name = hparams.get("model_type")
     model_key = _HPARAM_MODEL_TO_KEY.get(model_name, "gawf")
-    if model_key == "gawf":
+    if model_key in ("gawf", "gawf_multi"):
         raise RuntimeError(
             "BG switch offset analysis does not support GaWF checkpoints "
             "(use RNN, LSTM, or GRU sector checkpoints only)."

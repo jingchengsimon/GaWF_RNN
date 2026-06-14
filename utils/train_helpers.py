@@ -719,6 +719,7 @@ def get_model_classes(
     dendritic_ann_conv_class,
     mamba_conv_class=None,
     ssm_conv_class=None,
+    gawf_multi_conv_class=None,
 ):
     """Return mapping from model type name to model class.
     
@@ -741,6 +742,8 @@ def get_model_classes(
         "ffn": feedforward_conv_class,
         "dann": dendritic_ann_conv_class,
     }
+    if gawf_multi_conv_class is not None:
+        model_classes["gawf_multi"] = gawf_multi_conv_class
     if mamba_conv_class is not None:
         model_classes["mamba"] = mamba_conv_class
     if ssm_conv_class is not None:
@@ -756,7 +759,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=str,
         nargs="+",
         default=["rnn"],
-        choices=["rnn", "lstm", "gru", "gawf", "ffn", "dann", "mamba", "ssm"],
+        choices=[
+            "rnn",
+            "lstm",
+            "gru",
+            "gawf",
+            "gawf_multi",
+            "ffn",
+            "dann",
+            "mamba",
+            "ssm",
+        ],
         help='Model types to train (default: ["rnn"])',
     )
     parser.add_argument(
@@ -835,7 +848,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "GaWFRNN only: feedback context dimension dz. "
-            "If omitted, use legacy feedback dim (num_classes + num_pos)."
+            "For model_type=gawf, omitting this keeps legacy feedback dim "
+            "(num_classes + num_pos). For model_type=gawf_multi, omitting this uses dz=8."
+        ),
+    )
+    parser.add_argument(
+        "--gawf_layers",
+        type=int,
+        default=2,
+        help=(
+            "gawf_multi only: number of recurrent GaWF layers. "
+            "Must be >= 2; default 2."
         ),
     )
     parser.add_argument(

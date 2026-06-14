@@ -5,6 +5,7 @@
 | Abbreviation | Full term | Context |
 |---|---|---|
 | `gawf` | Gated-with-Feedback | Model family name |
+| `gawf_multi` | Multi-layer Gated-with-Feedback | Separate CLI model type for projected multi-layer GaWF |
 | `rnn` | Recurrent Neural Network | Model type key in CLI |
 | `gru` | Gated Recurrent Unit | Model type key |
 | `lstm` | Long Short-Term Memory | Model type key |
@@ -27,7 +28,8 @@
 | `h` | Hidden size | Filename suffix, e.g. `h256` |
 | `dmodel` | Mamba/SSM sequence width | Filename suffix for `mamba` / `ssm`, e.g. `dmodel170` |
 | `state` | SSM latent state size | Filename suffix for `ssm`, e.g. `state189` |
-| `dz` | GaWF feedback context dimension | Optional filename suffix for `gawf`, e.g. `dz32` |
+| `dz` | GaWF feedback context dimension | Optional filename suffix for `gawf`, required/defaulted for `gawf_multi`, e.g. `dz8` |
+| `L` | GaWF recurrent layer count | `gawf_multi` filename suffix, e.g. `L2` |
 | `acc` | Acceleration / accuracy | Context-dependent (filename: acceleration) |
 | `sector` | 3×3 spatial sector | Label mode name |
 | `coord` | Coordinate regression | Label mode name |
@@ -80,9 +82,15 @@
 ```
 Example: `gawf_sector_acc_h256_lr0.0005_wd0.0001_cdo0_rdo0.5_dz32_fb50_model.pth`
 
-GaWF `dz` suffix is optional:
+Single-layer GaWF `dz` suffix is optional:
 - with explicit feedback dim: `_dz{value}`
 - legacy behavior (no explicit feedback dim): omit `_dz`
+
+Multi-layer GaWF stems add layer count and always include projected feedback dim:
+```
+gawf_multi_{label_mode}{acc_suffix}_h{hidden}_L{layers}_lr{lr}_wd{wd}_cdo{cdo}_rdo{rdo}_dz{dz}{fb_suffix}_model.pth
+```
+`gawf_multi` defaults to `L=2`, `dz=8`; it is separate from single-layer `gawf`.
 
 Mamba and SSM stems use model-native width/state names instead of `h`:
 ```
@@ -108,7 +116,8 @@ tag = f"{mode}{selected_idx}_{agg}"
 
 ### Class names
 `PascalCase`. Model classes end in `Conv` when they include a CNN encoder:
-`RNNConv`, `GRUConv`, `LSTMConv`, `GaWFRNNConv`, `DendriticANNConv`, `FeedForwardConv`.
+`RNNConv`, `GRUConv`, `LSTMConv`, `GaWFRNNConv`, `MultiLayerGaWFRNNConv`,
+`DendriticANNConv`, `FeedForwardConv`.
 
 ### Function names
 `snake_case` starting with a verb:

@@ -28,13 +28,19 @@ if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
 from train_model import MC_RNN_Dataset
-from utils.train_gawf_core import GaWFRNNConv
+from utils.train_gawf_core import GaWFRNNConv, MultiLayerGaWFRNNConv
 from utils.train_rnn_core import GRUConv, LSTMConv, RNNConv
 from utils.train_helpers import PathHelper, create_datasets, set_seed
 from utils_viz.model_train_single_result import parse_hparams_from_filename
 
 # parse_hparams_from_filename uses title case; cls_map keys are lowercase
-_HPARAM_MODEL_TO_KEY = {"RNN": "rnn", "LSTM": "lstm", "GRU": "gru", "GaWF": "gawf"}
+_HPARAM_MODEL_TO_KEY = {
+    "RNN": "rnn",
+    "LSTM": "lstm",
+    "GRU": "gru",
+    "GaWF": "gawf",
+    "GaWFMulti": "gawf_multi",
+}
 
 LABEL_COLUMNS = [
     "frame",
@@ -64,10 +70,10 @@ def parse_args() -> argparse.Namespace:
         "--model_type",
         type=str,
         default=None,
-        choices=["gawf", "rnn", "lstm", "gru"],
+        choices=["gawf", "gawf_multi", "rnn", "lstm", "gru"],
         help=(
             "Override architecture. Default: inferred from checkpoint basename prefix "
-            "(gawf_ / rnn_ / lstm_ / gru_), same convention as training artifact names."
+            "(gawf_ / gawf_multi_ / rnn_ / lstm_ / gru_), same convention as training artifact names."
         ),
     )
     p.add_argument("--T", type=int, default=None, help="Segment length in frames (overrides duration_sec*fps if set).")
@@ -143,7 +149,7 @@ def infer_model_type_from_ckpt(ckpt_path: str) -> str:
     if raw is None:
         raise ValueError(
             f"Cannot infer model_type from filename {base!r}. "
-            "Expected basename to start with gawf_, rnn_, lstm_, or gru_ "
+            "Expected basename to start with gawf_, gawf_multi_, rnn_, lstm_, or gru_ "
             "(see parse_hparams_from_filename in utils_viz/model_train_single_result.py). "
             "Pass --model_type explicitly."
         )
@@ -231,11 +237,20 @@ def build_model(
 
     cls_map = {
         "gawf": GaWFRNNConv,
+        "gawf_multi": MultiLayerGaWFRNNConv,
         "rnn": RNNConv,
         "lstm": LSTMConv,
         "gru": GRUConv,
     }
     ModelClass = cls_map[model_type]
+    model_kwargs = {}
+    if model_type in ("gawf", "gawf_multi"):
+        parsed_feedback_dim = hparams.get("feedback_dim")
+        if parsed_feedback_dim is not None:
+            model_kwargs["feedback_dim"] = int(parsed_feedback_dim)
+        if model_type == "gawf_multi":
+            model_kwargs["num_layers"] = int(hparams.get("gawf_layers", 2))
+
     mdl = ModelClass(
         num_classes=num_classes,
         num_pos=num_pos,
@@ -246,6 +261,7 @@ def build_model(
         hidden_size=hidden_size,
         max_chars=15,
         predict_all_chars=predict_all_chars,
+        **model_kwargs,
     )
     state_dict = torch.load(ckpt_path, map_location=device)
     state_dict = {k: v for k, v in state_dict.items() if k != "prev_feedback"}
@@ -274,24 +290,52 @@ def run_stream_pop_act(
     enc = model.encoder(enc_in)
     seq = enc.view(1, T, -1)
 
-    # GaWFRNNConv sets self.hidden_size; BaseRNNConv subclasses only expose rnn.hidden_size
-    Hdim = int(getattr(model, "hidden_size", model.rnn.hidden_size))
+    # GaWF variants set self.hidden_size; BaseRNNConv subclasses expose rnn.hidden_size.
+    if hasattr(model, "hidden_size"):
+        Hdim = int(model.hidden_size)
+    else:
+        Hdim = int(model.rnn.hidden_size)
     out_np = np.zeros((T, Hdim), dtype=np.float32)
 
     with torch.no_grad():
         if model_type == "gawf":
-            fb_dim = model.num_classes + model.num_pos
-            fb = torch.zeros(1, fb_dim, device=device, dtype=torch.float32)
+            fb = torch.zeros(1, model.feedback_dim, device=device, dtype=torch.float32)
             h = torch.zeros(1, Hdim, device=device, dtype=seq.dtype)
             for t in range(T):
                 x_t = seq[:, t, :]
                 fb_t = fb.clamp(-10, 10).unsqueeze(2)
                 gated_output = model.middle_gawf(x_t, h, fb_t)
                 char_t, pos_t = model.classifier(gated_output)
-                with torch.no_grad():
-                    fb = torch.cat([char_t, pos_t], dim=-1)
+                fb = model._compute_feedback(char_t, pos_t)
                 h = gated_output
                 out_np[t] = gated_output.squeeze(0).cpu().numpy()
+        elif model_type == "gawf_multi":
+            fb_top = torch.zeros(1, model.feedback_dim, device=device, dtype=torch.float32)
+            h_states = [
+                torch.zeros(1, Hdim, device=device, dtype=seq.dtype)
+                for _ in range(model.num_layers)
+            ]
+            for t in range(T):
+                layer_input = seq[:, t, :]
+                next_h_states = []
+                for layer_idx in range(model.num_layers):
+                    if layer_idx == model.num_layers - 1:
+                        fb = fb_top
+                    else:
+                        fb = model.hidden_projectors[layer_idx](h_states[layer_idx + 1])
+                    fb_t = fb.clamp(-10, 10).unsqueeze(2)
+                    h_t = model.middle_gawf_layer(
+                        layer_idx,
+                        layer_input,
+                        h_states[layer_idx],
+                        fb_t,
+                    )
+                    next_h_states.append(h_t)
+                    layer_input = h_t
+                char_t, pos_t = model.classifier(layer_input)
+                fb_top = model._compute_output_feedback(char_t, pos_t)
+                h_states = next_h_states
+                out_np[t] = layer_input.squeeze(0).cpu().numpy()
         else:
             h_rnn: torch.Tensor | Tuple[torch.Tensor, torch.Tensor]
             if model_type == "lstm":

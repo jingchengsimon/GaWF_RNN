@@ -360,6 +360,8 @@ def parse_hparams_from_filename(filename):
         hparams['model_type'] = 'LSTM'
     elif filename.startswith('gru_'):
         hparams['model_type'] = 'GRU'
+    elif filename.startswith('gawf_multi_'):
+        hparams['model_type'] = 'GaWFMulti'
     elif filename.startswith('gawf_'):
         hparams['model_type'] = 'GaWF'
     elif filename.startswith('mamba_'):
@@ -381,6 +383,9 @@ def parse_hparams_from_filename(filename):
     dz_match = re.search(r'_dz(\d+)', filename)
     if dz_match:
         hparams['feedback_dim'] = int(dz_match.group(1))
+    layer_match = re.search(r'_L(\d+)', filename)
+    if layer_match:
+        hparams['gawf_layers'] = int(layer_match.group(1))
     
     # 提取 lr (支持科学计数法，如 1e-4)
     # 使用贪婪匹配 + 只在下划线处停止
@@ -462,5 +467,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 

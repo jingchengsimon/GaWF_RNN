@@ -40,7 +40,7 @@ from .train_sector import (
     single_char_global_eval_init,
     single_char_global_eval_update,
 )
-from .train_gawf_core import GaWFRNNConv
+from .train_gawf_core import GaWFRNNConv, MultiLayerGaWFRNNConv
 
 
 def _raise_unsupported_coord_engine(logger) -> None:
@@ -136,7 +136,7 @@ def setup_training_components(
         logger=logger,
     )
 
-    is_gawf = isinstance(mdl, GaWFRNNConv)
+    is_gawf = isinstance(mdl, (GaWFRNNConv, MultiLayerGaWFRNNConv))
     train_dl, train_eval_dl, val_dl = build_loaders(
         train_data,
         val_data,
@@ -822,4 +822,3 @@ def summarize_online_train(epoch_ctx: Dict[str, Any]) -> str:
     if loss_char is not None:
         parts.append(f"loss_char={loss_char:.4f}")
     return ", ".join(parts)
-

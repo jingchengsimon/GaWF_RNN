@@ -148,3 +148,198 @@ class GaWFRNNConv(BaseConvSequenceModel):
 
         return char_out, pos_out
 
+
+class MultiLayerGaWFRNNConv(BaseConvSequenceModel):
+    """
+    Multi-layer GaWF RNN model with explicit projected feedback.
+
+    This class is intentionally separate from GaWFRNNConv so the existing
+    single-layer legacy/projected GaWF behavior remains unchanged.
+    """
+
+    def __init__(
+        self,
+        num_classes,
+        num_pos,
+        kernel_size=3,
+        device="cuda",
+        cnn_dropout=0.0,
+        rnn_dropout=0.5,
+        hidden_size=256,
+        max_chars=15,
+        predict_all_chars=False,
+        feedback_dim=None,
+        num_layers=2,
+    ):
+        if predict_all_chars:
+            raise ValueError("MultiLayerGaWFRNNConv currently supports single-character heads only.")
+        super(MultiLayerGaWFRNNConv, self).__init__(
+            num_classes,
+            num_pos,
+            kernel_size=kernel_size,
+            device=device,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
+            hidden_size=hidden_size,
+            max_chars=max_chars,
+            predict_all_chars=predict_all_chars,
+        )
+        self.num_classes = num_classes
+        self.num_pos = num_pos
+        self.hidden_size = hidden_size
+        self.num_layers = int(num_layers)
+        if self.num_layers < 2:
+            raise ValueError(
+                f"MultiLayerGaWFRNNConv requires num_layers >= 2, got {self.num_layers}"
+            )
+
+        self.output_feedback_dim = num_classes + num_pos
+        self.feedback_dim = 8 if feedback_dim is None else int(feedback_dim)
+        if self.feedback_dim <= 0:
+            raise ValueError(f"feedback_dim must be > 0, got {self.feedback_dim}")
+
+        input_size = self.encoder_flatten_size
+        layer_input_sizes = [input_size] + [hidden_size] * (self.num_layers - 1)
+        self.rnns = nn.ModuleList(
+            [
+                nn.RNN(
+                    input_size=layer_input_size,
+                    hidden_size=hidden_size,
+                    num_layers=1,
+                    batch_first=True,
+                )
+                for layer_input_size in layer_input_sizes
+            ]
+        )
+        self.LNormRNN = nn.ModuleList(
+            [nn.LayerNorm(hidden_size) for _ in range(self.num_layers)]
+        )
+
+        self.U_layers = nn.ParameterList(
+            [
+                nn.Parameter(torch.randn(hidden_size, self.feedback_dim) * 0.01)
+                for _ in range(self.num_layers)
+            ]
+        )
+        self.V_layers = nn.ParameterList(
+            [
+                nn.Parameter(
+                    torch.randn(self.feedback_dim, layer_input_size + hidden_size) * 0.01
+                )
+                for layer_input_size in layer_input_sizes
+            ]
+        )
+
+        self.hidden_projectors = nn.ModuleList(
+            [
+                nn.Linear(hidden_size, self.feedback_dim)
+                for _ in range(self.num_layers - 1)
+            ]
+        )
+        self.proj_out = nn.Linear(self.output_feedback_dim, self.feedback_dim)
+        self.gate_tau = 0.5
+        self.register_buffer("prev_feedback", None)
+
+    def set_feedback_frozen(self, freeze: bool):
+        params = list(self.U_layers) + list(self.V_layers)
+        params.extend(self.hidden_projectors.parameters())
+        params.extend(self.proj_out.parameters())
+        for p in params:
+            p.requires_grad = not freeze
+
+    def _compute_output_feedback(self, char_t, pos_t):
+        y_t = torch.cat([char_t, pos_t], dim=-1)
+        return self.proj_out(y_t)
+
+    def middle_gawf_layer(self, layer_idx, x_t, h_prev, fb_t):
+        input_size = x_t.size(-1)
+        rnn = self.rnns[layer_idx]
+        weight_ih = rnn.weight_ih_l0
+        weight_hh = rnn.weight_hh_l0
+        bias_ih = rnn.bias_ih_l0
+        bias_hh = rnn.bias_hh_l0
+        U = self.U_layers[layer_idx]
+        V = self.V_layers[layer_idx]
+        V_ih = V[:, :input_size].unsqueeze(0)
+        V_hh = V[:, input_size:].unsqueeze(0)
+        trans_ih = torch.matmul(U, fb_t * V_ih)
+        trans_hh = torch.matmul(U, fb_t * V_hh)
+        gate_ih = torch.sigmoid(trans_ih / self.gate_tau)
+        gate_hh = torch.sigmoid(trans_hh / self.gate_tau)
+        gated_weight_ih = gate_ih * weight_ih.unsqueeze(0)
+        gated_weight_hh = gate_hh * weight_hh.unsqueeze(0)
+        ih = torch.bmm(x_t.unsqueeze(1), gated_weight_ih.transpose(1, 2)).squeeze(1)
+        hh = torch.bmm(h_prev.unsqueeze(1), gated_weight_hh.transpose(1, 2)).squeeze(1)
+        if bias_ih is not None:
+            ih = ih + bias_ih.unsqueeze(0)
+        if bias_hh is not None:
+            hh = hh + bias_hh.unsqueeze(0)
+        h_t = torch.tanh(ih + hh)
+        gated_output = self.LNormRNN[layer_idx](h_t)
+        gated_output = F.relu(gated_output)
+        return gated_output
+
+    def forward(self, x, use_feedback=True, reset_feedback=False):
+        x = x.to(self.device)
+        batch_size, frame_num, channels, height, width = x.size()
+        x = x.view(batch_size * frame_num, channels, height, width)
+        x = self.encoder(x)
+        x = x.view(batch_size, frame_num, -1)
+
+        if use_feedback:
+            if reset_feedback or self.prev_feedback is None:
+                fb_top = torch.zeros(
+                    batch_size, self.feedback_dim, device=x.device, dtype=torch.float32
+                )
+            else:
+                fb_top = self.prev_feedback.to(device=x.device, dtype=torch.float32)
+
+            char_out = torch.empty(
+                batch_size, frame_num, self.num_classes, device=x.device, dtype=x.dtype
+            )
+            pos_out = torch.empty(
+                batch_size, frame_num, self.num_pos, device=x.device, dtype=x.dtype
+            )
+            h_states = [
+                torch.zeros(batch_size, self.hidden_size, device=x.device, dtype=x.dtype)
+                for _ in range(self.num_layers)
+            ]
+
+            for t in range(frame_num):
+                layer_input = x[:, t, :]
+                next_h_states = []
+                for layer_idx in range(self.num_layers):
+                    if layer_idx == self.num_layers - 1:
+                        fb = fb_top
+                    else:
+                        fb = self.hidden_projectors[layer_idx](h_states[layer_idx + 1])
+                    fb_t = fb.clamp(-10, 10).unsqueeze(2)
+                    h_t = self.middle_gawf_layer(
+                        layer_idx,
+                        layer_input,
+                        h_states[layer_idx],
+                        fb_t,
+                    )
+                    h_t = F.dropout(h_t, p=self.rnn_dropout, training=self.training)
+                    next_h_states.append(h_t)
+                    layer_input = h_t
+
+                char_t, pos_t = self.classifier(layer_input)
+                fb_top = self._compute_output_feedback(char_t, pos_t)
+                h_states = next_h_states
+                char_out[:, t, :], pos_out[:, t, :] = char_t, pos_t
+
+            self.prev_feedback = fb_top.detach().to(dtype=torch.float32)
+        else:
+            self.prev_feedback = None
+            layer_output = x
+            for layer_idx, rnn in enumerate(self.rnns):
+                layer_output, _ = rnn(layer_output)
+                layer_output = self.LNormRNN[layer_idx](layer_output)
+                layer_output = F.relu(layer_output)
+                layer_output = F.dropout(
+                    layer_output, p=self.rnn_dropout, training=self.training
+                )
+            char_out, pos_out = self.classifier(layer_output)
+
+        return char_out, pos_out

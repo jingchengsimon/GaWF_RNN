@@ -40,7 +40,7 @@ from utils.train_rnn_engine import (
 )
 
 from utils.train_rnn_core import RNNConv, GRUConv, LSTMConv
-from utils.train_gawf_core import GaWFRNNConv
+from utils.train_gawf_core import GaWFRNNConv, MultiLayerGaWFRNNConv
 from utils.train_ann_core import DendriticANNConv, FeedForwardConv
 from utils.train_mamba_core import MambaConv
 from utils.train_ssm_core import SSMConv
@@ -526,6 +526,7 @@ if __name__ == "__main__":
         DendriticANNConv,
         MambaConv,
         SSMConv,
+        gawf_multi_conv_class=MultiLayerGaWFRNNConv,
     )
 
     model_types = args.model_types
@@ -538,6 +539,7 @@ if __name__ == "__main__":
     wds = args.wds
     cnn_dropout_grid = args.cnn_dropout
     rnn_dropout = args.rnn_dropout
+    gawf_layers = args.gawf_layers
 
     # Build hyperparameter combinations with model-specific width/state names.
     experiment_configs = []
@@ -642,6 +644,9 @@ if __name__ == "__main__":
             model_kwargs["ssm_state_size"] = ssm_state_size
         elif model_type == "gawf":
             model_kwargs["feedback_dim"] = feedback_dim
+        elif model_type == "gawf_multi":
+            model_kwargs["feedback_dim"] = 8 if feedback_dim is None else feedback_dim
+            model_kwargs["num_layers"] = gawf_layers
         mdl = ModelClass(
                 num_classes=10,
                 num_pos=num_pos,
@@ -660,6 +665,8 @@ if __name__ == "__main__":
             width_desc = f"ssm_d_model={model_width}, ssm_state_size={ssm_state_size}"
         elif model_type == "gawf" and feedback_dim is not None:
             width_desc = f"{width_desc}, dz={feedback_dim}"
+        elif model_type == "gawf_multi":
+            width_desc = f"{width_desc}, layers={gawf_layers}, dz={mdl.feedback_dim}"
         logger.info(
             "Created %s model (predict_all_chars=%s, max_chars=%s, cnn_dropout=%s, rnn_dropout=%s, %s, cnn_feature_size=large)",
             model_type.upper(), predict_all_chars, max_chars, cnn_dropout, rnn_dropout, width_desc,
@@ -717,10 +724,18 @@ if __name__ == "__main__":
         width_suffix = f"_{width_label}{model_width}"
         if model_type == "ssm":
             width_suffix = f"_dmodel{model_width}_state{ssm_state_size}"
+        layer_suffix = ""
+        if model_type == "gawf_multi":
+            layer_suffix = f"_L{gawf_layers}"
         dz_suffix = ""
         if model_type == "gawf" and feedback_dim is not None:
             dz_suffix = f"_dz{feedback_dim}"
-        results_stem = f"{model_type}_{mode_suffix}{acc_suffix}{width_suffix}{hp_suffix}{dz_suffix}{fb_path_suffix}"
+        elif model_type == "gawf_multi":
+            dz_suffix = f"_dz{mdl.feedback_dim}"
+        results_stem = (
+            f"{model_type}_{mode_suffix}{acc_suffix}{width_suffix}"
+            f"{layer_suffix}{hp_suffix}{dz_suffix}{fb_path_suffix}"
+        )
         results_path = os.path.join(results_dir, results_stem)
 
         PathHelper.save_results(results, results_path, logger=logger)
@@ -746,10 +761,12 @@ if __name__ == "__main__":
         elif model_type == "ssm":
             metric_summary["ssm_d_model"] = model_width
             metric_summary["ssm_state_size"] = ssm_state_size
-        elif model_type == "gawf":
+        elif model_type in ("gawf", "gawf_multi"):
             metric_summary["feedback_dim"] = (
                 int(mdl.feedback_dim) if hasattr(mdl, "feedback_dim") else None
             )
+            if model_type == "gawf_multi":
+                metric_summary["gawf_layers"] = int(mdl.num_layers)
         metrics_path = os.path.join(results_dir, f"{results_stem}_metrics.json")
         PathHelper.save_metrics_summary(metric_summary, metrics_path, logger=logger)
 
@@ -758,4 +775,3 @@ if __name__ == "__main__":
     logger.info("=" * 60)
     logger.info("All %s experiments completed! Results saved to: %s/", total_experiments, results_dir)
     logger.info("=" * 60)
-
