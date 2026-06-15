@@ -325,6 +325,19 @@ Amarel helpers live in `experiments/amarel/`: `probe_amarel_slurm_limits.sh`,
 tasks per batch, and array concurrency `%96`; batch submission waits for each
 batch before submitting the next to respect submit limits. Failed or missing
 tasks are recorded and rerun explicitly; there is no automatic retry loop.
+When submitting any training job on Amarel through Slurm, explicitly export
+`AIM3_NUM_WORKERS=12` and `AIM3_PIN_MEMORY=1` in the submission environment so
+the run logs show `num_workers=12, pin_memory=True`. Do this at submission time
+only; do not bake these values into local launchers or training scripts because
+interactive/local remote runs can OOM with the same DataLoader settings. Always
+pair these DataLoader acceleration settings with explicit Slurm resources:
+`--cpus-per-task=16`, `--mem=64G`, and `--gres=gpu:1`, instead of relying on the
+default 4 CPU / 16G allocation. Amarel Slurm scripts submitted by Codex must
+activate the project conda environment with
+`source /home/js3269/enter/etc/profile.d/conda.sh` followed by
+`conda activate aim3_rnn`; do not use `module` or a `faw_rnn_env` virtualenv.
+After submitting from Codex, verify and report the requested resources and
+environment settings in the user-facing update or final response.
 Amarel Slurm stdout/stderr and submission logs live under
 `experiments/amarel/artifacts/`. For launch validation before the full 1024-run
 campaign, use `submit_hparam_4h_5epoch_test.sh` and
@@ -359,6 +372,9 @@ results/anal_figs/<module>/
 ```
 
 Conda env: `aim3_rnn`  (activate before running any script)
+Remote env rule: on both `amarel` and `sjc-remote`, do not run tests or training
+with the default shell Python. Activate conda env `aim3_rnn` first, including
+inside Slurm scripts and SSH diagnostics.
 GPU allocation: if **`CUDA_VISIBLE_DEVICES`** is unset, `train_model.py` may set it via `pick_cuda_device_index()`; **preset `CUDA_VISIBLE_DEVICES` is preserved** (parallel launchers).
 
 ### 9.1 Amarel Interactive Command Format
