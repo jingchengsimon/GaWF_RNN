@@ -30,6 +30,7 @@ from .train_acceleration import (
     build_loaders,
     run_forward_with_feedback,
     TrainStepper,
+    GawfDiagnosticsRecorder,
 )
 from .train_helpers import LoggingHelper
 from .train_predict_all_chars import build_loss_fn_all_chars, AllCharsMetricsMode
@@ -103,6 +104,11 @@ def setup_training_components(
     logger,
     optim_name: str = "adam",
     run_label: str = "",
+    gawf_feedback_lr_scale: float = 1.0,
+    gawf_diag_enabled: bool = False,
+    gawf_diag_path: str | None = None,
+    gawf_diag_every: int = 1,
+    gawf_diag_gate_eps: float = 0.01,
 ) -> Dict[str, Any]:
     """
     Build all training components:
@@ -137,6 +143,7 @@ def setup_training_components(
     )
 
     is_gawf = isinstance(mdl, (GaWFRNNConv, MultiLayerGaWFRNNConv))
+    is_gawf_multi = isinstance(mdl, MultiLayerGaWFRNNConv)
     train_dl, train_eval_dl, val_dl = build_loaders(
         train_data,
         val_data,
@@ -184,6 +191,37 @@ def setup_training_components(
                         shown,
                     )
                 OptimClass = torch.optim.AdamW
+
+        if is_gawf_multi:
+            base_params = []
+            gate_params = []
+            projector_params = []
+            for pname, param in mdl.named_parameters():
+                if "U_layers" in pname or "V_layers" in pname:
+                    gate_params.append(param)
+                elif "proj_out" in pname or "hidden_projectors" in pname:
+                    projector_params.append(param)
+                else:
+                    base_params.append(param)
+
+            feedback_lr = lr * float(gawf_feedback_lr_scale)
+            param_groups = [
+                {"params": base_params, "lr": lr, "weight_decay": wd},
+                {"params": gate_params, "lr": feedback_lr, "weight_decay": 0.0},
+                {"params": projector_params, "lr": feedback_lr, "weight_decay": wd},
+            ]
+            optim_kwargs = {}
+            if OptimClass in (torch.optim.Adam, torch.optim.AdamW) and has_big_hidden:
+                optim_kwargs["eps"] = 1e-6
+            if logger is not None:
+                logger.info(
+                    "Multi-layer GaWF optimizer: base_lr=%s, feedback_lr=%s "
+                    "(feedback_lr_scale=%s)",
+                    lr,
+                    feedback_lr,
+                    gawf_feedback_lr_scale,
+                )
+            return OptimClass(param_groups, **optim_kwargs)
 
         if is_gawf:
             gawf_params = []
@@ -247,6 +285,14 @@ def setup_training_components(
             predict_all_chars,
         )
 
+    gawf_diagnostics = GawfDiagnosticsRecorder(
+        enabled=gawf_diag_enabled and is_gawf,
+        output_path=gawf_diag_path,
+        every_n_steps=gawf_diag_every,
+        gate_saturation_eps=gawf_diag_gate_eps,
+        logger=logger,
+    )
+
     stepper = TrainStepper(
         mdl,
         optim,
@@ -256,6 +302,7 @@ def setup_training_components(
         scaler,
         autocast_fn,
         pin_memory,
+        gawf_diagnostics=gawf_diagnostics,
     )
 
     # Metrics storage (character acc, position metric, and optional losses).
@@ -312,6 +359,11 @@ def setup_training_components(
         "num_workers": num_workers,
         "pin_memory": pin_memory,
         "is_gawf": is_gawf,
+        "is_gawf_multi": is_gawf_multi,
+        "gawf_feedback_lr_scale": gawf_feedback_lr_scale,
+        "gawf_diag_enabled": bool(gawf_diag_enabled and is_gawf),
+        "gawf_diag_path": gawf_diag_path,
+        "gawf_diagnostics": gawf_diagnostics,
         "train_dl": train_dl,
         "train_eval_dl": train_eval_dl,
         "val_dl": val_dl,
@@ -726,6 +778,10 @@ def begin_epoch(
         if use_tqdm and (epoch == 0 or epoch == fb_start_epoch) and logger is not None:
             logger.info("GaWFRNN (nofb): epoch %d use_feedback=%s", epoch, feedback_flag)
 
+    gawf_diagnostics = components.get("gawf_diagnostics")
+    if gawf_diagnostics is not None:
+        gawf_diagnostics.begin_epoch(epoch)
+
     epoch_acc = metrics_mode.init_epoch_train()
     num_batches_total = len(train_dl)
 
@@ -821,4 +877,17 @@ def summarize_online_train(epoch_ctx: Dict[str, Any]) -> str:
         parts.append(f"loss_pos={loss_pos:.4f}")
     if loss_char is not None:
         parts.append(f"loss_char={loss_char:.4f}")
+    gawf_diagnostics = components.get("gawf_diagnostics")
+    if gawf_diagnostics is not None:
+        diag_summary = gawf_diagnostics.finish_epoch(epoch)
+        logger = components.get("logger")
+        if diag_summary is not None and logger is not None:
+            logger.info(
+                "GaWF diagnostics epoch %s: recorded_steps=%s, "
+                "grad_norm_preclip_all_mean=%.4f, gate_saturation_frac_mean=%.6f",
+                epoch + 1,
+                diag_summary.get("num_recorded_steps", 0),
+                diag_summary.get("grad_norm_preclip_all_mean", float("nan")),
+                diag_summary.get("gate_saturation_frac_mean", float("nan")),
+            )
     return ", ".join(parts)

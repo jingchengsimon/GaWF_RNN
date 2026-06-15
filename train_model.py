@@ -212,6 +212,11 @@ def network_train(
     optim: str = "adam",
     patience: int = 0,
     run_label: str = "",
+    gawf_feedback_lr_scale: float = 1.0,
+    gawf_diag_enabled: bool = False,
+    gawf_diag_path: str | None = None,
+    gawf_diag_every: int = 1,
+    gawf_diag_gate_eps: float = 0.01,
 ):
     """
     Train model, supports sector mode and coordinate mode.
@@ -235,6 +240,11 @@ def network_train(
         logger=logger,
         optim_name=optim,
         run_label=run_label,
+        gawf_feedback_lr_scale=gawf_feedback_lr_scale,
+        gawf_diag_enabled=gawf_diag_enabled,
+        gawf_diag_path=gawf_diag_path,
+        gawf_diag_every=gawf_diag_every,
+        gawf_diag_gate_eps=gawf_diag_gate_eps,
     )
 
     val_every = 1  # run full validation only every N epochs
@@ -429,11 +439,24 @@ def network_train(
             :actual_epochs
         ]
         out["fg_switch_post5_val_acc_pos"] = components["fg_switch_post5_val_acc_pos"][:actual_epochs]
+    gawf_diagnostics = components.get("gawf_diagnostics")
+    if gawf_diagnostics is not None:
+        diag_result = gawf_diagnostics.to_result_dict()
+        if diag_result is not None:
+            out["gawf_diagnostics"] = diag_result
     return out
 
 if __name__ == "__main__":
     parser = build_arg_parser()
     args = parser.parse_args()
+    if args.gawf_multi_lr_scale <= 0:
+        parser.error("--gawf_multi_lr_scale must be > 0")
+    if args.gawf_multi_feedback_lr_scale <= 0:
+        parser.error("--gawf_multi_feedback_lr_scale must be > 0")
+    if args.gawf_diag_every <= 0:
+        parser.error("--gawf_diag_every must be > 0")
+    if args.gawf_diag_gate_eps <= 0 or args.gawf_diag_gate_eps >= 0.5:
+        parser.error("--gawf_diag_gate_eps must be in (0, 0.5)")
 
     # GPU selection before any CUDA init. If the launcher already set
     # CUDA_VISIBLE_DEVICES, respect it (logical cuda:0 is that device).
@@ -671,48 +694,24 @@ if __name__ == "__main__":
             "Created %s model (predict_all_chars=%s, max_chars=%s, cnn_dropout=%s, rnn_dropout=%s, %s, cnn_feature_size=large)",
             model_type.upper(), predict_all_chars, max_chars, cnn_dropout, rnn_dropout, width_desc,
         )
-       
-        # # [COMPILE] compile model for speed (PyTorch 2.x)
-        # try:
-        #     mdl = torch.compile(mdl)  # 可选：torch.compile(mdl, mode="max-autotune")
-        # except Exception as e:
-        #     logger.warning("[COMPILE] torch.compile failed, fallback to eager: %s", e)
 
-        # Train model
-        logger.info("Starting training...")
-        logger.info("Acceleration training enabled" if use_acceleration else "Using standard training method")
-        
+        train_lr = lr
+        gawf_feedback_lr_scale = 1.0
+        if model_type == "gawf_multi":
+            train_lr = lr * args.gawf_multi_lr_scale
+            gawf_feedback_lr_scale = args.gawf_multi_feedback_lr_scale
+            logger.info(
+                "gawf_multi effective lr: requested_lr=%s, train_lr=%s, "
+                "lr_scale=%s, feedback_lr_scale=%s",
+                lr,
+                train_lr,
+                args.gawf_multi_lr_scale,
+                args.gawf_multi_feedback_lr_scale,
+            )
 
-        run_label = f"{args.result_suffix}|e{experiment_num:03d}|{model_type}"
-        results = network_train(
-            mdl,
-            train_ds,
-            val_ds,
-            num_epochs=args.num_epochs,
-            lr=lr,
-            use_acceleration=use_acceleration,
-            weight_decay=weight_decay,
-            rnn_diag_lambda=1e-4,
-            use_mmap=args.use_mmap,
-            use_tqdm=use_tqdm,
-            nofb=args.nofb,
-            fb_start_epoch=args.fb_start_epoch,
-            seed=args.seed,
-            logger=logger,
-            optim=args.optim,
-            patience=args.patience,
-            run_label=run_label,
-        )
-
-        # Save training results
-        logger.info(
-            "Saving results for %s (%s)...",
-            model_type.upper(),
-            width_desc,
-        )
         mode_suffix = "allchars" if predict_all_chars else ("sector" if use_sector_mode else "coord")
         acc_suffix = "_acc" if use_acceleration else ""
-        hp_suffix = f"_lr{lr}_wd{weight_decay}_cdo{cnn_dropout}_rdo{rnn_dropout}"
+        hp_suffix = f"_lr{train_lr}_wd{weight_decay}_cdo{cnn_dropout}_rdo{rnn_dropout}"
         # nofb/fb_start_epoch in result path: nofb only -> _nofb; nofb + fb_start_epoch -> _fb{N} only
         if args.nofb:
             if args.fb_start_epoch >= 999999:
@@ -738,6 +737,60 @@ if __name__ == "__main__":
         )
         results_path = os.path.join(results_dir, results_stem)
 
+        gawf_diag_path = None
+        if args.gawf_diag and model_type in ("gawf", "gawf_multi"):
+            diag_dir = args.gawf_diag_dir.strip() or os.path.join(
+                results_dir,
+                "gawf_diagnostics",
+            )
+            gawf_diag_path = os.path.join(
+                diag_dir,
+                f"{results_stem}_gawf_diag.jsonl",
+            )
+       
+        # # [COMPILE] compile model for speed (PyTorch 2.x)
+        # try:
+        #     mdl = torch.compile(mdl)  # 可选：torch.compile(mdl, mode="max-autotune")
+        # except Exception as e:
+        #     logger.warning("[COMPILE] torch.compile failed, fallback to eager: %s", e)
+
+        # Train model
+        logger.info("Starting training...")
+        logger.info("Acceleration training enabled" if use_acceleration else "Using standard training method")
+        
+
+        run_label = f"{args.result_suffix}|e{experiment_num:03d}|{model_type}"
+        results = network_train(
+            mdl,
+            train_ds,
+            val_ds,
+            num_epochs=args.num_epochs,
+            lr=train_lr,
+            use_acceleration=use_acceleration,
+            weight_decay=weight_decay,
+            rnn_diag_lambda=1e-4,
+            use_mmap=args.use_mmap,
+            use_tqdm=use_tqdm,
+            nofb=args.nofb,
+            fb_start_epoch=args.fb_start_epoch,
+            seed=args.seed,
+            logger=logger,
+            optim=args.optim,
+            patience=args.patience,
+            run_label=run_label,
+            gawf_feedback_lr_scale=gawf_feedback_lr_scale,
+            gawf_diag_enabled=args.gawf_diag,
+            gawf_diag_path=gawf_diag_path,
+            gawf_diag_every=args.gawf_diag_every,
+            gawf_diag_gate_eps=args.gawf_diag_gate_eps,
+        )
+
+        # Save training results
+        logger.info(
+            "Saving results for %s (%s)...",
+            model_type.upper(),
+            width_desc,
+        )
         PathHelper.save_results(results, results_path, logger=logger)
 
         # Build and save concise metrics summary for this experiment
@@ -750,12 +803,15 @@ if __name__ == "__main__":
             dataset_mode=dataset_mode,
             num_epochs=args.num_epochs,
             hidden_size=model_width,
-            lr=lr,
+            lr=train_lr,
             weight_decay=weight_decay,
             cnn_dropout=cnn_dropout,
             rnn_dropout=rnn_dropout,
             optimizer=args.optim,
         )
+        if train_lr != lr:
+            metric_summary["requested_lr"] = lr
+            metric_summary["effective_lr"] = train_lr
         if model_type == "mamba":
             metric_summary["mamba_d_model"] = model_width
         elif model_type == "ssm":
@@ -767,6 +823,14 @@ if __name__ == "__main__":
             )
             if model_type == "gawf_multi":
                 metric_summary["gawf_layers"] = int(mdl.num_layers)
+                metric_summary["gawf_multi_lr_scale"] = args.gawf_multi_lr_scale
+                metric_summary["gawf_multi_feedback_lr_scale"] = (
+                    args.gawf_multi_feedback_lr_scale
+                )
+        if gawf_diag_path is not None:
+            metric_summary["gawf_diag_path"] = gawf_diag_path
+            metric_summary["gawf_diag_every"] = args.gawf_diag_every
+            metric_summary["gawf_diag_gate_eps"] = args.gawf_diag_gate_eps
         metrics_path = os.path.join(results_dir, f"{results_stem}_metrics.json")
         PathHelper.save_metrics_summary(metric_summary, metrics_path, logger=logger)
 

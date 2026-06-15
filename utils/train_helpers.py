@@ -862,6 +862,59 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--gawf_multi_lr_scale",
+        type=float,
+        default=0.1,
+        help=(
+            "gawf_multi only: scale applied to --lrs before training. "
+            "Single-layer gawf is unchanged. Default: 0.1."
+        ),
+    )
+    parser.add_argument(
+        "--gawf_multi_feedback_lr_scale",
+        type=float,
+        default=0.1,
+        help=(
+            "gawf_multi only: learning-rate scale for U/V and feedback projector "
+            "parameter groups, relative to the already scaled multi-layer base lr. "
+            "Single-layer gawf is unchanged. Default: 0.1."
+        ),
+    )
+    parser.add_argument(
+        "--gawf_diag",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable opt-in GaWF diagnostics JSONL logging. Records gate logits, "
+            "gate saturation, feedback norms, pre-clip gradient norms, and "
+            "U/V/projector parameter norms. Default: disabled."
+        ),
+    )
+    parser.add_argument(
+        "--gawf_diag_every",
+        type=int,
+        default=1,
+        help="Record one GaWF diagnostics step every N train batches when --gawf_diag is set.",
+    )
+    parser.add_argument(
+        "--gawf_diag_gate_eps",
+        type=float,
+        default=0.01,
+        help=(
+            "Gate saturation threshold for --gawf_diag; a gate is saturated if "
+            "gate <= eps or gate >= 1 - eps. Default: 0.01."
+        ),
+    )
+    parser.add_argument(
+        "--gawf_diag_dir",
+        type=str,
+        default="",
+        help=(
+            "Directory for GaWF diagnostics JSONL files. Empty uses "
+            "results/train_data/<result_suffix>/gawf_diagnostics/."
+        ),
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,

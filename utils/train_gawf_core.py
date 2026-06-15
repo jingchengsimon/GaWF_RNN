@@ -5,7 +5,143 @@ import torch.nn.functional as F
 from .train_rnn_core import BaseConvSequenceModel
 
 
-class GaWFRNNConv(BaseConvSequenceModel):
+class GaWFDiagnosticsMixin:
+    """Small opt-in hooks for collecting GaWF gate/feedback diagnostics."""
+
+    def _init_gawf_diagnostics_state(self) -> None:
+        self._gawf_diag_state = None
+        self._gawf_diag_gate_eps = 0.01
+
+    def begin_gawf_diagnostics(self, gate_saturation_eps: float = 0.01) -> None:
+        self._gawf_diag_gate_eps = float(gate_saturation_eps)
+        self._gawf_diag_state = {
+            "gate_logit_min": float("inf"),
+            "gate_logit_max": float("-inf"),
+            "gate_saturation_count": 0,
+            "gate_count": 0,
+            "feedback_norm_sum": 0.0,
+            "feedback_norm_max": 0.0,
+            "feedback_count": 0,
+            "layers": {},
+        }
+
+    def pop_gawf_diagnostics(self):
+        state = self._gawf_diag_state
+        self._gawf_diag_state = None
+        if not state:
+            return {}
+
+        out = {
+            "gate_logit_min": (
+                state["gate_logit_min"]
+                if state["gate_logit_min"] != float("inf")
+                else None
+            ),
+            "gate_logit_max": (
+                state["gate_logit_max"]
+                if state["gate_logit_max"] != float("-inf")
+                else None
+            ),
+            "gate_saturation_frac": (
+                state["gate_saturation_count"] / state["gate_count"]
+                if state["gate_count"]
+                else None
+            ),
+            "feedback_norm_mean": (
+                state["feedback_norm_sum"] / state["feedback_count"]
+                if state["feedback_count"]
+                else None
+            ),
+            "feedback_norm_max": state["feedback_norm_max"],
+        }
+        for layer_name, layer_state in state["layers"].items():
+            prefix = f"{layer_name}_"
+            out[prefix + "gate_logit_min"] = (
+                layer_state["gate_logit_min"]
+                if layer_state["gate_logit_min"] != float("inf")
+                else None
+            )
+            out[prefix + "gate_logit_max"] = (
+                layer_state["gate_logit_max"]
+                if layer_state["gate_logit_max"] != float("-inf")
+                else None
+            )
+            out[prefix + "gate_saturation_frac"] = (
+                layer_state["gate_saturation_count"] / layer_state["gate_count"]
+                if layer_state["gate_count"]
+                else None
+            )
+            out[prefix + "feedback_norm_mean"] = (
+                layer_state["feedback_norm_sum"] / layer_state["feedback_count"]
+                if layer_state["feedback_count"]
+                else None
+            )
+            out[prefix + "feedback_norm_max"] = layer_state["feedback_norm_max"]
+        return out
+
+    def _layer_diag_state(self, layer_idx: int):
+        state = self._gawf_diag_state
+        layer_name = f"layer{layer_idx}"
+        layers = state["layers"]
+        if layer_name not in layers:
+            layers[layer_name] = {
+                "gate_logit_min": float("inf"),
+                "gate_logit_max": float("-inf"),
+                "gate_saturation_count": 0,
+                "gate_count": 0,
+                "feedback_norm_sum": 0.0,
+                "feedback_norm_max": 0.0,
+                "feedback_count": 0,
+            }
+        return layers[layer_name]
+
+    def _record_gawf_feedback(self, layer_idx: int, fb) -> None:
+        if self._gawf_diag_state is None:
+            return
+        with torch.no_grad():
+            norms = fb.detach().float().norm(dim=-1)
+            mean_norm = float(norms.mean().item())
+            max_norm = float(norms.max().item())
+
+        for state in (self._gawf_diag_state, self._layer_diag_state(layer_idx)):
+            state["feedback_norm_sum"] += mean_norm
+            state["feedback_norm_max"] = max(state["feedback_norm_max"], max_norm)
+            state["feedback_count"] += 1
+
+    def _record_gawf_gate(
+        self,
+        layer_idx: int,
+        gate_logits_ih,
+        gate_logits_hh,
+        gate_ih,
+        gate_hh,
+    ) -> None:
+        if self._gawf_diag_state is None:
+            return
+        eps = self._gawf_diag_gate_eps
+        with torch.no_grad():
+            logit_min = min(
+                float(gate_logits_ih.detach().float().amin().item()),
+                float(gate_logits_hh.detach().float().amin().item()),
+            )
+            logit_max = max(
+                float(gate_logits_ih.detach().float().amax().item()),
+                float(gate_logits_hh.detach().float().amax().item()),
+            )
+            sat_count = int(
+                ((gate_ih <= eps) | (gate_ih >= 1.0 - eps)).sum().item()
+                + ((gate_hh <= eps) | (gate_hh >= 1.0 - eps)).sum().item()
+            )
+            gate_count = int(gate_ih.numel() + gate_hh.numel())
+
+        for state in (self._gawf_diag_state, self._layer_diag_state(layer_idx)):
+            state["gate_logit_min"] = min(state["gate_logit_min"], logit_min)
+            state["gate_logit_max"] = max(state["gate_logit_max"], logit_max)
+            state["gate_saturation_count"] += sat_count
+            state["gate_count"] += gate_count
+
+
+class GaWFRNNConv(GaWFDiagnosticsMixin, BaseConvSequenceModel):
     """
     GaWF (Gated with Feedback) RNN Model.
     Encoder and classifier from BaseConvSequenceModel. Forward overridden for feedback.
@@ -59,6 +195,7 @@ class GaWFRNNConv(BaseConvSequenceModel):
         self.register_buffer("prev_feedback", None)
 
         self._init_gawf_params()
+        self._init_gawf_diagnostics_state()
 
     def _init_gawf_params(self) -> None:
         """
@@ -90,8 +227,11 @@ class GaWFRNNConv(BaseConvSequenceModel):
         V_hh = self.V[:, input_size:].unsqueeze(0)
         trans_ih = torch.matmul(self.U, fb_t * V_ih)
         trans_hh = torch.matmul(self.U, fb_t * V_hh)
-        gate_ih = torch.sigmoid(trans_ih / self.gate_tau)
-        gate_hh = torch.sigmoid(trans_hh / self.gate_tau)
+        gate_logits_ih = trans_ih / self.gate_tau
+        gate_logits_hh = trans_hh / self.gate_tau
+        gate_ih = torch.sigmoid(gate_logits_ih)
+        gate_hh = torch.sigmoid(gate_logits_hh)
+        self._record_gawf_gate(0, gate_logits_ih, gate_logits_hh, gate_ih, gate_hh)
         gated_weight_ih = gate_ih * weight_ih.unsqueeze(0)
         gated_weight_hh = gate_hh * weight_hh.unsqueeze(0)
         ih = torch.bmm(x_t.unsqueeze(1), gated_weight_ih.transpose(1, 2)).squeeze(1)
@@ -125,6 +265,7 @@ class GaWFRNNConv(BaseConvSequenceModel):
 
             for t in range(frame_num):
                 x_t = x[:, t, :]
+                self._record_gawf_feedback(0, fb)
                 fb_t = fb.clamp(-10, 10).unsqueeze(2)
                 gated_output = self.middle_gawf(x_t, h, fb_t)
                 gated_output = F.dropout(gated_output, p=self.rnn_dropout, training=self.training)
@@ -149,7 +290,7 @@ class GaWFRNNConv(BaseConvSequenceModel):
         return char_out, pos_out
 
 
-class MultiLayerGaWFRNNConv(BaseConvSequenceModel):
+class MultiLayerGaWFRNNConv(GaWFDiagnosticsMixin, BaseConvSequenceModel):
     """
     Multi-layer GaWF RNN model with explicit projected feedback.
 
@@ -239,6 +380,7 @@ class MultiLayerGaWFRNNConv(BaseConvSequenceModel):
         self.proj_out = nn.Linear(self.output_feedback_dim, self.feedback_dim)
         self.gate_tau = 0.5
         self.register_buffer("prev_feedback", None)
+        self._init_gawf_diagnostics_state()
 
     def set_feedback_frozen(self, freeze: bool):
         params = list(self.U_layers) + list(self.V_layers)
@@ -264,8 +406,17 @@ class MultiLayerGaWFRNNConv(BaseConvSequenceModel):
         V_hh = V[:, input_size:].unsqueeze(0)
         trans_ih = torch.matmul(U, fb_t * V_ih)
         trans_hh = torch.matmul(U, fb_t * V_hh)
-        gate_ih = torch.sigmoid(trans_ih / self.gate_tau)
-        gate_hh = torch.sigmoid(trans_hh / self.gate_tau)
+        gate_logits_ih = trans_ih / self.gate_tau
+        gate_logits_hh = trans_hh / self.gate_tau
+        gate_ih = torch.sigmoid(gate_logits_ih)
+        gate_hh = torch.sigmoid(gate_logits_hh)
+        self._record_gawf_gate(
+            layer_idx,
+            gate_logits_ih,
+            gate_logits_hh,
+            gate_ih,
+            gate_hh,
+        )
         gated_weight_ih = gate_ih * weight_ih.unsqueeze(0)
         gated_weight_hh = gate_hh * weight_hh.unsqueeze(0)
         ih = torch.bmm(x_t.unsqueeze(1), gated_weight_ih.transpose(1, 2)).squeeze(1)
@@ -313,6 +464,7 @@ class MultiLayerGaWFRNNConv(BaseConvSequenceModel):
                         fb = fb_top
                     else:
                         fb = self.hidden_projectors[layer_idx](h_states[layer_idx + 1])
+                    self._record_gawf_feedback(layer_idx, fb)
                     fb_t = fb.clamp(-10, 10).unsqueeze(2)
                     h_t = self.middle_gawf_layer(
                         layer_idx,
