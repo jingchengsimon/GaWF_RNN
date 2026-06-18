@@ -849,7 +849,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help=(
             "GaWFRNN only: feedback context dimension dz. "
             "For model_type=gawf, omitting this keeps legacy feedback dim "
-            "(num_classes + num_pos). For model_type=gawf_multi, omitting this uses dz=8."
+            "(num_classes + num_pos). For model_type=gawf_multi, omitting this "
+            "or setting 0 disables feedback projectors; values > 0 enable projected dz."
         ),
     )
     parser.add_argument(

@@ -5,7 +5,7 @@
 | Abbreviation | Full term | Context |
 |---|---|---|
 | `gawf` | Gated-with-Feedback | Model family name |
-| `gawf_multi` | Multi-layer Gated-with-Feedback | Separate CLI model type for projected multi-layer GaWF |
+| `gawf_multi` | Multi-layer Gated-with-Feedback | Separate CLI model type for multi-layer GaWF |
 | `rnn` | Recurrent Neural Network | Model type key in CLI |
 | `gru` | Gated Recurrent Unit | Model type key |
 | `lstm` | Long Short-Term Memory | Model type key |
@@ -16,7 +16,7 @@
 | `ssm` | State Space Model | Model type key |
 | `cnn` | Convolutional Neural Network | Encoder stage |
 | `fb` | Feedback | Feedback vector / buffer |
-| `fb_dim` | Feedback dimension | `dz` (GaWF hyperparameter); legacy default `num_classes + num_pos` |
+| `fb_dim` | Feedback dimension | `dz` for projected GaWF; direct feedback uses output or hidden dimensions |
 | `ih` | Input-to-Hidden | RNN weight matrix |
 | `hh` | Hidden-to-Hidden | RNN recurrent weight |
 | `hparam` | Hyperparameter | Used in log/result dir names |
@@ -28,7 +28,7 @@
 | `h` | Hidden size | Filename suffix, e.g. `h256` |
 | `dmodel` | Mamba/SSM sequence width | Filename suffix for `mamba` / `ssm`, e.g. `dmodel170` |
 | `state` | SSM latent state size | Filename suffix for `ssm`, e.g. `state189` |
-| `dz` | GaWF feedback context dimension | Optional filename suffix for `gawf`, required/defaulted for `gawf_multi`, e.g. `dz8` |
+| `dz` | Projected GaWF feedback context dimension | Optional filename suffix for `gawf` and projected `gawf_multi`, e.g. `dz8` |
 | `L` | GaWF recurrent layer count | `gawf_multi` filename suffix, e.g. `L2` |
 | `acc` | Acceleration / accuracy | Context-dependent (filename: acceleration) |
 | `sector` | 3×3 spatial sector | Label mode name |
@@ -86,11 +86,11 @@ Single-layer GaWF `dz` suffix is optional:
 - with explicit feedback dim: `_dz{value}`
 - legacy behavior (no explicit feedback dim): omit `_dz`
 
-Multi-layer GaWF stems add layer count and always include projected feedback dim:
+Multi-layer GaWF stems always add layer count. Projected runs also include `dz`:
 ```
-gawf_multi_{label_mode}{acc_suffix}_h{hidden}_L{layers}_lr{lr}_wd{wd}_cdo{cdo}_rdo{rdo}_dz{dz}{fb_suffix}_model.pth
+gawf_multi_{label_mode}{acc_suffix}_h{hidden}_L{layers}_lr{lr}_wd{wd}_cdo{cdo}_rdo{rdo}{_dz{dz}}{fb_suffix}_model.pth
 ```
-`gawf_multi` defaults to `L=2`, `dz=8`; it is separate from single-layer `gawf`.
+`gawf_multi` defaults to `L=2` with direct feedback; `--dz > 0` enables projected feedback.
 
 Mamba and SSM stems use model-native width/state names instead of `h`:
 ```

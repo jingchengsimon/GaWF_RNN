@@ -310,7 +310,9 @@ def run_stream_pop_act(
                 h = gated_output
                 out_np[t] = gated_output.squeeze(0).cpu().numpy()
         elif model_type == "gawf_multi":
-            fb_top = torch.zeros(1, model.feedback_dim, device=device, dtype=torch.float32)
+            fb_top = torch.zeros(
+                1, model.top_feedback_dim, device=device, dtype=torch.float32
+            )
             h_states = [
                 torch.zeros(1, Hdim, device=device, dtype=seq.dtype)
                 for _ in range(model.num_layers)
@@ -321,8 +323,10 @@ def run_stream_pop_act(
                 for layer_idx in range(model.num_layers):
                     if layer_idx == model.num_layers - 1:
                         fb = fb_top
-                    else:
+                    elif model.use_feedback_projector:
                         fb = model.hidden_projectors[layer_idx](h_states[layer_idx + 1])
+                    else:
+                        fb = model._compute_hidden_feedback(h_states[layer_idx + 1])
                     fb_t = fb.clamp(-10, 10).unsqueeze(2)
                     h_t = model.middle_gawf_layer(
                         layer_idx,

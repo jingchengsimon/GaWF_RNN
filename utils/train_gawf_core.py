@@ -335,12 +335,24 @@ class MultiLayerGaWFRNNConv(GaWFDiagnosticsMixin, BaseConvSequenceModel):
             )
 
         self.output_feedback_dim = num_classes + num_pos
-        self.feedback_dim = 8 if feedback_dim is None else int(feedback_dim)
-        if self.feedback_dim <= 0:
-            raise ValueError(f"feedback_dim must be > 0, got {self.feedback_dim}")
+        requested_feedback_dim = None if feedback_dim is None else int(feedback_dim)
+        if requested_feedback_dim is not None and requested_feedback_dim < 0:
+            raise ValueError(
+                f"feedback_dim must be >= 0 for multi-layer GaWF, got {requested_feedback_dim}"
+            )
+        self.use_feedback_projector = (
+            requested_feedback_dim is not None and requested_feedback_dim > 0
+        )
+        self.feedback_dim = requested_feedback_dim if self.use_feedback_projector else 0
 
         input_size = self.encoder_flatten_size
         layer_input_sizes = [input_size] + [hidden_size] * (self.num_layers - 1)
+        self.layer_feedback_dims = (
+            [self.feedback_dim] * self.num_layers
+            if self.use_feedback_projector
+            else [hidden_size] * (self.num_layers - 1) + [self.output_feedback_dim]
+        )
+        self.top_feedback_dim = self.layer_feedback_dims[-1]
         self.rnns = nn.ModuleList(
             [
                 nn.RNN(
@@ -358,40 +370,52 @@ class MultiLayerGaWFRNNConv(GaWFDiagnosticsMixin, BaseConvSequenceModel):
 
         self.U_layers = nn.ParameterList(
             [
-                nn.Parameter(torch.randn(hidden_size, self.feedback_dim) * 0.01)
-                for _ in range(self.num_layers)
+                nn.Parameter(torch.randn(hidden_size, layer_feedback_dim) * 0.01)
+                for layer_feedback_dim in self.layer_feedback_dims
             ]
         )
         self.V_layers = nn.ParameterList(
             [
                 nn.Parameter(
-                    torch.randn(self.feedback_dim, layer_input_size + hidden_size) * 0.01
+                    torch.randn(layer_feedback_dim, layer_input_size + hidden_size) * 0.01
                 )
-                for layer_input_size in layer_input_sizes
+                for layer_feedback_dim, layer_input_size in zip(
+                    self.layer_feedback_dims, layer_input_sizes
+                )
             ]
         )
 
-        self.hidden_projectors = nn.ModuleList(
-            [
-                nn.Linear(hidden_size, self.feedback_dim)
-                for _ in range(self.num_layers - 1)
-            ]
-        )
-        self.proj_out = nn.Linear(self.output_feedback_dim, self.feedback_dim)
+        if self.use_feedback_projector:
+            self.hidden_projectors = nn.ModuleList(
+                [
+                    nn.Linear(hidden_size, self.feedback_dim)
+                    for _ in range(self.num_layers - 1)
+                ]
+            )
+            self.proj_out = nn.Linear(self.output_feedback_dim, self.feedback_dim)
+        else:
+            self.hidden_projectors = nn.ModuleList()
+            self.proj_out = None
         self.gate_tau = 0.5
         self.register_buffer("prev_feedback", None)
         self._init_gawf_diagnostics_state()
 
     def set_feedback_frozen(self, freeze: bool):
         params = list(self.U_layers) + list(self.V_layers)
-        params.extend(self.hidden_projectors.parameters())
-        params.extend(self.proj_out.parameters())
+        if self.use_feedback_projector:
+            params.extend(self.hidden_projectors.parameters())
+            params.extend(self.proj_out.parameters())
         for p in params:
             p.requires_grad = not freeze
 
     def _compute_output_feedback(self, char_t, pos_t):
         y_t = torch.cat([char_t, pos_t], dim=-1)
+        if self.proj_out is None:
+            return y_t
         return self.proj_out(y_t)
+
+    def _compute_hidden_feedback(self, h_t):
+        return h_t.detach()
 
     def middle_gawf_layer(self, layer_idx, x_t, h_prev, fb_t):
         input_size = x_t.size(-1)
@@ -440,7 +464,7 @@ class MultiLayerGaWFRNNConv(GaWFDiagnosticsMixin, BaseConvSequenceModel):
         if use_feedback:
             if reset_feedback or self.prev_feedback is None:
                 fb_top = torch.zeros(
-                    batch_size, self.feedback_dim, device=x.device, dtype=torch.float32
+                    batch_size, self.top_feedback_dim, device=x.device, dtype=torch.float32
                 )
             else:
                 fb_top = self.prev_feedback.to(device=x.device, dtype=torch.float32)
@@ -462,8 +486,11 @@ class MultiLayerGaWFRNNConv(GaWFDiagnosticsMixin, BaseConvSequenceModel):
                 for layer_idx in range(self.num_layers):
                     if layer_idx == self.num_layers - 1:
                         fb = fb_top
-                    else:
+                    elif self.use_feedback_projector:
                         fb = self.hidden_projectors[layer_idx](h_states[layer_idx + 1])
+                    else:
+                        with torch.no_grad():
+                            fb = self._compute_hidden_feedback(h_states[layer_idx + 1])
                     self._record_gawf_feedback(layer_idx, fb)
                     fb_t = fb.clamp(-10, 10).unsqueeze(2)
                     h_t = self.middle_gawf_layer(
@@ -477,7 +504,11 @@ class MultiLayerGaWFRNNConv(GaWFDiagnosticsMixin, BaseConvSequenceModel):
                     layer_input = h_t
 
                 char_t, pos_t = self.classifier(layer_input)
-                fb_top = self._compute_output_feedback(char_t, pos_t)
+                if self.proj_out is None:
+                    with torch.no_grad():
+                        fb_top = self._compute_output_feedback(char_t, pos_t)
+                else:
+                    fb_top = self._compute_output_feedback(char_t, pos_t)
                 h_states = next_h_states
                 char_out[:, t, :], pos_out[:, t, :] = char_t, pos_t
 

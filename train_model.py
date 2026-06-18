@@ -453,6 +453,8 @@ if __name__ == "__main__":
         parser.error("--gawf_multi_lr_scale must be > 0")
     if args.gawf_multi_feedback_lr_scale <= 0:
         parser.error("--gawf_multi_feedback_lr_scale must be > 0")
+    if args.feedback_dim is not None and args.feedback_dim < 0:
+        parser.error("--feedback_dim/--dz must be >= 0")
     if args.gawf_diag_every <= 0:
         parser.error("--gawf_diag_every must be > 0")
     if args.gawf_diag_gate_eps <= 0 or args.gawf_diag_gate_eps >= 0.5:
@@ -668,7 +670,7 @@ if __name__ == "__main__":
         elif model_type == "gawf":
             model_kwargs["feedback_dim"] = feedback_dim
         elif model_type == "gawf_multi":
-            model_kwargs["feedback_dim"] = 8 if feedback_dim is None else feedback_dim
+            model_kwargs["feedback_dim"] = feedback_dim
             model_kwargs["num_layers"] = gawf_layers
         mdl = ModelClass(
                 num_classes=10,
@@ -689,7 +691,11 @@ if __name__ == "__main__":
         elif model_type == "gawf" and feedback_dim is not None:
             width_desc = f"{width_desc}, dz={feedback_dim}"
         elif model_type == "gawf_multi":
-            width_desc = f"{width_desc}, layers={gawf_layers}, dz={mdl.feedback_dim}"
+            if getattr(mdl, "use_feedback_projector", False):
+                feedback_desc = f"dz={mdl.feedback_dim}"
+            else:
+                feedback_desc = "direct_feedback"
+            width_desc = f"{width_desc}, layers={gawf_layers}, {feedback_desc}"
         logger.info(
             "Created %s model (predict_all_chars=%s, max_chars=%s, cnn_dropout=%s, rnn_dropout=%s, %s, cnn_feature_size=large)",
             model_type.upper(), predict_all_chars, max_chars, cnn_dropout, rnn_dropout, width_desc,
@@ -729,7 +735,7 @@ if __name__ == "__main__":
         dz_suffix = ""
         if model_type == "gawf" and feedback_dim is not None:
             dz_suffix = f"_dz{feedback_dim}"
-        elif model_type == "gawf_multi":
+        elif model_type == "gawf_multi" and getattr(mdl, "use_feedback_projector", False):
             dz_suffix = f"_dz{mdl.feedback_dim}"
         results_stem = (
             f"{model_type}_{mode_suffix}{acc_suffix}{width_suffix}"
@@ -823,6 +829,12 @@ if __name__ == "__main__":
             )
             if model_type == "gawf_multi":
                 metric_summary["gawf_layers"] = int(mdl.num_layers)
+                metric_summary["use_feedback_projector"] = bool(
+                    getattr(mdl, "use_feedback_projector", False)
+                )
+                metric_summary["layer_feedback_dims"] = [
+                    int(dim) for dim in getattr(mdl, "layer_feedback_dims", [])
+                ]
                 metric_summary["gawf_multi_lr_scale"] = args.gawf_multi_lr_scale
                 metric_summary["gawf_multi_feedback_lr_scale"] = (
                     args.gawf_multi_feedback_lr_scale

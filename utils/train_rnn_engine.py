@@ -208,8 +208,11 @@ def setup_training_components(
             param_groups = [
                 {"params": base_params, "lr": lr, "weight_decay": wd},
                 {"params": gate_params, "lr": feedback_lr, "weight_decay": 0.0},
-                {"params": projector_params, "lr": feedback_lr, "weight_decay": wd},
             ]
+            if projector_params:
+                param_groups.append(
+                    {"params": projector_params, "lr": feedback_lr, "weight_decay": wd}
+                )
             optim_kwargs = {}
             if OptimClass in (torch.optim.Adam, torch.optim.AdamW) and has_big_hidden:
                 optim_kwargs["eps"] = 1e-6

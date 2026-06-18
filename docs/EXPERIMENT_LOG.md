@@ -23,8 +23,8 @@ implementation choice.
 - Goal: improve GaWF generalization by making the feedback dimension less tied
   to a specific task output structure.
 - Design reference: CFL-style projector layer.
-- Current choice: use a generic feedback dimension of `dz=8`.
-- Current ClutterMNIST implementation: the original `dz=19` output is first
+- Projected feedback runs use a generic feedback dimension such as `dz=8`.
+- Projected ClutterMNIST implementation: the original `dz=19` output is first
   linearly projected into a `dz=8` feedback vector, then used by the existing
   `U * fb * V` gating pathway.
 - Difference from the CFL paper: this implementation uses a projector layer
@@ -38,11 +38,13 @@ implementation choice.
 - Model: `gawf_multi`.
 - Scope: implemented as a separate model type from single-layer `gawf` so
   existing legacy and projected single-layer behavior is unchanged.
-- Default projected feedback dimension: `dz=8`.
+- Direct feedback is the default; specifying `--dz > 0` enables projected feedback
+  such as `dz=8`.
 - Default recurrent depth: `--gawf_layers 2`; the CLI supports deeper stacks.
 - Parameter sharing choice: U and V are not shared across layers. The model uses
   one U/V pair per recurrent layer because V shape depends on each layer's input
   size.
-- Feedback source: the final recurrent layer uses projected classifier output;
-  non-final layers use a projector from the previous timestep's upper-layer
-  hidden state.
+- Feedback source: in direct mode, the final recurrent layer uses previous
+  classifier output and non-final layers use the detached previous timestep's
+  adjacent upper-layer hidden state. In projected mode, both sources are linearly
+  projected to `dz`.
