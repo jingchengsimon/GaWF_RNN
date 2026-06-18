@@ -73,8 +73,22 @@ implementation choice.
   and searched weight decay. `U` and `V` use the same task learning rate but
   always set `weight_decay=0.0`. No `0.1` learning-rate scale is applied to
   `U` or `V` for single-layer `gawf`.
-- Related multi-layer note: `gawf_multi` has separate CLI controls,
-  `--gawf_multi_lr_scale` and `--gawf_multi_feedback_lr_scale` (both default
-  `0.1`). In that model only, the base learning rate is scaled by
-  `gawf_multi_lr_scale`; U/V feedback-gating parameter groups use the further
-  `gawf_multi_feedback_lr_scale` and still set `weight_decay=0.0`.
+- Related multi-layer note: `gawf_multi` uses only
+  `--gawf_multi_feedback_lr_scale` (default `0.1`) for learning-rate scaling.
+  Base parameters use the searched learning rate directly. U/V feedback-gating
+  parameter groups use `searched_lr * gawf_multi_feedback_lr_scale` and still
+  set `weight_decay=0.0`.
+
+## 2026-06-18 - Multi-layer GaWF Learning-rate Scale Simplification
+
+- Model: `gawf_multi`.
+- Change: removed the CLI argument `--gawf_multi_lr_scale`.
+- Reason: the previous implementation had two multiplicative scale knobs for
+  multi-layer GaWF learning rates, which made the effective base and feedback
+  learning rates harder to interpret.
+- Current implementation: base parameters use the searched or requested
+  learning rate directly. The only multi-layer feedback-specific scale is
+  `--gawf_multi_feedback_lr_scale`, default `0.1`; U/V use
+  `lr * gawf_multi_feedback_lr_scale`.
+- Weight decay: U/V remain in a no-weight-decay optimizer group
+  (`weight_decay=0.0`). Base parameters use the searched/requested weight decay.

@@ -449,8 +449,6 @@ def network_train(
 if __name__ == "__main__":
     parser = build_arg_parser()
     args = parser.parse_args()
-    if args.gawf_multi_lr_scale <= 0:
-        parser.error("--gawf_multi_lr_scale must be > 0")
     if args.gawf_multi_feedback_lr_scale <= 0:
         parser.error("--gawf_multi_feedback_lr_scale must be > 0")
     if args.feedback_dim is not None and args.feedback_dim < 0:
@@ -704,14 +702,10 @@ if __name__ == "__main__":
         train_lr = lr
         gawf_feedback_lr_scale = 1.0
         if model_type == "gawf_multi":
-            train_lr = lr * args.gawf_multi_lr_scale
             gawf_feedback_lr_scale = args.gawf_multi_feedback_lr_scale
             logger.info(
-                "gawf_multi effective lr: requested_lr=%s, train_lr=%s, "
-                "lr_scale=%s, feedback_lr_scale=%s",
+                "gawf_multi optimizer lr: base_lr=%s, feedback_lr_scale=%s",
                 lr,
-                train_lr,
-                args.gawf_multi_lr_scale,
                 args.gawf_multi_feedback_lr_scale,
             )
 
@@ -835,7 +829,6 @@ if __name__ == "__main__":
                 metric_summary["layer_feedback_dims"] = [
                     int(dim) for dim in getattr(mdl, "layer_feedback_dims", [])
                 ]
-                metric_summary["gawf_multi_lr_scale"] = args.gawf_multi_lr_scale
                 metric_summary["gawf_multi_feedback_lr_scale"] = (
                     args.gawf_multi_feedback_lr_scale
                 )

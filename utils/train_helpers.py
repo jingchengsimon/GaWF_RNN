@@ -863,15 +863,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--gawf_multi_lr_scale",
-        type=float,
-        default=0.1,
-        help=(
-            "gawf_multi only: scale applied to --lrs before training. "
-            "Single-layer gawf is unchanged. Default: 0.1."
-        ),
-    )
-    parser.add_argument(
         "--gawf_multi_feedback_lr_scale",
         type=float,
         default=0.1,
