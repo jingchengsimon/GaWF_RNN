@@ -85,6 +85,11 @@ that assume spatial dimensions (6,6) and 32 feature channels.
 - Gate: `sigmoid(U @ (fb * V) / gate_tau)`, `gate_tau = 0.5`
 - U shape: `(hidden_size, fb_dim)`, V shape: `(fb_dim, input_size + hidden_size)`
 - `prev_feedback` is a runtime buffer (not a parameter); **skip it** when loading state_dicts.
+- Optimizer grouping: for single-layer `gawf`, U/V are placed in a no-weight-decay
+  parameter group but use the same learning rate as the rest of the model. For
+  `gawf_multi`, U/V are also no-weight-decay and use the configured feedback
+  learning-rate scale; the default multi-layer scales are
+  `--gawf_multi_lr_scale 0.1` and `--gawf_multi_feedback_lr_scale 0.1`.
 - Multi-layer GaWF uses separate CLI model type `gawf_multi` and class
   `MultiLayerGaWFRNNConv`; default `--gawf_layers 2`. If `--dz` is omitted or set
   to `0`, multi-layer GaWF uses direct feedback: non-final layers receive the

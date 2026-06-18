@@ -66,3 +66,15 @@ implementation choice.
   seed gave maximum loss difference `4.77e-7`; repeating the optimized path gave
   `0.0` loss difference. For `hidden_size=512`, batch size 256, AMP enabled,
   peak allocated GPU memory dropped from `2603.7 MB` to `1709.5 MB`.
+- Optimizer details for the `gawf hidden_size=512` full-grid rerun:
+  the submitted job uses the single-layer `gawf` model path, not `gawf_multi`.
+  Single-layer `gawf` splits optimizer parameters into base parameters and
+  GaWF gating parameters (`U`, `V`). Base parameters use the task learning rate
+  and searched weight decay. `U` and `V` use the same task learning rate but
+  always set `weight_decay=0.0`. No `0.1` learning-rate scale is applied to
+  `U` or `V` for single-layer `gawf`.
+- Related multi-layer note: `gawf_multi` has separate CLI controls,
+  `--gawf_multi_lr_scale` and `--gawf_multi_feedback_lr_scale` (both default
+  `0.1`). In that model only, the base learning rate is scaled by
+  `gawf_multi_lr_scale`; U/V feedback-gating parameter groups use the further
+  `gawf_multi_feedback_lr_scale` and still set `weight_decay=0.0`.
