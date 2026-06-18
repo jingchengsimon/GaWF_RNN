@@ -77,18 +77,21 @@ BaseMergeConvModel                 (utils/train_ann_core.py)
 that assume spatial dimensions (6,6) and 32 feature channels.
 
 ### 2.3 GaWF Gating
-- Feedback vector: `fb ∈ ℝ^(fb_dim)` where `fb_dim = dz` is a GaWF hyperparameter (`--feedback_dim` / `--dz`).
-- Legacy compatibility: if `--feedback_dim` is omitted, `fb_dim = num_classes + num_pos`.
+- Feedback vector: `fb ∈ ℝ^(fb_dim)`. For projected GaWF, `fb_dim = dz`
+  (`--feedback_dim` / `--dz`).
+- Legacy compatibility: for single-layer `gawf`, if `--feedback_dim` is omitted,
+  `fb_dim = num_classes + num_pos`.
 - Optional projector: `proj_out` maps output logits `y ∈ ℝ^(num_classes + num_pos)` to `fb ∈ ℝ^(dz)`.
 - Gate: `sigmoid(U @ (fb * V) / gate_tau)`, `gate_tau = 0.5`
 - U shape: `(hidden_size, fb_dim)`, V shape: `(fb_dim, input_size + hidden_size)`
 - `prev_feedback` is a runtime buffer (not a parameter); **skip it** when loading state_dicts.
 - Multi-layer GaWF uses separate CLI model type `gawf_multi` and class
-  `MultiLayerGaWFRNNConv`; default `--gawf_layers 2`, default `dz=8`.
-  It does not reuse single-layer legacy feedback. Each recurrent layer has its own
-  U/V pair (`U_layers`, `V_layers`); non-final layers receive projected feedback
-  from the previous timestep's upper-layer hidden state, and the final layer receives
-  projected feedback from previous logits.
+  `MultiLayerGaWFRNNConv`; default `--gawf_layers 2`. If `--dz` is omitted or set
+  to `0`, multi-layer GaWF uses direct feedback: non-final layers receive the
+  detached adjacent higher layer's previous hidden output (`hidden_size` dim), and
+  the final layer receives detached previous output logits (`num_classes + num_pos`
+  dim). If `--dz > 0`, each recurrent layer has its own U/V pair (`U_layers`,
+  `V_layers`) and receives projected feedback with dimension `dz`.
 
 ### 2.4 Label Format
 | Mode | `labels` shape | `labels[..., 0]` | `labels[..., 1]` |
@@ -163,7 +166,7 @@ if __name__ == "__main__":
 | `--mamba_d_models` | int+ | `train_model.py` only: Mamba sequence width `d_model`; repeat for grid (default `[170]`) |
 | `--ssm_d_models` | int+ | `train_model.py` only: SSM sequence feature width `d_model`; repeat for grid (default `[256]`) |
 | `--ssm_state_sizes` | int+ | `train_model.py` only: diagonal SSM latent state size; repeat for grid (default `[189]`) |
-| `--feedback_dim` / `--dz` | int | `train_model.py` only, GaWF: feedback context dimension `dz`; default `None` keeps single-layer legacy `num_classes + num_pos`, while `gawf_multi` defaults to `8` |
+| `--feedback_dim` / `--dz` | int | `train_model.py` only, GaWF: feedback context dimension `dz`; default `None` keeps single-layer legacy `num_classes + num_pos`; for `gawf_multi`, `None` or `0` disables projectors and values `>0` enable projected feedback |
 | `--gawf_layers` | int | `train_model.py` only, `gawf_multi`: recurrent layer count; default `2`, must be `>=2` |
 | `--data_suffix` | str | Suffix for **train** (and default val): `stimulus_reg-train-<suffix>.npy` / `stimulus_reg-validation-<suffix>` |
 | `--eval_data_suffix` | str | Suffix for **validation only**; empty → same as `--data_suffix` (use for train/val scale mismatch, e.g. 4h train + 40h val) |
@@ -196,7 +199,7 @@ Figures follow: `<mode><idx>_<agg>_<descriptor>.png`.
 Metadata JSON follows: `<descriptor>_meta_<tag>.json`.
 Single-layer GaWF checkpoints may include optional `_dz{value}` when `--feedback_dim`
 is explicitly set. Multi-layer GaWF checkpoints use prefix `gawf_multi_` and include
-`_L{layers}` plus `_dz{value}`.
+`_L{layers}`; projected multi-layer runs additionally include `_dz{value}`.
 
 ---
 
@@ -331,9 +334,12 @@ the run logs show `num_workers=12, pin_memory=True`. Do this at submission time
 only; do not bake these values into local launchers or training scripts because
 interactive/local remote runs can OOM with the same DataLoader settings. Always
 pair these DataLoader acceleration settings with explicit Slurm resources:
-`--cpus-per-task=16`, `--mem=64G`, and `--gres=gpu:1`, instead of relying on the
-default 4 CPU / 16G allocation. Amarel Slurm scripts submitted by Codex must
-activate the project conda environment with
+`--cpus-per-task=16`, `--mem=64G`, `--gres=gpu:1`, and
+`--constraint=adalovelace`, instead of relying on the default 4 CPU / 16G
+allocation or mixed GPU architectures. Use `--nodelist=gpuk018` only when an
+experiment specifically needs to reproduce the old p0 node-level execution
+path. Amarel Slurm scripts submitted by Codex must activate the project conda
+environment with
 `source /home/js3269/enter/etc/profile.d/conda.sh` followed by
 `conda activate aim3_rnn`; do not use `module` or a `faw_rnn_env` virtualenv.
 After submitting from Codex, verify and report the requested resources and
@@ -343,6 +349,11 @@ Amarel Slurm stdout/stderr and submission logs live under
 campaign, use `submit_hparam_4h_5epoch_test.sh` and
 `check_hparam_4h_5epoch_test_status.sh`; this runs only four 4h/5-epoch jobs
 (`rnn`, `lstm`, `gru`, `gawf`) at `hidden_size=256`, `lr=5e-4`, `wd=1e-4`.
+For training-metrics visualizations, always use `visualize_batch.sh` from the
+repo root so plots share the same style and output layout; do not create ad hoc
+plotting scripts for saved metrics unless the user explicitly asks for a custom
+figure. Activate `aim3_rnn` first on Amarel before running visualization so the
+script uses the environment with `numpy`/matplotlib installed.
 `submit_hparam_full_grid_batches.sh --scale <4|10|20|40|all ...>` submits only
 the selected scale slices when requested, e.g. `--scale 10 20 40` skips 4h.
 Local two-GPU debugging uses

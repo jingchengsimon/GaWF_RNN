@@ -232,10 +232,8 @@ class GaWFRNNConv(GaWFDiagnosticsMixin, BaseConvSequenceModel):
         gate_ih = torch.sigmoid(gate_logits_ih)
         gate_hh = torch.sigmoid(gate_logits_hh)
         self._record_gawf_gate(0, gate_logits_ih, gate_logits_hh, gate_ih, gate_hh)
-        gated_weight_ih = gate_ih * weight_ih.unsqueeze(0)
-        gated_weight_hh = gate_hh * weight_hh.unsqueeze(0)
-        ih = torch.bmm(x_t.unsqueeze(1), gated_weight_ih.transpose(1, 2)).squeeze(1)
-        hh = torch.bmm(h_prev.unsqueeze(1), gated_weight_hh.transpose(1, 2)).squeeze(1)
+        ih = torch.einsum("bi,bhi,hi->bh", x_t, gate_ih, weight_ih)
+        hh = torch.einsum("bi,bhi,hi->bh", h_prev, gate_hh, weight_hh)
         if bias_ih is not None:
             ih = ih + bias_ih.unsqueeze(0)
         if bias_hh is not None:

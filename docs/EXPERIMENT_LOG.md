@@ -48,3 +48,21 @@ implementation choice.
   classifier output and non-final layers use the detached previous timestep's
   adjacent upper-layer hidden state. In projected mode, both sources are linearly
   projected to `dz`.
+
+## 2026-06-18 - Single-layer GaWF Gated Matmul Memory Optimization
+
+- Model: `gawf`.
+- Motivation: `gawf hidden_size=512` full-grid jobs failed with CUDA OOM during
+  the first training epoch. The issue was peak activation memory, not parameter
+  count.
+- Previous implementation: explicitly materialized `gated_weight_ih` and
+  `gated_weight_hh` with shapes `(B, H, I)` and `(B, H, H)` before batched
+  matrix multiplication.
+- Current implementation: keeps the same per-sample `gate_ih` and `gate_hh`
+  definitions, but computes the contractions directly with `torch.einsum`.
+  This is algebraically equivalent to `(gate * weight)` followed by the same
+  input/hidden reductions, while avoiding the extra `gated_weight_*` tensors.
+- Validation: on `sjc-remote`, a synthetic 5-step training A/B with the same
+  seed gave maximum loss difference `4.77e-7`; repeating the optimized path gave
+  `0.0` loss difference. For `hidden_size=512`, batch size 256, AMP enabled,
+  peak allocated GPU memory dropped from `2603.7 MB` to `1709.5 MB`.
