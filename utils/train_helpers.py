@@ -718,7 +718,8 @@ def get_model_classes(
     feedforward_conv_class,
     dendritic_ann_conv_class,
     mamba_conv_class=None,
-    ssm_conv_class=None,
+    diaglti_conv_class=None,
+    s5_conv_class=None,
     gawf_multi_conv_class=None,
 ):
     """Return mapping from model type name to model class.
@@ -746,8 +747,11 @@ def get_model_classes(
         model_classes["gawf_multi"] = gawf_multi_conv_class
     if mamba_conv_class is not None:
         model_classes["mamba"] = mamba_conv_class
-    if ssm_conv_class is not None:
-        model_classes["ssm"] = ssm_conv_class
+    if diaglti_conv_class is not None:
+        model_classes["diaglti"] = diaglti_conv_class
+    if s5_conv_class is not None:
+        model_classes["ssm"] = s5_conv_class
+        model_classes["s5"] = s5_conv_class
     return model_classes
 
 
@@ -768,7 +772,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "ffn",
             "dann",
             "mamba",
+            "diaglti",
             "ssm",
+            "s5",
         ],
         help='Model types to train (default: ["rnn"])',
     )
@@ -787,18 +793,50 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Mamba d_model values to test (default: [170]).",
     )
     parser.add_argument(
-        "--ssm_d_models",
+        "--diaglti_d_models",
         type=int,
         nargs="+",
         default=[256],
-        help="SSM sequence feature width d_model values to test (default: [256]).",
+        help="DiagLTI sequence feature width d_model values to test (default: [256]).",
     )
     parser.add_argument(
-        "--ssm_state_sizes",
+        "--diaglti_state_sizes",
         type=int,
         nargs="+",
         default=[189],
-        help="SSM latent state sizes to test (default: [189]).",
+        help="DiagLTI latent state sizes to test (default: [189]).",
+    )
+    parser.add_argument(
+        "--s5_d_models",
+        type=int,
+        nargs="+",
+        default=[256],
+        help="S5 sequence feature width d_model values to test (default: [256]).",
+    )
+    parser.add_argument(
+        "--s5_state_sizes",
+        type=int,
+        nargs="+",
+        default=[189],
+        help="S5 latent state sizes to test (default: [189]).",
+    )
+    parser.add_argument(
+        "--s5_num_layers",
+        type=int,
+        default=1,
+        help="Number of S5 layers (default: 1).",
+    )
+    parser.add_argument(
+        "--s5_dropout",
+        type=float,
+        default=0.0,
+        help="Dropout between stacked S5 layers (default: 0).",
+    )
+    parser.add_argument(
+        "--s5_ssm_lr_scale",
+        type=float,
+        default=0.1,
+        help="S5 SSM-core learning-rate multiplier (default: 0.1).",
     )
     parser.add_argument(
         "--num_epochs",

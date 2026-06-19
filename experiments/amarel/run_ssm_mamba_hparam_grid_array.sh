@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=aim3-ssm-mamba
+#SBATCH --job-name=aim3-mamba-s5
 #SBATCH --partition=gpu-redhat
 #SBATCH --account=general
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
 #SBATCH --time=72:00:00
-#SBATCH --output=experiments/amarel/artifacts/ssm_mamba_hparam_grid/%A_%a.out
-#SBATCH --error=experiments/amarel/artifacts/ssm_mamba_hparam_grid/%A_%a.err
+#SBATCH --output=experiments/amarel/artifacts/mamba_s5_hparam_grid/%A_%a.out
+#SBATCH --error=experiments/amarel/artifacts/mamba_s5_hparam_grid/%A_%a.err
 
-# Run one SSM/Mamba hparam-grid task. Submit via
+# Run one Mamba/S5 hparam-grid task. Submit via
 # experiments/amarel/submit_ssm_mamba_hparam_grid_batches.sh.
 
 set -euo pipefail
@@ -22,8 +22,8 @@ fi
 cd "$ROOT"
 
 GRID_UTIL="experiments/generalization/ssm_mamba_hparam_grid.py"
-ART_ROOT="$ROOT/experiments/amarel/artifacts/ssm_mamba_hparam_grid"
-STATUS_DIR="$ROOT/experiments/generalization/artifacts/gen_hparam_ssm_mamba_grid/status"
+ART_ROOT="$ROOT/experiments/amarel/artifacts/mamba_s5_hparam_grid"
+STATUS_DIR="$ROOT/experiments/generalization/artifacts/gen_hparam_mamba_s5_grid/status"
 mkdir -p "$ART_ROOT" "$STATUS_DIR"
 
 if [[ -n "${TASK_ID_FILE:-}" ]]; then
@@ -92,11 +92,16 @@ fi
 
 model_args=()
 case "$MODEL_TYPE" in
-  ssm)
-    model_args=(--model_types ssm --ssm_d_models "$SSM_D_MODEL" --ssm_state_sizes "$SSM_STATE_SIZE")
-    ;;
   mamba)
     model_args=(--model_types mamba --mamba_d_models "$MAMBA_D_MODEL")
+    ;;
+  s5)
+    model_args=(
+      --model_types s5
+      --s5_d_models "$S5_D_MODEL"
+      --s5_state_sizes "$S5_STATE_SIZE"
+      --s5_ssm_lr_scale "$S5_SSM_LR_SCALE"
+    )
     ;;
   *)
     echo "Unsupported MODEL_TYPE=$MODEL_TYPE" | tee "$FAIL_FILE"

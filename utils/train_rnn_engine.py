@@ -42,6 +42,9 @@ from .train_sector import (
     single_char_global_eval_update,
 )
 from .train_gawf_core import GaWFRNNConv, MultiLayerGaWFRNNConv
+from .train_mamba_core import MambaConv
+from .train_s5_core import S5Conv
+from .train_diaglti_core import DiagLTIConv
 
 
 def _raise_unsupported_coord_engine(logger) -> None:
@@ -109,6 +112,7 @@ def setup_training_components(
     gawf_diag_path: str | None = None,
     gawf_diag_every: int = 1,
     gawf_diag_gate_eps: float = 0.01,
+    s5_ssm_lr_scale: float = 0.1,
 ) -> Dict[str, Any]:
     """
     Build all training components:
@@ -242,6 +246,101 @@ def setup_training_components(
             if OptimClass in (torch.optim.Adam, torch.optim.AdamW) and has_big_hidden:
                 optim_kwargs["eps"] = 1e-6
             return OptimClass(param_groups, **optim_kwargs)
+
+        if isinstance(mdl, (MambaConv, DiagLTIConv)):
+            decay = []
+            no_decay = []
+            for pname, param in mdl.named_parameters():
+                if not param.requires_grad:
+                    continue
+                if getattr(param, "_no_weight_decay", False) or param.ndim <= 1:
+                    no_decay.append((pname, param))
+                else:
+                    decay.append((pname, param))
+
+            if logger is not None:
+                logger.info(
+                    "Mamba/DiagLTI no_decay: %s",
+                    [name for name, _param in no_decay],
+                )
+
+            param_groups = []
+            if decay:
+                param_groups.append(
+                    {"params": [param for _name, param in decay], "weight_decay": wd}
+                )
+            if no_decay:
+                param_groups.append(
+                    {
+                        "params": [param for _name, param in no_decay],
+                        "weight_decay": 0.0,
+                    }
+                )
+            optim_kwargs = {"lr": lr}
+            if OptimClass in (torch.optim.Adam, torch.optim.AdamW) and has_big_hidden:
+                optim_kwargs["eps"] = 1e-6
+            return OptimClass(param_groups, **optim_kwargs)
+
+        if isinstance(mdl, S5Conv):
+            def _is_s5_core_param(pname: str) -> bool:
+                core_prefixes = ("Lambda", "log_step", "log_dt", "inv_dt", "B")
+                return any(
+                    part.startswith(core_prefixes) for part in pname.split(".")
+                )
+
+            ssm_core = []
+            no_decay = []
+            decay = []
+            for pname, param in mdl.named_parameters():
+                if not param.requires_grad:
+                    continue
+                if _is_s5_core_param(pname):
+                    ssm_core.append((pname, param))
+                elif param.ndim <= 1:
+                    no_decay.append((pname, param))
+                else:
+                    decay.append((pname, param))
+
+            if logger is not None:
+                logger.info("S5 ssm_core: %s", [name for name, _param in ssm_core])
+                logger.info("S5 decay   : %s", [name for name, _param in decay])
+                if not ssm_core:
+                    logger.warning(
+                        "S5 optimizer did not identify any SSM core parameters. "
+                        "Check S5 parameter names for Lambda/B/log_step variants."
+                    )
+
+            ssm_lr = lr * float(s5_ssm_lr_scale)
+            param_groups = []
+            if ssm_core:
+                param_groups.append(
+                    {
+                        "params": [param for _name, param in ssm_core],
+                        "lr": ssm_lr,
+                        "weight_decay": 0.0,
+                    }
+                )
+            if no_decay:
+                param_groups.append(
+                    {
+                        "params": [param for _name, param in no_decay],
+                        "lr": lr,
+                        "weight_decay": 0.0,
+                    }
+                )
+            if decay:
+                param_groups.append(
+                    {
+                        "params": [param for _name, param in decay],
+                        "lr": lr,
+                        "weight_decay": wd,
+                    }
+                )
+            optim_kwargs = {}
+            if OptimClass in (torch.optim.Adam, torch.optim.AdamW) and has_big_hidden:
+                optim_kwargs["eps"] = 1e-6
+            return OptimClass(param_groups, **optim_kwargs)
+
         optim_kwargs = {"lr": lr, "weight_decay": wd}
         if OptimClass in (torch.optim.Adam, torch.optim.AdamW) and has_big_hidden:
             optim_kwargs["eps"] = 1e-6
@@ -367,6 +466,7 @@ def setup_training_components(
         "gawf_diag_enabled": bool(gawf_diag_enabled and is_gawf),
         "gawf_diag_path": gawf_diag_path,
         "gawf_diagnostics": gawf_diagnostics,
+        "s5_ssm_lr_scale": s5_ssm_lr_scale,
         "train_dl": train_dl,
         "train_eval_dl": train_eval_dl,
         "val_dl": val_dl,

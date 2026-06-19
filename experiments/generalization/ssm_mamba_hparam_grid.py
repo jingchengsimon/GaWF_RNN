@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Hyperparameter grid utilities for SSM and Mamba sequence baselines.
+"""Hyperparameter grid utilities for Mamba and S5 sequence baselines.
 
-This is intentionally separate from ``hparam_full_grid.py`` so the completed
-RNN/LSTM/GRU/GaWF search scripts remain unchanged. The grid searches scale,
-model, learning rate, and weight decay while using the model-native default
-widths introduced in ``train_ssm_core.py`` and ``train_mamba_core.py``.
+This grid follows the RNN/LSTM/GRU scheme: fixed model size, fixed architecture
+knobs, lr x weight-decay search, validation selection, and 40h validation/test
+reporting through ``train_model.py``. Mamba/S5 use the wider lr range needed by
+SSM-style models. S5 also carries a fixed SSM-core lr multiplier; it is not a
+search dimension.
 """
 from __future__ import annotations
 
@@ -20,19 +21,21 @@ from itertools import product
 from typing import Any, Dict, Iterable, List, Sequence
 
 SCALES = ["4h", "10h", "20h", "40h"]
-MODELS = ["ssm", "mamba"]
-LRS = [1e-4, 5e-4, 1e-3, 5e-3]
+MODELS = ["mamba", "s5"]
+LRS = [1e-4, 5e-4, 1e-3, 5e-3, 1e-2]
 WDS = [0.0, 1e-5, 1e-4, 1e-3]
-SSM_D_MODEL = 256
-SSM_STATE_SIZE = 189
 MAMBA_D_MODEL = 170
+S5_D_MODEL = 256
+S5_STATE_SIZE = 189
+S5_SSM_LR_SCALE = 0.1
+GAWF_REF_HIDDEN = 256
 CNN_DROPOUT = 0.0
 RNN_DROPOUT = 0.5
 NUM_EPOCHS = 100
 PATIENCE = 15
 SEED = 42
-RESULT_ROOT_SUFFIX = "gen_hparam_ssm_mamba_grid"
-CSV_TAG = "_ssm_mamba_hparam_grid"
+RESULT_ROOT_SUFFIX = "gen_hparam_mamba_s5_grid"
+CSV_TAG = "_mamba_s5_hparam_grid"
 TOTAL_TASKS = len(SCALES) * len(MODELS) * len(LRS) * len(WDS)
 
 
@@ -48,9 +51,11 @@ class TaskConfig:
     num_epochs: int = NUM_EPOCHS
     patience: int = PATIENCE
     seed: int = SEED
-    ssm_d_model: int = SSM_D_MODEL
-    ssm_state_size: int = SSM_STATE_SIZE
+    gawf_ref_hidden: int = GAWF_REF_HIDDEN
     mamba_d_model: int = MAMBA_D_MODEL
+    s5_d_model: int = S5_D_MODEL
+    s5_state_size: int = S5_STATE_SIZE
+    s5_ssm_lr_scale: float = S5_SSM_LR_SCALE
 
     @property
     def data_suffix(self) -> str:
@@ -66,10 +71,10 @@ class TaskConfig:
 
     @property
     def result_stem(self) -> str:
-        if self.model == "ssm":
-            width_suffix = f"_dmodel{self.ssm_d_model}_state{self.ssm_state_size}"
-        elif self.model == "mamba":
+        if self.model == "mamba":
             width_suffix = f"_dmodel{self.mamba_d_model}"
+        elif self.model == "s5":
+            width_suffix = f"_dmodel{self.s5_d_model}_state{self.s5_state_size}"
         else:
             raise ValueError(f"Unsupported model: {self.model}")
         return (
@@ -178,15 +183,21 @@ def metrics_matches_task(metrics: Dict[str, Any], cfg: TaskConfig) -> bool:
         metrics.get("dataset_suffix") == cfg.data_suffix,
         metrics.get("eval_dataset_suffix") == cfg.eval_data_suffix,
     ]
-    if cfg.model == "ssm":
+    if cfg.model == "mamba":
+        checks.append(int(metrics.get("mamba_d_model", -1)) == cfg.mamba_d_model)
+    elif cfg.model == "s5":
         checks.extend(
             [
-                int(metrics.get("ssm_d_model", -1)) == cfg.ssm_d_model,
-                int(metrics.get("ssm_state_size", -1)) == cfg.ssm_state_size,
+                int(metrics.get("s5_d_model", -1)) == cfg.s5_d_model,
+                int(metrics.get("s5_state_size", -1)) == cfg.s5_state_size,
+                math.isclose(
+                    float(metrics.get("s5_ssm_lr_scale", float("nan"))),
+                    cfg.s5_ssm_lr_scale,
+                    rel_tol=0,
+                    abs_tol=1e-12,
+                ),
             ]
         )
-    elif cfg.model == "mamba":
-        checks.append(int(metrics.get("mamba_d_model", -1)) == cfg.mamba_d_model)
     return all(checks)
 
 
@@ -198,6 +209,11 @@ def validate_task_output(cfg: TaskConfig, root: str) -> Dict[str, Any]:
         "task_id": cfg.task_id,
         "scale": cfg.scale,
         "model": cfg.model,
+        "gawf_ref_hidden": cfg.gawf_ref_hidden,
+        "mamba_d_model": cfg.mamba_d_model if cfg.model == "mamba" else "",
+        "s5_d_model": cfg.s5_d_model if cfg.model == "s5" else "",
+        "s5_state_size": cfg.s5_state_size if cfg.model == "s5" else "",
+        "s5_ssm_lr_scale": cfg.s5_ssm_lr_scale if cfg.model == "s5" else "",
         "lr": cfg.lr,
         "weight_decay": cfg.weight_decay,
         "metrics_path": metrics_path,
@@ -209,11 +225,6 @@ def validate_task_output(cfg: TaskConfig, root: str) -> Dict[str, Any]:
         "valid": False,
         "reason": "",
     }
-    if cfg.model == "ssm":
-        row["ssm_d_model"] = cfg.ssm_d_model
-        row["ssm_state_size"] = cfg.ssm_state_size
-    else:
-        row["mamba_d_model"] = cfg.mamba_d_model
     if not row["metrics_exists"]:
         row["reason"] = "missing_metrics"
         return row
@@ -244,6 +255,7 @@ def shell_assignments(cfg: TaskConfig, root: str) -> str:
         "TASK_ID": str(cfg.task_id),
         "SCALE": cfg.scale,
         "MODEL_TYPE": cfg.model,
+        "GAWF_REF_HIDDEN": str(cfg.gawf_ref_hidden),
         "LR": repr(cfg.lr),
         "WD": repr(cfg.weight_decay),
         "CNN_DROPOUT": repr(cfg.cnn_dropout),
@@ -258,9 +270,10 @@ def shell_assignments(cfg: TaskConfig, root: str) -> str:
         "METRICS_PATH": os.path.join(root, cfg.metrics_relpath),
         "PKL_PATH": os.path.join(root, cfg.pkl_relpath),
         "MODEL_PATH": os.path.join(root, cfg.model_relpath),
-        "SSM_D_MODEL": str(cfg.ssm_d_model),
-        "SSM_STATE_SIZE": str(cfg.ssm_state_size),
         "MAMBA_D_MODEL": str(cfg.mamba_d_model),
+        "S5_D_MODEL": str(cfg.s5_d_model),
+        "S5_STATE_SIZE": str(cfg.s5_state_size),
+        "S5_SSM_LR_SCALE": repr(cfg.s5_ssm_lr_scale),
     }
     return "\n".join(f"{k}={shlex.quote(v)}" for k, v in values.items())
 
@@ -291,8 +304,10 @@ def phase3_csv_row(scale: str, m: Dict[str, Any]) -> Dict[str, Any]:
         "model": m.get("model_type"),
         "lr": m.get("lr"),
         "wd": m.get("weight_decay"),
-        "d_model": m.get("ssm_d_model", m.get("mamba_d_model")),
-        "state_size": m.get("ssm_state_size"),
+        "gawf_ref_hidden": m.get("gawf_ref_hidden", GAWF_REF_HIDDEN),
+        "d_model": m.get("mamba_d_model", m.get("s5_d_model")),
+        "state_size": m.get("s5_state_size"),
+        "s5_ssm_lr_scale": m.get("s5_ssm_lr_scale"),
         "early_stop_epoch": m.get("early_stop_epoch_1based", m.get("actual_epochs")),
         "train_acc": train_acc_char,
         "val_acc": val_acc_char,
@@ -322,6 +337,7 @@ def load_all_metrics(result_root: str) -> List[Dict[str, Any]]:
 
 def best_summary_rows(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
+    max_lr = max(LRS)
     for scale in SCALES:
         for model in MODELS:
             candidates = [
@@ -333,14 +349,20 @@ def best_summary_rows(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
             if not candidates:
                 continue
             best = max(candidates, key=score_row)
+            best_lr = float(best.get("lr", float("nan")))
             out.append(
                 {
                     "scale": scale,
                     "model": model,
-                    "d_model": best.get("ssm_d_model", best.get("mamba_d_model")),
-                    "state_size": best.get("ssm_state_size"),
+                    "gawf_ref_hidden": best.get("gawf_ref_hidden", GAWF_REF_HIDDEN),
+                    "d_model": best.get("mamba_d_model", best.get("s5_d_model")),
+                    "state_size": best.get("s5_state_size"),
+                    "s5_ssm_lr_scale": best.get("s5_ssm_lr_scale"),
                     "lr": best.get("lr"),
                     "weight_decay": best.get("weight_decay"),
+                    "best_at_lr_ceiling": math.isclose(
+                        best_lr, max_lr, rel_tol=0, abs_tol=1e-12
+                    ),
                     "val_acc_at_best": score_row(best),
                     "train_acc_at_best_val": best.get("train_acc_at_best_val"),
                     "overfit_gap": best.get("overfit_gap"),
@@ -360,22 +382,24 @@ def best_summary_rows(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def write_markdown_summary(path: str, best_rows: Sequence[Dict[str, Any]]) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        f.write("# SSM/Mamba Hyperparameter Search Summary\n\n")
+        f.write("# Mamba/S5 Hyperparameter Search Summary\n\n")
         f.write(
             "Selection criterion: highest `val_acc_at_best` per scale and model. "
-            "SSM uses fixed d_model/state defaults; Mamba uses fixed d_model.\n\n"
+            "Mamba/S5 use a wider lr grid up to 1e-2; S5 uses fixed "
+            "`s5_ssm_lr_scale=0.1`, so SSM-core lr is `lr * 0.1`.\n\n"
         )
         f.write(
-            "| Scale | Model | d_model | State | LR | WD | Val Char | Train Char | "
-            "Gap Char | Val Sector | Train Sector | Gap Sector | Epochs |\n"
+            "| Scale | Model | d_model | State | LR | WD | LR ceiling? | "
+            "Val Char | Train Char | Gap Char | Val Sector | Train Sector | Gap Sector | Epochs |\n"
         )
-        f.write("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+        f.write("|---|---|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|\n")
         for row in best_rows:
             f.write(
                 f"| {row['scale']} | {row['model']} | {row.get('d_model')} | "
                 f"{row.get('state_size')} | {row['lr']} | {row['weight_decay']} | "
-                f"{row.get('val_acc_at_best')} | {row.get('train_acc_at_best_val')} | "
-                f"{row.get('overfit_gap')} | {row.get('val_acc_sector_at_best')} | "
+                f"{row.get('best_at_lr_ceiling')} | {row.get('val_acc_at_best')} | "
+                f"{row.get('train_acc_at_best_val')} | {row.get('overfit_gap')} | "
+                f"{row.get('val_acc_sector_at_best')} | "
                 f"{row.get('train_acc_sector_at_best_val_sector')} | "
                 f"{row.get('overfit_gap_sector')} | {row.get('actual_epochs')} |\n"
             )
@@ -419,14 +443,16 @@ def cmd_status(args: argparse.Namespace) -> None:
     failed = [r for r in rows if not r["valid"]]
     ok = [r for r in rows if r["valid"]]
 
-    status_csv = os.path.join(out_dir, "ssm_mamba_hparam_status.csv")
+    status_csv = os.path.join(out_dir, "mamba_s5_hparam_status.csv")
     fieldnames = [
         "task_id",
         "scale",
         "model",
-        "ssm_d_model",
-        "ssm_state_size",
+        "gawf_ref_hidden",
         "mamba_d_model",
+        "s5_d_model",
+        "s5_state_size",
+        "s5_ssm_lr_scale",
         "lr",
         "weight_decay",
         "valid",
@@ -456,7 +482,7 @@ def cmd_status(args: argparse.Namespace) -> None:
         "failed_task_ids_path": failed_path,
         "status_csv": status_csv,
     }
-    write_json(os.path.join(out_dir, "ssm_mamba_hparam_status.json"), summary)
+    write_json(os.path.join(out_dir, "mamba_s5_hparam_status.json"), summary)
     print(json.dumps(summary, indent=2))
     if failed and args.fail_on_missing:
         raise SystemExit(1)
@@ -479,14 +505,14 @@ def cmd_summarize(args: argparse.Namespace) -> None:
     best_json: Dict[str, Dict[str, Dict[str, Any]]] = {}
     for row in best_rows:
         best_json.setdefault(row["scale"], {})[row["model"]] = row
-    write_json(os.path.join(out_dir, "ssm_mamba_hparam_best.json"), best_json)
+    write_json(os.path.join(out_dir, "mamba_s5_hparam_best.json"), best_json)
     write_csv(
-        os.path.join(out_dir, "ssm_mamba_hparam_best.csv"),
+        os.path.join(out_dir, "mamba_s5_hparam_best.csv"),
         best_rows,
         list(best_rows[0].keys()),
     )
     write_markdown_summary(
-        os.path.join(out_dir, "ssm_mamba_hparam_best_summary.md"), best_rows
+        os.path.join(out_dir, "mamba_s5_hparam_best_summary.md"), best_rows
     )
 
     all_rows = []
@@ -494,11 +520,11 @@ def cmd_summarize(args: argparse.Namespace) -> None:
         scale = str(m.get("dataset_suffix", "")).replace("-float32", "")
         all_rows.append(phase3_csv_row(scale, m))
     write_csv(
-        os.path.join(out_dir, "ssm_mamba_hparam_all_trials.csv"),
+        os.path.join(out_dir, "mamba_s5_hparam_all_trials.csv"),
         all_rows,
         list(all_rows[0].keys()),
     )
-    print(f"Wrote SSM/Mamba hparam summaries under {out_dir}")
+    print(f"Wrote Mamba/S5 hparam summaries under {out_dir}")
 
 
 def build_parser() -> argparse.ArgumentParser:

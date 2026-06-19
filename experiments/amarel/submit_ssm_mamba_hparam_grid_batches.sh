@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Submit the 128-task SSM/Mamba hparam grid in bounded Slurm array batches.
+# Submit the Mamba/S5 hparam grid in bounded Slurm array batches.
 #
 # Usage:
 #   bash experiments/amarel/submit_ssm_mamba_hparam_grid_batches.sh
-#   bash experiments/amarel/submit_ssm_mamba_hparam_grid_batches.sh --model ssm
 #   bash experiments/amarel/submit_ssm_mamba_hparam_grid_batches.sh --model mamba
+#   bash experiments/amarel/submit_ssm_mamba_hparam_grid_batches.sh --model s5
 #   bash experiments/amarel/submit_ssm_mamba_hparam_grid_batches.sh --scale 4 10 20 40
 #
-# Note: Mamba tasks require mamba-ssm and causal-conv1d in AIM3_CONDA_ENV.
+# Note: Mamba tasks require mamba-ssm and causal-conv1d; S5 tasks require
+# s5-pytorch in AIM3_CONDA_ENV.
 
 set -euo pipefail
 
@@ -20,10 +21,12 @@ ARRAY_CONCURRENCY="${ARRAY_CONCURRENCY:-64}"
 POLL_SECONDS="${POLL_SECONDS:-300}"
 RUN_SCRIPT="$SCRIPT_DIR/run_ssm_mamba_hparam_grid_array.sh"
 GRID_UTIL="$ROOT/experiments/generalization/ssm_mamba_hparam_grid.py"
-SUBMIT_LOG_DIR="$ROOT/experiments/amarel/artifacts/ssm_mamba_hparam_grid"
+SUBMIT_LOG_DIR="$ROOT/experiments/amarel/artifacts/mamba_s5_hparam_grid"
 SUBMIT_LOG="$SUBMIT_LOG_DIR/submissions_$(date +%Y%m%d_%H%M%S).log"
 TASK_LIST_DIR="$SUBMIT_LOG_DIR/task_lists"
-MODELS=(ssm mamba)
+SMOKE_MARKER="$ROOT/experiments/amarel/artifacts/mamba_s5_optimizer_smoke/optimizer_grouping_smoke.done"
+SKIP_SMOKE_CHECK=0
+MODELS=(mamba s5)
 SCALES=(4h 10h 20h 40h)
 START_TASK=""
 END_TASK=""
@@ -31,11 +34,15 @@ END_TASK=""
 usage() {
   cat <<'EOF'
 Usage:
-  bash submit_ssm_mamba_hparam_grid_batches.sh [--model ssm|mamba|all ...] [--scale 4|10|20|40|all ...]
+  bash submit_ssm_mamba_hparam_grid_batches.sh [--model mamba|s5|all ...] [--scale 4|10|20|40|all ...]
   bash submit_ssm_mamba_hparam_grid_batches.sh --start-task N --end-task M
+  bash submit_ssm_mamba_hparam_grid_batches.sh --skip-smoke-check
 
 Defaults:
-  models = ssm mamba, scales = 4h 10h 20h 40h, batch size = 128, array concurrency = 64.
+  models = mamba s5, scales = 4h 10h 20h 40h, batch size = 128, array concurrency = 64.
+
+Before full submission, run:
+  sbatch experiments/amarel/run_mamba_s5_optimizer_smoke.sh
 EOF
 }
 
@@ -46,8 +53,8 @@ while [[ $# -gt 0 ]]; do
       shift
       while [[ $# -gt 0 && "$1" != -* ]]; do
         case "$1" in
-          all) MODELS=(ssm mamba) ;;
-          ssm|mamba) MODELS+=("$1") ;;
+          all) MODELS=(mamba s5) ;;
+          mamba|s5) MODELS+=("$1") ;;
           *) echo "Invalid model: $1" >&2; exit 2 ;;
         esac
         shift
@@ -76,6 +83,10 @@ while [[ $# -gt 0 ]]; do
       END_TASK="$2"
       shift 2
       ;;
+    --skip-smoke-check)
+      SKIP_SMOKE_CHECK=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -90,6 +101,24 @@ done
 
 if [[ "${#MODELS[@]}" -eq 0 || "${#SCALES[@]}" -eq 0 ]]; then
   echo "At least one model and one scale are required." >&2
+  exit 2
+fi
+
+if [[ "$SKIP_SMOKE_CHECK" -eq 0 && ! -f "$SMOKE_MARKER" ]]; then
+  cat >&2 <<EOF
+Optimizer grouping smoke marker is missing:
+  $SMOKE_MARKER
+
+Run this first and inspect its log for:
+  Mamba no_decay
+  S5 ssm_core
+  S5 decay
+
+Submit smoke:
+  sbatch experiments/amarel/run_mamba_s5_optimizer_smoke.sh
+
+To override intentionally, pass --skip-smoke-check.
+EOF
   exit 2
 fi
 
@@ -125,7 +154,10 @@ if [[ -n "$START_TASK" || -n "$END_TASK" ]]; then
   done
 else
   python "$GRID_UTIL" emit-task --task-id 0 --root "$ROOT" >/dev/null
-  for task_id in $(seq 0 127); do
+  total_grid_tasks="$(
+    python -c "import importlib.util, sys; spec=importlib.util.spec_from_file_location('grid', '$GRID_UTIL'); mod=importlib.util.module_from_spec(spec); sys.modules['grid'] = mod; spec.loader.exec_module(mod); print(mod.TOTAL_TASKS)"
+  )"
+  for task_id in $(seq 0 "$((total_grid_tasks - 1))"); do
     cfg_json="$(python "$GRID_UTIL" emit-task --task-id "$task_id" --root "$ROOT" --format json)"
     model="$(python -c 'import json,sys; print(json.load(sys.stdin)["model"])' <<< "$cfg_json")"
     scale="$(python -c 'import json,sys; print(json.load(sys.stdin)["scale"])' <<< "$cfg_json")"
@@ -151,11 +183,14 @@ fi
 mapfile -t TASK_IDS < "$TASK_LIST_FILE"
 TOTAL_TASKS="${#TASK_IDS[@]}"
 
-log "AIM3 SSM/Mamba hparam submission"
+log "AIM3 Mamba/S5 hparam submission"
 log "timestamp=$(date -Is)"
 log "root=$ROOT"
 log "models=${MODELS[*]}"
 log "scales=${SCALES[*]}"
+log "lr_grid=1e-4 5e-4 1e-3 5e-3 1e-2"
+log "wd_grid=0 1e-5 1e-4 1e-3"
+log "s5_ssm_lr_scale=0.1"
 log "task_list=$TASK_LIST_FILE"
 log "total_tasks=$TOTAL_TASKS"
 log "batch_size=$BATCH_SIZE"

@@ -366,8 +366,12 @@ def parse_hparams_from_filename(filename):
         hparams['model_type'] = 'GaWF'
     elif filename.startswith('mamba_'):
         hparams['model_type'] = 'MAMBA'
+    elif filename.startswith('diaglti_'):
+        hparams['model_type'] = 'DiagLTI'
+    elif filename.startswith('s5_'):
+        hparams['model_type'] = 'S5'
     elif filename.startswith('ssm_'):
-        hparams['model_type'] = 'SSM'
+        hparams['model_type'] = 'S5'
     
     # 提取 hidden_size
     import re
@@ -467,4 +471,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

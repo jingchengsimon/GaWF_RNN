@@ -5,17 +5,18 @@ import torch.nn.functional as F
 from .train_rnn_core import BaseConvSequenceModel
 
 
-SSM_DEFAULT_D_MODEL = 256
-SSM_DEFAULT_STATE_SIZE = 189
+DIAGLTI_DEFAULT_D_MODEL = 256
+DIAGLTI_DEFAULT_STATE_SIZE = 189
 
 
-class DiagonalSSMLayer(nn.Module):
+class DiagonalLTILayer(nn.Module):
     """
-    Real-valued diagonal state-space layer with an nn.RNN-like sequence contract.
+    Real-valued diagonal LTI / EMA layer with an nn.RNN-like sequence contract.
 
-    This is a lightweight SSM/LRU-style recurrent layer implemented with standard
-    PyTorch ops. It is intended as a dependency-free baseline for comparing SSM
-    dynamics against RNN/GRU/LSTM under the existing training pipeline.
+    This is a lightweight dependency-free baseline built from learnable
+    multi-timescale exponential moving averages. It is NOT an S4/S5-family SSM:
+    it has real diagonal dynamics, a serial for-loop update, and no HiPPO or
+    complex eigenvalue parameterization.
     """
 
     def __init__(
@@ -75,9 +76,9 @@ class DiagonalSSMLayer(nn.Module):
         return torch.stack(outputs, dim=1), state
 
 
-class SSMRNNWrapper(nn.Module):
+class DiagLTIWrapper(nn.Module):
     """
-    Stack diagonal SSM layers behind the same forward shape used by nn.RNN.
+    Stack diagonal LTI / EMA layers behind the same forward shape used by nn.RNN.
 
     Input/Output:
       - batch_first=True:  (B, T, input_size) -> ((B, T, hidden_size), h_n)
@@ -104,7 +105,7 @@ class SSMRNNWrapper(nn.Module):
     ):
         super().__init__()
         if bidirectional:
-            raise ValueError("SSMRNNWrapper does not support bidirectional=True")
+            raise ValueError("DiagLTIWrapper does not support bidirectional=True")
         if num_layers < 1:
             raise ValueError("num_layers must be >= 1")
 
@@ -122,7 +123,7 @@ class SSMRNNWrapper(nn.Module):
         )
         self.layers = nn.ModuleList(
             [
-                DiagonalSSMLayer(
+                DiagonalLTILayer(
                     d_model=d_model,
                     state_size=state_size,
                     min_decay=min_decay,
@@ -155,12 +156,13 @@ class SSMRNNWrapper(nn.Module):
         return x, h_n
 
 
-class SSMConv(BaseConvSequenceModel):
+class DiagLTIConv(BaseConvSequenceModel):
     """
-    CNN encoder + diagonal SSM sequence model + existing classifier heads.
+    CNN encoder + diagonal LTI / EMA sequence model + existing classifier heads.
 
     This class keeps the same external forward I/O as RNNConv while replacing the
-    middle recurrent computation with an SSM/LRU-style state update.
+    middle recurrent computation with a real-valued diagonal LTI baseline. It is
+    NOT an S4/S5-family SSM.
     """
 
     def __init__(
@@ -171,43 +173,43 @@ class SSMConv(BaseConvSequenceModel):
         device="cuda",
         cnn_dropout=0.0,
         rnn_dropout=0.5,
-        ssm_d_model=SSM_DEFAULT_D_MODEL,
+        diaglti_d_model=DIAGLTI_DEFAULT_D_MODEL,
         max_chars=15,
         predict_all_chars=False,
-        ssm_num_layers=1,
-        ssm_dropout=0.0,
-        ssm_state_size=SSM_DEFAULT_STATE_SIZE,
-        ssm_min_decay=0.1,
-        ssm_max_decay=0.99,
-        ssm_activation="silu",
-        ssm_residual=True,
+        diaglti_num_layers=1,
+        diaglti_dropout=0.0,
+        diaglti_state_size=DIAGLTI_DEFAULT_STATE_SIZE,
+        diaglti_min_decay=0.1,
+        diaglti_max_decay=0.99,
+        diaglti_activation="silu",
+        diaglti_residual=True,
     ):
-        super(SSMConv, self).__init__(
+        super(DiagLTIConv, self).__init__(
             num_classes,
             num_pos,
             kernel_size=kernel_size,
             device=device,
             cnn_dropout=cnn_dropout,
             rnn_dropout=rnn_dropout,
-            hidden_size=ssm_d_model,
+            hidden_size=diaglti_d_model,
             max_chars=max_chars,
             predict_all_chars=predict_all_chars,
         )
-        self.ssm_d_model = ssm_d_model
-        self.ssm_state_size = ssm_state_size
-        self.rnn = SSMRNNWrapper(
+        self.diaglti_d_model = diaglti_d_model
+        self.diaglti_state_size = diaglti_state_size
+        self.rnn = DiagLTIWrapper(
             input_size=self.encoder_flatten_size,
-            d_model=ssm_d_model,
-            num_layers=ssm_num_layers,
+            d_model=diaglti_d_model,
+            num_layers=diaglti_num_layers,
             batch_first=True,
-            dropout=ssm_dropout,
-            state_size=ssm_state_size,
-            min_decay=ssm_min_decay,
-            max_decay=ssm_max_decay,
-            activation=ssm_activation,
-            residual=ssm_residual,
+            dropout=diaglti_dropout,
+            state_size=diaglti_state_size,
+            min_decay=diaglti_min_decay,
+            max_decay=diaglti_max_decay,
+            activation=diaglti_activation,
+            residual=diaglti_residual,
         )
-        self.LNormRNN = nn.LayerNorm(ssm_d_model)
+        self.LNormRNN = nn.LayerNorm(diaglti_d_model)
         self.to(self.device)
 
     def middle(self, x):

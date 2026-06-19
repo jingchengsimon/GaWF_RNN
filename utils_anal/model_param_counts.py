@@ -13,7 +13,8 @@ if PROJECT_ROOT not in sys.path:
 
 from utils.train_rnn_core import GRUConv, LSTMConv, RNNConv
 from utils.train_gawf_core import GaWFRNNConv
-from utils.train_ssm_core import SSMConv
+from utils.train_diaglti_core import DiagLTIConv
+from utils.train_s5_core import S5Conv
 
 try:
     from utils.train_mamba_core import MambaConv
@@ -33,13 +34,16 @@ def build_models(
     hidden_gru: int,
     hidden_gawf: int,
     mamba_d_model: int,
-    ssm_d_model: int,
+    diaglti_d_model: int,
+    s5_d_model: int,
     mamba_num_layers: int = 1,
     mamba_d_state: int = 16,
     mamba_d_conv: int = 4,
     mamba_expand: int = 2,
-    ssm_num_layers: int = 1,
-    ssm_state_size: int | None = None,
+    diaglti_num_layers: int = 1,
+    diaglti_state_size: int | None = None,
+    s5_num_layers: int = 1,
+    s5_state_size: int | None = None,
     num_classes: int = 10,
     num_pos: int = 9,
     device: str = "cpu",
@@ -64,13 +68,22 @@ def build_models(
         "lstm": LSTMConv(hidden_size=hidden_lstm, **common),
         "gru": GRUConv(hidden_size=hidden_gru, **common),
         "gawf": GaWFRNNConv(hidden_size=hidden_gawf, feedback_dim=feedback_dim, **common),
-        "ssm": SSMConv(
-            ssm_d_model=ssm_d_model,
-            ssm_num_layers=ssm_num_layers,
-            ssm_state_size=ssm_state_size,
+        "diaglti": DiagLTIConv(
+            diaglti_d_model=diaglti_d_model,
+            diaglti_num_layers=diaglti_num_layers,
+            diaglti_state_size=diaglti_state_size,
             **common,
         ),
     }
+    try:
+        models["s5"] = S5Conv(
+            s5_d_model=s5_d_model,
+            s5_num_layers=s5_num_layers,
+            s5_state_size=s5_state_size,
+            **common,
+        )
+    except ImportError:
+        models["s5"] = None
     if MambaConv is not None:
         try:
             models["mamba"] = MambaConv(
@@ -121,10 +134,16 @@ def parse_args() -> argparse.Namespace:
         help="Mamba sequence width d_model (default: 170).",
     )
     parser.add_argument(
-        "--ssm_d_model",
+        "--diaglti_d_model",
         type=int,
         default=256,
-        help="SSM sequence feature width d_model (default: 256).",
+        help="DiagLTI sequence feature width d_model (default: 256).",
+    )
+    parser.add_argument(
+        "--s5_d_model",
+        type=int,
+        default=256,
+        help="S5 sequence feature width d_model (default: 256).",
     )
     parser.add_argument(
         "--mamba_num_layers",
@@ -151,16 +170,28 @@ def parse_args() -> argparse.Namespace:
         help="Mamba inner expansion factor (default: 2).",
     )
     parser.add_argument(
-        "--ssm_num_layers",
+        "--diaglti_num_layers",
         type=int,
         default=1,
-        help="Number of diagonal SSM layers (default: 1).",
+        help="Number of DiagLTI layers (default: 1).",
     )
     parser.add_argument(
-        "--ssm_state_size",
+        "--diaglti_state_size",
         type=int,
         default=189,
-        help="Diagonal SSM state size (default: 189).",
+        help="DiagLTI state size (default: 189).",
+    )
+    parser.add_argument(
+        "--s5_num_layers",
+        type=int,
+        default=1,
+        help="Number of S5 layers (default: 1).",
+    )
+    parser.add_argument(
+        "--s5_state_size",
+        type=int,
+        default=189,
+        help="S5 latent state size (default: 189).",
     )
     parser.add_argument(
         "--device",
@@ -218,13 +249,16 @@ def main():
         hidden_gru=args.hidden_gru,
         hidden_gawf=args.hidden_gawf,
         mamba_d_model=args.mamba_d_model,
-        ssm_d_model=args.ssm_d_model,
+        diaglti_d_model=args.diaglti_d_model,
+        s5_d_model=args.s5_d_model,
         mamba_num_layers=args.mamba_num_layers,
         mamba_d_state=args.mamba_d_state,
         mamba_d_conv=args.mamba_d_conv,
         mamba_expand=args.mamba_expand,
-        ssm_num_layers=args.ssm_num_layers,
-        ssm_state_size=args.ssm_state_size,
+        diaglti_num_layers=args.diaglti_num_layers,
+        diaglti_state_size=args.diaglti_state_size,
+        s5_num_layers=args.s5_num_layers,
+        s5_state_size=args.s5_state_size,
         num_classes=args.num_classes,
         num_pos=args.num_pos,
         feedback_dim=args.feedback_dim,
@@ -241,13 +275,16 @@ def main():
         f" hidden_gru={args.hidden_gru},"
         f" hidden_gawf={args.hidden_gawf},"
         f" mamba_d_model={args.mamba_d_model},"
-        f" ssm_d_model={args.ssm_d_model},"
+        f" diaglti_d_model={args.diaglti_d_model},"
+        f" s5_d_model={args.s5_d_model},"
         f" mamba_num_layers={args.mamba_num_layers},"
         f" mamba_d_state={args.mamba_d_state},"
         f" mamba_d_conv={args.mamba_d_conv},"
         f" mamba_expand={args.mamba_expand},"
-        f" ssm_num_layers={args.ssm_num_layers},"
-        f" ssm_state_size={args.ssm_state_size},"
+        f" diaglti_num_layers={args.diaglti_num_layers},"
+        f" diaglti_state_size={args.diaglti_state_size},"
+        f" s5_num_layers={args.s5_num_layers},"
+        f" s5_state_size={args.s5_state_size},"
         f" num_classes={args.num_classes},"
         f" num_pos={args.num_pos},"
         f" feedback_dim={args.feedback_dim},"
@@ -260,18 +297,18 @@ def main():
 
     for name, model in models.items():
         if model is None:
-            print(
-                f"{name.upper():5s}  skipped: install mamba-ssm and causal-conv1d "
-                "to instantiate MambaConv."
-            )
+            if name == "mamba":
+                msg = "install mamba-ssm and causal-conv1d to instantiate MambaConv."
+            else:
+                msg = "install s5-pytorch to instantiate S5Conv."
+            print(f"{name.upper():7s}  skipped: {msg}")
             continue
         total, trainable = count_parameters(model)
         print(
-            f"{name.upper():5s}  total_params={total:,}  "
+            f"{name.upper():7s}  total_params={total:,}  "
             f"trainable_params={trainable:,}"
         )
 
 
 if __name__ == "__main__":
     main()
-
