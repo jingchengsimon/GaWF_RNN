@@ -68,8 +68,11 @@ class TaskConfig:
 
     @property
     def result_stem(self) -> str:
+        # ``train_model.py`` derives the saved filename from the model width and
+        # optimizer values.  Keep the validator aligned with that real filename;
+        # the GaWF reference size is already encoded by the matched hidden size.
         return (
-            f"{self.model}_sector_acc_h{self.hidden_size}_matchgawf{self.gawf_ref_hidden}"
+            f"{self.model}_sector_acc_h{self.hidden_size}"
             f"_lr{self.lr}_wd{self.weight_decay}_cdo{self.cnn_dropout}_rdo{self.rnn_dropout}"
         )
 
