@@ -113,6 +113,7 @@ Run this first and inspect its log for:
   Mamba no_decay
   S5 ssm_core
   S5 decay
+  S5_AMP_SMOKE_OK
 
 Submit smoke:
   sbatch experiments/amarel/run_mamba_s5_optimizer_smoke.sh

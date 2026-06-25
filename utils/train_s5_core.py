@@ -71,15 +71,30 @@ class S5RNNWrapper(nn.Module):
         )
         self.dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
 
+    @staticmethod
+    def _is_autocast_enabled(device_type: str) -> bool:
+        try:
+            return bool(torch.is_autocast_enabled(device_type=device_type))
+        except TypeError:
+            return bool(torch.is_autocast_enabled())
+
     def forward(self, x: torch.Tensor, h_0=None):
         if not self.batch_first:
             x = x.transpose(0, 1)
 
         x = self.input_proj(x)
         layer_finals = []
+        autocast_active = self._is_autocast_enabled(x.device.type)
         for layer_idx, layer in enumerate(self.layers):
             residual = x
-            x = layer(x)
+            if autocast_active:
+                # S5 uses vmap + associative_scan internally and is not stable under autocast.
+                # Run only the S5 kernel in fp32, then cast back for the surrounding AMP graph.
+                with torch.autocast(device_type=x.device.type, enabled=False):
+                    x = layer(x.float())
+                x = x.to(residual.dtype)
+            else:
+                x = layer(x)
             if self.residual:
                 x = x + residual
             layer_finals.append(x[:, -1, :])

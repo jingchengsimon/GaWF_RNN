@@ -9,11 +9,12 @@
 #SBATCH --output=experiments/amarel/artifacts/mamba_s5_optimizer_smoke/%j.out
 #SBATCH --error=experiments/amarel/artifacts/mamba_s5_optimizer_smoke/%j.err
 
-# Run a required optimizer-grouping smoke check before the full Mamba/S5 grid.
+# Run required smoke checks before the full Mamba/S5 grid.
 # Inspect the output logs before bulk submission:
 #   - Mamba A_log/D should appear in the no_decay log line.
 #   - S5 Lambda/B/log_step-like parameters should appear in ssm_core.
 #   - S5 C/readout/input projections should not appear in ssm_core.
+#   - S5 synthetic AMP forward/backward should complete on CUDA.
 
 set -euo pipefail
 
@@ -110,6 +111,61 @@ run_smoke_model() {
 run_smoke_model mamba
 run_smoke_model s5
 
+S5_AMP_LOG="$ART_ROOT/s5_amp_synthetic_smoke.log"
+echo "[$(date -Is)] synthetic AMP smoke model=s5" | tee "$S5_AMP_LOG"
+python - <<'PY' 2>&1 | tee -a "$S5_AMP_LOG"
+import importlib
+importlib.import_module("numpy")
+
+import torch
+
+from utils.train_s5_core import S5Conv
+
+
+def main() -> None:
+    if not torch.cuda.is_available():
+        raise RuntimeError("S5 AMP smoke requires CUDA")
+
+    torch.manual_seed(7)
+    device = torch.device("cuda")
+    model = S5Conv(
+        num_classes=10,
+        num_pos=9,
+        device="cuda",
+        cnn_dropout=0.0,
+        rnn_dropout=0.5,
+        s5_d_model=64,
+        s5_state_size=64,
+    ).to(device)
+    model.train()
+
+    bsz, tlen = 2, 8
+    frames = torch.randn(bsz, tlen, 2, 96, 96, device=device)
+    labels_char = torch.randint(0, 10, (bsz, tlen), device=device)
+    labels_pos = torch.randint(0, 9, (bsz, tlen), device=device)
+    ce = torch.nn.CrossEntropyLoss()
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    scaler = torch.amp.GradScaler("cuda")
+    optimizer.zero_grad(set_to_none=True)
+    with torch.autocast(device_type="cuda", dtype=torch.float16):
+        out_char, out_pos = model(frames)
+        loss = (
+            ce(out_char.reshape(-1, 10), labels_char.reshape(-1))
+            + ce(out_pos.reshape(-1, 9), labels_pos.reshape(-1))
+        )
+
+    scaler.scale(loss).backward()
+    scaler.step(optimizer)
+    scaler.update()
+    torch.cuda.synchronize()
+    print(f"S5_AMP_SMOKE_OK loss={float(loss.detach().cpu()):.6f}")
+
+
+if __name__ == "__main__":
+    main()
+PY
+
 MAMBA_LOG="$ART_ROOT/mamba_optimizer_grouping.log"
 S5_LOG="$ART_ROOT/s5_optimizer_grouping.log"
 
@@ -122,6 +178,7 @@ grep -q "S5 decay" "$S5_LOG"
 grep -Eq "S5 ssm_core: .*Lambda" "$S5_LOG"
 grep -Eq "S5 ssm_core: .*B" "$S5_LOG"
 grep -Eq "S5 ssm_core: .*(log_step|log_dt|inv_dt)" "$S5_LOG"
+grep -q "S5_AMP_SMOKE_OK" "$S5_AMP_LOG"
 if grep -Eq "S5 ssm_core: .*([.]C|[.]C_|C[.])" "$S5_LOG"; then
   echo "S5 C/readout-like parameter appears in ssm_core; inspect grouping before full grid." >&2
   exit 1
@@ -132,7 +189,8 @@ fi
   echo "timestamp=$(date -Is)"
   echo "mamba_log=$MAMBA_LOG"
   echo "s5_log=$S5_LOG"
-  echo "checked=Mamba A_log/D no_decay; S5 Lambda/B/dt ssm_core; S5 C not in ssm_core"
+  echo "s5_amp_log=$S5_AMP_LOG"
+  echo "checked=Mamba A_log/D no_decay; S5 Lambda/B/dt ssm_core; S5 C not in ssm_core; S5 AMP synthetic step"
 } > "$MARKER"
 
 echo "Optimizer grouping smoke passed: $MARKER"
