@@ -4,6 +4,40 @@
 
 **Import propagation:** Whenever you rename, move, split, or delete a module or public symbol, search the repository and update every affected `import` and call site in the **same** change (do not leave stale imports).
 
+## Persistent Experiment Dashboard
+
+The project dashboard is a macOS LaunchAgent available at
+[`http://Jingchengs-Mac-mini.local:8765/`](http://Jingchengs-Mac-mini.local:8765/). In every new Codex conversation whose
+workspace is this repository, include this clickable dashboard link in the first substantive
+reply so the entry point is not trapped in one thread. Do not repeat it in every later reply.
+
+The in-app browser tab may be kept open as a convenience, but it is not the source of truth for
+cross-thread discovery. The durable entry points are this project instruction and the global
+Codex instruction. Task registration and result-validity rules live in `dashboard/tasks.json`.
+
+### Mandatory remote-job registration lifecycle
+
+This workflow applies to **every conversation** that submits compute for this repository:
+
+1. After a successful Amarel Slurm submission or sjc-remote dual-GPU launch, register the task
+   in `dashboard/tasks.json` during the **same turn**. Registration is not optional and must not
+   be deferred to a later conversation.
+2. Store a human-readable task description, the execution host (`amarel` or `sjc-remote`), every
+   returned Slurm job ID / sjc-remote process or run ID, the remote root, and a tracker that
+   measures completed valid outputs. Scheduler state alone is not a completion metric.
+3. Use `metrics_grid` for sweeps and `explicit_units` for named runs. The expected total and
+   required result evidence must match the submitted work. After registration, request a
+   Dashboard refresh and verify that the new task appears with its job ID and initial progress.
+4. When reporting a completed run in conversation, include the training summary, but **keep the
+   Dashboard record**. Completion is not permission to remove history.
+5. Remove a task only after a human explicitly confirms that the Dashboard record is no longer
+   needed. Use `python3 -m dashboard.manage_tasks remove <id> --human-confirmed`; never edit a
+   task away merely because it completed, failed, timed out, or became stale.
+
+For sjc-remote, use the stable identifier returned by its launcher when available; otherwise use
+the PID, tmux session name, or an explicit run ID that uniquely identifies the two-GPU process.
+All new registrations use retention policy `human_confirmation_required`.
+
 ---
 
 ## 0. Project Overview

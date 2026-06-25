@@ -5,6 +5,19 @@ import torch.nn.functional as F
 from .train_rnn_core import BaseConvSequenceModel
 
 
+def _compute_gawf_transforms(U, fb_t, V, input_size):
+    """Compute GaWF input/hidden transforms as ``(U * fb) @ V``.
+
+    Scaling U first materializes a ``(batch, hidden, feedback)`` intermediate instead of
+    broadcasting ``fb * V_ih`` to ``(batch, feedback, input)``. The same scaled U is reused
+    for the input-to-hidden and hidden-to-hidden transforms.
+    """
+    scaled_u = U.unsqueeze(0) * fb_t.transpose(1, 2)
+    trans_ih = torch.matmul(scaled_u, V[:, :input_size])
+    trans_hh = torch.matmul(scaled_u, V[:, input_size:])
+    return trans_ih, trans_hh
+
+
 class GaWFDiagnosticsMixin:
     """Small opt-in hooks for collecting GaWF gate/feedback diagnostics."""
 
@@ -223,10 +236,12 @@ class GaWFRNNConv(GaWFDiagnosticsMixin, BaseConvSequenceModel):
         weight_hh = self.rnn.weight_hh_l0
         bias_ih = self.rnn.bias_ih_l0
         bias_hh = self.rnn.bias_hh_l0
-        V_ih = self.V[:, :input_size].unsqueeze(0)
-        V_hh = self.V[:, input_size:].unsqueeze(0)
-        trans_ih = torch.matmul(self.U, fb_t * V_ih)
-        trans_hh = torch.matmul(self.U, fb_t * V_hh)
+        trans_ih, trans_hh = _compute_gawf_transforms(
+            self.U,
+            fb_t,
+            self.V,
+            input_size,
+        )
         gate_logits_ih = trans_ih / self.gate_tau
         gate_logits_hh = trans_hh / self.gate_tau
         gate_ih = torch.sigmoid(gate_logits_ih)
@@ -424,10 +439,12 @@ class MultiLayerGaWFRNNConv(GaWFDiagnosticsMixin, BaseConvSequenceModel):
         bias_hh = rnn.bias_hh_l0
         U = self.U_layers[layer_idx]
         V = self.V_layers[layer_idx]
-        V_ih = V[:, :input_size].unsqueeze(0)
-        V_hh = V[:, input_size:].unsqueeze(0)
-        trans_ih = torch.matmul(U, fb_t * V_ih)
-        trans_hh = torch.matmul(U, fb_t * V_hh)
+        trans_ih, trans_hh = _compute_gawf_transforms(
+            U,
+            fb_t,
+            V,
+            input_size,
+        )
         gate_logits_ih = trans_ih / self.gate_tau
         gate_logits_hh = trans_hh / self.gate_tau
         gate_ih = torch.sigmoid(gate_logits_ih)
