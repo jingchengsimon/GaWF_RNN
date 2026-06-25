@@ -90,7 +90,7 @@ The key is the CLI `--model_types` string; value is the class.
 - `eval_valid` — **fair** full pass on `val_dl`; writes `val_*` curves (honours `val_every`).
 - `evaluate_epoch` — core one-loader eval pass; wrapped by `eval_train_subset` and `eval_valid`. Reuse `components["metrics_mode"]` when calling from training.
 
-**AMP + complex parameters:** For complex-parameter models (e.g. S5), keep AMP autocast enabled but disable GradScaler; CUDA AMP unscale on `ComplexFloat` gradients is unsupported.
+**AMP + complex parameters:** For complex-parameter models (e.g. S5), keep AMP autocast enabled but disable GradScaler; CUDA AMP unscale on `ComplexFloat` gradients is unsupported. Gradient clipping should run on real-valued gradients only (skip complex grads for foreach clip ops).
 
 **Fair metrics:** Official train/val curve metrics must come from `eval_train_subset` / `eval_valid`, not from `summarize_online_train` / per-batch online averages.
 

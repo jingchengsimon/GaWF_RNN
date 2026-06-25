@@ -280,6 +280,17 @@ def _gradient_norms(mdl):
     return out
 
 
+def _real_grad_params(mdl):
+    params = []
+    for p in mdl.parameters():
+        if p.grad is None:
+            continue
+        if torch.is_complex(p.grad):
+            continue
+        params.append(p)
+    return params
+
+
 class GawfDiagnosticsRecorder:
     """Opt-in JSONL recorder for GaWF gate, feedback, gradient, and parameter stats."""
 
@@ -489,8 +500,10 @@ class TrainStepper:
                     self.optim.zero_grad(set_to_none=True)
                     self.scaler.update()
                     return loss.detach().item(), out_char.detach(), out_pos.detach() if out_pos is not None else None, labels_device
-                torch.nn.utils.clip_grad_value_(self.mdl.parameters(), clip_value=1.0)
-                torch.nn.utils.clip_grad_norm_(self.mdl.parameters(), max_norm=1.0)
+                clip_params = _real_grad_params(self.mdl)
+                if clip_params:
+                    torch.nn.utils.clip_grad_value_(clip_params, clip_value=1.0)
+                    torch.nn.utils.clip_grad_norm_(clip_params, max_norm=1.0)
                 self.scaler.step(self.optim)
                 self.scaler.update()
                 self.optim.zero_grad(set_to_none=True)
@@ -499,8 +512,12 @@ class TrainStepper:
             if (batch_idx + 1) % accum_steps == 0:
                 if record_diag:
                     diag_row.update(_gradient_norms(self.mdl))
-                torch.nn.utils.clip_grad_value_(self.mdl.parameters(), clip_value=1.0)
-                grad_norm = torch.nn.utils.clip_grad_norm_(self.mdl.parameters(), max_norm=1.0)
+                clip_params = _real_grad_params(self.mdl)
+                if clip_params:
+                    torch.nn.utils.clip_grad_value_(clip_params, clip_value=1.0)
+                    grad_norm = torch.nn.utils.clip_grad_norm_(clip_params, max_norm=1.0)
+                else:
+                    grad_norm = torch.tensor(0.0, device=inputs.device)
                 if not torch.isfinite(grad_norm):
                     if record_diag:
                         diag_row.update(
