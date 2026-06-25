@@ -146,7 +146,11 @@ def main() -> None:
     ce = torch.nn.CrossEntropyLoss()
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
-    scaler = torch.amp.GradScaler("cuda")
+    has_complex_params = any(
+        param.requires_grad and torch.is_complex(param)
+        for param in model.parameters()
+    )
+    scaler = None if has_complex_params else torch.amp.GradScaler("cuda")
     optimizer.zero_grad(set_to_none=True)
     with torch.autocast(device_type="cuda", dtype=torch.float16):
         out_char, out_pos = model(frames)
@@ -155,9 +159,13 @@ def main() -> None:
             + ce(out_pos.reshape(-1, 9), labels_pos.reshape(-1))
         )
 
-    scaler.scale(loss).backward()
-    scaler.step(optimizer)
-    scaler.update()
+    if scaler is None:
+        loss.backward()
+        optimizer.step()
+    else:
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
     torch.cuda.synchronize()
     print(f"S5_AMP_SMOKE_OK loss={float(loss.detach().cpu()):.6f}")
 

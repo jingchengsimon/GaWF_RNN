@@ -120,6 +120,8 @@ Owns: `AccelerationConfig` (all AMP/grad-accum flags), `setup_acceleration`
 (returns autocast_fn, scaler, batch_size, …), `build_loaders` (train/val/eval
 DataLoaders), `TrainStepper` (one-step forward+backward, no branches in
 training loop), `run_forward_with_feedback`.
+For complex-parameter models (e.g. S5), training keeps AMP autocast active but
+disables GradScaler to avoid `ComplexFloat` unscale limitations in CUDA AMP.
 
 ### `utils/train_sector.py`
 Owns all metric and loss logic for single-char + sector/coordinate mode:

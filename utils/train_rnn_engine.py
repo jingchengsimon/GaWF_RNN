@@ -347,6 +347,16 @@ def setup_training_components(
         return OptimClass(mdl.parameters(), **optim_kwargs)
 
     optim = _build_optimizer()
+    has_complex_params = any(
+        param.requires_grad and torch.is_complex(param)
+        for param in mdl.parameters()
+    )
+    if scaler is not None and has_complex_params:
+        if logger is not None:
+            logger.info(
+                "Disabling GradScaler for complex-parameter model; AMP autocast remains enabled."
+            )
+        scaler = None
     lr_base = lr
 
     criterion_char = nn.CrossEntropyLoss()
