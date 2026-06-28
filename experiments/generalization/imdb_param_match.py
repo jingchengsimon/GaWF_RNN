@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""IMDB param-matched grid for rnn / lstm / gru (anchor LSTM H*=128).
+"""IMDB param-matched grid for rnn / gru (anchor LSTM H*=128).
 
 Phase E of the IMDB pilot. The LSTM anchor search (``imdb_hparam_grid.py``)
-selected ``H* = 128`` (LSTM recurrent core = 132,352 params). Here each classic
-recurrent family is swept over ``lr x weight_decay`` at the single ``hidden``
-whose recurrent core matches that anchor (empirically, ``count_core_params`` on
-``embed_dim=128``):
+selected ``H* = 128`` (LSTM recurrent core = 132,352 params). Here rnn and gru are
+swept over ``lr x weight_decay`` at the single ``hidden`` whose recurrent core
+matches that anchor (empirically, ``count_core_params`` on ``embed_dim=128``):
 
-- ``lstm`` -> ``hidden=128`` (132,352, the reference)
-- ``gru``  -> ``hidden=155`` (132,835, +0.37%)
 - ``rnn``  -> ``hidden=304`` (132,544, +0.15%)
+- ``gru``  -> ``hidden=155`` (132,835, +0.37%)
 
-``gawf`` is matched separately in ``imdb_gawf_param_match.py`` (``hidden=171``,
-132,183). Together the four give the param-matched IMDB comparison. Dropout fixed
+``lstm`` itself is **not re-run here**: its matched point is ``hidden=128``, which
+the anchor grid (``imdb_lstm_hparam_grid``) already searched at identical config —
+that best run is the lstm row of the four-model comparison. ``gawf`` is matched
+separately in ``imdb_gawf_param_match.py`` (``hidden=171``, 132,183). Dropout fixed
 (``embed_dropout=0.0``, ``rnn_dropout=0.5``; not searched); selection by validation
 accuracy. Mirrors ``imdb_hparam_grid.py`` but with a per-model matched hidden.
 """
@@ -29,8 +29,9 @@ from glob import glob
 from itertools import product
 from typing import Any, Dict, Iterable, List, Sequence
 
-MODELS = ["rnn", "lstm", "gru"]
+MODELS = ["rnn", "gru"]  # lstm (h=128) is reused from the anchor grid, not re-run here
 # Per-model hidden whose recurrent core matches the LSTM anchor (132,352) at embed_dim=128.
+# (lstm=128 kept for reference / param-match provenance.)
 MODEL_HIDDEN = {"rnn": 304, "lstm": 128, "gru": 155}
 LRS = [1e-4, 5e-4, 1e-3, 5e-3]
 WDS = [0.0, 1e-5, 1e-4, 1e-3]
@@ -296,12 +297,13 @@ def best_summary_rows(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def write_markdown_summary(path: str, best_rows: Sequence[Dict[str, Any]]) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        f.write("# IMDB Param-matched RNN/LSTM/GRU Summary\n\n")
+        f.write("# IMDB Param-matched RNN/GRU Summary\n\n")
         f.write(
             "Selection criterion: highest `val_acc_at_best`. Dropout fixed "
             "(`embed_dropout=0.0`, `rnn_dropout=0.5`). Each model's `hidden` is core "
-            "param-matched to the LSTM anchor `H*=128` (132,352): rnn=304, lstm=128, "
-            "gru=155. `gawf` (h=171) is summarized separately.\n\n"
+            "param-matched to the LSTM anchor `H*=128` (132,352): rnn=304, gru=155. "
+            "`lstm` (h=128) is reused from the anchor grid; `gawf` (h=171) is "
+            "summarized separately.\n\n"
         )
         f.write("| Model | Hidden | Embed | LR | WD | Core params | Val | Train | Test | Gap | Epochs |\n")
         f.write("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n")
