@@ -22,9 +22,14 @@ if [[ -z "$ROOT" || ! -f "$ROOT/train_imdb.py" ]]; then
 fi
 cd "$ROOT"
 
-GRID_UTIL="experiments/generalization/imdb_hparam_grid.py"
-ART_ROOT="$ROOT/experiments/amarel/artifacts/imdb_lstm_hparam_grid"
-STATUS_DIR="$ROOT/experiments/generalization/artifacts/imdb_lstm_hparam_grid/status"
+# Grid util + artifact name are overridable so the same runner drives both the
+# LSTM anchor grid (default) and the GaWF param-match grid. Override at submit
+# time via --export=...,AIM3_IMDB_GRID_UTIL=...,AIM3_IMDB_GRID_NAME=... (and set
+# sbatch --job-name / --output accordingly).
+GRID_UTIL="${AIM3_IMDB_GRID_UTIL:-experiments/generalization/imdb_hparam_grid.py}"
+GRID_NAME="${AIM3_IMDB_GRID_NAME:-imdb_lstm_hparam_grid}"
+ART_ROOT="$ROOT/experiments/amarel/artifacts/$GRID_NAME"
+STATUS_DIR="$ROOT/experiments/generalization/artifacts/$GRID_NAME/status"
 mkdir -p "$ART_ROOT" "$STATUS_DIR"
 
 if [[ -n "${TASK_ID_FILE:-}" ]]; then
