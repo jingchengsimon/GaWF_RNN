@@ -256,7 +256,7 @@ def save_outputs(args, cfg: Dict, out: Dict) -> str:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--model_types", nargs="+", default=["lstm"], choices=["lstm", "gawf"])
+    p.add_argument("--model_types", nargs="+", default=["lstm"], choices=["rnn", "lstm", "gru", "gawf"])
     p.add_argument("--data_dir", default=None, help="Base data dir (CLI -> env -> <repo>/stimuli).")
     p.add_argument("--result_dir", default=".", help="Repo root under which results/ is written.")
     p.add_argument("--result_suffix", default="imdb_hparam", help="Subdir under results/train_data/.")

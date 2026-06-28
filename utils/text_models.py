@@ -110,6 +110,44 @@ class TextLSTM(TextSequenceClassifier):
         return out
 
 
+class TextRNN(TextSequenceClassifier):
+    def __init__(self, vocab_size: int, **kwargs):
+        super().__init__(vocab_size, **kwargs)
+        self.rnn = nn.RNN(
+            input_size=self.embed_dim,
+            hidden_size=self.hidden_size,
+            num_layers=1,
+            batch_first=True,
+        )
+        self.LNormRNN = nn.LayerNorm(self.hidden_size)
+        self.to(self.device)
+
+    def middle(self, x):
+        out = self.rnn(x)[0]
+        out = self.LNormRNN(out)
+        out = F.relu(out)
+        return out
+
+
+class TextGRU(TextSequenceClassifier):
+    def __init__(self, vocab_size: int, **kwargs):
+        super().__init__(vocab_size, **kwargs)
+        self.gru = nn.GRU(
+            input_size=self.embed_dim,
+            hidden_size=self.hidden_size,
+            num_layers=1,
+            batch_first=True,
+        )
+        self.LNormRNN = nn.LayerNorm(self.hidden_size)
+        self.to(self.device)
+
+    def middle(self, x):
+        out = self.gru(x)[0]
+        out = self.LNormRNN(out)
+        out = F.relu(out)
+        return out
+
+
 class TextGaWF(TextSequenceClassifier):
     """GaWF with hidden-state feedback for single-label sequence classification."""
 
@@ -167,8 +205,10 @@ class TextGaWF(TextSequenceClassifier):
 
 
 def get_text_model_classes():
-    """Factory mapping model-type name -> class (extensible to rnn/gru/mamba/s5)."""
+    """Factory mapping model-type name -> class (extensible to mamba/s5)."""
     return {
+        "rnn": TextRNN,
         "lstm": TextLSTM,
+        "gru": TextGRU,
         "gawf": TextGaWF,
     }
