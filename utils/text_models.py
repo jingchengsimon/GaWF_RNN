@@ -18,6 +18,11 @@ parameter matching isolates the recurrent block.
 - ``TextGaWFLogits`` : vision-style GaWF for IMDB. Each timestep produces sentiment
   logits with the shared head, and the previous timestep logits provide the next
   feedback vector (``feedback_dim = num_classes``).
+- ``TextGaWFMulti`` : multi-layer GaWF. By default it mirrors the vision
+  ``gawf_multi`` direct-feedback path: lower layers receive the detached adjacent
+  higher layer's previous hidden state, and the final layer receives detached
+  previous sentiment logits. Passing ``feedback_dim > 0`` enables per-layer
+  projectors.
 """
 
 from __future__ import annotations
@@ -286,6 +291,181 @@ class TextGaWFLogits(TextSequenceClassifier):
         return self.fc(pooled)
 
 
+class TextGaWFMulti(TextSequenceClassifier):
+    """Multi-layer GaWF for text sequence classification.
+
+    The default direct-feedback mode follows ``MultiLayerGaWFRNNConv``: non-final
+    recurrent layers are gated by the adjacent higher layer's previous hidden
+    state, while the final recurrent layer is gated by previous output logits.
+    """
+
+    include_fc_in_core_params = True
+
+    def __init__(
+        self,
+        vocab_size: int,
+        feedback_dim: int | None = None,
+        num_layers: int = 2,
+        **kwargs,
+    ):
+        super().__init__(vocab_size, **kwargs)
+        self.num_layers = int(num_layers)
+        if self.num_layers < 2:
+            raise ValueError(f"TextGaWFMulti requires num_layers >= 2, got {self.num_layers}")
+
+        input_size = self.embed_dim
+        hidden_size = self.hidden_size
+        self.output_feedback_dim = self.num_classes
+        requested_feedback_dim = None if feedback_dim is None else int(feedback_dim)
+        if requested_feedback_dim is not None and requested_feedback_dim < 0:
+            raise ValueError(
+                f"feedback_dim must be >= 0 for multi-layer GaWF, got {requested_feedback_dim}"
+            )
+        self.use_feedback_projector = (
+            requested_feedback_dim is not None and requested_feedback_dim > 0
+        )
+        self.feedback_dim = requested_feedback_dim if self.use_feedback_projector else 0
+
+        layer_input_sizes = [input_size] + [hidden_size] * (self.num_layers - 1)
+        self.layer_feedback_dims = (
+            [self.feedback_dim] * self.num_layers
+            if self.use_feedback_projector
+            else [hidden_size] * (self.num_layers - 1) + [self.output_feedback_dim]
+        )
+        self.top_feedback_dim = self.layer_feedback_dims[-1]
+
+        self.rnns = nn.ModuleList(
+            [
+                nn.RNN(
+                    input_size=layer_input_size,
+                    hidden_size=hidden_size,
+                    num_layers=1,
+                    batch_first=True,
+                )
+                for layer_input_size in layer_input_sizes
+            ]
+        )
+        self.LNormRNN = nn.ModuleList(
+            [nn.LayerNorm(hidden_size) for _ in range(self.num_layers)]
+        )
+        self.U_layers = nn.ParameterList(
+            [
+                nn.Parameter(torch.randn(hidden_size, layer_feedback_dim) * 0.01)
+                for layer_feedback_dim in self.layer_feedback_dims
+            ]
+        )
+        self.V_layers = nn.ParameterList(
+            [
+                nn.Parameter(
+                    torch.randn(layer_feedback_dim, layer_input_size + hidden_size) * 0.01
+                )
+                for layer_feedback_dim, layer_input_size in zip(
+                    self.layer_feedback_dims, layer_input_sizes
+                )
+            ]
+        )
+
+        if self.use_feedback_projector:
+            self.hidden_projectors = nn.ModuleList(
+                [
+                    nn.Linear(hidden_size, self.feedback_dim)
+                    for _ in range(self.num_layers - 1)
+                ]
+            )
+            self.proj_out = nn.Linear(self.output_feedback_dim, self.feedback_dim)
+        else:
+            self.hidden_projectors = nn.ModuleList()
+            self.proj_out = None
+        self.gate_tau = 0.5
+        self.to(self.device)
+
+    def set_feedback_frozen(self, freeze: bool):
+        params = list(self.U_layers) + list(self.V_layers)
+        if self.use_feedback_projector:
+            params.extend(self.hidden_projectors.parameters())
+            params.extend(self.proj_out.parameters())
+        for p in params:
+            p.requires_grad = not freeze
+
+    def _step(self, layer_idx, x_t, h_prev, fb_t):
+        input_size = x_t.size(-1)
+        rnn = self.rnns[layer_idx]
+        weight_ih = rnn.weight_ih_l0
+        weight_hh = rnn.weight_hh_l0
+        bias_ih = rnn.bias_ih_l0
+        bias_hh = rnn.bias_hh_l0
+        U = self.U_layers[layer_idx]
+        V = self.V_layers[layer_idx]
+        trans_ih, trans_hh = _compute_gawf_transforms(U, fb_t, V, input_size)
+        gate_ih = torch.sigmoid(trans_ih / self.gate_tau)
+        gate_hh = torch.sigmoid(trans_hh / self.gate_tau)
+        ih = torch.einsum("bi,bhi,hi->bh", x_t, gate_ih, weight_ih)
+        hh = torch.einsum("bi,bhi,hi->bh", h_prev, gate_hh, weight_hh)
+        if bias_ih is not None:
+            ih = ih + bias_ih.unsqueeze(0)
+        if bias_hh is not None:
+            hh = hh + bias_hh.unsqueeze(0)
+        h_t = torch.tanh(ih + hh)
+        h_t = self.LNormRNN[layer_idx](h_t)
+        return F.relu(h_t)
+
+    def _hidden_feedback(self, layer_idx, h_states):
+        if self.use_feedback_projector:
+            return self.hidden_projectors[layer_idx](h_states[layer_idx + 1])
+        with torch.no_grad():
+            return h_states[layer_idx + 1].detach()
+
+    def _output_feedback(self, logits_t):
+        if self.proj_out is not None:
+            return self.proj_out(logits_t)
+        with torch.no_grad():
+            return logits_t.detach()
+
+    def _middle_with_feedback(self, x, apply_recurrent_dropout: bool):
+        batch_size, frame_num, _ = x.shape
+        h_states = [
+            torch.zeros(batch_size, self.hidden_size, device=x.device, dtype=x.dtype)
+            for _ in range(self.num_layers)
+        ]
+        fb_top = torch.zeros(batch_size, self.top_feedback_dim, device=x.device, dtype=x.dtype)
+        outputs = torch.empty(
+            batch_size, frame_num, self.hidden_size, device=x.device, dtype=x.dtype
+        )
+
+        for t in range(frame_num):
+            layer_input = x[:, t, :]
+            next_h_states = []
+            for layer_idx in range(self.num_layers):
+                if layer_idx == self.num_layers - 1:
+                    fb = fb_top
+                else:
+                    fb = self._hidden_feedback(layer_idx, h_states)
+                fb_t = fb.clamp(-10, 10).unsqueeze(2)
+                h_t = self._step(layer_idx, layer_input, h_states[layer_idx], fb_t)
+                if apply_recurrent_dropout:
+                    h_t = F.dropout(h_t, p=self.rnn_dropout, training=self.training)
+                next_h_states.append(h_t)
+                layer_input = h_t
+
+            logits_t = self.fc(layer_input)
+            fb_top = self._output_feedback(logits_t)
+            outputs[:, t, :] = layer_input
+            h_states = next_h_states
+        return outputs
+
+    def middle(self, x):
+        return self._middle_with_feedback(x, apply_recurrent_dropout=False)
+
+    def forward(self, ids, lengths):
+        ids = ids.to(self.device)
+        lengths = lengths.to(self.device).long()
+        x = self.embedding(ids)
+        x = F.dropout(x, p=self.embed_dropout, training=self.training)
+        seq = self._middle_with_feedback(x, apply_recurrent_dropout=True)
+        pooled = self._pool(seq, lengths)
+        return self.fc(pooled)
+
+
 def get_text_model_classes():
     """Factory mapping model-type name -> class (extensible to mamba/s5)."""
     return {
@@ -294,4 +474,5 @@ def get_text_model_classes():
         "gru": TextGRU,
         "gawf": TextGaWF,
         "gawf_logits": TextGaWFLogits,
+        "gawf_multi": TextGaWFMulti,
     }

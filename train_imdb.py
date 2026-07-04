@@ -68,6 +68,10 @@ def train_one_config(
     set_seed(args.seed)
     model_classes = get_text_model_classes()
     ModelClass = model_classes[cfg["model"]]
+    model_kwargs = {}
+    if cfg["model"] == "gawf_multi":
+        model_kwargs["num_layers"] = args.gawf_layers
+        model_kwargs["feedback_dim"] = args.feedback_dim
     model = ModelClass(
         vocab_size=meta["vocab_size"],
         embed_dim=args.embed_dim,
@@ -77,10 +81,17 @@ def train_one_config(
         rnn_dropout=args.rnn_dropout,
         pooling=args.pooling,
         device=device,
+        **model_kwargs,
     )
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = build_optimizer(model, cfg["lr"], cfg["wd"], args.optim)
+    optimizer = build_optimizer(
+        model,
+        cfg["lr"],
+        cfg["wd"],
+        args.optim,
+        gawf_feedback_lr_scale=args.gawf_multi_feedback_lr_scale,
+    )
 
     use_amp = device == "cuda" and args.use_acceleration
     autocast_fn = (
@@ -192,20 +203,49 @@ def train_one_config(
         "early_stop_epoch_1based": actual_epochs,
         "stopped_by_patience": stopped_by_patience,
     }
+    if cfg["model"] == "gawf_multi":
+        metrics.update(
+            {
+                "gawf_layers": int(model.num_layers),
+                "feedback_dim": int(model.feedback_dim),
+                "use_feedback_projector": bool(model.use_feedback_projector),
+                "gawf_multi_feedback_lr_scale": args.gawf_multi_feedback_lr_scale,
+                "layer_feedback_dims": [int(x) for x in model.layer_feedback_dims],
+            }
+        )
     return {"metrics": metrics, "model": model}
 
 
-def result_stem(cfg: Dict, embed_dim: int, edo: float, rdo: float) -> str:
-    return (
+def result_stem(
+    cfg: Dict,
+    embed_dim: int,
+    edo: float,
+    rdo: float,
+    gawf_layers: int = 2,
+    feedback_dim: int | None = None,
+) -> str:
+    stem = (
         f"{cfg['model']}_imdb_h{cfg['hidden']}_emb{embed_dim}"
         f"_lr{cfg['lr']}_wd{cfg['wd']}_edo{edo}_rdo{rdo}"
     )
+    if cfg["model"] == "gawf_multi":
+        stem = f"{stem}_L{gawf_layers}"
+        if feedback_dim is not None and feedback_dim > 0:
+            stem = f"{stem}_dz{feedback_dim}"
+    return stem
 
 
 def save_outputs(args, cfg: Dict, out: Dict) -> str:
     result_dir = os.path.join(args.result_dir, "results", "train_data", args.result_suffix)
     os.makedirs(result_dir, exist_ok=True)
-    stem = result_stem(cfg, args.embed_dim, args.embed_dropout, args.rnn_dropout)
+    stem = result_stem(
+        cfg,
+        args.embed_dim,
+        args.embed_dropout,
+        args.rnn_dropout,
+        gawf_layers=args.gawf_layers,
+        feedback_dim=args.feedback_dim,
+    )
     metrics_path = os.path.join(result_dir, f"{stem}_metrics.json")
     pkl_path = os.path.join(result_dir, f"{stem}.pkl")
     model_path = os.path.join(result_dir, f"{stem}_model.pth")
@@ -246,6 +286,29 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--pooling", default="last", choices=["last", "mean"])
     p.add_argument("--num_epochs", type=int, default=50)
     p.add_argument("--patience", type=int, default=10)
+    p.add_argument(
+        "--gawf_layers",
+        type=int,
+        default=2,
+        help="gawf_multi only: number of recurrent GaWF layers.",
+    )
+    p.add_argument(
+        "--feedback_dim",
+        "--dz",
+        dest="feedback_dim",
+        type=int,
+        default=0,
+        help=(
+            "gawf_multi only: 0 uses direct feedback; >0 enables per-layer "
+            "projected feedback with this dimension."
+        ),
+    )
+    p.add_argument(
+        "--gawf_multi_feedback_lr_scale",
+        type=float,
+        default=0.1,
+        help="gawf_multi only: learning-rate scale for U/V and feedback projectors.",
+    )
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--batch_size", type=int, default=64)
     p.add_argument("--num_workers", type=int, default=0)
@@ -259,6 +322,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_arg_parser().parse_args()
+    if args.gawf_layers < 2:
+        raise SystemExit("--gawf_layers must be >= 2")
+    if args.feedback_dim < 0:
+        raise SystemExit("--feedback_dim/--dz must be >= 0")
+    if args.gawf_multi_feedback_lr_scale <= 0:
+        raise SystemExit("--gawf_multi_feedback_lr_scale must be > 0")
     device = select_device(args.device)
     set_seed(args.seed)
     meta = load_meta(args.data_dir)

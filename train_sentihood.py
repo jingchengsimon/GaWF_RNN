@@ -44,6 +44,9 @@ from utils.text_train_utils import (
 from utils.train_helpers import set_seed
 
 DISABLE_TQDM = os.environ.get("DISABLE_TQDM", "0").lower() in ("1", "true", "yes")
+SENTIHOOD_MODEL_CHOICES = sorted(
+    model_name for model_name in get_text_model_classes() if model_name != "gawf_multi"
+)
 
 
 def _autocast(device: str, use_acceleration: bool):
@@ -274,7 +277,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--model_types",
         nargs="+",
         default=["lstm"],
-        choices=sorted(get_text_model_classes()),
+        choices=SENTIHOOD_MODEL_CHOICES,
     )
     p.add_argument("--data_dir", default=None, help="Base data dir (CLI -> env -> <repo>/stimuli).")
     p.add_argument("--result_dir", default=".", help="Repo root under which results/ is written.")

@@ -36,8 +36,54 @@ def count_core_params(model: nn.Module) -> int:
     return total
 
 
-def build_optimizer(model: nn.Module, lr: float, weight_decay: float, optim_name: str):
+def build_optimizer(
+    model: nn.Module,
+    lr: float,
+    weight_decay: float,
+    optim_name: str,
+    gawf_feedback_lr_scale: float = 1.0,
+):
     """Adam(W) with GaWF U/V excluded from weight decay."""
+    has_multilayer_gawf = hasattr(model, "U_layers") and hasattr(model, "V_layers")
+    if has_multilayer_gawf:
+        base_decay, base_no_decay, gate_params, projector_decay, projector_no_decay = (
+            [],
+            [],
+            [],
+            [],
+            [],
+        )
+        for name, p in model.named_parameters():
+            if not p.requires_grad:
+                continue
+            if "U_layers" in name or "V_layers" in name:
+                gate_params.append(p)
+            elif "hidden_projectors" in name or "proj_out" in name:
+                if p.ndim <= 1:
+                    projector_no_decay.append(p)
+                else:
+                    projector_decay.append(p)
+            elif p.ndim <= 1:
+                base_no_decay.append(p)
+            else:
+                base_decay.append(p)
+
+        feedback_lr = lr * float(gawf_feedback_lr_scale)
+        groups = [
+            {"params": base_decay, "lr": lr, "weight_decay": weight_decay},
+            {"params": base_no_decay, "lr": lr, "weight_decay": 0.0},
+            {"params": gate_params, "lr": feedback_lr, "weight_decay": 0.0},
+        ]
+        if projector_decay:
+            groups.append(
+                {"params": projector_decay, "lr": feedback_lr, "weight_decay": weight_decay}
+            )
+        if projector_no_decay:
+            groups.append({"params": projector_no_decay, "lr": feedback_lr, "weight_decay": 0.0})
+        if optim_name == "adamw":
+            return torch.optim.AdamW(groups)
+        return torch.optim.Adam(groups)
+
     decay, no_decay = [], []
     for name, p in model.named_parameters():
         if not p.requires_grad:
