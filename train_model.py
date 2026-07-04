@@ -452,6 +452,8 @@ def network_train(
 if __name__ == "__main__":
     parser = build_arg_parser()
     args = parser.parse_args()
+    if args.gawf_feedback_lr_scale <= 0:
+        parser.error("--gawf_feedback_lr_scale must be > 0")
     if args.gawf_multi_feedback_lr_scale <= 0:
         parser.error("--gawf_multi_feedback_lr_scale must be > 0")
     if args.feedback_dim is not None and args.feedback_dim < 0:
@@ -730,7 +732,14 @@ if __name__ == "__main__":
 
         train_lr = lr
         gawf_feedback_lr_scale = 1.0
-        if model_type == "gawf_multi":
+        if model_type == "gawf":
+            gawf_feedback_lr_scale = args.gawf_feedback_lr_scale
+            logger.info(
+                "gawf optimizer lr: base_lr=%s, feedback_lr_scale=%s",
+                lr,
+                args.gawf_feedback_lr_scale,
+            )
+        elif model_type == "gawf_multi":
             gawf_feedback_lr_scale = args.gawf_multi_feedback_lr_scale
             logger.info(
                 "gawf_multi optimizer lr: base_lr=%s, feedback_lr_scale=%s",
@@ -755,6 +764,9 @@ if __name__ == "__main__":
         layer_suffix = ""
         if model_type == "gawf_multi":
             layer_suffix = f"_L{gawf_layers}"
+        fblr_suffix = ""
+        if model_type == "gawf" and args.gawf_feedback_lr_scale != 1.0:
+            fblr_suffix = f"_fblr{args.gawf_feedback_lr_scale}"
         dz_suffix = ""
         if model_type == "gawf" and feedback_dim is not None:
             dz_suffix = f"_dz{feedback_dim}"
@@ -762,7 +774,7 @@ if __name__ == "__main__":
             dz_suffix = f"_dz{mdl.feedback_dim}"
         results_stem = (
             f"{model_type}_{mode_suffix}{acc_suffix}{width_suffix}"
-            f"{layer_suffix}{hp_suffix}{dz_suffix}{fb_path_suffix}"
+            f"{layer_suffix}{hp_suffix}{fblr_suffix}{dz_suffix}{fb_path_suffix}"
         )
         results_path = os.path.join(results_dir, results_stem)
 
@@ -857,7 +869,9 @@ if __name__ == "__main__":
             metric_summary["feedback_dim"] = (
                 int(mdl.feedback_dim) if hasattr(mdl, "feedback_dim") else None
             )
-            if model_type == "gawf_multi":
+            if model_type == "gawf":
+                metric_summary["gawf_feedback_lr_scale"] = args.gawf_feedback_lr_scale
+            elif model_type == "gawf_multi":
                 metric_summary["gawf_layers"] = int(mdl.num_layers)
                 metric_summary["use_feedback_projector"] = bool(
                     getattr(mdl, "use_feedback_projector", False)

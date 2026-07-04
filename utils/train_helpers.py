@@ -931,6 +931,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--gawf_feedback_lr_scale",
+        type=float,
+        default=1.0,
+        help=(
+            "Single-layer gawf only: learning-rate scale for U/V parameter group. "
+            "Default 1.0 preserves legacy behavior; gawf_multi uses "
+            "--gawf_multi_feedback_lr_scale instead."
+        ),
+    )
+    parser.add_argument(
         "--gawf_multi_feedback_lr_scale",
         type=float,
         default=0.1,

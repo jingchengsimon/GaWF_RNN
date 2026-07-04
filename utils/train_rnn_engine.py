@@ -238,13 +238,22 @@ def setup_training_components(
                     gawf_params.append(param)
                 else:
                     base_params.append(param)
+            feedback_lr = lr * float(gawf_feedback_lr_scale)
             param_groups = [
-                {"params": base_params, "weight_decay": wd},
-                {"params": gawf_params, "weight_decay": 0.0},
+                {"params": base_params, "lr": lr, "weight_decay": wd},
+                {"params": gawf_params, "lr": feedback_lr, "weight_decay": 0.0},
             ]
-            optim_kwargs = {"lr": lr}
+            optim_kwargs = {}
             if OptimClass in (torch.optim.Adam, torch.optim.AdamW) and has_big_hidden:
                 optim_kwargs["eps"] = 1e-6
+            if logger is not None:
+                logger.info(
+                    "Single-layer GaWF optimizer: base_lr=%s, feedback_lr=%s "
+                    "(feedback_lr_scale=%s)",
+                    lr,
+                    feedback_lr,
+                    gawf_feedback_lr_scale,
+                )
             return OptimClass(param_groups, **optim_kwargs)
 
         if isinstance(mdl, (MambaConv, DiagLTIConv)):
