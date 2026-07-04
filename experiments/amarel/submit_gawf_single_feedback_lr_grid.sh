@@ -12,6 +12,7 @@ RUN_SCRIPT="$SCRIPT_DIR/run_gawf_single_feedback_lr_grid_array.sh"
 LOG_DIR="$ROOT/experiments/amarel/artifacts/gawf_single_feedback_lr_grid"
 SUBMIT_LOG="$LOG_DIR/submission_$(date +%Y%m%d_%H%M%S).log"
 ARRAY_CONCURRENCY="${ARRAY_CONCURRENCY:-96}"
+TASKS_PER_ARRAY="${TASKS_PER_ARRAY:-4}"
 mkdir -p "$LOG_DIR"
 
 if ! command -v sbatch >/dev/null 2>&1; then
@@ -24,10 +25,11 @@ if [[ "$total_tasks" -le 0 ]]; then
   echo "No tasks emitted by $GRID_UTIL" >&2
   exit 2
 fi
-last_task=$((total_tasks - 1))
+array_tasks=$(((total_tasks + TASKS_PER_ARRAY - 1) / TASKS_PER_ARRAY))
+last_task=$((array_tasks - 1))
 throttle="$ARRAY_CONCURRENCY"
-if [[ "$total_tasks" -lt "$throttle" ]]; then
-  throttle="$total_tasks"
+if [[ "$array_tasks" -lt "$throttle" ]]; then
+  throttle="$array_tasks"
 fi
 
 {
@@ -36,7 +38,9 @@ fi
   echo "root=$ROOT"
   echo "grid_util=$GRID_UTIL"
   echo "run_script=$RUN_SCRIPT"
-  echo "total_tasks=$total_tasks"
+  echo "logical_total_tasks=$total_tasks"
+  echo "tasks_per_array=$TASKS_PER_ARRAY"
+  echo "slurm_array_tasks=$array_tasks"
   echo "array=0-${last_task}%${throttle}"
   echo "resources=partition=gpu-redhat account=general gres=gpu:1 constraint=adalovelace cpus=16 mem=64G time=72:00:00"
   echo "env=AIM3_NUM_WORKERS=12 AIM3_PIN_MEMORY=1 conda=aim3_rnn"
@@ -44,7 +48,7 @@ fi
 
 job_id="$(
   sbatch --parsable \
-    --export=ALL,AIM3_ROOT="$ROOT",AIM3_NUM_WORKERS=12,AIM3_PIN_MEMORY=1 \
+    --export=ALL,AIM3_ROOT="$ROOT",AIM3_NUM_WORKERS=12,AIM3_PIN_MEMORY=1,TASKS_PER_ARRAY="$TASKS_PER_ARRAY" \
     --array="0-${last_task}%${throttle}" \
     "$RUN_SCRIPT"
 )"

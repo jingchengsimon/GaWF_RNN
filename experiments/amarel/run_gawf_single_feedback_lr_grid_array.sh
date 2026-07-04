@@ -27,7 +27,22 @@ ART_ROOT="$ROOT/experiments/amarel/artifacts/$GRID_NAME"
 STATUS_DIR="$ROOT/experiments/generalization/artifacts/gawf_single_fblr_finesearch_40h/status"
 mkdir -p "$ART_ROOT" "$STATUS_DIR"
 
-TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
+TASKS_PER_ARRAY="${TASKS_PER_ARRAY:-1}"
+if [[ "$TASKS_PER_ARRAY" -gt 1 && -z "${AIM3_INNER_TASK_ID:-}" ]]; then
+  total_tasks="$(python "$GRID_UTIL" list-task-ids | wc -l | tr -d ' ')"
+  start_task=$((${SLURM_ARRAY_TASK_ID:-0} * TASKS_PER_ARRAY))
+  end_task=$((start_task + TASKS_PER_ARRAY - 1))
+  if [[ "$end_task" -ge "$total_tasks" ]]; then
+    end_task=$((total_tasks - 1))
+  fi
+  echo "Array index ${SLURM_ARRAY_TASK_ID:-0} running logical tasks ${start_task}-${end_task}"
+  for logical_task_id in $(seq "$start_task" "$end_task"); do
+    AIM3_INNER_TASK_ID="$logical_task_id" TASKS_PER_ARRAY=1 bash "$0"
+  done
+  exit 0
+fi
+
+TASK_ID="${AIM3_INNER_TASK_ID:-${SLURM_ARRAY_TASK_ID:-0}}"
 DONE_FILE="$STATUS_DIR/task_$(printf '%04d' "$TASK_ID").done"
 FAIL_FILE="$STATUS_DIR/task_$(printf '%04d' "$TASK_ID").fail"
 
