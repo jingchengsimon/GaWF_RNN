@@ -190,8 +190,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--s5_state_size",
         type=int,
-        default=189,
-        help="S5 latent state size (default: 189).",
+        default=128,
+        help="S5 latent state size (default: 128, param-matched to GaWF h=256).",
     )
     parser.add_argument(
         "--device",

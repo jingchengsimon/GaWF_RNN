@@ -125,6 +125,9 @@ fi
 
 mkdir -p "$SUBMIT_LOG_DIR" "$TASK_LIST_DIR"
 
+export AIM3_NUM_WORKERS="${AIM3_NUM_WORKERS:-12}"
+export AIM3_PIN_MEMORY="${AIM3_PIN_MEMORY:-1}"
+
 log() {
   printf '%s\n' "$*" | tee -a "$SUBMIT_LOG"
 }
@@ -196,6 +199,8 @@ log "task_list=$TASK_LIST_FILE"
 log "total_tasks=$TOTAL_TASKS"
 log "batch_size=$BATCH_SIZE"
 log "array_concurrency=$ARRAY_CONCURRENCY"
+log "cpus_per_task=16 mem=64G gres=gpu:1 constraint=adalovelace"
+log "AIM3_NUM_WORKERS=$AIM3_NUM_WORKERS AIM3_PIN_MEMORY=$AIM3_PIN_MEMORY"
 log "run_script=$RUN_SCRIPT"
 log "submit_log=$SUBMIT_LOG"
 
@@ -218,7 +223,10 @@ while [[ "$start" -lt "$TOTAL_TASKS" ]]; do
   log "Submitting task-list rows ${start}-${end} as array 0-${array_last}%${throttle}"
   job_id="$(
     sbatch --parsable \
-      --export=ALL,AIM3_ROOT="$ROOT",TASK_ID_FILE="$TASK_LIST_FILE",TASK_FILE_OFFSET="$start" \
+      --constraint=adalovelace \
+      --cpus-per-task=16 \
+      --mem=64G \
+      --export=ALL,AIM3_ROOT="$ROOT",AIM3_NUM_WORKERS="$AIM3_NUM_WORKERS",AIM3_PIN_MEMORY="$AIM3_PIN_MEMORY",TASK_ID_FILE="$TASK_LIST_FILE",TASK_FILE_OFFSET="$start" \
       --array="0-${array_last}%${throttle}" \
       "$RUN_SCRIPT"
   )"

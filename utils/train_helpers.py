@@ -202,6 +202,36 @@ class PathHelper:
         return base_path
 
     @staticmethod
+    def get_results_root(
+        override: Optional[str] = None,
+        logger: Optional[logging.Logger] = None,
+    ) -> str:
+        """Resolve the root directory under which results are written.
+
+        Mirrors get_base_path so results can live off the (quota-limited) home
+        directory: an explicit override wins, then the AIM3_RESULTS_PATH /
+        FAW_RNN_RESULTS_PATH env vars (set on Amarel to point at /scratch),
+        else the project-relative ``results`` directory.
+        """
+        if override and override.strip():
+            root = os.path.abspath(os.path.expanduser(override.strip()))
+            if logger is not None:
+                logger.info("Using results root (override): %s", root)
+            return root
+        env_path = os.environ.get("AIM3_RESULTS_PATH") or os.environ.get("FAW_RNN_RESULTS_PATH")
+        if env_path and env_path.strip():
+            root = os.path.abspath(os.path.expanduser(env_path.strip()))
+            if logger is not None:
+                logger.info("Using results root (env): %s", root)
+            return root
+        _this_dir = os.path.dirname(os.path.abspath(__file__))
+        _repo_root = os.path.dirname(_this_dir)
+        root = os.path.join(_repo_root, "results")
+        if logger is not None:
+            logger.info("Using results root (project-relative): %s", root)
+        return root
+
+    @staticmethod
     def prepare_data_paths(
         base_path: str,
         data_suffix: str = "",
@@ -817,8 +847,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--s5_state_sizes",
         type=int,
         nargs="+",
-        default=[189],
-        help="S5 latent state sizes to test (default: [189]).",
+        default=[128],
+        help="S5 latent state sizes to test (default: [128], param-matched to GaWF h=256).",
     )
     parser.add_argument(
         "--s5_num_layers",
@@ -1001,6 +1031,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help=(
             "Base directory containing stimulus_reg-* files. "
             "If not set, uses AIM3_STIMULI_PATH / FAW_RNN_DATA_PATH env, else <repo>/stimuli."
+        ),
+    )
+    parser.add_argument(
+        "--results_dir",
+        type=str,
+        default="",
+        help=(
+            "Root directory under which results/train_data is written. "
+            "If not set, uses AIM3_RESULTS_PATH / FAW_RNN_RESULTS_PATH env, else <repo>/results."
         ),
     )
     parser.add_argument(

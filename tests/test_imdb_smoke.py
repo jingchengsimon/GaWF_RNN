@@ -11,6 +11,7 @@ Run::
     # or
     python tests/test_imdb_smoke.py
 """
+
 from __future__ import annotations
 
 import json
@@ -27,7 +28,12 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from utils.imdb_data import build_imdb_loaders  # noqa: E402
-from utils.text_models import TextGaWF, TextLSTM, get_text_model_classes  # noqa: E402
+from utils.text_models import (
+    TextGaWF,
+    TextGaWFLogits,
+    TextLSTM,
+    get_text_model_classes,
+)  # noqa: E402
 import train_imdb  # noqa: E402
 
 VOCAB_SIZE = 50
@@ -85,7 +91,7 @@ def _make_args(seed=42):
 
 class TestIMDBSmoke(unittest.TestCase):
     def test_models_instantiate_and_forward(self):
-        for cls in (TextLSTM, TextGaWF):
+        for cls in (TextLSTM, TextGaWF, TextGaWFLogits):
             model = cls(vocab_size=VOCAB_SIZE, embed_dim=16, hidden_size=24, device="cpu")
             ids = torch.randint(0, VOCAB_SIZE, (4, MAX_LEN))
             lengths = torch.randint(1, MAX_LEN + 1, (4,))
@@ -100,6 +106,16 @@ class TestIMDBSmoke(unittest.TestCase):
         self.assertEqual(tuple(model.V.shape), (24, 16 + 24))
         self.assertFalse(hasattr(model, "proj_out") and model.__dict__.get("proj_out") is not None)
 
+    def test_gawf_logits_feedback_is_output_sized(self):
+        model = TextGaWFLogits(vocab_size=VOCAB_SIZE, embed_dim=16, hidden_size=24, device="cpu")
+        self.assertEqual(model.feedback_dim, 2)
+        self.assertEqual(tuple(model.U.shape), (24, 2))
+        self.assertEqual(tuple(model.V.shape), (2, 16 + 24))
+        self.assertTrue(model.include_fc_in_core_params)
+        self.assertEqual(
+            train_imdb.count_core_params(model), 24 * 24 + 24 * 16 + 10 * 24 + 2 * 16 + 2
+        )
+
     def test_optimizer_excludes_UV_from_weight_decay(self):
         model = TextGaWF(vocab_size=VOCAB_SIZE, embed_dim=16, hidden_size=24, device="cpu")
         optim = train_imdb.build_optimizer(model, lr=1e-3, weight_decay=1e-4, optim_name="adamw")
@@ -111,24 +127,32 @@ class TestIMDBSmoke(unittest.TestCase):
         self.assertIn(id(model.V), no_decay_ids)
 
     def test_end_to_end_train_both_models(self):
-        self.assertEqual(set(get_text_model_classes()), {"lstm", "gawf"})
+        self.assertEqual(
+            set(get_text_model_classes()), {"rnn", "lstm", "gru", "gawf", "gawf_logits"}
+        )
         with tempfile.TemporaryDirectory() as tmp:
             meta = _write_synthetic_dataset(tmp)
             loaders = build_imdb_loaders(tmp, batch_size=32, num_workers=0, seed=42)
             args = _make_args()
-            for model_name in ("lstm", "gawf"):
+            for model_name in ("lstm", "gawf", "gawf_logits"):
                 cfg = {"model": model_name, "hidden": 24, "lr": 1e-2, "wd": 0.0}
                 out = train_imdb.train_one_config(args, cfg, loaders, "cpu", meta)
                 m = out["metrics"]
                 # Schema present.
                 for key in (
-                    "model_type", "val_acc", "best_val_acc", "val_acc_at_best",
-                    "test_acc_at_best", "core_param_count", "actual_epochs",
+                    "model_type",
+                    "val_acc",
+                    "best_val_acc",
+                    "val_acc_at_best",
+                    "test_acc_at_best",
+                    "core_param_count",
+                    "actual_epochs",
                 ):
                     self.assertIn(key, m, f"{model_name}: missing metrics key {key}")
                 # Loss decreases over training.
                 self.assertLess(
-                    m["train_loss"][-1], m["train_loss"][0] + 1e-6,
+                    m["train_loss"][-1],
+                    m["train_loss"][0] + 1e-6,
                     f"{model_name}: train loss did not decrease",
                 )
                 # Learns the separable signal above chance.

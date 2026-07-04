@@ -3,8 +3,9 @@
 #SBATCH --partition=gpu-redhat
 #SBATCH --account=general
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=16G
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=64G
+#SBATCH --constraint=adalovelace
 #SBATCH --time=72:00:00
 #SBATCH --output=experiments/amarel/artifacts/mamba_s5_hparam_grid/%A_%a.out
 #SBATCH --error=experiments/amarel/artifacts/mamba_s5_hparam_grid/%A_%a.err

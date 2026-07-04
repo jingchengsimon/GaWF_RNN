@@ -1,11 +1,10 @@
-"""Text sequence-classification models for the IMDB benchmark.
+"""Reusable text sequence-classification models for language benchmarks.
 
 A small parallel subsystem to the vision ``*Conv`` models. The vision pipeline is
 left untouched; here the **embedding layer is the encoder** (token id ->
-``embed_dim`` vector per timestep) and a **single sentiment head is applied once**
-per sequence after pooling. Intermediate timesteps only update hidden state; no
-per-step logits (IMDB is sequence *classification*, not the per-frame labeling of
-the vision task).
+``embed_dim`` vector per timestep) and a **single classification head is applied
+once** per sequence after pooling. IMDB uses review tokens directly; SentiHood
+uses flattened query-pair tokens (sentence + <sep> + location/aspect query).
 
 Models share an identical ``nn.Embedding`` + ``SentimentHead`` so that any
 parameter matching isolates the recurrent block.
@@ -16,7 +15,11 @@ parameter matching isolates the recurrent block.
   and there is **no ``proj_out`` / fixed-size ``dz`` projection** (on the vision task
   ``dz=8`` did worse and larger ``dz`` overfit). Reuses ``_compute_gawf_transforms``
   and ``gate_tau`` from the vision GaWF.
+- ``TextGaWFLogits`` : vision-style GaWF for IMDB. Each timestep produces sentiment
+  logits with the shared head, and the previous timestep logits provide the next
+  feedback vector (``feedback_dim = num_classes``).
 """
+
 from __future__ import annotations
 
 import torch
@@ -204,6 +207,85 @@ class TextGaWF(TextSequenceClassifier):
         return outputs
 
 
+class TextGaWFLogits(TextSequenceClassifier):
+    """GaWF with previous sentiment logits as the feedback vector.
+
+    This keeps the legacy ``TextGaWF`` untouched while matching the vision GaWF
+    design more closely: every recurrent step emits logits through ``fc`` and the
+    next step gates its input/hidden weights with those logits. The final IMDB
+    prediction still follows the text pipeline, pooling the hidden sequence once.
+    """
+
+    include_fc_in_core_params = True
+
+    def __init__(self, vocab_size: int, **kwargs):
+        super().__init__(vocab_size, **kwargs)
+        input_size = self.embed_dim
+        hidden_size = self.hidden_size
+        self.feedback_dim = self.num_classes
+        self.rnn = nn.RNN(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=1,
+            batch_first=True,
+        )
+        combined_weight_size = input_size + hidden_size
+        self.U = nn.Parameter(torch.randn(hidden_size, self.feedback_dim) * 0.01)
+        self.V = nn.Parameter(torch.randn(self.feedback_dim, combined_weight_size) * 0.01)
+        self.gate_tau = 0.5
+        self.LNormRNN = nn.LayerNorm(hidden_size)
+        self.to(self.device)
+
+    def _step(self, x_t, h_prev, fb_t):
+        input_size = x_t.size(-1)
+        weight_ih = self.rnn.weight_ih_l0
+        weight_hh = self.rnn.weight_hh_l0
+        bias_ih = self.rnn.bias_ih_l0
+        bias_hh = self.rnn.bias_hh_l0
+        trans_ih, trans_hh = _compute_gawf_transforms(self.U, fb_t, self.V, input_size)
+        gate_ih = torch.sigmoid(trans_ih / self.gate_tau)
+        gate_hh = torch.sigmoid(trans_hh / self.gate_tau)
+        ih = torch.einsum("bi,bhi,hi->bh", x_t, gate_ih, weight_ih)
+        hh = torch.einsum("bi,bhi,hi->bh", h_prev, gate_hh, weight_hh)
+        if bias_ih is not None:
+            ih = ih + bias_ih.unsqueeze(0)
+        if bias_hh is not None:
+            hh = hh + bias_hh.unsqueeze(0)
+        h_t = torch.tanh(ih + hh)
+        h_t = self.LNormRNN(h_t)
+        h_t = F.relu(h_t)
+        return h_t
+
+    def _middle_with_logit_feedback(self, x, apply_recurrent_dropout: bool):
+        batch_size, frame_num, _ = x.shape
+        h = torch.zeros(batch_size, self.hidden_size, device=x.device, dtype=x.dtype)
+        fb = torch.zeros(batch_size, self.feedback_dim, device=x.device, dtype=x.dtype)
+        outputs = torch.empty(
+            batch_size, frame_num, self.hidden_size, device=x.device, dtype=x.dtype
+        )
+        for t in range(frame_num):
+            fb_t = fb.clamp(-10, 10).unsqueeze(2)
+            h = self._step(x[:, t, :], h, fb_t)
+            if apply_recurrent_dropout:
+                h = F.dropout(h, p=self.rnn_dropout, training=self.training)
+            logits_t = self.fc(h)
+            fb = logits_t.detach()
+            outputs[:, t, :] = h
+        return outputs
+
+    def middle(self, x):
+        return self._middle_with_logit_feedback(x, apply_recurrent_dropout=False)
+
+    def forward(self, ids, lengths):
+        ids = ids.to(self.device)
+        lengths = lengths.to(self.device).long()
+        x = self.embedding(ids)
+        x = F.dropout(x, p=self.embed_dropout, training=self.training)
+        seq = self._middle_with_logit_feedback(x, apply_recurrent_dropout=True)
+        pooled = self._pool(seq, lengths)
+        return self.fc(pooled)
+
+
 def get_text_model_classes():
     """Factory mapping model-type name -> class (extensible to mamba/s5)."""
     return {
@@ -211,4 +293,5 @@ def get_text_model_classes():
         "lstm": TextLSTM,
         "gru": TextGRU,
         "gawf": TextGaWF,
+        "gawf_logits": TextGaWFLogits,
     }

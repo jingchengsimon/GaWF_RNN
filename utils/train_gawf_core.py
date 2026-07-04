@@ -262,7 +262,6 @@ class GaWFRNNConv(GaWFDiagnosticsMixin, BaseConvSequenceModel):
         x = x.to(self.device)
         batch_size, frame_num, channels, height, width = x.size()
         x = x.view(batch_size * frame_num, channels, height, width)
-        x = self.encoder(x)
         x = x.view(batch_size, frame_num, -1)
 
         if use_feedback:

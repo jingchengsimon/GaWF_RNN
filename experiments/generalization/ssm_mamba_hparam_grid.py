@@ -26,7 +26,8 @@ LRS = [1e-4, 5e-4, 1e-3, 5e-3, 1e-2]
 WDS = [0.0, 1e-5, 1e-4, 1e-3]
 MAMBA_D_MODEL = 170
 S5_D_MODEL = 256
-S5_STATE_SIZE = 189
+# Param-matched to GaWF h=256 (~586k params); do not reuse DiagLTI state=189.
+S5_STATE_SIZE = 128
 S5_SSM_LR_SCALE = 0.1
 GAWF_REF_HIDDEN = 256
 CNN_DROPOUT = 0.0
@@ -527,6 +528,47 @@ def cmd_summarize(args: argparse.Namespace) -> None:
     print(f"Wrote Mamba/S5 hparam summaries under {out_dir}")
 
 
+def cmd_purge_legacy_s5_state189(args: argparse.Namespace) -> None:
+    """Remove legacy S5 grid artifacts that used state_size=189."""
+    root = os.path.abspath(args.root)
+    status_dir = os.path.join(
+        root,
+        "experiments",
+        "generalization",
+        "artifacts",
+        RESULT_ROOT_SUFFIX,
+        "status",
+    )
+    removed: List[str] = []
+    for cfg in iter_task_configs():
+        if cfg.model != "s5":
+            continue
+        task_dir = os.path.join(root, "results", "train_data", cfg.result_suffix)
+        if not os.path.isdir(task_dir):
+            continue
+        for path in sorted(glob(os.path.join(task_dir, "*state189*"))):
+            if args.dry_run:
+                print(f"would_remove {path}")
+            else:
+                os.remove(path)
+                removed.append(path)
+        done_file = os.path.join(status_dir, f"task_{cfg.task_id:04d}.done")
+        fail_file = os.path.join(status_dir, f"task_{cfg.task_id:04d}.fail")
+        for path in (done_file, fail_file):
+            if os.path.isfile(path):
+                if args.dry_run:
+                    print(f"would_remove {path}")
+                else:
+                    os.remove(path)
+                    removed.append(path)
+    summary = {
+        "dry_run": args.dry_run,
+        "removed_count": len(removed),
+        "removed_paths": removed,
+    }
+    print(json.dumps(summary, indent=2))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -553,6 +595,14 @@ def build_parser() -> argparse.ArgumentParser:
     summ.add_argument("--root", default=".")
     summ.add_argument("--out-dir", default="")
     summ.set_defaults(func=cmd_summarize)
+
+    purge = sub.add_parser(
+        "purge-legacy-s5-state189",
+        help="Delete legacy S5 hparam outputs/checkpoints that used state_size=189",
+    )
+    purge.add_argument("--root", default=".")
+    purge.add_argument("--dry-run", action="store_true")
+    purge.set_defaults(func=cmd_purge_legacy_s5_state189)
     return parser
 
 

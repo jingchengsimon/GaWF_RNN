@@ -484,7 +484,8 @@ if __name__ == "__main__":
         not disable_tqdm_env and sys.stdout.isatty() and term_ok
     )
 
-    results_dir = f"results/train_data/{args.result_suffix}"
+    results_root = PathHelper.get_results_root(override=args.results_dir or None)
+    results_dir = os.path.join(results_root, "train_data", args.result_suffix)
     if not os.path.exists(results_dir):
         os.makedirs(results_dir, exist_ok=True)
 

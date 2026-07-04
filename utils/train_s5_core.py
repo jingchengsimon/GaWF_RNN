@@ -12,7 +12,7 @@ from .train_rnn_core import BaseConvSequenceModel
 
 
 S5_DEFAULT_D_MODEL = 256
-S5_DEFAULT_STATE_SIZE = 189
+S5_DEFAULT_STATE_SIZE = 128
 
 
 def _get_s5_layer():
