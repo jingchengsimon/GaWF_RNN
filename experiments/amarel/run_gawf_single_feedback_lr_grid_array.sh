@@ -94,6 +94,7 @@ DISABLE_TQDM=1 python train_model.py \
   --data_suffix "$DATA_SUFFIX" \
   --eval_data_suffix "$EVAL_DATA_SUFFIX" \
   --data_dir "$DATA_DIR" \
+  --results_dir "$ROOT/results" \
   --lrs "$LR" \
   --wds "$WD" \
   --cnn_dropout "$CNN_DROPOUT" \
