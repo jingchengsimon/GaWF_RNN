@@ -3,16 +3,21 @@ Load export_pop_act output: pop_act.npy + labels.tsv (UMAP/PCA), or pop_act_dpca
 
 Reduce (T, D) -> (T, 3) via UMAP or PCA; save Plotly HTML under ``<save_dir>/<run_tag>/``.
 
-PCA mode also saves explained-variance bar chart. ``--reducer dpca`` saves one matplotlib PNG (1×2 panels) only.
+PCA mode also saves explained-variance bar chart. ``--reducer dpca`` saves matplotlib PNG
+diagnostics from either official dPCA reduced-rank regression or the legacy condensed SVD
+baseline.
 
-Reducer implementations: utils_viz.dimred_reducer (UMAPReducer, PCAReducer); dPCA is numpy SVD (no extra package).
+Reducer implementations: utils_viz.dimred_reducer (UMAPReducer, PCAReducer); dPCA RRR uses
+the optional ``dpca`` PyPI package (machenslab/dPCA).
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
+import shutil
 import sys
 
 import numpy as np
@@ -34,6 +39,25 @@ def parse_args() -> argparse.Namespace:
         default="umap",
         choices=["umap", "pca", "dpca"],
         help="UMAP / PCA (3D Plotly) or dPCA (2D PNG from pop_act_dpca.npy in --pop_act_dir).",
+    )
+    p.add_argument(
+        "--dpca_method",
+        type=str,
+        default="rrr",
+        choices=["rrr", "condensed"],
+        help=(
+            "dPCA method when --reducer dpca: official reduced-rank regression "
+            "(rrr, default) or legacy marginalization+SVD baseline (condensed)."
+        ),
+    )
+    p.add_argument(
+        "--dpca_regularizer",
+        type=float,
+        default=1e-4,
+        help=(
+            "Fixed official dPCA regularizer for --dpca_method rrr. Do not use 'auto' here "
+            "because pop_act_dpca contains condition means, not trial-by-trial data."
+        ),
     )
     p.add_argument(
         "--pca_variance_bars",
@@ -69,17 +93,26 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--pop_act_dir",
         type=str,
-        # default="./results/anal_data/pop_act/gawf_sector_acc_h256_lr0.0005_wd0.0001_do0_fb50_model",
-        # default="./results/anal_data/pop_act/rnn_sector_acc_h275_lr0.0005_wd0.0001_do0_model",
-        # default="./results/anal_data/pop_act/lstm_sector_acc_h80_lr0.0005_wd0.0001_do0_model",
+        # default=(
+        #     "./results/anal_data/pop_act/"
+        #     "gawf_sector_acc_h256_lr0.0005_wd0.0001_do0_fb50_model"
+        # )
+        # default="./results/anal_data/pop_act/rnn_sector_acc_h275_lr0.0005_wd0.0001_do0_model"
+        # default="./results/anal_data/pop_act/lstm_sector_acc_h80_lr0.0005_wd0.0001_do0_model"
         default="./results/anal_data/pop_act/gru_sector_acc_h105_lr0.0005_wd0.0001_do0_model",
-        help="Directory with pop_act.npy and labels.tsv (typically export_pop_act: <save_dir>/<run_tag>/).",
+        help=(
+            "Directory with pop_act.npy and labels.tsv "
+            "(typically export_pop_act: <save_dir>/<run_tag>/)."
+        ),
     )
     p.add_argument(
         "--save_dir",
         type=str,
         default="./results/anal_figs/pop_act_umap",
-        help="Parent directory for figures; writes <save_dir>/<run_tag>/ (HTML + PCA bar PNG if applicable).",
+        help=(
+            "Parent directory for figures; writes <save_dir>/<run_tag>/ "
+            "(HTML + PCA bar PNG if applicable)."
+        ),
     )
     p.add_argument(
         "--run_tag",
@@ -172,7 +205,12 @@ def load_xy_for_sector(labels_tsv: str) -> tuple[np.ndarray, np.ndarray]:
     ys: list[float] = []
     with open(labels_tsv, "r", newline="") as f:
         r = csv.DictReader(f, delimiter="\t")
-        if r.fieldnames is None or "fg_char_x" not in r.fieldnames or "fg_char_y" not in r.fieldnames:
+        has_xy = (
+            r.fieldnames is not None
+            and "fg_char_x" in r.fieldnames
+            and "fg_char_y" in r.fieldnames
+        )
+        if not has_xy:
             raise ValueError(f"labels.tsv must have fg_char_x, fg_char_y; got {r.fieldnames}")
         for row in r:
             xs.append(float(row["fg_char_x"]))
@@ -242,39 +280,322 @@ SECTOR_COLORS = [
 ]
 
 
-def run_dpca(X_dpca: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _load_official_dpca_class():
+    try:
+        from dPCA.dPCA import dPCA
+    except ImportError as e:
+        raise ImportError(
+            "Official dPCA RRR mode requires the PyPI package 'dpca'. "
+            "Install it with: pip install dpca"
+        ) from e
+    return dPCA
+
+
+def _counts_from_dir(pop_act_dir: str) -> np.ndarray | None:
+    candidates = [
+        os.path.join(pop_act_dir, "pop_act_digitxsector_counts.npy"),
+        os.path.join(pop_act_dir, "pop_act_counts.npy"),
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            counts = np.load(path)
+            if counts.shape != (10, 9):
+                raise ValueError(f"{path} must have shape (10, 9), got {counts.shape}")
+            return counts.astype(np.int64, copy=False)
+    return None
+
+
+def fill_nan_digit_sector_cells(
+    X_dpca: np.ndarray,
+    counts: np.ndarray | None = None,
+) -> tuple[np.ndarray, dict]:
+    """
+    Fill empty or NaN digit×sector cells before official dPCA.
+
+    ``X_dpca`` is (D, 10, 9), where D is hidden units. Official dPCA rejects NaNs. Empty
+    cells are identified from counts when available, otherwise from any NaN in a cell. Each
+    empty cell is imputed per feature with an additive estimate:
+    ``digit_marginal[d] + sector_marginal[s] - grand_mean``. If either marginal is undefined
+    for a feature, that feature falls back to its grand mean. The function prints how many
+    condition cells/elements were imputed so missing data never silently becomes zero.
+    """
+    X = np.asarray(X_dpca, dtype=np.float64).copy()
+    if X.ndim != 3 or X.shape[1:] != (10, 9):
+        raise ValueError(f"X_dpca must be (D, 10, 9), got {X.shape}")
+
+    nan_mask = np.isnan(X)
+    if counts is not None:
+        empty_cells = counts <= 0
+        if empty_cells.shape != (10, 9):
+            raise ValueError(f"counts must have shape (10, 9), got {empty_cells.shape}")
+    else:
+        empty_cells = np.any(nan_mask, axis=0)
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        digit_mean = np.nanmean(X, axis=2)
+        sector_mean = np.nanmean(X, axis=1)
+        grand = np.nanmean(X, axis=(1, 2))
+    grand = np.where(np.isnan(grand), 0.0, grand)
+
+    element_fill_count = int(np.sum(nan_mask))
+    cell_fill_count = int(np.sum(empty_cells))
+    for d in range(10):
+        for s in range(9):
+            needs_fill = bool(empty_cells[d, s]) or bool(np.any(np.isnan(X[:, d, s])))
+            if not needs_fill:
+                continue
+            estimate = digit_mean[:, d] + sector_mean[:, s] - grand
+            estimate = np.where(np.isnan(estimate), grand, estimate)
+            elem_mask = np.isnan(X[:, d, s])
+            if bool(empty_cells[d, s]):
+                X[:, d, s] = estimate
+            elif np.any(elem_mask):
+                X[elem_mask, d, s] = estimate[elem_mask]
+
+    remaining_nan = int(np.isnan(X).sum())
+    if remaining_nan:
+        raise ValueError(f"NaN imputation failed; remaining NaN elements={remaining_nan}")
+
+    print(
+        "[dPCA] NaN/empty-cell imputation: "
+        f"cells={cell_fill_count}, nan_elements={element_fill_count}, "
+        f"counts_available={counts is not None}"
+    )
+    return X.astype(np.float64, copy=False), {
+        "empty_cell_count": cell_fill_count,
+        "nan_element_count": element_fill_count,
+        "counts_available": counts is not None,
+    }
+
+
+def _flatten_component_scores(scores: np.ndarray) -> np.ndarray:
+    arr = np.asarray(scores, dtype=np.float64)
+    if arr.ndim != 3 or arr.shape[1:] != (10, 9):
+        raise ValueError(f"dPCA scores must be (components, 10, 9), got {arr.shape}")
+    out = np.zeros((90, 2), dtype=np.float64)
+    n = min(2, arr.shape[0])
+    for comp in range(n):
+        out[:, comp] = arr[comp].reshape(90)
+    return out.astype(np.float32)
+
+
+def _ensure_two_vectors(vectors: np.ndarray, n_features: int) -> np.ndarray:
+    arr = np.asarray(vectors, dtype=np.float64)
+    if arr.ndim != 2 or arr.shape[0] != n_features:
+        raise ValueError(
+            f"Axis vectors must have shape ({n_features}, n_components), got {arr.shape}"
+        )
+    out = np.zeros((n_features, 2), dtype=np.float64)
+    n = min(2, arr.shape[1])
+    out[:, :n] = arr[:, :n]
+    return out
+
+
+def _variance_ratio_for_json(explained: dict) -> dict[str, list[float]]:
+    out: dict[str, list[float]] = {}
+    for key in ("d", "s", "ds"):
+        vals = np.asarray(explained.get(key, []), dtype=np.float64)
+        out[key] = [float(v) for v in vals[:2]]
+    return out
+
+
+def run_dpca_condensed(X_dpca: np.ndarray) -> dict:
     """
     X_dpca: (D, 10, 9) condition-averaged pop act (may contain NaN for empty cells).
 
-    Returns W_digit (D, 2) and W_sector (D, 2): first two left singular vectors of the
-    digit- and sector-marginalized matrices (*condensed* dPCA / marginalization + SVD).
+    Legacy condensed baseline: first marginalize over sector/digit, then take the first two
+    left singular vectors for each marginalization. This does not include the official dPCA
+    reduced-rank-regression whitening/regularization step.
     """
     X = np.asarray(X_dpca, dtype=np.float64)
     if X.ndim != 3 or X.shape[1:] != (10, 9):
-        raise ValueError(f"run_dpca expects (D, 10, 9), got {X.shape}")
+        raise ValueError(f"run_dpca_condensed expects (D, 10, 9), got {X.shape}")
 
     X_digit = np.nanmean(X, axis=2)
     X_digit -= X_digit.mean(axis=1, keepdims=True)
-    U_d, _, _ = np.linalg.svd(X_digit, full_matrices=False)
+    U_d, S_d, _ = np.linalg.svd(X_digit, full_matrices=False)
     n_d = min(2, U_d.shape[1])
     W_digit = np.zeros((U_d.shape[0], 2), dtype=np.float64)
     W_digit[:, :n_d] = U_d[:, :n_d]
 
     X_sector = np.nanmean(X, axis=1)
     X_sector -= X_sector.mean(axis=1, keepdims=True)
-    U_s, _, _ = np.linalg.svd(X_sector, full_matrices=False)
+    U_s, S_s, _ = np.linalg.svd(X_sector, full_matrices=False)
     n_s = min(2, U_s.shape[1])
     W_sector = np.zeros((U_s.shape[0], 2), dtype=np.float64)
     W_sector[:, :n_s] = U_s[:, :n_s]
 
-    return W_digit.astype(np.float32), W_sector.astype(np.float32)
+    D = X.shape[0]
+    X_flat = np.nan_to_num(X.reshape(D, 90).T.astype(np.float64), nan=0.0)
+    coords_digit = (X_flat @ W_digit).astype(np.float32)
+    coords_sector = (X_flat @ W_sector).astype(np.float32)
+    denom_d = float(np.sum(S_d**2)) or 1.0
+    denom_s = float(np.sum(S_s**2)) or 1.0
+    explained = {
+        "d": [float((s**2) / denom_d) for s in S_d[:2]],
+        "s": [float((s**2) / denom_s) for s in S_s[:2]],
+        "ds": [],
+    }
+    return {
+        "method": "condensed",
+        "coords_digit": coords_digit,
+        "coords_sector": coords_sector,
+        "explained_variance_ratio": explained,
+        "digit_axes": W_digit,
+        "sector_axes": W_sector,
+        "imputation": {
+            "empty_cell_count": int(np.any(np.isnan(X), axis=0).sum()),
+            "nan_element_count": int(np.isnan(X).sum()),
+            "counts_available": False,
+        },
+    }
+
+
+def run_dpca_rrr(
+    X_dpca: np.ndarray,
+    *,
+    regularizer: float,
+    counts: np.ndarray | None = None,
+) -> dict:
+    """
+    Official machenslab/dPCA reduced-rank-regression dPCA for (D, digit, sector) means.
+
+    Empty or NaN cells are explicitly imputed with
+    ``digit_marginal[d] + sector_marginal[s] - grand_mean`` (falling back to grand mean when
+    a marginal is unavailable) before fitting, because official dPCA does not accept NaNs.
+    The fixed ``regularizer`` is used directly; ``regularizer='auto'`` is deliberately not
+    used because these inputs are condition means rather than trial-by-trial data.
+    """
+    dPCA = _load_official_dpca_class()
+    X, imputation = fill_nan_digit_sector_cells(X_dpca, counts=counts)
+    print(f"[dPCA] method=rrr regularizer={regularizer:g}")
+    dpca = dPCA(labels="ds", n_components=2, regularizer=float(regularizer))
+    Z = dpca.fit_transform(X)
+    for key in ("d", "s", "ds"):
+        if key not in Z:
+            raise KeyError(f"Official dPCA result missing marginalization {key!r}; got {list(Z)}")
+    return {
+        "method": "rrr",
+        "coords_digit": _flatten_component_scores(Z["d"]),
+        "coords_sector": _flatten_component_scores(Z["s"]),
+        "explained_variance_ratio": _variance_ratio_for_json(dpca.explained_variance_ratio_),
+        "digit_axes": _ensure_two_vectors(dpca.D["d"], X.shape[0]),
+        "sector_axes": _ensure_two_vectors(dpca.D["s"], X.shape[0]),
+        "imputation": imputation,
+        "regularizer": float(regularizer),
+    }
+
+
+def run_dpca(
+    X_dpca: np.ndarray,
+    *,
+    method: str,
+    regularizer: float,
+    counts: np.ndarray | None = None,
+) -> dict:
+    if method == "rrr":
+        return run_dpca_rrr(X_dpca, regularizer=regularizer, counts=counts)
+    if method == "condensed":
+        return run_dpca_condensed(X_dpca)
+    raise ValueError(f"Unknown dPCA method {method!r}")
+
+
+def _principal_angles_deg(A: np.ndarray, B: np.ndarray) -> list[float]:
+    Qa, _ = np.linalg.qr(np.asarray(A, dtype=np.float64))
+    Qb, _ = np.linalg.qr(np.asarray(B, dtype=np.float64))
+    sv = np.linalg.svd(Qa.T @ Qb, compute_uv=False)
+    return [float(np.degrees(np.arccos(np.clip(v, -1.0, 1.0)))) for v in sv]
+
+
+def _first_axis_angle_deg(A: np.ndarray, B: np.ndarray) -> float:
+    a = np.asarray(A, dtype=np.float64)[:, 0]
+    b = np.asarray(B, dtype=np.float64)[:, 0]
+    denom = float(np.linalg.norm(a) * np.linalg.norm(b))
+    if denom <= 1e-30:
+        return 90.0
+    cos = abs(float(np.dot(a, b) / denom))
+    return float(np.degrees(np.arccos(np.clip(cos, -1.0, 1.0))))
+
+
+def _group_between_variance_ratio(coords: np.ndarray, labels: np.ndarray) -> float:
+    xy = np.asarray(coords, dtype=np.float64)
+    if xy.ndim == 1:
+        xy = xy[:, np.newaxis]
+    labels = np.asarray(labels, dtype=np.int64)
+    grand = xy.mean(axis=0)
+    total = float(np.sum((xy - grand) ** 2))
+    if total <= 1e-30:
+        return 0.0
+    between = 0.0
+    for label in np.unique(labels):
+        group = xy[labels == label]
+        diff = group.mean(axis=0) - grand
+        between += float(group.shape[0] * np.sum(diff**2))
+    return between / total
+
+
+def summarize_dpca_result(
+    result: dict,
+    digit_labels: np.ndarray,
+    sector_labels: np.ndarray,
+) -> dict:
+    digit_axes = np.asarray(result["digit_axes"], dtype=np.float64)
+    sector_axes = np.asarray(result["sector_axes"], dtype=np.float64)
+    summary = {
+        "method": result["method"],
+        "regularizer": result.get("regularizer"),
+        "first_axis_angle_deg": _first_axis_angle_deg(digit_axes, sector_axes),
+        "subspace_angles_deg": _principal_angles_deg(digit_axes, sector_axes),
+        "sector_leakage_on_digit_plane": _group_between_variance_ratio(
+            result["coords_digit"], sector_labels
+        ),
+        "digit_leakage_on_sector_plane": _group_between_variance_ratio(
+            result["coords_sector"], digit_labels
+        ),
+        "explained_variance_ratio": result["explained_variance_ratio"],
+        "imputation": result.get("imputation", {}),
+    }
+    return summary
+
+
+def print_dpca_summary(summary: dict) -> None:
+    ev = summary["explained_variance_ratio"]
+    ev_text = ", ".join(
+        f"{key}={sum(ev.get(key, [])) * 100.0:.2f}% "
+        f"({', '.join(f'{v * 100.0:.2f}' for v in ev.get(key, []))})"
+        for key in ("d", "s", "ds")
+    )
+    print(
+        f"[dPCA:{summary['method']}] first-axis angle="
+        f"{summary['first_axis_angle_deg']:.2f} deg; subspace angles="
+        f"{[round(v, 2) for v in summary['subspace_angles_deg']]}"
+    )
+    print(
+        f"[dPCA:{summary['method']}] leakage sector-on-digit="
+        f"{summary['sector_leakage_on_digit_plane']:.4f}, digit-on-sector="
+        f"{summary['digit_leakage_on_sector_plane']:.4f}"
+    )
+    print(f"[dPCA:{summary['method']}] explained variance ratio: {ev_text}")
+
+
+def save_dpca_variance_json(out_dir: str, method_suffix: str, payload: dict) -> None:
+    os.makedirs(out_dir, exist_ok=True)
+    method_path = os.path.join(out_dir, f"dpca_variance{method_suffix}.json")
+    with open(method_path, "w") as f:
+        json.dump(payload, f, indent=2)
+    legacy_path = os.path.join(out_dir, "dpca_variance.json")
+    shutil.copyfile(method_path, legacy_path)
+    print(f"Saved {method_path}")
+    print(f"Saved {legacy_path}")
 
 
 def save_dpca_scatter(
-    coords_90x2: np.ndarray,
+    coords_digit_90x2: np.ndarray,
+    coords_sector_90x2: np.ndarray,
     digit_labels: np.ndarray,
     sector_labels: np.ndarray,
     out_dir: str,
+    file_suffix: str = "",
 ) -> None:
     """
     Single 1×2 figure: left = color by digit (0–9), right = by sector (0–8);
@@ -286,9 +607,11 @@ def save_dpca_scatter(
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
 
-    c = np.asarray(coords_90x2, dtype=np.float64)
-    if c.shape != (90, 2):
-        raise ValueError(f"coords must be (90, 2), got {c.shape}")
+    c_digit = np.asarray(coords_digit_90x2, dtype=np.float64)
+    c_sector = np.asarray(coords_sector_90x2, dtype=np.float64)
+    if c_digit.shape != (90, 2) or c_sector.shape != (90, 2):
+        raise ValueError(f"coords must be (90, 2), got {c_digit.shape} and {c_sector.shape}")
+    c = np.stack([c_digit[:, 0], c_sector[:, 0]], axis=1)
     digit_labels = np.asarray(digit_labels, dtype=np.int64).reshape(90)
     sector_labels = np.asarray(sector_labels, dtype=np.int64).reshape(90)
 
@@ -368,18 +691,23 @@ def save_dpca_scatter(
     _decorate(ax1)
 
     fig.tight_layout()
-    out_path = os.path.join(out_dir, "dpca_scatter.png")
+    out_path = os.path.join(out_dir, f"dpca_scatter{file_suffix}.png")
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
+    if file_suffix:
+        legacy_path = os.path.join(out_dir, "dpca_scatter.png")
+        shutil.copyfile(out_path, legacy_path)
 
 
 def save_dpca_2x2_orthogonality(
-    X_flat: np.ndarray,
+    coords_digit_90x2: np.ndarray,
+    coords_sector_90x2: np.ndarray,
     digit_labels: np.ndarray,
     sector_labels: np.ndarray,
-    W_digit: np.ndarray,
-    W_sector: np.ndarray,
     out_dir: str,
+    file_suffix: str = "",
+    write_legacy_copy: bool = True,
+    dodge_conditions: bool = False,
 ) -> None:
     """
     2×2 panels: digit-PC plane vs sector-PC plane × digit vs sector coloring (orthogonality check).
@@ -390,19 +718,15 @@ def save_dpca_2x2_orthogonality(
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
 
-    Xf = np.asarray(X_flat, dtype=np.float64)
-    if Xf.shape[0] != 90:
-        raise ValueError(f"X_flat must be (90, D), got {Xf.shape}")
-    Wd = np.asarray(W_digit, dtype=np.float64)
-    Ws = np.asarray(W_sector, dtype=np.float64)
-    if Wd.shape[1] != 2 or Ws.shape[1] != 2:
-        raise ValueError(f"W_digit / W_sector must have 2 columns, got {Wd.shape}, {Ws.shape}")
-
+    coords_digit = np.asarray(coords_digit_90x2, dtype=np.float64)
+    coords_sector = np.asarray(coords_sector_90x2, dtype=np.float64)
+    if coords_digit.shape != (90, 2) or coords_sector.shape != (90, 2):
+        raise ValueError(
+            f"coords_digit / coords_sector must be (90, 2), got "
+            f"{coords_digit.shape} and {coords_sector.shape}"
+        )
     digit_labels = np.asarray(digit_labels, dtype=np.int64).reshape(90)
     sector_labels = np.asarray(sector_labels, dtype=np.int64).reshape(90)
-
-    coords_digit = Xf @ Wd
-    coords_sector = Xf @ Ws
 
     def _sym_lim(c: np.ndarray) -> tuple[float, float]:
         m = float(np.max(np.abs(c))) if c.size else 0.0
@@ -413,6 +737,33 @@ def save_dpca_2x2_orthogonality(
 
     lo_d, hi_d = _sym_lim(coords_digit)
     lo_s, hi_s = _sym_lim(coords_sector)
+
+    def _dodged(xy: np.ndarray, labels: np.ndarray, lim: tuple[float, float]) -> np.ndarray:
+        if not dodge_conditions:
+            return xy
+        vals = sorted(int(v) for v in np.unique(labels))
+        n_cols = int(np.ceil(np.sqrt(len(vals))))
+        n_rows = int(np.ceil(len(vals) / n_cols))
+        span = max(float(lim[1] - lim[0]), 1e-12)
+        step = span * 0.018
+        offsets = {}
+        for idx, val in enumerate(vals):
+            col = idx % n_cols
+            row = idx // n_cols
+            offsets[val] = np.array(
+                [
+                    (col - (n_cols - 1) / 2.0) * step,
+                    (row - (n_rows - 1) / 2.0) * step,
+                ],
+                dtype=np.float64,
+            )
+        out = xy.copy()
+        for idx, val in enumerate(labels.astype(np.int64)):
+            out[idx] += offsets[int(val)]
+        return out
+
+    coords_digit_plot = _dodged(coords_digit, sector_labels, (lo_d, hi_d))
+    coords_sector_plot = _dodged(coords_sector, digit_labels, (lo_s, hi_s))
 
     digit_handles = [
         Line2D(
@@ -478,7 +829,13 @@ def save_dpca_2x2_orthogonality(
                 )
             ax.legend(handles=sector_handles, title="sector", **legend_kw)
 
-    def _decorate(ax, xlabel: str, ylabel: str, xlim: tuple[float, float], ylim: tuple[float, float]) -> None:
+    def _decorate(
+        ax,
+        xlabel: str,
+        ylabel: str,
+        xlim: tuple[float, float],
+        ylim: tuple[float, float],
+    ) -> None:
         ax.axhline(0.0, color="0.5", linewidth=0.85, linestyle="--", zorder=1)
         ax.axvline(0.0, color="0.5", linewidth=0.85, linestyle="--", zorder=1)
         ax.set_xlim(xlim)
@@ -492,26 +849,32 @@ def save_dpca_2x2_orthogonality(
     fig, axes = plt.subplots(2, 2, figsize=(12, 10), sharex="row", sharey="row")
 
     axes[0, 0].set_title("[expected: clustered]", fontsize=9)
-    _draw_points(axes[0, 0], coords_digit, by_digit=True)
+    _draw_points(axes[0, 0], coords_digit_plot, by_digit=True)
     _decorate(axes[0, 0], "dPC digit-1", "dPC digit-2", (lo_d, hi_d), (lo_d, hi_d))
 
     axes[0, 1].set_title("[expected: mixed if orthogonal]", fontsize=9)
-    _draw_points(axes[0, 1], coords_digit, by_digit=False)
+    _draw_points(axes[0, 1], coords_digit_plot, by_digit=False)
     _decorate(axes[0, 1], "dPC digit-1", "dPC digit-2", (lo_d, hi_d), (lo_d, hi_d))
 
     axes[1, 0].set_title("[expected: mixed if orthogonal]", fontsize=9)
-    _draw_points(axes[1, 0], coords_sector, by_digit=True)
+    _draw_points(axes[1, 0], coords_sector_plot, by_digit=True)
     _decorate(axes[1, 0], "dPC sector-1", "dPC sector-2", (lo_s, hi_s), (lo_s, hi_s))
 
     axes[1, 1].set_title("[expected: clustered]", fontsize=9)
-    _draw_points(axes[1, 1], coords_sector, by_digit=False)
+    _draw_points(axes[1, 1], coords_sector_plot, by_digit=False)
     _decorate(axes[1, 1], "dPC sector-1", "dPC sector-2", (lo_s, hi_s), (lo_s, hi_s))
 
-    fig.suptitle("dPCA orthogonality check: digit vs sector axes", fontsize=12)
+    title = "dPCA orthogonality check: digit vs sector axes"
+    if dodge_conditions:
+        title += " (condition-dodged)"
+    fig.suptitle(title, fontsize=12)
     fig.tight_layout(rect=[0, 0, 0.88, 0.95])
-    out_path = os.path.join(out_dir, "dpca_2x2_orthogonality.png")
+    out_path = os.path.join(out_dir, f"dpca_2x2_orthogonality{file_suffix}.png")
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
+    if file_suffix and write_legacy_copy:
+        legacy_path = os.path.join(out_dir, "dpca_2x2_orthogonality.png")
+        shutil.copyfile(out_path, legacy_path)
 
 
 def discrete_equal_bins_colorscale(colors: list[str]) -> list[list]:
@@ -555,20 +918,80 @@ def main() -> None:
         if X_dpca.ndim != 3 or X_dpca.shape[1:] != (10, 9):
             raise ValueError(f"pop_act_dpca must be (D, 10, 9), got {X_dpca.shape}")
 
-        W_digit, W_sector = run_dpca(X_dpca)
-        D = X_dpca.shape[0]
-        X_flat = np.nan_to_num(X_dpca.reshape(D, 90).T.astype(np.float64), nan=0.0)
-        W = np.stack([W_digit[:, 0].astype(np.float64), W_sector[:, 0].astype(np.float64)], axis=1)
-        coords = (X_flat @ W).astype(np.float32)
-
+        counts = _counts_from_dir(args.pop_act_dir)
         digit_labels = np.arange(90, dtype=np.int64) // 9
         sector_labels = np.arange(90, dtype=np.int64) % 9
-        save_dpca_scatter(coords, digit_labels, sector_labels, out_dir)
-        save_dpca_2x2_orthogonality(
-            X_flat, digit_labels, sector_labels, W_digit, W_sector, out_dir
+
+        condensed = run_dpca_condensed(X_dpca)
+        condensed_summary = summarize_dpca_result(condensed, digit_labels, sector_labels)
+        print_dpca_summary(condensed_summary)
+
+        stability_summary = None
+        if args.dpca_method == "rrr":
+            if float(args.dpca_regularizer) != 0.0:
+                rrr_zero = run_dpca_rrr(X_dpca, regularizer=0.0, counts=counts)
+                stability_summary = summarize_dpca_result(rrr_zero, digit_labels, sector_labels)
+                print_dpca_summary(stability_summary)
+            result = run_dpca(
+                X_dpca,
+                method="rrr",
+                regularizer=float(args.dpca_regularizer),
+                counts=counts,
+            )
+        else:
+            result = condensed
+
+        summary = summarize_dpca_result(result, digit_labels, sector_labels)
+        print_dpca_summary(summary)
+        if args.dpca_method == "rrr":
+            delta_angle = (
+                summary["first_axis_angle_deg"] - condensed_summary["first_axis_angle_deg"]
+            )
+            delta_leak = (
+                summary["sector_leakage_on_digit_plane"]
+                - condensed_summary["sector_leakage_on_digit_plane"]
+            )
+            print(
+                "[dPCA compare] rrr - condensed: "
+                f"first-axis angle delta={delta_angle:.2f} deg, "
+                f"sector-on-digit leakage delta={delta_leak:.4f}"
+            )
+
+        method_suffix = f"_{args.dpca_method}"
+        save_dpca_scatter(
+            result["coords_digit"],
+            result["coords_sector"],
+            digit_labels,
+            sector_labels,
+            out_dir,
+            file_suffix=method_suffix,
         )
-        print(f"Saved {os.path.join(out_dir, 'dpca_scatter.png')}")
-        print(f"Saved {os.path.join(out_dir, 'dpca_2x2_orthogonality.png')}")
+        save_dpca_2x2_orthogonality(
+            result["coords_digit"],
+            result["coords_sector"],
+            digit_labels,
+            sector_labels,
+            out_dir,
+            file_suffix=method_suffix,
+        )
+        payload = {
+            "method": args.dpca_method,
+            "pop_act_dpca": os.path.abspath(primary),
+            "regularizer": float(args.dpca_regularizer)
+            if args.dpca_method == "rrr"
+            else None,
+            "selected": summary,
+            "condensed_reference": condensed_summary,
+            "rrr_zero_regularizer_reference": stability_summary,
+        }
+        save_dpca_variance_json(out_dir, method_suffix, payload)
+        print(f"Saved {os.path.join(out_dir, f'dpca_scatter{method_suffix}.png')}")
+        print(f"Saved {os.path.join(out_dir, f'dpca_2x2_orthogonality{method_suffix}.png')}")
+        print(f"Saved compatibility copy {os.path.join(out_dir, 'dpca_scatter.png')}")
+        print(
+            "Saved compatibility copy "
+            f"{os.path.join(out_dir, 'dpca_2x2_orthogonality.png')}"
+        )
         return
 
     pop_path = os.path.join(args.pop_act_dir, "pop_act.npy")
@@ -688,7 +1111,11 @@ def main() -> None:
 
     if args.reducer == "pca" and pca_ratios is not None:
         bar_path = os.path.join(out_dir, "pca_explained_variance_bars.png")
-        save_pca_explained_variance_bar_chart(bar_path, pca_ratios, max_components=args.pca_variance_bars)
+        save_pca_explained_variance_bar_chart(
+            bar_path,
+            pca_ratios,
+            max_components=args.pca_variance_bars,
+        )
         print(f"Saved {bar_path}")
 
 

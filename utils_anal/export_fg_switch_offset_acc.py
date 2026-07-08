@@ -4,7 +4,7 @@
 char + sector accuracy vs ``labels[:,:,0]`` / ``labels[:,:,1]``.
 
 ``--switch_target bg``: same model and same **foreground** char/sector metrics as fg mode,
-but pre5/post5 windows are aligned to **bg_switch** transition times.
+but pre/post windows are aligned to **bg_switch** transition times.
 
 The optional ``_finetune_fcchars_only`` / head-training helpers and CLI flags are retained
 for reference but **not invoked** from ``main()`` (legacy bg-multiset head path).
@@ -45,13 +45,24 @@ from utils.train_predict_all_chars import loss_char_all_chars
 from utils.train_helpers import pick_cuda_device_index_prefer_no_python
 from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset, resolve_device
 
-OFFSET_ORDER: List[int] = [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]
-OFFSET_LABELS: List[str] = ["pre5", "pre4", "pre3", "pre2", "pre1", "post1", "post2", "post3", "post4", "post5"]
+DEFAULT_WINDOW_RADIUS = 5
+
+
+def build_offset_order(window_radius: int) -> List[int]:
+    """Return offsets ordered as preN..pre1, post1..postN."""
+    if window_radius <= 0:
+        raise ValueError("--window_radius must be a positive integer")
+    return list(range(-window_radius, 0)) + list(range(1, window_radius + 1))
+
+
+def build_offset_labels(offset_order: List[int]) -> List[str]:
+    """Return human-readable labels for ``build_offset_order`` output."""
+    return [f"pre{abs(off)}" if off < 0 else f"post{off}" for off in offset_order]
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Export per-offset (pre5..post5) test accuracies for one or more checkpoints."
+        description="Export per-offset switch-window test accuracies for one or more checkpoints."
     )
     parser.add_argument(
         "--switch_target",
@@ -112,6 +123,12 @@ def parse_args() -> argparse.Namespace:
         default="40h-float32",
         help="Stimulus/label filename tail after split base (e.g. 40h-float32 -> stimulus_reg-test-40h-float32.npy).",
     )
+    parser.add_argument(
+        "--window_radius",
+        type=int,
+        default=DEFAULT_WINDOW_RADIUS,
+        help="Number of frames before/after each switch to export (default: 5).",
+    )
     parser.add_argument("--use_mmap", action="store_true", default=True)
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
@@ -137,10 +154,12 @@ def _parse_model_key(ckpt_path: str) -> str:
     return "unknown"
 
 
-def _build_offset_targets_from_switch(switch_01: np.ndarray) -> np.ndarray:
+def _build_offset_targets_from_switch(switch_01: np.ndarray, window_radius: int) -> np.ndarray:
     """
-    Per-frame offset in {-5..-1, 1..5} with the same rules as fg pre5/post5 windowing.
+    Per-frame offset in {-N..-1, 1..N} with the same rules as fg pre/post windowing.
     """
+    if window_radius <= 0:
+        raise ValueError("window_radius must be a positive integer")
     switch_01 = np.asarray(switch_01).astype(np.int32, copy=False)
     num_frames = int(switch_01.shape[0])
     switches = np.where(switch_01 != 0)[0].tolist()
@@ -148,7 +167,7 @@ def _build_offset_targets_from_switch(switch_01: np.ndarray) -> np.ndarray:
     forbidden = np.zeros(num_frames, dtype=bool)
     for i in range(1, len(switches)):
         s_prev, s_curr = switches[i - 1], switches[i]
-        if s_curr - s_prev < 10:
+        if s_curr - s_prev < 2 * window_radius:
             left = s_prev + 1
             right = s_curr
             forbidden[left:right] = True
@@ -156,11 +175,11 @@ def _build_offset_targets_from_switch(switch_01: np.ndarray) -> np.ndarray:
     post_offset = np.zeros(num_frames, dtype=np.int8)
     pre_offset = np.zeros(num_frames, dtype=np.int8)
     for s in switches:
-        for dt in range(0, 5):
+        for dt in range(0, window_radius):
             t = s + dt
             if 0 <= t < num_frames:
                 post_offset[t] = np.int8(dt + 1)
-        for dt in range(1, 6):
+        for dt in range(1, window_radius + 1):
             t = s - dt
             if 0 <= t < num_frames:
                 pre_offset[t] = np.int8(-dt)
@@ -175,7 +194,7 @@ def _build_offset_targets_from_switch(switch_01: np.ndarray) -> np.ndarray:
     return offset_targets
 
 
-def _offset_stats_template_fg() -> Dict[int, Dict[str, int]]:
+def _offset_stats_template_fg(offset_order: List[int]) -> Dict[int, Dict[str, int]]:
     return {
         off: {
             "char_correct": 0,
@@ -183,7 +202,7 @@ def _offset_stats_template_fg() -> Dict[int, Dict[str, int]]:
             "pos_correct": 0,
             "pos_total": 0,
         }
-        for off in OFFSET_ORDER
+        for off in offset_order
     }
 
 
@@ -201,6 +220,7 @@ def evaluate_ckpt_offset_acc(
     batch_size: int,
     *,
     switch_source: str,
+    window_radius: int = DEFAULT_WINDOW_RADIUS,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Per-offset char (fg id) and sector accuracy; windows from ``fg_switch`` or ``bg_switch``.
@@ -216,8 +236,9 @@ def evaluate_ckpt_offset_acc(
     if switch_arr is None:
         raise RuntimeError(f"Test dataset does not expose {sw_name}; cannot build offset labels.")
 
-    offset_targets = _build_offset_targets_from_switch(switch_arr)
-    stats = _offset_stats_template_fg()
+    offset_order = build_offset_order(window_radius)
+    offset_targets = _build_offset_targets_from_switch(switch_arr, window_radius)
+    stats = _offset_stats_template_fg(offset_order)
 
     dl = DataLoader(
         test_ds,
@@ -258,7 +279,7 @@ def evaluate_ckpt_offset_acc(
             global_end = global_start + bs * seq_len
             batch_offsets = offset_targets[global_start:global_end].reshape(bs, seq_len)
 
-            for off in OFFSET_ORDER:
+            for off in offset_order:
                 m = batch_offsets == off
                 n = int(m.sum())
                 if n == 0:
@@ -272,10 +293,10 @@ def evaluate_ckpt_offset_acc(
             if samples_done % 200 < bs or bidx == 0:
                 print(f"  [{switch_source} eval] batches={bidx + 1}, sequences≈{samples_done}")
 
-    char_acc = np.zeros(len(OFFSET_ORDER), dtype=np.float32)
-    pos_acc = np.zeros(len(OFFSET_ORDER), dtype=np.float32)
-    frame_counts = np.zeros(len(OFFSET_ORDER), dtype=np.int64)
-    for i, off in enumerate(OFFSET_ORDER):
+    char_acc = np.zeros(len(offset_order), dtype=np.float32)
+    pos_acc = np.zeros(len(offset_order), dtype=np.float32)
+    frame_counts = np.zeros(len(offset_order), dtype=np.int64)
+    for i, off in enumerate(offset_order):
         c_tot = stats[off]["char_total"]
         p_tot = stats[off]["pos_total"]
         frame_counts[i] = c_tot
@@ -294,10 +315,17 @@ def evaluate_ckpt_offset_acc_fg(
     test_ds,
     device: torch.device,
     batch_size: int,
+    window_radius: int = DEFAULT_WINDOW_RADIUS,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Backward-compatible alias for ``evaluate_ckpt_offset_acc(..., switch_source='fg')``."""
     return evaluate_ckpt_offset_acc(
-        ckpt_path, model, test_ds, device, batch_size, switch_source="fg"
+        ckpt_path,
+        model,
+        test_ds,
+        device,
+        batch_size,
+        switch_source="fg",
+        window_radius=window_radius,
     )
 
 
@@ -411,6 +439,8 @@ def _save_outputs_fg(
     char_acc: np.ndarray,
     pos_acc: np.ndarray,
     frame_counts: np.ndarray,
+    offset_order: List[int],
+    offset_labels: List[str],
 ) -> None:
     ckpt_tag = os.path.basename(ckpt_path).replace("_model.pth", "")
     npz_path = os.path.join(save_dir, f"fg_switch_offset_acc_{ckpt_tag}.npz")
@@ -418,8 +448,8 @@ def _save_outputs_fg(
 
     np.savez(
         npz_path,
-        offset_order=np.asarray(OFFSET_ORDER, dtype=np.int64),
-        offset_labels=np.asarray(OFFSET_LABELS, dtype="<U6"),
+        offset_order=np.asarray(offset_order, dtype=np.int64),
+        offset_labels=np.asarray(offset_labels, dtype="<U8"),
         char_acc=char_acc.astype(np.float32),
         sector_acc=pos_acc.astype(np.float32),
         frame_counts=frame_counts.astype(np.int64),
@@ -429,8 +459,9 @@ def _save_outputs_fg(
             {
                 "ckpt": os.path.abspath(ckpt_path),
                 "switch_target": "fg",
-                "offset_order": OFFSET_ORDER,
-                "offset_labels": OFFSET_LABELS,
+                "window_radius": len(offset_order) // 2,
+                "offset_order": offset_order,
+                "offset_labels": offset_labels,
                 "frame_counts": frame_counts.astype(np.int64).tolist(),
             },
             f,
@@ -446,6 +477,8 @@ def _save_outputs_bg(
     char_acc: np.ndarray,
     pos_acc: np.ndarray,
     frame_counts: np.ndarray,
+    offset_order: List[int],
+    offset_labels: List[str],
 ) -> None:
     ckpt_tag = os.path.basename(ckpt_path).replace("_model.pth", "")
     npz_path = os.path.join(save_dir, f"bg_switch_offset_acc_{ckpt_tag}.npz")
@@ -453,8 +486,8 @@ def _save_outputs_bg(
 
     np.savez(
         npz_path,
-        offset_order=np.asarray(OFFSET_ORDER, dtype=np.int64),
-        offset_labels=np.asarray(OFFSET_LABELS, dtype="<U6"),
+        offset_order=np.asarray(offset_order, dtype=np.int64),
+        offset_labels=np.asarray(offset_labels, dtype="<U8"),
         char_acc=char_acc.astype(np.float32),
         sector_acc=pos_acc.astype(np.float32),
         frame_counts=frame_counts.astype(np.int64),
@@ -464,8 +497,9 @@ def _save_outputs_bg(
             {
                 "ckpt": os.path.abspath(ckpt_path),
                 "switch_target": "bg",
-                "offset_order": OFFSET_ORDER,
-                "offset_labels": OFFSET_LABELS,
+                "window_radius": len(offset_order) // 2,
+                "offset_order": offset_order,
+                "offset_labels": offset_labels,
                 "frame_counts": frame_counts.astype(np.int64).tolist(),
             },
             f,
@@ -501,10 +535,13 @@ def main() -> None:
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
+    offset_order = build_offset_order(args.window_radius)
+    offset_labels = build_offset_labels(offset_order)
 
     print("Building test dataset...")
     test_ds, num_pos = build_test_dataset(args)
     print(f"Test dataset size: {len(test_ds)}")
+    print(f"Window radius: {args.window_radius}; offsets: {offset_labels}")
 
     ckpt_paths = _collect_ckpts(args)
     print(f"Found {len(ckpt_paths)} checkpoints.")
@@ -519,11 +556,28 @@ def main() -> None:
             device=device,
             batch_size=args.batch_size,
             switch_source=args.switch_target,
+            window_radius=args.window_radius,
         )
         if args.switch_target == "fg":
-            _save_outputs_fg(args.save_dir, ckpt, char_acc, pos_acc, frame_counts)
+            _save_outputs_fg(
+                args.save_dir,
+                ckpt,
+                char_acc,
+                pos_acc,
+                frame_counts,
+                offset_order,
+                offset_labels,
+            )
         else:
-            _save_outputs_bg(args.save_dir, ckpt, char_acc, pos_acc, frame_counts)
+            _save_outputs_bg(
+                args.save_dir,
+                ckpt,
+                char_acc,
+                pos_acc,
+                frame_counts,
+                offset_order,
+                offset_labels,
+            )
 
 
 if __name__ == "__main__":

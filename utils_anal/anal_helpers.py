@@ -13,7 +13,9 @@ import torch
 
 from train_model import MC_RNN_Dataset
 from utils.train_gawf_core import GaWFRNNConv, MultiLayerGaWFRNNConv
+from utils.train_mamba_core import MambaConv
 from utils.train_rnn_core import GRUConv, LSTMConv, RNNConv
+from utils.train_s5_core import S5Conv
 from utils.train_helpers import PathHelper, create_datasets
 from utils_viz.model_train_single_result import parse_hparams_from_filename
 
@@ -106,6 +108,8 @@ _HPARAM_MODEL_TO_KEY: Dict[str, str] = {
     "RNN": "rnn",
     "LSTM": "lstm",
     "GRU": "gru",
+    "MAMBA": "mamba",
+    "S5": "s5",
 }
 
 
@@ -136,6 +140,8 @@ def build_model_from_ckpt(
         "rnn": RNNConv,
         "lstm": LSTMConv,
         "gru": GRUConv,
+        "mamba": MambaConv,
+        "s5": S5Conv,
     }
     model_cls = model_class_map[model_key]
     model_kwargs = {}
@@ -145,6 +151,11 @@ def build_model_from_ckpt(
             model_kwargs["feedback_dim"] = int(parsed_feedback_dim)
         if model_key == "gawf_multi":
             model_kwargs["num_layers"] = int(hparams.get("gawf_layers", 2))
+    elif model_key == "mamba":
+        model_kwargs["mamba_d_model"] = int(hparams.get("d_model", 170))
+    elif model_key == "s5":
+        model_kwargs["s5_d_model"] = int(hparams.get("d_model", 256))
+        model_kwargs["s5_state_size"] = int(hparams.get("state_size", 128))
 
     model = model_cls(
         num_classes=num_classes,
@@ -153,7 +164,7 @@ def build_model_from_ckpt(
         device=str(device),
         cnn_dropout=cnn_dropout,
         rnn_dropout=rnn_dropout,
-        hidden_size=hidden_size,
+        **({} if model_key in ("mamba", "s5") else {"hidden_size": hidden_size}),
         max_chars=15,
         predict_all_chars=(num_pos == 0),
         **model_kwargs,

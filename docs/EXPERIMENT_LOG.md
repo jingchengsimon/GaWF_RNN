@@ -169,15 +169,24 @@ slightly above the best 40h `hidden_size=512` run (`task_1019`, best val char
   - `mamba` / `s5`: `gen_hparam_mamba_s5_grid` (`mamba` 40h slice `39/40` valid;
     `s5` 40h slice `20/20` valid at `state=128`, rerun complete `2026-06-28`,
     superseding legacy `state=189` outputs; results stored on `/scratch`).
+- Test evaluation backfill: on 2026-07-06, the six copied best checkpoints in
+  `results/train_data/clutter_best_6model_param_matched_40h` were evaluated on
+  `stimulus_reg-test-40h-float32` from `/scratch/js3269/stimuli`. The output
+  artifact is
+  `results/train_data/clutter_best_6model_param_matched_40h/test_acc_40h_eval.json`.
+  Evaluation reused the training eval protocol; Mamba was run on CPU with
+  PyTorch reference kernels (`causal_conv1d_fn=None`,
+  `selective_scan_fn=selective_scan_ref`) because the installed fast kernels
+  require CUDA.
 
-| Model | Params | Grid | Best task | Width | lr | weight decay | Train char acc | Val char acc | Char gap | Val sector acc | Val loss char | Val loss pos | Epochs |
-| --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `gawf` | 586,067 | `gen_hparam_full_grid` | `task_1007` | `hidden_size=256` | 0.005 | 0.001 | 93.332563 | 90.093559 | 3.24 | 93.642535 | 0.361951 | 0.194324 | 72 |
-| `mamba` | 587,275 | `gen_hparam_mamba_s5_grid` | `task_0131` | `d_model=170` | 0.001 | 0.001 | 91.620527 | 86.565073 | 5.06 | 93.375942 | 0.444332 | 0.188731 | 34 |
-| `gru` | 586,905 | `gen_hparam_40h_param_match` | `task_0047` | `hidden_size=105` | 0.005 | 0.001 | 88.757107 | 84.831456 | 3.93 | 92.281887 | 0.504102 | 0.226703 | 31 |
-| `rnn` | 586,865 | `gen_hparam_40h_param_match` | `task_0009` | `hidden_size=275` | 0.001 | 1e-05 | 91.302709 | 84.149388 | 7.15 | 91.892570 | 0.536043 | 0.241285 | 62 |
-| `lstm` | 584,675 | `gen_hparam_40h_param_match` | `task_0027` | `hidden_size=80` | 0.001 | 0.001 | 89.948382 | 83.607920 | 6.34 | 91.607884 | 0.557105 | 0.253663 | 42 |
-| `s5` | 587,475 | `gen_hparam_mamba_s5_grid` | `task_0148` | `d_model=256`, `state=128` | 0.001 | 0.0 | 86.168562 | 79.998780 | 6.17 | 90.728542 | 0.653471 | 0.263917 | 98 |
+| Model | Params | Grid | Best task | Width | lr | weight decay | Train char acc | Val char acc | Test char acc | Train sector acc | Val sector acc | Test sector acc | Char gap | Val loss char | Val loss pos | Epochs |
+| --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `gawf` | 586,067 | `gen_hparam_full_grid` | `task_1007` | `hidden_size=256` | 0.005 | 0.001 | 93.332563 | 90.093559 | 85.619700 | 95.230321 | 93.642535 | 92.699464 | 3.24 | 0.361951 | 0.194324 | 72 |
+| `mamba` | 587,275 | `gen_hparam_mamba_s5_grid` | `task_0131` | `d_model=170` | 0.001 | 0.001 | 91.620527 | 86.565073 | 82.672282 | 95.321002 | 93.375942 | 92.224585 | 5.06 | 0.444332 | 0.188731 | 34 |
+| `gru` | 586,905 | `gen_hparam_40h_param_match` | `task_0047` | `hidden_size=105` | 0.005 | 0.001 | 88.757107 | 84.831456 | 80.168615 | 92.553929 | 92.281887 | 90.595980 | 3.93 | 0.504102 | 0.226703 | 31 |
+| `rnn` | 586,865 | `gen_hparam_40h_param_match` | `task_0009` | `hidden_size=275` | 0.001 | 1e-05 | 91.302709 | 84.149388 | 79.674000 | 93.384007 | 91.892570 | 89.924517 | 7.15 | 0.536043 | 0.241285 | 62 |
+| `lstm` | 584,675 | `gen_hparam_40h_param_match` | `task_0027` | `hidden_size=80` | 0.001 | 0.001 | 89.948382 | 83.607920 | 79.806536 | 92.823792 | 91.607884 | 90.232043 | 6.34 | 0.557105 | 0.253663 | 42 |
+| `s5` | 587,475 | `gen_hparam_mamba_s5_grid` | `task_0148` | `d_model=256`, `state=128` | 0.001 | 0.0 | 86.168562 | 79.998780 | 75.387371 | 91.545977 | 90.728542 | 88.939664 | 6.17 | 0.653471 | 0.263917 | 98 |
 
 - Param counts: `python utils_anal/model_param_counts.py --hidden_rnn 275
   --hidden_lstm 80 --hidden_gru 105 --hidden_gawf 256 --mamba_d_model 170
@@ -198,8 +207,8 @@ slightly above the best 40h `hidden_size=512` run (`task_1019`, best val char
 | `s5` | `s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5` |
 
 - Current conclusion (param-matched, 40h train + 40h validation):
-  1. **GAWF** (`task_1007`) still leads on val char (`90.09%`) with the smallest
-     char gap (`3.24` pt) among the top models.
+  1. **GAWF** (`task_1007`) still leads on val char (`90.09%`) and test char
+     (`85.62%`) with the smallest char gap (`3.24` pt) among the top models.
   2. **Mamba** (`task_0131`) is second on char (`86.57%`) and closest on sector
      (`93.38%` vs GAWF `93.64%`).
   3. At matched width, **GRU/RNN/LSTM** all fall to `83.6-84.8%` val char,
