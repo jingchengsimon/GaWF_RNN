@@ -16,6 +16,19 @@ ATARI_PILOT_ENVS = (
 )
 
 
+def _register_ale_envs(gym) -> None:
+    """Register ALE namespaces for Gymnasium versions that require explicit setup."""
+    try:
+        import ale_py
+    except ImportError as exc:
+        raise ImportError(
+            "Atari experiments require ale-py, e.g. "
+            "`pip install 'gymnasium[atari]' ale-py`."
+        ) from exc
+    if hasattr(gym, "register_envs"):
+        gym.register_envs(ale_py)
+
+
 def _frame_stack(env, gym, frame_stack: int):
     if frame_stack <= 1:
         return env
@@ -47,6 +60,7 @@ def make_atari_env(
                 "Atari experiments require gymnasium with Atari extras, e.g. "
                 "`pip install 'gymnasium[atari,accept-rom-license]'`."
             ) from exc
+        _register_ale_envs(gym)
 
         env = gym.make(
             env_id,
@@ -92,6 +106,7 @@ def make_vector_atari_env(
             "Atari experiments require gymnasium with Atari extras, e.g. "
             "`pip install 'gymnasium[atari,accept-rom-license]'`."
         ) from exc
+    _register_ale_envs(gym)
 
     env_fns = [
         make_atari_env(env_id, seed, idx, frame_stack, capture_video, video_dir)
