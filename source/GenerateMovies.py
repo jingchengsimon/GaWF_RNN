@@ -9,12 +9,10 @@ deprecated libraries.
 Initial code was produced with Gemini AI. """
 
 import os
-import cv2
 import numpy as np
 import numpy.lib.format as npfmt
 
 import argparse
-import torchvision
 import csv
 from dataclasses import dataclass, field
 from typing import List, Literal, Tuple
@@ -43,6 +41,7 @@ class StimulusConfig:
 
     # Switch Event Properties
     mean_switch_interval_seconds: float = 5.0
+    switch_mode: Literal["exclusive", "joint"] = "exclusive"
 
     # Output Settings
     output_dir: str = "stimulus_output"
@@ -116,6 +115,8 @@ class MovingCharacter:
 
 def load_mnist_data(config=None):
     """Loads MNIST dataset using PyTorch/torchvision and organizes it by digit. Optionally restricts to a sample index range."""
+    import torchvision
+
     print("Loading MNIST dataset using PyTorch/torchvision...")
     mnist_dataset = torchvision.datasets.MNIST(
         root='./mnist_data_pytorch',
@@ -203,6 +204,8 @@ def generate_stimulus_video(config: StimulusConfig, mnist_data: dict):
 
     video_writer = None
     if write_mp4:
+        import cv2
+
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         video_writer = cv2.VideoWriter(
             video_path, fourcc, config.fps, (config.width, config.height)
@@ -249,6 +252,34 @@ def generate_stimulus_video(config: StimulusConfig, mnist_data: dict):
 
     next_switch_frame = int(np.random.exponential(scale=mean_switch_interval_frames))
 
+    def change_foreground() -> None:
+        """Resample the foreground identity, position, and speed."""
+        nonlocal fg_speed
+        fg_speed = np.random.choice(config.fg_speeds)
+        fg_label, fg_img = get_random_digit(mnist_data)
+        if np.linalg.norm(fg_char.vel) == 0:
+            current_direction = np.array([1.0, 0.0])
+        else:
+            current_direction = fg_char.vel / np.linalg.norm(fg_char.vel)
+
+        fg_char.vel = current_direction * fg_speed
+        fg_char.pos = np.random.rand(2) * [config.width - 28, config.height - 28] + 14
+        fg_char.label = fg_label
+        fg_char.image = fg_img
+
+    def change_background() -> None:
+        """Resample all background characters and their shared speed scale."""
+        nonlocal bg_char_count, bg_mean_speed, background_chars
+        bg_char_count = np.random.choice(config.bg_char_counts)
+        bg_mean_speed = np.random.choice(config.bg_mean_speeds)
+        background_chars = []
+        for _ in range(bg_char_count):
+            bg_label, bg_img = get_random_digit(mnist_data)
+            bg_pos = np.random.rand(2) * [config.width - 28, config.height - 28] + 14
+            angle = np.random.uniform(0, 2 * np.pi)
+            bg_vel = np.array([np.cos(angle), np.sin(angle)]) * bg_mean_speed
+            background_chars.append(MovingCharacter(bg_label, bg_img, bg_pos, bg_vel))
+
     # --- Simulation Loop ---
     for frame_idx in tqdm(range(total_frames), desc=f"Generating Video"):
         # Initialize switch flags for the current frame
@@ -257,32 +288,22 @@ def generate_stimulus_video(config: StimulusConfig, mnist_data: dict):
 
         # Check for switch event
         if frame_idx >= next_switch_frame:
-            if np.random.rand() < 0.5:
+            if config.switch_mode == "joint":
+                # --- Change Foreground and Background together ---
+                fg_switch_flag = 1
+                bg_switch_flag = 1
+                change_foreground()
+                change_background()
+            elif config.switch_mode == "exclusive" and np.random.rand() < 0.5:
                 # --- Change Foreground ---
                 fg_switch_flag = 1  # Set flag to 1 for this frame
-                fg_speed = np.random.choice(config.fg_speeds)
-                fg_label, fg_img = get_random_digit(mnist_data)
-                if np.linalg.norm(fg_char.vel) == 0:
-                    current_direction = np.array([1.0, 0.0])  # Default direction if velocity is zero
-                else:
-                    current_direction = fg_char.vel / np.linalg.norm(fg_char.vel)
-
-                fg_char.vel = current_direction * fg_speed
-                fg_char.pos = np.random.rand(2) * [config.width - 28, config.height - 28] + 14
-                fg_char.label = fg_label
-                fg_char.image = fg_img
-            else:
+                change_foreground()
+            elif config.switch_mode == "exclusive":
                 # --- Change Background ---
                 bg_switch_flag = 1  # Set flag to 1 for this frame
-                bg_char_count = np.random.choice(config.bg_char_counts)
-                bg_mean_speed = np.random.choice(config.bg_mean_speeds)
-                background_chars = []
-                for _ in range(bg_char_count):
-                    bg_label, bg_img = get_random_digit(mnist_data)
-                    bg_pos = np.random.rand(2) * [config.width - 28, config.height - 28] + 14
-                    angle = np.random.uniform(0, 2 * np.pi)
-                    bg_vel = np.array([np.cos(angle), np.sin(angle)]) * bg_mean_speed
-                    background_chars.append(MovingCharacter(bg_label, bg_img, bg_pos, bg_vel))
+                change_background()
+            else:
+                raise ValueError(f"Unknown switch_mode: {config.switch_mode}")
 
             next_switch_frame = frame_idx + int(np.random.exponential(scale=mean_switch_interval_frames))
 
@@ -344,6 +365,27 @@ def parse_args() -> argparse.Namespace:
         metavar="H",
         help="Hours of train stimulus (suffix becomes Hh-float32; train duration = 14400*H seconds).",
     )
+    p.add_argument(
+        "--split",
+        choices=("all", "train", "validation", "test"),
+        default="all",
+        help="Which split to generate. Default all preserves the historical behavior.",
+    )
+    p.add_argument(
+        "--switch-mode",
+        choices=("exclusive", "joint"),
+        default="exclusive",
+        help="exclusive: each switch changes fg or bg; joint: each switch changes both.",
+    )
+    p.add_argument(
+        "--suffix-extra",
+        type=str,
+        default=None,
+        help=(
+            "Extra text appended to the Hh-float32 suffix. "
+            "Default is '-jointswitch' for --switch-mode joint and empty otherwise."
+        ),
+    )
     return p.parse_args()
 
 
@@ -352,16 +394,20 @@ def main():
     args = parse_args()
     ## Normal data
     data_hour_length = args.hour
-    data_suffix = f"{data_hour_length}h-float32"
+    suffix_extra = args.suffix_extra
+    if suffix_extra is None:
+        suffix_extra = "-jointswitch" if args.switch_mode == "joint" else ""
+    data_suffix = f"{data_hour_length}h-float32{suffix_extra}"
     config = StimulusConfig(
         width=96,
         height=96,
-        duration_seconds=3600 * data_hour_length, 
+        duration_seconds=3600 * data_hour_length,
         fps=24,
         fg_speeds=[1,0, 2.0, 3.0, 4.0, 6.0, 8.0], #[1.0, 2.0, 4.0],
         bg_char_counts=[1, 2, 4, 8, 12], #[1, 2, 4],
         bg_mean_speeds=[1.0, 2.0, 4.0, 6.0, 8.0], #[1.0, 2.0, 4.0],
         mean_switch_interval_seconds=1.0,
+        switch_mode=args.switch_mode,
         output_dir=os.path.join(PROJECT_ROOT, "stimuli"),
         mnist_sample_start=0,
         mnist_sample_end=40000,
@@ -369,29 +415,29 @@ def main():
         output_mode=args.output_mode,
     )
     os.makedirs(config.output_dir, exist_ok=True)
-    mnist_data = load_mnist_data(config)
-    print("MNIST data loaded.")
-    generate_stimulus_video(config, mnist_data)
 
+    def run_split(
+        split_name: Literal["train", "validation", "test"],
+        sample_start: int,
+        sample_end: int,
+        duration_seconds: int,
+    ) -> None:
+        config.mnist_sample_start = sample_start
+        config.mnist_sample_end = sample_end
+        config.duration_seconds = duration_seconds
+        config.suffix = f"reg-{split_name}-{data_suffix}"
+        mnist_data = load_mnist_data(config)
+        print("MNIST data loaded.")
+        generate_stimulus_video(config, mnist_data)
 
-    # Generate validation data
-    config.mnist_sample_start = 40000
-    config.mnist_sample_end = 50000
-    config.duration_seconds = 2400
-    config.suffix = "reg-validation-" + data_suffix
-    mnist_data = load_mnist_data(config)
-    print("MNIST data loaded.")
-    generate_stimulus_video(config, mnist_data)
+    if args.split in ("all", "train"):
+        run_split("train", 0, 40000, 3600 * data_hour_length)
 
+    if args.split in ("all", "validation"):
+        run_split("validation", 40000, 50000, 2400)
 
-    # Generate test data
-    config.mnist_sample_start = 50000
-    config.mnist_sample_end = 60000
-    config.duration_seconds = 2400
-    config.suffix = "reg-test-" + data_suffix
-    mnist_data = load_mnist_data(config)
-    print("MNIST data loaded.")
-    generate_stimulus_video(config, mnist_data)
+    if args.split in ("all", "test"):
+        run_split("test", 50000, 60000, 2400)
 
 if __name__ == "__main__":
     main()
