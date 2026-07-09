@@ -68,12 +68,26 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def _extract_episode_returns(infos) -> list[float]:
     returns: list[float] = []
-    final_infos = infos.get("final_info") if isinstance(infos, dict) else None
+    if not isinstance(infos, dict):
+        return returns
+
+    episode = infos.get("episode")
+    episode_mask = infos.get("_episode")
+    if isinstance(episode, dict) and "r" in episode:
+        raw_returns = np.asarray(episode["r"]).reshape(-1)
+        if episode_mask is None:
+            mask = np.ones(raw_returns.shape, dtype=bool)
+        else:
+            mask = np.asarray(episode_mask).reshape(-1).astype(bool)
+        returns.extend(float(value) for value, keep in zip(raw_returns, mask) if keep)
+
+    final_infos = infos.get("final_info")
     if final_infos is None:
         return returns
     for final_info in final_infos:
         if final_info and "episode" in final_info:
-            returns.append(float(final_info["episode"]["r"]))
+            episode_return = np.asarray(final_info["episode"]["r"]).reshape(-1)[0]
+            returns.append(float(episode_return))
     return returns
 
 
