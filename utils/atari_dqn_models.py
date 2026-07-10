@@ -1,11 +1,15 @@
-"""Atari Q-networks: classic feedforward DQN and a GaWF-gated recurrent variant.
+"""Atari Q-networks in the DRQN framework (Hausknecht & Stone, 2015).
 
-Inputs are preprocessed Atari observations shaped ``(B, C, 84, 84)`` or sequences
-``(B, T, C, 84, 84)``. Outputs are Q-values over environment actions. Unlike the
-A2C models in ``atari_task_models``, the recurrent input carries encoder features
-only (no previous action/reward), so both variants see exactly the classic DQN
-input information; the GaWF variant additionally gates its recurrence with the
-detached previous-step Q-values.
+The Nature-DQN convolutional stack produces flattened features that feed a
+single "readout slot". The classic ``cnn`` baseline fills that slot with the
+Nature-DQN dense layer (``FC(conv->feature_dim)+ReLU``); the recurrent variants
+replace that dense layer with a recurrent core (RNN/GRU/LSTM/GaWF) exactly as
+DRQN replaces DQN's first fully connected layer. All variants share the conv
+stack and a final linear Q-head, so they differ only in the readout slot.
+
+The recurrent input is the raw flattened conv features only (no previous
+action/reward), matching the classic DQN observation. The GaWF variant
+additionally gates its recurrence with the detached previous-step Q-values.
 """
 
 from __future__ import annotations
@@ -17,19 +21,52 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .atari_task_models import AtariNatureEncoder
 from .recurrent_cores.gawf import GaWFCore
+from .recurrent_cores.rnn import GRUCore, LSTMCore, RNNCore
 
-AtariDQNModelType = Literal["cnn", "gawf"]
+AtariDQNModelType = Literal["cnn", "rnn", "gru", "lstm", "gawf"]
 DQNFeedbackMode = Literal["none", "qvalues"]
+
+RECURRENT_MODEL_TYPES = ("rnn", "gru", "lstm", "gawf")
+
+AtariRecurrentState = torch.Tensor | tuple[torch.Tensor, torch.Tensor]
 
 
 @dataclass(frozen=True)
 class AtariQNetworkState:
-    """Runtime recurrent state plus previous Q-value outputs (GaWF only)."""
+    """Recurrent state plus previous Q-values (used as GaWF gate feedback)."""
 
-    recurrent: torch.Tensor
+    recurrent: AtariRecurrentState
     prev_q: torch.Tensor
+
+
+class AtariDQNConvFeatures(nn.Module):
+    """Nature-DQN convolutional stack returning flattened features (no dense layer)."""
+
+    def __init__(self, in_channels: int = 4) -> None:
+        super().__init__()
+        self.in_channels = int(in_channels)
+        self.conv = nn.Sequential(
+            nn.Conv2d(self.in_channels, 32, kernel_size=8, stride=4),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1),
+            nn.ReLU(),
+            nn.Flatten(),
+        )
+        with torch.no_grad():
+            dummy = torch.zeros(1, self.in_channels, 84, 84)
+            self.output_size = int(self.conv(dummy).shape[-1])
+
+    def forward(self, obs: torch.Tensor) -> torch.Tensor:
+        if obs.dtype == torch.uint8:
+            obs = obs.float().div(255.0)
+        else:
+            obs = obs.float()
+            if obs.numel() > 0 and obs.detach().amax() > 1.5:
+                obs = obs.div(255.0)
+        return self.conv(obs)
 
 
 class AtariQHead(nn.Module):
@@ -44,51 +81,60 @@ class AtariQHead(nn.Module):
 
 
 class AtariQNetwork(nn.Module):
-    """Atari Q-network with optional GaWF recurrence gated by previous Q-values."""
+    """DRQN-family Atari Q-network; feedforward CNN or a recurrent readout slot."""
 
     def __init__(
         self,
         num_actions: int,
         input_channels: int = 4,
         model_type: AtariDQNModelType = "cnn",
-        hidden_size: int = 256,
+        hidden_size: int = 512,
         encoder_feature_dim: int = 512,
         core_dropout: float = 0.0,
         feedback_mode: DQNFeedbackMode = "none",
         detach_feedback: bool = True,
     ) -> None:
         super().__init__()
-        if model_type not in {"cnn", "gawf"}:
+        if model_type not in {"cnn", *RECURRENT_MODEL_TYPES}:
             raise ValueError(f"Unsupported Atari DQN model_type: {model_type}")
         if feedback_mode not in {"none", "qvalues"}:
             raise ValueError(f"Unsupported feedback_mode: {feedback_mode}")
-        if model_type == "cnn" and feedback_mode != "none":
-            raise ValueError("CNN DQN baseline only supports feedback_mode='none'")
+        if model_type != "gawf" and feedback_mode != "none":
+            raise ValueError(
+                f"feedback_mode='qvalues' is only valid for model_type='gawf', not '{model_type}'"
+            )
         self.num_actions = int(num_actions)
         self.input_channels = int(input_channels)
         self.model_type = model_type
         self.hidden_size = int(hidden_size)
         self.feedback_mode = feedback_mode
         self.detach_feedback = bool(detach_feedback)
-        self.encoder = AtariNatureEncoder(
-            in_channels=self.input_channels,
-            feature_dim=encoder_feature_dim,
-        )
-        # Recurrent input carries encoder features only, keeping the observable
-        # information identical to the classic DQN baseline.
-        self.recurrent_input_size = self.encoder.output_size
+
+        self.features = AtariDQNConvFeatures(in_channels=self.input_channels)
+        conv_out = self.features.output_size
 
         if self.model_type == "cnn":
+            # Feedforward readout slot: Nature-DQN dense layer.
+            self.proj = nn.Sequential(nn.Linear(conv_out, encoder_feature_dim), nn.ReLU())
             self.core = None
-            head_input_size = self.encoder.output_size
-        else:
+            head_input_size = encoder_feature_dim
+        elif self.model_type == "gawf":
+            self.proj = None
             self.core = GaWFCore(
-                input_size=self.recurrent_input_size,
+                input_size=conv_out,
                 hidden_size=self.hidden_size,
                 feedback_dim=max(
-                    1,
-                    self.feedback_dim_for_mode(self.feedback_mode, self.num_actions),
+                    1, self.feedback_dim_for_mode(self.feedback_mode, self.num_actions)
                 ),
+                dropout=core_dropout,
+            )
+            head_input_size = self.core.output_size
+        else:
+            self.proj = None
+            core_cls = {"rnn": RNNCore, "gru": GRUCore, "lstm": LSTMCore}[self.model_type]
+            self.core = core_cls(
+                input_size=conv_out,
+                hidden_size=self.hidden_size,
                 dropout=core_dropout,
             )
             head_input_size = self.core.output_size
@@ -96,7 +142,11 @@ class AtariQNetwork(nn.Module):
 
     @property
     def is_recurrent(self) -> bool:
-        return self.model_type == "gawf"
+        return self.model_type in RECURRENT_MODEL_TYPES
+
+    @property
+    def uses_tuple_state(self) -> bool:
+        return self.model_type == "lstm"
 
     @staticmethod
     def feedback_dim_for_mode(feedback_mode: DQNFeedbackMode, num_actions: int) -> int:
@@ -111,8 +161,23 @@ class AtariQNetwork(nn.Module):
     def _encode_sequence(self, obs: torch.Tensor) -> torch.Tensor:
         batch_size, n_steps = obs.shape[:2]
         flat_obs = obs.reshape(batch_size * n_steps, *obs.shape[2:])
-        encoded = self.encoder(flat_obs)
+        encoded = self.features(flat_obs)
         return encoded.view(batch_size, n_steps, -1)
+
+    def _initial_recurrent_state(
+        self,
+        batch_size: int,
+        device: torch.device | str,
+        dtype: torch.dtype,
+    ) -> AtariRecurrentState:
+        if self.model_type == "gawf":
+            return self.core.initial_state(batch_size, device, dtype)
+        shape = (1, batch_size, self.hidden_size)
+        if self.uses_tuple_state:
+            h = torch.zeros(shape, device=device, dtype=dtype)
+            c = torch.zeros(shape, device=device, dtype=dtype)
+            return h, c
+        return torch.zeros(shape, device=device, dtype=dtype)
 
     def initial_state(
         self,
@@ -123,17 +188,19 @@ class AtariQNetwork(nn.Module):
         if not self.is_recurrent:
             return None
         return AtariQNetworkState(
-            recurrent=self.core.initial_state(batch_size, device, dtype),
+            recurrent=self._initial_recurrent_state(batch_size, device, dtype),
             prev_q=torch.zeros(batch_size, self.num_actions, device=device, dtype=dtype),
         )
 
     def detach_state(self, state: AtariQNetworkState | None) -> AtariQNetworkState | None:
         if state is None:
             return None
-        return AtariQNetworkState(
-            recurrent=state.recurrent.detach(),
-            prev_q=state.prev_q.detach(),
-        )
+        recurrent = state.recurrent
+        if isinstance(recurrent, tuple):
+            recurrent = tuple(part.detach() for part in recurrent)
+        else:
+            recurrent = recurrent.detach()
+        return AtariQNetworkState(recurrent=recurrent, prev_q=state.prev_q.detach())
 
     def _coerce_state(
         self,
@@ -146,20 +213,26 @@ class AtariQNetwork(nn.Module):
             initial = self.initial_state(batch_size, device, dtype)
             assert initial is not None
             return initial
-        return AtariQNetworkState(
-            recurrent=state.recurrent.to(device=device, dtype=dtype),
-            prev_q=state.prev_q.to(device=device, dtype=dtype).view(
-                batch_size, self.num_actions
-            ),
-        )
+        recurrent = state.recurrent
+        if isinstance(recurrent, tuple):
+            recurrent = tuple(part.to(device=device, dtype=dtype) for part in recurrent)
+        else:
+            recurrent = recurrent.to(device=device, dtype=dtype)
+        prev_q = state.prev_q.to(device=device, dtype=dtype).view(batch_size, self.num_actions)
+        return AtariQNetworkState(recurrent=recurrent, prev_q=prev_q)
 
     def _mask_recurrent_state(
         self,
-        recurrent: torch.Tensor,
+        recurrent: AtariRecurrentState,
         done: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> AtariRecurrentState:
         keep = (1.0 - done.float()).to(done.device)
-        return recurrent * keep.view(-1, 1)
+        if isinstance(recurrent, tuple):
+            keep_lstm = keep.view(1, -1, 1)
+            return recurrent[0] * keep_lstm, recurrent[1] * keep_lstm
+        if recurrent.dim() == 3:  # (1, B, H) for RNN/GRU
+            return recurrent * keep.view(1, -1, 1)
+        return recurrent * keep.view(-1, 1)  # (B, H) for GaWF
 
     def _mask_output_state(self, prev_q: torch.Tensor, done: torch.Tensor) -> torch.Tensor:
         keep = (1.0 - done.float()).to(done.device)
@@ -173,11 +246,7 @@ class AtariQNetwork(nn.Module):
             feedback = feedback.detach()
         return feedback
 
-    def _gawf_no_feedback_step(
-        self,
-        x_t: torch.Tensor,
-        h_prev: torch.Tensor,
-    ) -> torch.Tensor:
+    def _gawf_no_feedback_step(self, x_t: torch.Tensor, h_prev: torch.Tensor) -> torch.Tensor:
         ih = F.linear(x_t, self.core.rnn.weight_ih_l0, self.core.rnn.bias_ih_l0)
         hh = F.linear(h_prev, self.core.rnn.weight_hh_l0, self.core.rnn.bias_hh_l0)
         h_t = torch.tanh(ih + hh)
@@ -189,16 +258,20 @@ class AtariQNetwork(nn.Module):
     def _core_step(
         self,
         x_t: torch.Tensor,
-        recurrent: torch.Tensor,
+        recurrent: AtariRecurrentState,
         feedback: torch.Tensor | None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        if self.feedback_mode == "none":
-            features = self._gawf_no_feedback_step(x_t, recurrent)
+    ) -> tuple[torch.Tensor, AtariRecurrentState]:
+        if self.model_type == "gawf":
+            if self.feedback_mode == "none":
+                features = self._gawf_no_feedback_step(x_t, recurrent)
+                return features, features
+            if feedback is None:
+                raise ValueError("GaWF qvalues feedback mode requires feedback")
+            features = self.core.step(x_t, recurrent, feedback)
             return features, features
-        if feedback is None:
-            raise ValueError("GaWF qvalues feedback mode requires feedback")
-        features = self.core.step(x_t, recurrent, feedback)
-        return features, features
+        # RNN/GRU/LSTM: run one timestep through the torch recurrent core.
+        features, next_recurrent = self.core(x_t.unsqueeze(1), recurrent)
+        return features[:, 0, :], next_recurrent
 
     def forward_sequence(
         self,
@@ -211,7 +284,7 @@ class AtariQNetwork(nn.Module):
             raise ValueError(f"obs must have shape (B,T,C,H,W), got {tuple(obs.shape)}")
         encoded = self._encode_sequence(obs)
         if not self.is_recurrent:
-            return self.head(encoded), None
+            return self.head(self.proj(encoded)), None
 
         batch_size, n_steps = encoded.shape[:2]
         device = encoded.device

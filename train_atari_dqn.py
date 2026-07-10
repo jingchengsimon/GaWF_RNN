@@ -36,15 +36,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train Atari DQN models")
     parser.add_argument("--env_id", type=str, default="ALE/Pong-v5", choices=ATARI_PILOT_ENVS)
     parser.add_argument("--algo", type=str, default="dqn", choices=["dqn"])
-    parser.add_argument("--model_type", type=str, default="cnn", choices=["cnn", "gawf"])
+    parser.add_argument(
+        "--model_type",
+        type=str,
+        default="cnn",
+        choices=["cnn", "rnn", "gru", "lstm", "gawf"],
+    )
     parser.add_argument(
         "--feedback_mode",
         type=str,
         default=None,
         choices=["none", "qvalues"],
-        help="GaWF gate feedback source; defaults to 'qvalues' for gawf, 'none' for cnn.",
+        help="GaWF gate feedback source; defaults to 'qvalues' for gawf, 'none' otherwise.",
     )
-    parser.add_argument("--hidden_size", type=int, default=256)
+    parser.add_argument("--hidden_size", type=int, default=512)
     parser.add_argument("--encoder_feature_dim", type=int, default=512)
     parser.add_argument("--core_dropout", type=float, default=0.0)
     parser.add_argument("--frame_stack", type=int, default=4)
@@ -264,7 +269,7 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
                 rolling_returns = rolling_returns[-100:]
 
             if global_step >= args.learning_starts and global_step % args.train_frequency == 0:
-                if args.model_type == "gawf":
+                if model.is_recurrent:
                     loss, q_mean = _drqn_sequence_loss(model, target_net, buffer, args, device)
                 else:
                     loss, q_mean = _dqn_transition_loss(model, target_net, buffer, args, device)
