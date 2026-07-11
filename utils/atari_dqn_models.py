@@ -102,6 +102,7 @@ class AtariQNetwork(nn.Module):
         ssm_state_size: int = 128,
         ssm_num_layers: int = 1,
         ssm_context_len: int = 16,
+        encoder_factory=None,
     ) -> None:
         super().__init__()
         if model_type not in {"cnn", *RECURRENT_MODEL_TYPES}:
@@ -120,7 +121,15 @@ class AtariQNetwork(nn.Module):
         self.detach_feedback = bool(detach_feedback)
         self.ssm_context_len = int(ssm_context_len)
 
-        self.features = AtariDQNConvFeatures(in_channels=self.input_channels)
+        # Pluggable observation encoder. Default = the Nature-DQN conv stack
+        # (Atari, unchanged). A callable ``encoder_factory`` lets other domains
+        # (e.g. MiniGrid) inject their own encoder; model and target networks
+        # each build a fresh instance. The encoder must expose ``.output_size``
+        # and map obs -> (B, output_size). The DRQN core/step logic is untouched.
+        if encoder_factory is not None:
+            self.features = encoder_factory()
+        else:
+            self.features = AtariDQNConvFeatures(in_channels=self.input_channels)
         conv_out = self.features.output_size
 
         if self.model_type == "cnn":

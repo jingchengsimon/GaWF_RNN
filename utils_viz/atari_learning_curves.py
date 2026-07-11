@@ -92,6 +92,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--data_root", default="results/train_data")
     parser.add_argument("--output_dir", default="results/train_figs/atari_pong_1frame")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Plot only this single seed (no band). Default: aggregate all seeds.",
+    )
     parser.add_argument("--output", default=None, help="Explicit output png path.")
     return parser.parse_args()
 
@@ -102,9 +108,12 @@ def _base_suffix(prefix: str, setting: str, model: str) -> str:
     return f"{prefix}_{model}"
 
 
-def _discover_run_dirs(data_root: str, base: str) -> list[Path]:
-    """All seed run dirs for a model+setting, plus a seedless dir if present."""
+def _discover_run_dirs(data_root: str, base: str, seed: Optional[int] = None) -> list[Path]:
+    """Run dirs for a model+setting. If seed is given, restrict to that seed."""
     root = Path(data_root)
+    if seed is not None:
+        one = root / f"{base}_seed{seed}"
+        return [one] if one.is_dir() else []
     seed_dirs = sorted(
         (Path(p) for p in glob.glob(str(root / f"{base}_seed*")) if os.path.isdir(p)),
         key=lambda p: int(re.search(r"_seed(\d+)$", p.name).group(1))
@@ -178,7 +187,7 @@ def _plot_setting(ax, args, setting: str) -> int:
     plotted = 0
     for model in args.models:
         base = _base_suffix(args.prefix, setting, model)
-        run_dirs = _discover_run_dirs(args.data_root, base)
+        run_dirs = _discover_run_dirs(args.data_root, base, args.seed)
         curves = [_load_curve(d / "metrics_history.jsonl", args.metric) for d in run_dirs]
         agg = _aggregate_seeds(curves, args.smooth)
         if agg is None:
@@ -186,7 +195,8 @@ def _plot_setting(ax, args, setting: str) -> int:
             continue
         grid, mean, std, n_seeds = agg
         color = MODEL_COLORS.get(model)
-        ax.plot(grid, mean, label=f"{model} (n={n_seeds})", color=color, linewidth=1.8)
+        label = model if args.seed is not None else f"{model} (n={n_seeds})"
+        ax.plot(grid, mean, label=label, color=color, linewidth=1.8)
         if args.band != "none" and n_seeds > 1:
             band = std / np.sqrt(n_seeds) if args.band == "sem" else std
             ax.fill_between(grid, mean - band, mean + band, color=color, alpha=0.18, linewidth=0)
@@ -216,15 +226,21 @@ def main() -> None:
             "metrics_history.jsonl."
         )
 
-    band_label = "" if args.band == "none" else f" ({args.band} band across seeds)"
-    fig.suptitle(f"Atari DRQN family — learning curves{band_label}", fontsize=13)
+    if args.seed is not None:
+        title_tag = f" (seed {args.seed})"
+    else:
+        title_tag = "" if args.band == "none" else f" ({args.band} band across seeds)"
+    fig.suptitle(f"Atari DRQN family — learning curves{title_tag}", fontsize=13)
     fig.tight_layout(rect=(0, 0, 1, 0.96))
 
     if args.output:
         out_path = args.output
     else:
         os.makedirs(args.output_dir, exist_ok=True)
-        out_path = os.path.join(args.output_dir, f"atari_pong_1frame_{args.setting}.png")
+        seed_tag = f"_seed{args.seed}" if args.seed is not None else ""
+        out_path = os.path.join(
+            args.output_dir, f"atari_pong_1frame_{args.setting}{seed_tag}.png"
+        )
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     fig.savefig(out_path, dpi=150)
     print(f"wrote {out_path}  ({total} model curves)")
