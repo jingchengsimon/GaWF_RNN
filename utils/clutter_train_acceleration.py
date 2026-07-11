@@ -12,7 +12,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader, Subset
 
-from .train_helpers import worker_init_fn
+from .clutter_train_helpers import worker_init_fn
 
 
 # -----------------------------------------------------------------------------

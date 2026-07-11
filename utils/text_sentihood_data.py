@@ -6,7 +6,7 @@ expands each sentence into query examples of the form:
     sentence1 + <sep> + "location - {1|2} - {aspect}"
 
 Each query receives one label in ``None / Positive / Negative``. The saved tensor
-layout mirrors ``utils.imdb_data`` so Amarel compute jobs can train offline.
+layout mirrors ``utils.text_imdb_data`` so Amarel compute jobs can train offline.
 """
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import torch
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
-from .imdb_data import resolve_data_dir
-from .train_helpers import worker_init_fn
+from .text_imdb_data import resolve_data_dir
+from .common_train_helpers import worker_init_fn
 
 PAD_TOKEN = "<pad>"
 UNK_TOKEN = "<unk>"
@@ -246,7 +246,7 @@ def load_meta(cli_data_dir: Optional[str]) -> Dict:
     if not os.path.isfile(meta_path):
         raise FileNotFoundError(
             f"SentiHood metadata not found at {meta_path}. "
-            "Run scripts/prepare_sentihood_data.py first."
+            "Run source/text/prepare_sentihood_data.py first."
         )
     with open(meta_path, "r", encoding="utf-8") as f:
         return json.load(f)

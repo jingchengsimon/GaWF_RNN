@@ -5,7 +5,7 @@ SentiHood is prepared as flattened query-pair examples:
 
     sentence + <sep> + location-aspect query -> None / Positive / Negative
 
-This entry point intentionally reuses ``utils.text_models`` from IMDB. The
+This entry point intentionally reuses ``utils.text_task_models`` from IMDB. The
 embedding and recurrent modules are unchanged; the task difference enters through
 offline query-pair tensors and ``num_classes=3``.
 
@@ -32,16 +32,16 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from utils.sentihood_data import build_sentihood_loaders, load_meta
-from utils.sentihood_metrics import compute_sentihood_metrics
-from utils.text_models import get_text_model_classes
+from utils.text_sentihood_data import build_sentihood_loaders, load_meta
+from utils.text_sentihood_metrics import compute_sentihood_metrics
+from utils.text_task_models import get_text_model_classes
 from utils.text_train_utils import (
     build_optimizer,
     count_core_params,
     maybe_subset,
     select_device,
 )
-from utils.train_helpers import set_seed
+from utils.common_train_helpers import set_seed
 
 DISABLE_TQDM = os.environ.get("DISABLE_TQDM", "0").lower() in ("1", "true", "yes")
 

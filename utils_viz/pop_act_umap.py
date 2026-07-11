@@ -60,6 +60,12 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--dpca_components",
+        type=int,
+        default=10,
+        help="When --reducer dpca: number of dPCs to fit/save for explained variance.",
+    )
+    p.add_argument(
         "--pca_variance_bars",
         type=int,
         default=20,
@@ -166,6 +172,76 @@ def save_pca_explained_variance_bar_chart(
     fig.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
+
+
+def save_dpca_explained_variance_bars(
+    out_dir: str,
+    summary: dict,
+    max_components: int = 10,
+) -> None:
+    """Save dPCA explained-variance bars for digit and sector components."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    ev = summary.get("explained_variance_ratio", {})
+    panels = [
+        ("d", "Digit dPC explained variance", "#4472C4"),
+        ("s", "Sector dPC explained variance", "#ED7D31"),
+    ]
+    fig, axes = plt.subplots(1, 2, figsize=(8.8, 3.8), sharey=True)
+
+    max_percent = 0.0
+    values_by_key: dict[str, np.ndarray] = {}
+    for key, _, _ in panels:
+        vals = np.asarray(ev.get(key, []), dtype=np.float64)
+        vals = vals[np.isfinite(vals)]
+        vals = vals[: max(1, int(max_components))]
+        values_by_key[key] = vals
+        if vals.size:
+            max_percent = max(max_percent, float(np.max(vals) * 100.0))
+    ylim_top = max(5.0, max_percent * 1.25)
+
+    for ax, (key, title, color) in zip(axes, panels):
+        vals = values_by_key[key]
+        if vals.size == 0:
+            ax.text(0.5, 0.5, "No components", ha="center", va="center")
+            ax.set_xticks([])
+            ax.set_ylim(0.0, ylim_top)
+            ax.set_title(title, fontsize=11)
+            continue
+
+        x = np.arange(vals.size)
+        perc = vals * 100.0
+        bars = ax.bar(x, perc, color=color, alpha=0.9, width=0.72)
+        ax.set_xticks(x)
+        ax.set_xticklabels([f"dPC{i + 1}" for i in x])
+        ax.set_ylim(0.0, ylim_top)
+        ax.set_title(f"{title}\ntotal={float(np.sum(perc)):.2f}%", fontsize=11)
+        ax.grid(axis="y", alpha=0.28)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        for bar, val in zip(bars, perc):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                bar.get_height() + ylim_top * 0.025,
+                f"{val:.2f}%",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+
+    axes[0].set_ylabel("Explained variance (%)")
+    method = summary.get("method", "dpca")
+    fig.suptitle(f"dPCA explained variance ({method}; first {max_components} dPCs)", fontsize=12)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.91])
+
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, "dpca_explained_variance_bars.png")
+    fig.savefig(out_path, dpi=150, bbox_inches="tight", pad_inches=0.06)
+    plt.close(fig)
+    print(f"Saved {out_path}")
 
 
 def sector_from_xy(
@@ -391,21 +467,22 @@ def _ensure_two_vectors(vectors: np.ndarray, n_features: int) -> np.ndarray:
     return out
 
 
-def _variance_ratio_for_json(explained: dict) -> dict[str, list[float]]:
+def _variance_ratio_for_json(explained: dict, max_components: int = 10) -> dict[str, list[float]]:
     out: dict[str, list[float]] = {}
     for key in ("d", "s", "ds"):
         vals = np.asarray(explained.get(key, []), dtype=np.float64)
-        out[key] = [float(v) for v in vals[:2]]
+        out[key] = [float(v) for v in vals[: max(1, int(max_components))]]
     return out
 
 
-def run_dpca_condensed(X_dpca: np.ndarray) -> dict:
+def run_dpca_condensed(X_dpca: np.ndarray, *, n_components: int = 10) -> dict:
     """
     X_dpca: (D, 10, 9) condition-averaged pop act (may contain NaN for empty cells).
 
-    Legacy condensed baseline: first marginalize over sector/digit, then take the first two
-    left singular vectors for each marginalization. This does not include the official dPCA
-    reduced-rank-regression whitening/regularization step.
+    Legacy condensed baseline: first marginalize over sector/digit, then take left singular
+    vectors for each marginalization. This does not include the official dPCA
+    reduced-rank-regression whitening/regularization step. Scatter diagnostics still use
+    the first two axes, while explained-variance output keeps up to ``n_components`` entries.
     """
     X = np.asarray(X_dpca, dtype=np.float64)
     if X.ndim != 3 or X.shape[1:] != (10, 9):
@@ -431,9 +508,10 @@ def run_dpca_condensed(X_dpca: np.ndarray) -> dict:
     coords_sector = (X_flat @ W_sector).astype(np.float32)
     denom_d = float(np.sum(S_d**2)) or 1.0
     denom_s = float(np.sum(S_s**2)) or 1.0
+    k = max(1, int(n_components))
     explained = {
-        "d": [float((s**2) / denom_d) for s in S_d[:2]],
-        "s": [float((s**2) / denom_s) for s in S_s[:2]],
+        "d": [float((s**2) / denom_d) for s in S_d[:k]],
+        "s": [float((s**2) / denom_s) for s in S_s[:k]],
         "ds": [],
     }
     return {
@@ -455,6 +533,7 @@ def run_dpca_rrr(
     X_dpca: np.ndarray,
     *,
     regularizer: float,
+    n_components: int = 10,
     counts: np.ndarray | None = None,
 ) -> dict:
     """
@@ -468,8 +547,9 @@ def run_dpca_rrr(
     """
     dPCA = _load_official_dpca_class()
     X, imputation = fill_nan_digit_sector_cells(X_dpca, counts=counts)
-    print(f"[dPCA] method=rrr regularizer={regularizer:g}")
-    dpca = dPCA(labels="ds", n_components=2, regularizer=float(regularizer))
+    n_components = max(2, int(n_components))
+    print(f"[dPCA] method=rrr regularizer={regularizer:g} n_components={n_components}")
+    dpca = dPCA(labels="ds", n_components=n_components, regularizer=float(regularizer))
     Z = dpca.fit_transform(X)
     for key in ("d", "s", "ds"):
         if key not in Z:
@@ -478,7 +558,10 @@ def run_dpca_rrr(
         "method": "rrr",
         "coords_digit": _flatten_component_scores(Z["d"]),
         "coords_sector": _flatten_component_scores(Z["s"]),
-        "explained_variance_ratio": _variance_ratio_for_json(dpca.explained_variance_ratio_),
+        "explained_variance_ratio": _variance_ratio_for_json(
+            dpca.explained_variance_ratio_,
+            max_components=n_components,
+        ),
         "digit_axes": _ensure_two_vectors(dpca.D["d"], X.shape[0]),
         "sector_axes": _ensure_two_vectors(dpca.D["s"], X.shape[0]),
         "imputation": imputation,
@@ -491,12 +574,18 @@ def run_dpca(
     *,
     method: str,
     regularizer: float,
+    n_components: int = 10,
     counts: np.ndarray | None = None,
 ) -> dict:
     if method == "rrr":
-        return run_dpca_rrr(X_dpca, regularizer=regularizer, counts=counts)
+        return run_dpca_rrr(
+            X_dpca,
+            regularizer=regularizer,
+            n_components=n_components,
+            counts=counts,
+        )
     if method == "condensed":
-        return run_dpca_condensed(X_dpca)
+        return run_dpca_condensed(X_dpca, n_components=n_components)
     raise ValueError(f"Unknown dPCA method {method!r}")
 
 
@@ -922,20 +1011,26 @@ def main() -> None:
         digit_labels = np.arange(90, dtype=np.int64) // 9
         sector_labels = np.arange(90, dtype=np.int64) % 9
 
-        condensed = run_dpca_condensed(X_dpca)
+        condensed = run_dpca_condensed(X_dpca, n_components=args.dpca_components)
         condensed_summary = summarize_dpca_result(condensed, digit_labels, sector_labels)
         print_dpca_summary(condensed_summary)
 
         stability_summary = None
         if args.dpca_method == "rrr":
             if float(args.dpca_regularizer) != 0.0:
-                rrr_zero = run_dpca_rrr(X_dpca, regularizer=0.0, counts=counts)
+                rrr_zero = run_dpca_rrr(
+                    X_dpca,
+                    regularizer=0.0,
+                    n_components=args.dpca_components,
+                    counts=counts,
+                )
                 stability_summary = summarize_dpca_result(rrr_zero, digit_labels, sector_labels)
                 print_dpca_summary(stability_summary)
             result = run_dpca(
                 X_dpca,
                 method="rrr",
                 regularizer=float(args.dpca_regularizer),
+                n_components=args.dpca_components,
                 counts=counts,
             )
         else:
@@ -985,6 +1080,11 @@ def main() -> None:
             "rrr_zero_regularizer_reference": stability_summary,
         }
         save_dpca_variance_json(out_dir, method_suffix, payload)
+        save_dpca_explained_variance_bars(
+            out_dir,
+            summary,
+            max_components=args.dpca_components,
+        )
         print(f"Saved {os.path.join(out_dir, f'dpca_scatter{method_suffix}.png')}")
         print(f"Saved {os.path.join(out_dir, f'dpca_2x2_orthogonality{method_suffix}.png')}")
         print(f"Saved compatibility copy {os.path.join(out_dir, 'dpca_scatter.png')}")

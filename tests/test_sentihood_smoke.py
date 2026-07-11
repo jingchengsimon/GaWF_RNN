@@ -15,14 +15,14 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from utils.sentihood_data import (  # noqa: E402
+from utils.text_sentihood_data import (  # noqa: E402
     PAPER_ASPECTS,
     build_sentihood_loaders,
     iter_query_examples,
     prepare_sentihood_tensors,
 )
-from utils.sentihood_metrics import compute_sentihood_metrics  # noqa: E402
-from utils.text_models import TextLSTM  # noqa: E402
+from utils.text_sentihood_metrics import compute_sentihood_metrics  # noqa: E402
+from utils.text_task_models import TextLSTM  # noqa: E402
 import train_sentihood  # noqa: E402
 
 

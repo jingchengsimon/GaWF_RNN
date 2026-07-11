@@ -24,7 +24,7 @@ import torch.nn as nn
 
 from tqdm import tqdm
 
-from .train_acceleration import (
+from .clutter_train_acceleration import (
     AccelerationConfig,
     setup_acceleration,
     build_loaders,
@@ -32,21 +32,15 @@ from .train_acceleration import (
     TrainStepper,
     GawfDiagnosticsRecorder,
 )
-from .train_helpers import LoggingHelper
-from .train_predict_all_chars import build_loss_fn_all_chars, AllCharsMetricsMode
-from .train_sector import (
+from .clutter_train_helpers import LoggingHelper
+from .clutter_train_predict_all_chars import build_loss_fn_all_chars, AllCharsMetricsMode
+from .clutter_train_sector import (
     SingleCharMetricsMode,
     build_loss_fn_single,
     single_char_global_eval_finalize,
     single_char_global_eval_init,
     single_char_global_eval_update,
 )
-from .train_gawf_core import GaWFRNNConv, MultiLayerGaWFRNNConv
-from .train_mamba_core import MambaConv
-from .train_s5_core import S5Conv
-from .train_diaglti_core import DiagLTIConv
-
-
 def _raise_unsupported_coord_engine(logger) -> None:
     """Training engine does not implement single-char coordinate mode yet."""
     msg = (
@@ -146,8 +140,8 @@ def setup_training_components(
         logger=logger,
     )
 
-    is_gawf = isinstance(mdl, (GaWFRNNConv, MultiLayerGaWFRNNConv))
-    is_gawf_multi = isinstance(mdl, MultiLayerGaWFRNNConv)
+    is_gawf = bool(getattr(mdl, "is_gawf_model", False))
+    is_gawf_multi = bool(getattr(mdl, "is_gawf_multi_model", False))
     train_dl, train_eval_dl, val_dl = build_loaders(
         train_data,
         val_data,
@@ -247,7 +241,7 @@ def setup_training_components(
                 optim_kwargs["eps"] = 1e-6
             return OptimClass(param_groups, **optim_kwargs)
 
-        if isinstance(mdl, (MambaConv, DiagLTIConv)):
+        if bool(getattr(mdl, "uses_mamba_core", False)):
             decay = []
             no_decay = []
             for pname, param in mdl.named_parameters():
@@ -260,7 +254,7 @@ def setup_training_components(
 
             if logger is not None:
                 logger.info(
-                    "Mamba/DiagLTI no_decay: %s",
+                    "Mamba no_decay: %s",
                     [name for name, _param in no_decay],
                 )
 
@@ -281,7 +275,7 @@ def setup_training_components(
                 optim_kwargs["eps"] = 1e-6
             return OptimClass(param_groups, **optim_kwargs)
 
-        if isinstance(mdl, S5Conv):
+        if bool(getattr(mdl, "uses_s5_core", False)):
             def _is_s5_core_param(pname: str) -> bool:
                 core_prefixes = ("Lambda", "log_step", "log_dt", "inv_dt", "B")
                 return any(

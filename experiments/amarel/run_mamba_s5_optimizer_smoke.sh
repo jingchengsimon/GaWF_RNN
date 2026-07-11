@@ -119,7 +119,7 @@ importlib.import_module("numpy")
 
 import torch
 
-from utils.train_s5_core import S5Conv
+from utils.clutter_task_models import S5Conv
 
 
 def main() -> None:

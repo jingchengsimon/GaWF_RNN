@@ -1,7 +1,7 @@
 """Smoke test for the IMDB text subsystem (lstm + gawf).
 
 Builds a tiny *synthetic* pre-tokenized dataset (no download needed) in the layout
-``scripts/prepare_imdb_data.py`` produces, then trains both models for a few epochs
+``source/text/prepare_imdb_data.py`` produces, then trains both models for a few epochs
 on CPU and asserts they run end-to-end, fit a learnable signal, and write a metrics
 JSON with the expected schema. Mirrors the role of the Mamba/S5 optimizer smoke.
 
@@ -27,8 +27,8 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from utils.imdb_data import build_imdb_loaders  # noqa: E402
-from utils.text_models import (
+from utils.text_imdb_data import build_imdb_loaders  # noqa: E402
+from utils.text_task_models import (
     TextGaWF,
     TextGaWFLogits,
     TextLSTM,

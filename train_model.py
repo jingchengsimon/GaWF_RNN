@@ -15,7 +15,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from utils.train_helpers import (
+from utils.clutter_train_helpers import (
     LoggingHelper,
     PathHelper,
     create_datasets,
@@ -26,9 +26,9 @@ from utils.train_helpers import (
     summarize_experiment_metrics,
 )
 
-from utils.train_sector import compute_fg_transition_masks
+from utils.clutter_train_sector import compute_fg_transition_masks
 
-from utils.train_rnn_engine import (
+from utils.clutter_train_engine import (
     setup_training_components,
     cleanup_dataloaders,
     stop_requested,
@@ -39,12 +39,15 @@ from utils.train_rnn_engine import (
     eval_valid,
 )
 
-from utils.train_rnn_core import RNNConv, GRUConv, LSTMConv
-from utils.train_gawf_core import GaWFRNNConv, MultiLayerGaWFRNNConv
-from utils.train_ann_core import DendriticANNConv, FeedForwardConv
-from utils.train_mamba_core import MambaConv
-from utils.train_diaglti_core import DiagLTIConv
-from utils.train_s5_core import S5Conv
+from utils.clutter_task_models import (
+    GaWFRNNConv,
+    GRUConv,
+    LSTMConv,
+    MambaConv,
+    MultiLayerGaWFRNNConv,
+    RNNConv,
+    S5Conv,
+)
 
 
 torch.set_num_threads(4)
@@ -549,10 +552,7 @@ if __name__ == "__main__":
         LSTMConv,
         GRUConv,
         GaWFRNNConv,
-        FeedForwardConv,
-        DendriticANNConv,
         MambaConv,
-        DiagLTIConv,
         S5Conv,
         gawf_multi_conv_class=MultiLayerGaWFRNNConv,
     )
@@ -560,8 +560,6 @@ if __name__ == "__main__":
     model_types = args.model_types
     hidden_sizes = args.hidden_sizes
     mamba_d_models = args.mamba_d_models
-    diaglti_d_models = args.diaglti_d_models
-    diaglti_state_sizes = args.diaglti_state_sizes
     s5_d_models = args.s5_d_models
     s5_state_sizes = args.s5_state_sizes
     feedback_dim = args.feedback_dim
@@ -584,21 +582,6 @@ if __name__ == "__main__":
                         "model_width": mamba_d_model,
                         "width_label": "dmodel",
                         "state_size": None,
-                        "lr": lr,
-                        "weight_decay": weight_decay,
-                        "cnn_dropout": cnn_dropout,
-                    }
-                )
-        elif model_type == "diaglti":
-            for diaglti_d_model, diaglti_state_size, lr, weight_decay, cnn_dropout in product(
-                diaglti_d_models, diaglti_state_sizes, lrs, wds, cnn_dropout_grid
-            ):
-                experiment_configs.append(
-                    {
-                        "model_type": model_type,
-                        "model_width": diaglti_d_model,
-                        "width_label": "dmodel",
-                        "state_size": diaglti_state_size,
                         "lr": lr,
                         "weight_decay": weight_decay,
                         "cnn_dropout": cnn_dropout,
@@ -684,9 +667,6 @@ if __name__ == "__main__":
         width_kwarg = "hidden_size"
         if model_type == "mamba":
             width_kwarg = "mamba_d_model"
-        elif model_type == "diaglti":
-            width_kwarg = "diaglti_d_model"
-            model_kwargs["diaglti_state_size"] = state_size
         elif model_type in ("ssm", "s5"):
             width_kwarg = "s5_d_model"
             model_kwargs["s5_state_size"] = state_size
@@ -711,9 +691,7 @@ if __name__ == "__main__":
             )
 
         width_desc = f"{width_label}={model_width}"
-        if model_type == "diaglti":
-            width_desc = f"diaglti_d_model={model_width}, diaglti_state_size={state_size}"
-        elif model_type in ("ssm", "s5"):
+        if model_type in ("ssm", "s5"):
             width_desc = f"s5_d_model={model_width}, s5_state_size={state_size}"
         elif model_type == "gawf" and feedback_dim is not None:
             width_desc = f"{width_desc}, dz={feedback_dim}"
@@ -750,7 +728,7 @@ if __name__ == "__main__":
         else:
             fb_path_suffix = ""
         width_suffix = f"_{width_label}{model_width}"
-        if model_type in ("diaglti", "ssm", "s5"):
+        if model_type in ("ssm", "s5"):
             width_suffix = f"_dmodel{model_width}_state{state_size}"
         layer_suffix = ""
         if model_type == "gawf_multi":
@@ -844,9 +822,6 @@ if __name__ == "__main__":
             metric_summary["effective_lr"] = train_lr
         if model_type == "mamba":
             metric_summary["mamba_d_model"] = model_width
-        elif model_type == "diaglti":
-            metric_summary["diaglti_d_model"] = model_width
-            metric_summary["diaglti_state_size"] = state_size
         elif model_type in ("ssm", "s5"):
             metric_summary["s5_d_model"] = model_width
             metric_summary["s5_state_size"] = state_size

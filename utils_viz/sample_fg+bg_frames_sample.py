@@ -32,7 +32,7 @@ import numpy as np  # noqa: E402
 import torch  # noqa: E402
 
 from train_model import MC_RNN_Dataset  # noqa: E402
-from utils.train_helpers import PathHelper, create_datasets, set_seed  # noqa: E402
+from utils.clutter_train_helpers import PathHelper, create_datasets, set_seed  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -125,7 +125,7 @@ def build_test_dataset_allchars(args: argparse.Namespace):
         stims_test=stims_test,
         lbls_test=lbls_test,
     )
-    # test_ds 是一个长度为 1 的列表/tuple 或直接是 dataset，保持与 train_helpers 一致
+    # test_ds 是一个长度为 1 的列表/tuple 或直接是 dataset，保持与 clutter_train_helpers 一致
     if isinstance(test_ds, (list, tuple)):
         test_ds = test_ds[0]
     return test_ds, stims_test

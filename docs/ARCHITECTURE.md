@@ -10,17 +10,20 @@ aim3_RNN/
 ├── experiments/generalization/ ← Generalization launchers + hparam aggregation
 ├── experiments/amarel/ ← Amarel/Slurm probe, submit, status, and rerun helpers
 │
-├── utils/                   ← Training pipeline (imported by train_model only)
-│   ├── train_rnn_core.py    ← Model base classes and standard RNN variants
-│   ├── train_gawf_core.py   ← GaWF feedback model
-│   ├── train_ann_core.py    ← ANN/Dendritic model variants
-│   ├── train_mamba_core.py  ← Mamba sequence model adapter
-│   ├── train_ssm_core.py    ← Diagonal SSM sequence model
-│   ├── train_helpers.py     ← I/O, logging, arg parsing, seeding, path resolution
-│   ├── train_rnn_engine.py  ← Training step orchestration (setup, train, evaluate)
-│   ├── train_acceleration.py← AMP, grad scaler, DataLoader builder, TrainStepper
-│   ├── train_sector.py      ← Loss & metrics for single-char + sector/coordinate mode
-│   └── train_predict_all_chars.py ← Loss & metrics for all-chars mode
+├── utils/                   ← Task models, shared recurrent cores, train/data helpers
+│   ├── recurrent_cores/     ← RNN/GRU/LSTM/GaWF/Mamba/S5 task-agnostic recurrent cores
+│   ├── clutter_task_models.py
+│   ├── clutter_train_helpers.py
+│   ├── clutter_train_engine.py
+│   ├── clutter_train_acceleration.py
+│   ├── clutter_train_sector.py
+│   ├── clutter_train_predict_all_chars.py
+│   ├── text_task_models.py
+│   ├── text_imdb_data.py
+│   ├── text_sentihood_data.py
+│   ├── text_sentihood_metrics.py
+│   ├── text_train_utils.py
+│   └── common_train_helpers.py
 │
 ├── utils_anal/              ← Post-training analysis (no matplotlib)
 │   ├── export_gate_sample.py← CANONICAL: build_model_from_ckpt, build_test_dataset
@@ -50,9 +53,12 @@ aim3_RNN/
 │   ├── plot_generalization.py ← Phase-3 CSV → char/sector gap + train/val acc vs scale (PNG; optional PDF)
 │   └── paper_figs/          ← Publication figures (fig1.py, metrics_best_acc_bars.py)
 │
-└── source/                  ← Stimulus generation (independent, rarely modified)
-    ├── GenerateMovies.py
-    └── GenerateMovies_cplx.py
+└── source/                  ← Data generation/preparation scripts by task family
+    ├── clutter/generate_movies.py
+    ├── clutter/generate_movies_cplx.py
+    ├── text/prepare_imdb_data.py
+    ├── text/prepare_sentihood_data.py
+    └── atari/
 ```
 
 ---
@@ -63,24 +69,24 @@ aim3_RNN/
 stdlib / third-party (torch, numpy, matplotlib, scipy, tqdm)
         │
         ▼
-utils/train_helpers.py ◄────────────────────┐
+utils/clutter_train_helpers.py ◄────────────┐
         │                                    │
         ▼                                    │
-utils/train_acceleration.py                  │
+utils/clutter_train_acceleration.py          │
         │                                    │
         ▼                                    │
-utils/train_rnn_core.py                      │
+utils/recurrent_cores/                       │
         │                                    │
         ▼                                    │
-utils/train_gawf_core.py    utils/train_ann_core.py
-        │                          │
-        └──────────┬───────────────┘
+utils/clutter_task_models.py                 │
+        │                                    │
+        └──────────┬─────────────────────────┘
                    ▼
-        utils/train_sector.py
-        utils/train_predict_all_chars.py
+        utils/clutter_train_sector.py
+        utils/clutter_train_predict_all_chars.py
                    │
                    ▼
-        utils/train_rnn_engine.py
+        utils/clutter_train_engine.py
                    │
                    ▼
         train_model.py (MC_RNN_Dataset lives here)
@@ -101,13 +107,13 @@ utils/train_gawf_core.py    utils/train_ann_core.py
 
 ## 3. Module Responsibilities
 
-### `utils/train_helpers.py`
+### `utils/clutter_train_helpers.py`
 Single source for: path resolution and I/O (`PathHelper`: `get_base_path`, `prepare_data_paths`,
 `load_raw_data`, `save_results`, `save_metrics_summary`), dataset construction (`create_datasets`),
 model class registry (`get_model_classes`), logging (`LoggingHelper`),
 argument parser (`build_arg_parser`), seeding (`set_seed`), metrics helpers (`summarize_experiment_metrics`).
 
-### `utils/train_rnn_engine.py`
+### `utils/clutter_train_engine.py`
 Owns the training loop internals: `setup_training_components` (builds all
 components dict), `begin_epoch`, `train_batch`, `summarize_online_train`,
 `eval_train_subset`, `eval_valid` (both wrap `evaluate_epoch` for fair full-loader eval),
@@ -115,7 +121,7 @@ and core `evaluate_epoch`. The `network_train` skeleton in `train_model.py` only
 GaWF-family handling covers both `GaWFRNNConv` and `MultiLayerGaWFRNNConv` for feedback
 scheduling, feedback freezing, and no-weight-decay U/V optimizer grouping.
 
-### `utils/train_acceleration.py`
+### `utils/clutter_train_acceleration.py`
 Owns: `AccelerationConfig` (all AMP/grad-accum flags), `setup_acceleration`
 (returns autocast_fn, scaler, batch_size, …), `build_loaders` (train/val/eval
 DataLoaders), `TrainStepper` (one-step forward+backward, no branches in
@@ -125,14 +131,14 @@ disables GradScaler to avoid `ComplexFloat` unscale limitations in CUDA AMP.
 Gradient clipping in `TrainStepper` is applied to real-valued gradients only;
 complex gradients are skipped for foreach clip ops.
 
-### `utils/train_sector.py`
+### `utils/clutter_train_sector.py`
 Owns all metric and loss logic for single-char + sector/coordinate mode:
 `loss_char_single`, `loss_pos_single`, `batch_metric_*`, `eval_accumulate_batch_*`,
 `finalize_metrics_single`, `build_loss_fn_single`, `SingleCharMetricsMode`,
 and fg-switch window helpers: `compute_fg_transition_masks`, `single_char_global_eval_*`.
 
-### `utils/train_predict_all_chars.py`
-Same pattern as `train_sector.py` but for all-chars mode (greedy matching).
+### `utils/clutter_train_predict_all_chars.py`
+Same pattern as `clutter_train_sector.py` but for all-chars mode (greedy matching).
 
 ### `utils_anal/export_gate_sample.py`
 **Canonical model loader.** All analysis scripts must call:
@@ -155,16 +161,16 @@ rebuilding a model from a checkpoint filename alone.
 ## 4. Data Flow Diagram
 
 ```
-source/GenerateMovies*.py
+source/clutter/generate_movies*.py
         │
         ▼
 stimuli/  (stimulus_reg-*.npy  +  labels_reg-*.csv)
         │
-        ▼  train_helpers.PathHelper.load_raw_data()
+        ▼  clutter_train_helpers.PathHelper.load_raw_data()
 MC_RNN_Dataset  (train_model.py)
         │
         ▼  DataLoader
-train_rnn_engine  →  GaWFRNNConv / RNNConv / …
+clutter_train_engine  →  clutter_task_models → recurrent_cores
         │
         ▼  PathHelper.save_results()
 results/train_data/<suffix>/

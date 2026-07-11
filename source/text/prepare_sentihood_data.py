@@ -17,9 +17,14 @@ Outputs under ``<data_dir>/sentihood/``:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
-from utils.sentihood_data import PAPER_ASPECTS, prepare_sentihood_tensors
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
+
+from utils.text_sentihood_data import PAPER_ASPECTS, prepare_sentihood_tensors
 
 
 def parse_args() -> argparse.Namespace:

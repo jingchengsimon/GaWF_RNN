@@ -26,7 +26,7 @@ LRS = [1e-4, 5e-4, 1e-3, 5e-3, 1e-2]
 WDS = [0.0, 1e-5, 1e-4, 1e-3]
 MAMBA_D_MODEL = 170
 S5_D_MODEL = 256
-# Param-matched to GaWF h=256 (~586k params); do not reuse DiagLTI state=189.
+# Param-matched to GaWF h=256 (~586k params).
 S5_STATE_SIZE = 128
 S5_SSM_LR_SCALE = 0.1
 GAWF_REF_HIDDEN = 256

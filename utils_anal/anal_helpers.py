@@ -1,7 +1,7 @@
 """
 Shared helpers for analysis scripts: test split dataset construction and GaWF checkpoint loading.
 
-Imports: train_model (MC_RNN_Dataset), utils.train_helpers (paths/datasets), utils_viz (hparam parsing).
+Imports: train_model (MC_RNN_Dataset), utils.clutter_train_helpers (paths/datasets), utils_viz (hparam parsing).
 """
 from __future__ import annotations
 
@@ -12,11 +12,16 @@ from typing import Dict, Tuple
 import torch
 
 from train_model import MC_RNN_Dataset
-from utils.train_gawf_core import GaWFRNNConv, MultiLayerGaWFRNNConv
-from utils.train_mamba_core import MambaConv
-from utils.train_rnn_core import GRUConv, LSTMConv, RNNConv
-from utils.train_s5_core import S5Conv
-from utils.train_helpers import PathHelper, create_datasets
+from utils.clutter_task_models import (
+    GaWFRNNConv,
+    GRUConv,
+    LSTMConv,
+    MambaConv,
+    MultiLayerGaWFRNNConv,
+    RNNConv,
+    S5Conv,
+)
+from utils.clutter_train_helpers import PathHelper, create_datasets
 from utils_viz.model_train_single_result import parse_hparams_from_filename
 
 

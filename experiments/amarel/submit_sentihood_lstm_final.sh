@@ -7,7 +7,7 @@
 # Prerequisite on an Amarel login node:
 #   source /home/js3269/enter/etc/profile.d/conda.sh
 #   conda activate aim3_rnn
-#   python scripts/prepare_sentihood_data.py --data_dir /scratch/$USER/stimuli
+#   python source/text/prepare_sentihood_data.py --data_dir /scratch/$USER/stimuli
 
 set -euo pipefail
 

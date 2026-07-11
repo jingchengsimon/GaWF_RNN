@@ -745,10 +745,7 @@ def get_model_classes(
     lstm_conv_class,
     gru_conv_class,
     gawf_rnn_conv_class,
-    feedforward_conv_class,
-    dendritic_ann_conv_class,
     mamba_conv_class=None,
-    diaglti_conv_class=None,
     s5_conv_class=None,
     gawf_multi_conv_class=None,
 ):
@@ -759,8 +756,6 @@ def get_model_classes(
         lstm_conv_class: LSTMConv class
         gru_conv_class: GRUConv class
         gawf_rnn_conv_class: GaWFRNNConv class
-        feedforward_conv_class: FeedForwardConv class
-        dendritic_ann_conv_class: DendriticANNConv class
     
     Returns:
         Dictionary mapping model type names to model classes
@@ -770,15 +765,11 @@ def get_model_classes(
         "lstm": lstm_conv_class,
         "gru": gru_conv_class,
         "gawf": gawf_rnn_conv_class,
-        "ffn": feedforward_conv_class,
-        "dann": dendritic_ann_conv_class,
     }
     if gawf_multi_conv_class is not None:
         model_classes["gawf_multi"] = gawf_multi_conv_class
     if mamba_conv_class is not None:
         model_classes["mamba"] = mamba_conv_class
-    if diaglti_conv_class is not None:
-        model_classes["diaglti"] = diaglti_conv_class
     if s5_conv_class is not None:
         model_classes["ssm"] = s5_conv_class
         model_classes["s5"] = s5_conv_class
@@ -799,10 +790,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "gru",
             "gawf",
             "gawf_multi",
-            "ffn",
-            "dann",
             "mamba",
-            "diaglti",
             "ssm",
             "s5",
         ],
@@ -821,20 +809,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         nargs="+",
         default=[170],
         help="Mamba d_model values to test (default: [170]).",
-    )
-    parser.add_argument(
-        "--diaglti_d_models",
-        type=int,
-        nargs="+",
-        default=[256],
-        help="DiagLTI sequence feature width d_model values to test (default: [256]).",
-    )
-    parser.add_argument(
-        "--diaglti_state_sizes",
-        type=int,
-        nargs="+",
-        default=[189],
-        help="DiagLTI latent state sizes to test (default: [189]).",
     )
     parser.add_argument(
         "--s5_d_models",

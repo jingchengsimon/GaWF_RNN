@@ -50,7 +50,9 @@ This project trains and analyses **CNN-RNN / GaWF (Gated-Weight-on-Feedback) neu
 for a temporal task with multi-character visual recognition. Stimuli are multi-frame grayscale image sequences;
 labels encode foreground digit identity and 2-D position (sector or coordinate).
 
-**Entry point:** `train_model.py`
+**Clutter entry point:** `train_model.py`
+**Text entry points:** `train_imdb.py`, `train_sentihood.py`
+**Atari entry point:** `train_atari.py`
 **Package roots:** `utils/`, `utils_anal/`, `utils_viz/`
 **Conda env:** `aim3_rnn`  |  **Python ≥ 3.10**  |  **PyTorch ≥ 2.0**
 
@@ -60,16 +62,27 @@ labels encode foreground digit identity and 2-D position (sector or coordinate).
 
 ```
 .
-├── source/                  # Stimulus generation scripts (do not modify during training)
-├── utils/                   # Training pipeline (models, engine, helpers, acceleration)
-│   ├── train_rnn_core.py    # BaseConvSequenceModel, RNNConv, GRUConv, LSTMConv
-│   ├── train_gawf_core.py   # GaWFRNNConv (feedback gating)
-│   ├── train_ann_core.py    # DendriticANNConv, FeedForwardConv
-│   ├── train_helpers.py     # I/O, logging, arg parsing, seeding
-│   ├── train_rnn_engine.py  # setup_training_components, begin_epoch, train_batch, eval_train_subset, eval_valid, evaluate_epoch
-│   ├── train_acceleration.py# AccelerationConfig, TrainStepper, build_loaders
-│   ├── train_sector.py      # Loss / metrics for sector (single-char) mode
-│   └── train_predict_all_chars.py  # Loss / metrics for all-chars mode
+├── source/                  # Data generation/preparation scripts, organized by domain
+│   ├── clutter/             # Clutter movie generation scripts
+│   ├── text/                # IMDB/SentiHood preprocessing scripts
+│   └── atari/               # Atari/RL env/data-source scripts
+├── utils/                   # Task models, recurrent cores, train/data helpers
+│   ├── recurrent_cores/     # Task-agnostic RNN/GRU/LSTM/GaWF/Mamba/S5 recurrent cores
+│   ├── clutter_task_models.py
+│   ├── clutter_train_helpers.py
+│   ├── clutter_train_engine.py
+│   ├── clutter_train_acceleration.py
+│   ├── clutter_train_sector.py
+│   ├── clutter_train_predict_all_chars.py
+│   ├── text_task_models.py
+│   ├── text_imdb_data.py
+│   ├── text_sentihood_data.py
+│   ├── text_sentihood_metrics.py
+│   ├── text_train_utils.py
+│   ├── atari_task_models.py
+│   ├── atari_envs.py
+│   ├── atari_train_utils.py
+│   └── common_train_helpers.py
 ├── utils_anal/              # Post-training analysis scripts (export_*.py, …)
 ├── utils_viz/               # Visualisation scripts (gate_avg*.py, …)
 │   ├── plot_generalization.py  # Generalization figures (char/sector gap + train/val acc vs scale)
@@ -79,6 +92,7 @@ labels encode foreground digit identity and 2-D position (sector or coordinate).
 │   ├── anal_data/<module>/  # Analysis outputs (.npy, .npz, .json)
 │   └── anal_figs/<module>/  # Figure outputs (.png)
 ├── train_model.py           # CLI training entry-point
+├── train_atari.py           # Atari PPO training entry-point
 ├── experiments/generalization/  # Generalization launchers + hparam_full_grid.py (see §8)
 ├── experiments/amarel/          # Amarel/Slurm submission, probe, status, and rerun helpers
 ├── hparam_search.sh         # Hyperparameter sweep launcher (zsh)
@@ -87,6 +101,12 @@ labels encode foreground digit identity and 2-D position (sector or coordinate).
 
 **Rule:** Never place new analysis or visualisation logic inside `utils/`.
 Analysis → `utils_anal/`; visualisation → `utils_viz/`.
+
+**Task organization rule:** New task families must follow the same separation:
+task-specific entry point + task-specific model/data modules + shared recurrent cores.
+For Atari, use `train_atari.py`, `utils/atari_*` modules, and `source/atari/` for
+environment/data-source scripts. Do not add another task-specific GaWF/RNN implementation;
+reuse `utils/recurrent_cores/`.
 
 ---
 
@@ -97,12 +117,14 @@ Refactors that touch exported names must propagate: grep for old symbols and fix
 ### 2.1 Model Hierarchy
 ```
 nn.Module
-└── BaseConvSequenceModel          (utils/train_rnn_core.py)
-    ├── BaseRNNConv → RNNConv / GRUConv / LSTMConv
-    └── GaWFRNNConv                (utils/train_gawf_core.py)
-        └── feedback loop via U, V parameters + middle_gawf()
-BaseMergeConvModel                 (utils/train_ann_core.py)
-└── DendriticANNConv / FeedForwardConv
+├── task wrappers
+│   ├── ClutterSequenceModel       (utils/clutter_task_models.py)
+│   ├── TextSequenceClassifier     (utils/text_task_models.py)
+│   └── AtariActorCritic           (utils/atari_task_models.py)
+└── recurrent cores                (utils/recurrent_cores/)
+    ├── RNNCore / GRUCore / LSTMCore
+    ├── GaWFCore / MultiLayerGaWFCore
+    └── MambaCore / S5Core
 ```
 
 ### 2.2 CNN Encoder (fixed "large" config)
@@ -114,7 +136,28 @@ BaseMergeConvModel                 (utils/train_ann_core.py)
 **Do not change encoder output shape** without updating all downstream analysis scripts
 that assume spatial dimensions (6,6) and 32 feature channels.
 
-### 2.3 GaWF Gating
+### 2.3 Atari Architecture
+- Atari observations use Gymnasium/ALE preprocessing: grayscale 84×84 frames, optional
+  frame stack as channels.
+- Atari encoder: `AtariNatureEncoder` in `utils/atari_task_models.py`:
+  `Cx84x84 -> Conv32(8,s4) -> Conv64(4,s2) -> Conv64(3,s1) -> FC512`.
+  This is the Nature-DQN style visual encoder; keep it separate from the clutter CNN.
+- Atari heads are actor/critic heads: policy logits over discrete actions and one scalar
+  value estimate.
+- Current Atari task models are GaWF-only. Do not add RNN/GRU/LSTM Atari model choices;
+  future baselines such as DQN, Double DQN, or Rainbow should be added only after their
+  model and training details are explicitly confirmed.
+- Atari GaWF feedback is explicit experiment feedback, not a claim that DQN/Rainbow feed
+  this vector into their networks. For `feedback_mode=combined`, the GaWF gate feedback is
+  `prev_policy_logits + prev_value + prev_action_onehot + clipped_reward + done`, with
+  dimension `2 * num_actions + 3`.
+- `feedback_mode=output` uses only `prev_policy_logits + prev_value`; `transition` uses only
+  `prev_action_onehot + clipped_reward + done`. These switches are Atari/RL-task switches,
+  not clutter/text switches.
+- Environment creation and ROM checks belong under `source/atari/` or `utils/atari_envs.py`;
+  recurrent math remains in `utils/recurrent_cores/`.
+
+### 2.4 GaWF Gating
 - Feedback vector: `fb ∈ ℝ^(fb_dim)`. For projected GaWF, `fb_dim = dz`
   (`--feedback_dim` / `--dz`).
 - Legacy compatibility: for single-layer `gawf`, if `--feedback_dim` is omitted,
@@ -136,14 +179,14 @@ that assume spatial dimensions (6,6) and 32 feature channels.
   dim). If `--dz > 0`, each recurrent layer has its own U/V pair (`U_layers`,
   `V_layers`) and receives projected feedback with dimension `dz`.
 
-### 2.4 Label Format
+### 2.5 Label Format
 | Mode | `labels` shape | `labels[..., 0]` | `labels[..., 1]` |
 |------|---------------|-------------------|------------------|
 | sector (default) | `(B, T, 2)` int64 | fg digit 0–9 | sector 0–8 |
 | coordinate | `(B, T, 3)` float32 | fg digit | x coord | y coord |
 | predict_all_chars | `(B, T, max_chars)` int64 | chars in order; -1 = pad | — |
 
-**Sector fair-eval extensions (single-char only):** label TSV may include `fg_switch` (0/1). The dataset derives per-frame **pre5** / **post5** masks (see `utils/train_sector.compute_fg_transition_masks`) and, when present, training pickles store strict **global** accuracies (`glob_*`) and fg-switch-window accuracies (`fg_switch_pre5_*`, `fg_switch_post5_*`) alongside the legacy batch-mean curves. `predict_all_chars` runs are unchanged.
+**Sector fair-eval extensions (single-char only):** label TSV may include `fg_switch` (0/1). The dataset derives per-frame **pre5** / **post5** masks (see `utils/clutter_train_sector.compute_fg_transition_masks`) and, when present, training pickles store strict **global** accuracies (`glob_*`) and fg-switch-window accuracies (`fg_switch_pre5_*`, `fg_switch_post5_*`) alongside the legacy batch-mean curves. `predict_all_chars` runs are unchanged.
 
 ---
 
@@ -208,7 +251,7 @@ if __name__ == "__main__":
 | `--rnn_dropout` | float | `train_model.py` only: middle-path dropout *p* after ReLU (RNN/GaWF/FFN); single value (default `0.5`) |
 | `--mamba_d_models` | int+ | `train_model.py` only: Mamba sequence width `d_model`; repeat for grid (default `[170]`) |
 | `--ssm_d_models` | int+ | `train_model.py` only: SSM sequence feature width `d_model`; repeat for grid (default `[256]`) |
-| `--ssm_state_sizes` | int+ | `train_model.py` only: diagonal SSM latent state size; repeat for grid (default `[189]`) |
+| `--s5_state_sizes` | int+ | `train_model.py` only: S5 latent state size; repeat for grid (default `[128]`) |
 | `--feedback_dim` / `--dz` | int | `train_model.py` only, GaWF: feedback context dimension `dz`; default `None` keeps single-layer legacy `num_classes + num_pos`; for `gawf_multi`, `None` or `0` disables projectors and values `>0` enable projected feedback |
 | `--gawf_layers` | int | `train_model.py` only, `gawf_multi`: recurrent layer count; default `2`, must be `>=2` |
 | `--data_suffix` | str | Suffix for **train** (and default val): `stimulus_reg-train-<suffix>.npy` / `stimulus_reg-validation-<suffix>` |
@@ -288,12 +331,17 @@ When plotting N components + sum + full (N+2 panels), use `n_cols=3`,
 
 ## 6. Training Conventions (`utils/`)
 
-- **No new model classes** should be added directly to `train_rnn_core.py` unless they
-  extend `BaseConvSequenceModel` and use the same encoder architecture.
-- All new model types must be registered in `get_model_classes()` in `train_helpers.py`.
-- Loss functions must be constructed via `build_loss_fn_*()` factories in
-  `train_sector.py` or `train_predict_all_chars.py`; do not inline loss logic in the engine.
-- The training loop in `train_model.py` is a skeleton; heavy logic lives in `train_rnn_engine.py`.
+- **No task-specific recurrent math** should be reimplemented inside task wrappers. Add or
+  modify recurrent computation in `utils/recurrent_cores/`, then compose it from a task
+  model module such as `utils/clutter_task_models.py`, `utils/text_task_models.py`, or
+  future `utils/atari_*` modules.
+- Clutter model types must be registered in `get_model_classes()` in
+  `clutter_train_helpers.py`.
+- Clutter loss functions must be constructed via `build_loss_fn_*()` factories in
+  `clutter_train_sector.py` or `clutter_train_predict_all_chars.py`; do not inline loss
+  logic in the engine.
+- The clutter training loop in `train_model.py` is a skeleton; heavy logic lives in
+  `clutter_train_engine.py`.
 - `AccelerationConfig` is the single source of truth for AMP/grad-accum settings;
   never add `if use_acceleration` branches inside the training loop.
 
@@ -413,7 +461,7 @@ training processes concurrently via `CUDA_VISIBLE_DEVICES`.
 ## 9. Paths & Environment
 
 ```
-# Data resolution order (train_helpers.PathHelper.get_base_path):
+# Data resolution order (clutter_train_helpers.PathHelper.get_base_path):
 1. --data_dir CLI argument
 2. $AIM3_STIMULI_PATH environment variable
 3. $FAW_RNN_DATA_PATH environment variable

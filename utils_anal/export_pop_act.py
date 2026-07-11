@@ -28,9 +28,14 @@ if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
 from train_model import MC_RNN_Dataset
-from utils.train_gawf_core import GaWFRNNConv, MultiLayerGaWFRNNConv
-from utils.train_rnn_core import GRUConv, LSTMConv, RNNConv
-from utils.train_helpers import PathHelper, create_datasets, set_seed
+from utils.clutter_task_models import (
+    GRUConv,
+    LSTMConv,
+    MultiLayerGaWFRNNConv,
+    RNNConv,
+    GaWFRNNConv,
+)
+from utils.clutter_train_helpers import PathHelper, create_datasets, set_seed
 from utils_viz.model_train_single_result import parse_hparams_from_filename
 
 # parse_hparams_from_filename uses title case; cls_map keys are lowercase

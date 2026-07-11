@@ -21,7 +21,7 @@ from typing import Dict, Tuple
 
 import torch
 
-from utils.train_gawf_core import GaWFRNNConv
+from utils.clutter_task_models import GaWFRNNConv
 from utils_anal.anal_helpers import build_model_from_ckpt, resolve_device
 
 
@@ -294,4 +294,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
