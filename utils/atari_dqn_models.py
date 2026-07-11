@@ -24,8 +24,14 @@ import torch.nn.functional as F
 from .recurrent_cores.gawf import GaWFCore
 from .recurrent_cores.rnn import GRUCore, LSTMCore, RNNCore
 
-AtariDQNModelType = Literal["cnn", "rnn", "gru", "lstm", "gawf", "s5", "mamba"]
+AtariDQNModelType = Literal["cnn", "ann", "rnn", "gru", "lstm", "gawf", "s5", "mamba"]
 DQNFeedbackMode = Literal["none", "qvalues"]
+
+# Feedforward (non-recurrent) readout baseline. "cnn" is the legacy Atari label
+# (it sits on the Nature-DQN conv encoder); "ann" is the encoder-agnostic alias
+# used for MiniGrid, where with an MLP encoder the network has no convolution at
+# all. Both map to the same feedforward readout. (Post-Atari: drop "cnn".)
+FEEDFORWARD_MODEL_TYPES = ("cnn", "ann")
 
 # Cores stepped one timestep at a time (per-step done resets / GaWF feedback).
 STEPWISE_MODEL_TYPES = ("rnn", "gru", "lstm", "gawf")
@@ -105,7 +111,7 @@ class AtariQNetwork(nn.Module):
         encoder_factory=None,
     ) -> None:
         super().__init__()
-        if model_type not in {"cnn", *RECURRENT_MODEL_TYPES}:
+        if model_type not in {*FEEDFORWARD_MODEL_TYPES, *RECURRENT_MODEL_TYPES}:
             raise ValueError(f"Unsupported Atari DQN model_type: {model_type}")
         if feedback_mode not in {"none", "qvalues"}:
             raise ValueError(f"Unsupported feedback_mode: {feedback_mode}")
@@ -132,8 +138,8 @@ class AtariQNetwork(nn.Module):
             self.features = AtariDQNConvFeatures(in_channels=self.input_channels)
         conv_out = self.features.output_size
 
-        if self.model_type == "cnn":
-            # Feedforward readout slot: Nature-DQN dense layer.
+        if self.model_type in FEEDFORWARD_MODEL_TYPES:
+            # Feedforward readout slot: a dense layer (the memoryless baseline).
             self.proj = nn.Sequential(nn.Linear(conv_out, encoder_feature_dim), nn.ReLU())
             self.core = None
             head_input_size = encoder_feature_dim

@@ -40,8 +40,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--env_id", type=str, default="MiniGrid-MemoryS7-v0",
                         choices=MINIGRID_PILOT_ENVS)
     parser.add_argument("--algo", type=str, default="dqn", choices=["dqn"])
-    parser.add_argument("--model_type", type=str, default="gawf",
-                        choices=["cnn", "rnn", "gru", "lstm", "gawf", "s5", "mamba"])
+    parser.add_argument("--model_type", type=str, default="ann",
+                        choices=["ann", "cnn", "rnn", "gru", "lstm", "gawf", "s5", "mamba"])
     parser.add_argument("--feedback_mode", type=str, default=None,
                         choices=["none", "qvalues"])
     # Encoder (pluggable; default mlp). output_size = recurrent input_size.

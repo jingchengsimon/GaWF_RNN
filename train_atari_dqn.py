@@ -40,7 +40,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--model_type",
         type=str,
         default="cnn",
-        choices=["cnn", "rnn", "gru", "lstm", "gawf", "s5", "mamba"],
+        choices=["cnn", "ann", "rnn", "gru", "lstm", "gawf", "s5", "mamba"],
     )
     parser.add_argument(
         "--feedback_mode",
