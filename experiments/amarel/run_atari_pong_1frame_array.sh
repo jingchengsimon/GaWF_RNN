@@ -10,21 +10,24 @@
 #SBATCH --output=experiments/amarel/artifacts/atari_pong_1frame/%A_%a.out
 #SBATCH --error=experiments/amarel/artifacts/atari_pong_1frame/%A_%a.err
 
-# Train one (model x setting) cell of the 1-frame Pong sweep.
+# Train one (model x setting x seed) cell of the 1-frame Pong sweep.
 #
-# 7 models x 2 settings = 14 array tasks (SLURM_ARRAY_TASK_ID 0..13):
+# 7 models x 2 settings x 5 seeds = 70 array tasks (SLURM_ARRAY_TASK_ID 0..69):
 #   setting 0 = plain 1-frame Pong        (flicker_prob=0.0)   -> MDP-ish control
 #   setting 1 = 1-frame flickering Pong   (flicker_prob=0.5)   -> POMDP, needs memory
 # Both use --frame_stack 1 so the recurrent core is the ONLY source of memory.
 # The pre-existing 4-frame baseline sweep is separate and left untouched.
 #
-# task -> (model, setting):
+# task -> (model, setting, seed) with model varying fastest:
 #   model   = MODELS[task % 7]
-#   setting = task / 7
+#   rest    = task / 7            (0..9)
+#   setting = rest / 5           (0..1)
+#   seed    = SEEDS[rest % 5]
 #
-# S5/Mamba d_model come from the LSTM-anchored param match
-# (experiments/generalization/atari_ssm_param_match.py); override via env if the
-# JSON is absent: S5_D_MODEL, MAMBA_D_MODEL, SSM_STATE_SIZE.
+# All recurrent cores are param-matched to the LSTM anchor (hidden=512) via
+# experiments/generalization/atari_ssm_param_match.py -> results/atari_param_match/
+# atari_param_match.json. RNN/GRU/LSTM/GaWF get --hidden_size; S5/Mamba get
+# --ssm_d_model/--ssm_state_size; CNN is the unmatched feedforward control.
 
 set -euo pipefail
 
@@ -52,66 +55,64 @@ fi
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export KMP_DUPLICATE_LIB_OK=TRUE
 
-# ---- task -> (model, setting) ---------------------------------------------
+# ---- task -> (model, setting, seed) ---------------------------------------
 MODELS=(cnn rnn gru lstm gawf s5 mamba)
+SEEDS=(${SEEDS_OVERRIDE:-42 1 2 3 4})
 N_MODELS=${#MODELS[@]}
+N_SEEDS=${#SEEDS[@]}
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
+
 MODEL="${MODELS[$((TASK_ID % N_MODELS))]}"
-SETTING=$((TASK_ID / N_MODELS))
+REST=$((TASK_ID / N_MODELS))
+SETTING=$((REST / N_SEEDS))
+SEED="${SEEDS[$((REST % N_SEEDS))]}"
 
 if [[ "$SETTING" -eq 0 ]]; then
   FLICKER_PROB=0.0
-  SUFFIX="atari_dqn_pong1f_${MODEL}"
+  SUFFIX="atari_dqn_pong1f_${MODEL}_seed${SEED}"
 else
   FLICKER_PROB=0.5
-  SUFFIX="atari_dqn_pong1f_flicker_${MODEL}"
+  SUFFIX="atari_dqn_pong1f_flicker_${MODEL}_seed${SEED}"
 fi
 
-SEED="${SEED:-42}"
 TOTAL_TIMESTEPS="${TOTAL_TIMESTEPS:-1000000}"
 SEQ_LEN="${SEQ_LEN:-16}"
 
-# ---- param-matched S5/Mamba d_model ---------------------------------------
-MATCH_JSON="$ROOT/results/atari_param_match/atari_ssm_param_match.json"
-SSM_STATE_SIZE="${SSM_STATE_SIZE:-128}"
-S5_D_MODEL="${S5_D_MODEL:-}"
-MAMBA_D_MODEL="${MAMBA_D_MODEL:-}"
-if [[ -f "$MATCH_JSON" ]]; then
-  read -r JS5 JMAMBA JSTATE < <(python - "$MATCH_JSON" <<'PY'
+# ---- param-matched sizing from JSON ---------------------------------------
+MATCH_JSON="$ROOT/results/atari_param_match/atari_param_match.json"
+SIZE_ARGS=()
+if [[ "$MODEL" != "cnn" ]]; then
+  if [[ ! -f "$MATCH_JSON" ]]; then
+    echo "Missing $MATCH_JSON. Run atari_ssm_param_match.py first." >&2
+    exit 2
+  fi
+  read -r KIND V1 V2 < <(python - "$MATCH_JSON" "$MODEL" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
-m = d.get("matched", {})
-print(m.get("s5", {}).get("d_model", ""),
-      m.get("mamba", {}).get("d_model", ""),
-      d.get("ssm_state_size", ""))
+m = d["matched"].get(sys.argv[2], {})
+if "hidden_size" in m:
+    print("hidden", m["hidden_size"], "")
+elif "d_model" in m:
+    print("ssm", m["d_model"], m.get("state_size", d.get("ssm_state_size", 128)))
+else:
+    print("none", "", "")
 PY
 )
-  [[ -z "$S5_D_MODEL"   && -n "$JS5"    ]] && S5_D_MODEL="$JS5"
-  [[ -z "$MAMBA_D_MODEL" && -n "$JMAMBA" ]] && MAMBA_D_MODEL="$JMAMBA"
-  [[ -n "$JSTATE" ]] && SSM_STATE_SIZE="$JSTATE"
-fi
-
-SSM_ARGS=()
-if [[ "$MODEL" == "s5" ]]; then
-  if [[ -z "$S5_D_MODEL" ]]; then
-    echo "S5 d_model unknown: run atari_ssm_param_match.py or set S5_D_MODEL." >&2
+  if [[ "$KIND" == "hidden" ]]; then
+    SIZE_ARGS=(--hidden_size "$V1")
+  elif [[ "$KIND" == "ssm" ]]; then
+    SIZE_ARGS=(--ssm_d_model "$V1" --ssm_state_size "$V2")
+  else
+    echo "No matched sizing for model=$MODEL in $MATCH_JSON." >&2
     exit 2
   fi
-  SSM_ARGS=(--ssm_d_model "$S5_D_MODEL" --ssm_state_size "$SSM_STATE_SIZE")
-elif [[ "$MODEL" == "mamba" ]]; then
-  if [[ -z "$MAMBA_D_MODEL" ]]; then
-    echo "Mamba d_model unknown: run atari_ssm_param_match.py or set MAMBA_D_MODEL." >&2
-    exit 2
-  fi
-  SSM_ARGS=(--ssm_d_model "$MAMBA_D_MODEL" --ssm_state_size "$SSM_STATE_SIZE")
 fi
 
-DONE_FILE="$STATUS_DIR/${SUFFIX}_seed${SEED}.done"
-FAIL_FILE="$STATUS_DIR/${SUFFIX}_seed${SEED}.fail"
+DONE_FILE="$STATUS_DIR/${SUFFIX}.done"
+FAIL_FILE="$STATUS_DIR/${SUFFIX}.fail"
 
-echo "[$(date -Is)] task=$TASK_ID model=$MODEL setting=$SETTING flicker=$FLICKER_PROB"
-echo "result_suffix=$SUFFIX seed=$SEED total_timesteps=$TOTAL_TIMESTEPS"
-[[ ${#SSM_ARGS[@]} -gt 0 ]] && echo "ssm_args=${SSM_ARGS[*]}"
+echo "[$(date -Is)] task=$TASK_ID model=$MODEL setting=$SETTING seed=$SEED flicker=$FLICKER_PROB"
+echo "result_suffix=$SUFFIX total_timesteps=$TOTAL_TIMESTEPS sizing=${SIZE_ARGS[*]:-none(cnn)}"
 
 set +e
 DISABLE_TQDM=1 python train_atari_dqn.py \
@@ -124,26 +125,22 @@ DISABLE_TQDM=1 python train_atari_dqn.py \
   --seed "$SEED" \
   --device cuda \
   --result_suffix "$SUFFIX" \
-  "${SSM_ARGS[@]}"
+  "${SIZE_ARGS[@]}"
 train_rc=$?
 set -e
 
 if [[ "$train_rc" -ne 0 ]]; then
   {
-    echo "status=train_failed"
-    echo "task_id=$TASK_ID model=$MODEL setting=$SETTING"
-    echo "flicker_prob=$FLICKER_PROB result_suffix=$SUFFIX seed=$SEED"
-    echo "exit_code=$train_rc timestamp=$(date -Is)"
+    echo "status=train_failed task_id=$TASK_ID model=$MODEL setting=$SETTING seed=$SEED"
+    echo "flicker_prob=$FLICKER_PROB result_suffix=$SUFFIX exit_code=$train_rc timestamp=$(date -Is)"
   } > "$FAIL_FILE"
   exit "$train_rc"
 fi
 
 {
-  echo "status=done"
-  echo "task_id=$TASK_ID model=$MODEL setting=$SETTING"
-  echo "flicker_prob=$FLICKER_PROB result_suffix=$SUFFIX seed=$SEED"
-  echo "metrics_path=results/train_data/$SUFFIX/metrics.json"
-  echo "timestamp=$(date -Is)"
+  echo "status=done task_id=$TASK_ID model=$MODEL setting=$SETTING seed=$SEED"
+  echo "flicker_prob=$FLICKER_PROB result_suffix=$SUFFIX"
+  echo "metrics_path=results/train_data/$SUFFIX/metrics.json timestamp=$(date -Is)"
 } > "$DONE_FILE"
 rm -f "$FAIL_FILE"
-echo "[$(date -Is)] done model=$MODEL setting=$SETTING -> results/train_data/$SUFFIX"
+echo "[$(date -Is)] done model=$MODEL setting=$SETTING seed=$SEED -> results/train_data/$SUFFIX"

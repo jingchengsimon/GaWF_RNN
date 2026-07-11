@@ -1,14 +1,16 @@
-"""Overlay Atari DQN learning curves for the 1-frame Pong sweep.
+"""Overlay Atari DQN learning curves for the 1-frame Pong sweep (multi-seed).
 
 Reads ``results/train_data/<suffix>/metrics_history.jsonl`` (written by
 ``train_atari_dqn.py``) and overlays ``episodic_return_100`` vs ``global_step``
 for the seven model variants (cnn/rnn/gru/lstm/gawf/s5/mamba), one coloured line
-per model. Style mirrors ``utils_viz/model_train_compare_result.py`` (matplotlib
-Agg, fixed per-model colours, legend, output under ``results/train_figs``).
+per model. When several seeds are present the seeds are aggregated into a mean
+line with a shaded +/- std band. Style mirrors
+``utils_viz/model_train_compare_result.py`` (matplotlib Agg, fixed per-model
+colours, legend, output under ``results/train_figs``).
 
-The suffix convention matches the launch scripts:
-  plain 1-frame Pong      -> ``<prefix>_<model>``          (--setting plain)
-  1-frame flickering Pong -> ``<prefix>_flicker_<model>``  (--setting flicker)
+Suffix convention matches the launch scripts (seed suffix optional):
+  plain 1-frame Pong      -> ``<prefix>_<model>_seed<N>``          (--setting plain)
+  1-frame flickering Pong -> ``<prefix>_flicker_<model>_seed<N>``  (--setting flicker)
 
 Examples:
   python -m utils_viz.atari_learning_curves --setting both
@@ -18,8 +20,10 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -49,10 +53,12 @@ SETTING_TITLES = {
     "flicker": "1-frame Flickering Pong (POMDP, p=0.5)",
 }
 
+N_GRID = 300  # resampling points for cross-seed aggregation
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Overlay Atari DQN learning curves across models."
+        description="Overlay Atari DQN learning curves across models (multi-seed)."
     )
     parser.add_argument(
         "--setting",
@@ -76,7 +82,13 @@ def parse_args() -> argparse.Namespace:
         "--smooth",
         type=int,
         default=10,
-        help="Rolling-mean window (in logged points) for the curves; 1 disables it.",
+        help="Trailing rolling-mean window (in logged points) per seed; 1 disables it.",
+    )
+    parser.add_argument(
+        "--band",
+        choices=("std", "sem", "none"),
+        default="std",
+        help="Shaded band across seeds: std, standard error, or none.",
     )
     parser.add_argument("--data_root", default="results/train_data")
     parser.add_argument("--output_dir", default="results/train_figs/atari_pong_1frame")
@@ -84,15 +96,28 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _suffix_for(prefix: str, setting: str, model: str) -> str:
+def _base_suffix(prefix: str, setting: str, model: str) -> str:
     if setting == "flicker":
         return f"{prefix}_flicker_{model}"
     return f"{prefix}_{model}"
 
 
-def _load_curve(
-    jsonl_path: Path, metric: str
-) -> Optional[tuple[np.ndarray, np.ndarray]]:
+def _discover_run_dirs(data_root: str, base: str) -> list[Path]:
+    """All seed run dirs for a model+setting, plus a seedless dir if present."""
+    root = Path(data_root)
+    seed_dirs = sorted(
+        (Path(p) for p in glob.glob(str(root / f"{base}_seed*")) if os.path.isdir(p)),
+        key=lambda p: int(re.search(r"_seed(\d+)$", p.name).group(1))
+        if re.search(r"_seed(\d+)$", p.name)
+        else 0,
+    )
+    if seed_dirs:
+        return seed_dirs
+    seedless = root / base
+    return [seedless] if seedless.is_dir() else []
+
+
+def _load_curve(jsonl_path: Path, metric: str) -> Optional[tuple[np.ndarray, np.ndarray]]:
     if not jsonl_path.is_file():
         return None
     steps, values = [], []
@@ -105,8 +130,7 @@ def _load_curve(
                 rec = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            v = rec.get(metric)
-            s = rec.get("global_step")
+            v, s = rec.get(metric), rec.get("global_step")
             if v is None or s is None:
                 continue
             v = float(v)
@@ -116,16 +140,12 @@ def _load_curve(
             values.append(v)
     if not steps:
         return None
-    return np.asarray(steps), np.asarray(values)
+    order = np.argsort(steps)
+    return np.asarray(steps)[order], np.asarray(values)[order]
 
 
 def _smooth(values: np.ndarray, window: int) -> np.ndarray:
-    """Trailing moving average with a shrinking window at the start.
-
-    Each point averages up to ``window`` preceding points (min_periods=1). This
-    is causal (no future leakage) and, unlike a zero-padded convolution, does not
-    bias the final points toward zero.
-    """
+    """Trailing moving average (causal; no future leakage, no edge spike)."""
     if window <= 1 or values.size < 2:
         return values
     csum = np.concatenate([[0.0], np.cumsum(values)])
@@ -134,24 +154,42 @@ def _smooth(values: np.ndarray, window: int) -> np.ndarray:
     return (csum[idx + 1] - csum[lo]) / (idx + 1 - lo)
 
 
+def _aggregate_seeds(
+    curves: list[tuple[np.ndarray, np.ndarray]], smooth: int
+) -> Optional[tuple[np.ndarray, np.ndarray, np.ndarray, int]]:
+    """Resample each seed onto a common grid over the overlapping step range."""
+    curves = [c for c in curves if c is not None and c[0].size >= 2]
+    if not curves:
+        return None
+    lo = max(c[0][0] for c in curves)
+    hi = min(c[0][-1] for c in curves)
+    if hi <= lo:  # no overlap (e.g. one seed barely started); fall back to longest
+        steps, values = max(curves, key=lambda c: c[0][-1])
+        sm = _smooth(values, smooth)
+        return steps, sm, np.zeros_like(sm), 1
+    grid = np.linspace(lo, hi, N_GRID)
+    stacked = np.vstack([
+        np.interp(grid, steps, _smooth(values, smooth)) for steps, values in curves
+    ])
+    return grid, stacked.mean(0), stacked.std(0), len(curves)
+
+
 def _plot_setting(ax, args, setting: str) -> int:
     plotted = 0
     for model in args.models:
-        suffix = _suffix_for(args.prefix, setting, model)
-        path = Path(args.data_root) / suffix / "metrics_history.jsonl"
-        curve = _load_curve(path, args.metric)
-        if curve is None:
-            print(f"[skip] no data: {path}")
+        base = _base_suffix(args.prefix, setting, model)
+        run_dirs = _discover_run_dirs(args.data_root, base)
+        curves = [_load_curve(d / "metrics_history.jsonl", args.metric) for d in run_dirs]
+        agg = _aggregate_seeds(curves, args.smooth)
+        if agg is None:
+            print(f"[skip] no data: {args.data_root}/{base}[_seed*]")
             continue
-        steps, values = curve
-        color = MODEL_COLORS.get(model, None)
-        ax.plot(
-            steps,
-            _smooth(values, args.smooth),
-            label=model,
-            color=color,
-            linewidth=1.8,
-        )
+        grid, mean, std, n_seeds = agg
+        color = MODEL_COLORS.get(model)
+        ax.plot(grid, mean, label=f"{model} (n={n_seeds})", color=color, linewidth=1.8)
+        if args.band != "none" and n_seeds > 1:
+            band = std / np.sqrt(n_seeds) if args.band == "sem" else std
+            ax.fill_between(grid, mean - band, mean + band, color=color, alpha=0.18, linewidth=0)
         plotted += 1
     ax.set_title(SETTING_TITLES.get(setting, setting))
     ax.set_xlabel("environment steps")
@@ -178,18 +216,18 @@ def main() -> None:
             "metrics_history.jsonl."
         )
 
-    fig.suptitle("Atari DRQN family — learning curves", fontsize=13)
+    band_label = "" if args.band == "none" else f" ({args.band} band across seeds)"
+    fig.suptitle(f"Atari DRQN family — learning curves{band_label}", fontsize=13)
     fig.tight_layout(rect=(0, 0, 1, 0.96))
 
     if args.output:
         out_path = args.output
     else:
         os.makedirs(args.output_dir, exist_ok=True)
-        tag = args.setting
-        out_path = os.path.join(args.output_dir, f"atari_pong_1frame_{tag}.png")
+        out_path = os.path.join(args.output_dir, f"atari_pong_1frame_{args.setting}.png")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     fig.savefig(out_path, dpi=150)
-    print(f"wrote {out_path}  ({total} curves)")
+    print(f"wrote {out_path}  ({total} model curves)")
 
 
 if __name__ == "__main__":
