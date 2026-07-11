@@ -15,6 +15,19 @@ if PROJECT_ROOT not in sys.path:
 
 from utils.atari_dqn_models import AtariQNetwork, AtariQNetworkState
 
+try:  # optional deps: only present on the GPU boxes (Amarel), not locally
+    import s5  # noqa: F401
+
+    HAS_S5 = True
+except ImportError:
+    HAS_S5 = False
+try:
+    import mamba_ssm  # noqa: F401
+
+    HAS_MAMBA = True
+except ImportError:
+    HAS_MAMBA = False
+
 
 def _build_model(model_type: str, feedback_mode: str = "none", num_actions: int = 6) -> AtariQNetwork:
     return AtariQNetwork(
@@ -25,6 +38,18 @@ def _build_model(model_type: str, feedback_mode: str = "none", num_actions: int 
         encoder_feature_dim=32,
         core_dropout=0.0,
         feedback_mode=feedback_mode,
+    )
+
+
+def _build_sequence_model(model_type: str, num_actions: int = 6, context_len: int = 4) -> AtariQNetwork:
+    return AtariQNetwork(
+        num_actions=num_actions,
+        input_channels=1,
+        model_type=model_type,
+        ssm_d_model=16,
+        ssm_state_size=8,
+        ssm_num_layers=1,
+        ssm_context_len=context_len,
     )
 
 
@@ -173,6 +198,104 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
                 self.assertTrue(grads)
                 self.assertTrue(all(torch.isfinite(g).all().item() for g in grads))
                 optimizer.step()
+
+    def _check_sequence_core(self, model_type: str) -> None:
+        num_actions = 6
+        model = _build_sequence_model(model_type, num_actions, context_len=4)
+        self.assertTrue(model.is_recurrent)
+        self.assertTrue(model.uses_sequence_core)
+        model.eval()
+
+        # One-shot training path over a (B, T, C, H, W) window.
+        batch, n_steps = 2, 5
+        obs = torch.randint(0, 256, (batch, n_steps, 1, 84, 84), dtype=torch.uint8)
+        prev_dones = torch.zeros(batch, n_steps)
+        q_values, next_state = model.forward_sequence(obs, prev_dones)
+        self.assertEqual(q_values.shape, (batch, n_steps, num_actions))
+        self.assertIsNone(next_state)
+
+        # Online rolling-window step carries a (B, context_len, F) buffer.
+        q_step, state = model.step(obs[:, 0], torch.ones(batch))
+        self.assertEqual(q_step.shape, (batch, num_actions))
+        self.assertEqual(
+            state.recurrent.shape, (batch, model.ssm_context_len, model.core.input_size)
+        )
+
+        # A prev_done=1 must clear the window: same frame with/without history match.
+        _, state2 = model.step(obs[:, 1], torch.zeros(batch), state=state)
+        q_reset, _ = model.step(obs[:, 2], torch.ones(batch), state=state2)
+        q_fresh, _ = model.step(obs[:, 2], torch.ones(batch), state=None)
+        self.assertTrue(torch.allclose(q_reset, q_fresh, atol=1e-5))
+
+    @unittest.skipUnless(HAS_S5, "s5-pytorch not installed")
+    def test_s5_sequence_core(self) -> None:
+        self._check_sequence_core("s5")
+
+    @unittest.skipUnless(HAS_MAMBA, "mamba-ssm not installed")
+    def test_mamba_sequence_core(self) -> None:
+        self._check_sequence_core("mamba")
+
+
+class FlickerWrapperTest(unittest.TestCase):
+    """Test the Flickering-Atari observation logic without a real Gymnasium env.
+
+    ``_flicker`` takes ``gym`` as an argument, so we inject a fake module whose
+    ``ObservationWrapper`` is a trivial base class and exercise the blanking logic
+    directly (no ROMs / gymnasium required).
+    """
+
+    @staticmethod
+    def _fake_gym():
+        class _ObservationWrapper:
+            def __init__(self, env):
+                self.env = env
+
+        class _FakeGym:
+            ObservationWrapper = _ObservationWrapper
+
+        return _FakeGym
+
+    def test_disabled_returns_env_unchanged(self) -> None:
+        from utils.atari_envs import _flicker
+
+        sentinel = object()
+        self.assertIs(_flicker(sentinel, self._fake_gym(), 0.0, seed=0), sentinel)
+
+    def test_always_blank(self) -> None:
+        import numpy as np
+
+        from utils.atari_envs import _flicker
+
+        wrapper = _flicker(object(), self._fake_gym(), 1.0, seed=0)
+        frame = np.ones((84, 84), dtype=np.uint8)
+        out = wrapper.observation(frame)
+        self.assertTrue((np.asarray(out) == 0).all())
+        self.assertEqual(np.asarray(out).shape, frame.shape)
+
+    def test_never_blank(self) -> None:
+        import numpy as np
+
+        from utils.atari_envs import _flicker
+
+        wrapper = _flicker(object(), self._fake_gym(), 1e-9, seed=0)
+        frame = np.ones((84, 84), dtype=np.uint8)
+        # prob ~ 0: overwhelmingly passes the true frame through.
+        kept = sum(int((np.asarray(wrapper.observation(frame)) == 1).all()) for _ in range(50))
+        self.assertGreaterEqual(kept, 49)
+
+    def test_half_blank_rate(self) -> None:
+        import numpy as np
+
+        from utils.atari_envs import _flicker
+
+        wrapper = _flicker(object(), self._fake_gym(), 0.5, seed=123)
+        frame = np.ones((84, 84), dtype=np.uint8)
+        blanks = sum(
+            int((np.asarray(wrapper.observation(frame)) == 0).all()) for _ in range(2000)
+        )
+        # ~50% blanked; wide tolerance to stay deterministic-ish across seeds.
+        self.assertGreater(blanks, 850)
+        self.assertLess(blanks, 1150)
 
 
 if __name__ == "__main__":

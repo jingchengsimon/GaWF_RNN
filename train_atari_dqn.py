@@ -40,7 +40,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--model_type",
         type=str,
         default="cnn",
-        choices=["cnn", "rnn", "gru", "lstm", "gawf"],
+        choices=["cnn", "rnn", "gru", "lstm", "gawf", "s5", "mamba"],
     )
     parser.add_argument(
         "--feedback_mode",
@@ -53,6 +53,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--encoder_feature_dim", type=int, default=512)
     parser.add_argument("--core_dropout", type=float, default=0.0)
     parser.add_argument("--frame_stack", type=int, default=4)
+    parser.add_argument(
+        "--flicker_prob",
+        type=float,
+        default=0.0,
+        help="Per-timestep probability of blanking the whole screen "
+        "(Flickering-Atari POMDP, Hausknecht & Stone 2015). 0 disables it.",
+    )
+    # S5/Mamba core sizing (parameter-matched to the LSTM anchor by default; see
+    # experiments/generalization/atari_ssm_param_match.py). For Mamba, --ssm_state_size
+    # maps to d_state.
+    parser.add_argument("--ssm_d_model", type=int, default=256)
+    parser.add_argument("--ssm_state_size", type=int, default=128)
+    parser.add_argument("--ssm_num_layers", type=int, default=1)
+    parser.add_argument(
+        "--ssm_context_len",
+        type=int,
+        default=None,
+        help="Rolling-window length for S5/Mamba online stepping; defaults to --seq_len.",
+    )
     parser.add_argument("--total_timesteps", type=int, default=1_000_000)
     parser.add_argument("--num_envs", type=int, default=1)
     parser.add_argument("--buffer_size", type=int, default=1_000_000)
@@ -191,6 +210,7 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
         seed=args.seed,
         num_envs=args.num_envs,
         frame_stack=args.frame_stack,
+        flicker_prob=args.flicker_prob,
         capture_video=args.capture_video,
         video_dir=video_dir,
     )
@@ -202,6 +222,7 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
         next_obs = torch.as_tensor(current_obs_np, device=device)
         input_channels = int(next_obs.shape[1])
 
+        ssm_context_len = args.ssm_context_len if args.ssm_context_len else args.seq_len
         model_kwargs = dict(
             num_actions=num_actions,
             input_channels=input_channels,
@@ -210,6 +231,10 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
             encoder_feature_dim=args.encoder_feature_dim,
             core_dropout=args.core_dropout,
             feedback_mode=args.feedback_mode,
+            ssm_d_model=args.ssm_d_model,
+            ssm_state_size=args.ssm_state_size,
+            ssm_num_layers=args.ssm_num_layers,
+            ssm_context_len=ssm_context_len,
         )
         model = AtariQNetwork(**model_kwargs).to(device)
         target_net = AtariQNetwork(**model_kwargs).to(device)
@@ -322,6 +347,8 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
             "algo": args.algo,
             "model_type": args.model_type,
             "feedback_mode": args.feedback_mode,
+            "frame_stack": args.frame_stack,
+            "flicker_prob": args.flicker_prob,
             "global_step": global_step,
             "episodic_return_100": rolling_return,
             "fps": fps,

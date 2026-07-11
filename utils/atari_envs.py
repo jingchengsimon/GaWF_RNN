@@ -42,11 +42,41 @@ def _frame_stack(env, gym, frame_stack: int):
     raise RuntimeError("Gymnasium frame stack wrapper not found")
 
 
+def _flicker(env, gym, flicker_prob: float, seed: int):
+    """Flickering-Atari partial observability (Hausknecht & Stone, 2015).
+
+    At every timestep the entire screen is obscured (returned as an all-zero
+    frame) with probability ``flicker_prob``, otherwise the true observation is
+    passed through. This is applied on the preprocessed 84x84 frame and *before*
+    frame stacking, so with ``frame_stack=1`` each single-frame observation is
+    independently blanked, turning the MDP into a POMDP that requires temporal
+    integration to recover the hidden game state.
+    """
+    if flicker_prob <= 0.0:
+        return env
+
+    import numpy as np  # local import: numpy is only needed inside the factory
+
+    class _FlickerObservation(gym.ObservationWrapper):
+        def __init__(self, env, prob: float, rng_seed: int) -> None:
+            super().__init__(env)
+            self.prob = float(prob)
+            self._rng = np.random.default_rng(rng_seed)
+
+        def observation(self, observation):
+            if self._rng.random() < self.prob:
+                return np.zeros_like(np.asarray(observation))
+            return observation
+
+    return _FlickerObservation(env, flicker_prob, seed)
+
+
 def make_atari_env(
     env_id: str,
     seed: int,
     idx: int,
     frame_stack: int = 4,
+    flicker_prob: float = 0.0,
     capture_video: bool = False,
     video_dir: str | None = None,
 ) -> Callable[[], object]:
@@ -82,6 +112,7 @@ def make_atari_env(
             grayscale_obs=True,
             scale_obs=False,
         )
+        env = _flicker(env, gym, flicker_prob, seed + idx)
         env = _frame_stack(env, gym, frame_stack)
         env.action_space.seed(seed + idx)
         env.observation_space.seed(seed + idx)
@@ -95,6 +126,7 @@ def make_vector_atari_env(
     seed: int,
     num_envs: int,
     frame_stack: int = 4,
+    flicker_prob: float = 0.0,
     capture_video: bool = False,
     video_dir: str | None = None,
 ):
@@ -109,7 +141,9 @@ def make_vector_atari_env(
     _register_ale_envs(gym)
 
     env_fns = [
-        make_atari_env(env_id, seed, idx, frame_stack, capture_video, video_dir)
+        make_atari_env(
+            env_id, seed, idx, frame_stack, flicker_prob, capture_video, video_dir
+        )
         for idx in range(num_envs)
     ]
     return gym.vector.SyncVectorEnv(env_fns)

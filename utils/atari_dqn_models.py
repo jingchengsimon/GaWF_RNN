@@ -24,10 +24,15 @@ import torch.nn.functional as F
 from .recurrent_cores.gawf import GaWFCore
 from .recurrent_cores.rnn import GRUCore, LSTMCore, RNNCore
 
-AtariDQNModelType = Literal["cnn", "rnn", "gru", "lstm", "gawf"]
+AtariDQNModelType = Literal["cnn", "rnn", "gru", "lstm", "gawf", "s5", "mamba"]
 DQNFeedbackMode = Literal["none", "qvalues"]
 
-RECURRENT_MODEL_TYPES = ("rnn", "gru", "lstm", "gawf")
+# Cores stepped one timestep at a time (per-step done resets / GaWF feedback).
+STEPWISE_MODEL_TYPES = ("rnn", "gru", "lstm", "gawf")
+# Cores that only expose a whole-sequence scan (no O(1) recurrent state). These
+# are trained on full windows and stepped online via a rolling-window re-encode.
+SEQUENCE_MODEL_TYPES = ("s5", "mamba")
+RECURRENT_MODEL_TYPES = (*STEPWISE_MODEL_TYPES, *SEQUENCE_MODEL_TYPES)
 
 AtariRecurrentState = torch.Tensor | tuple[torch.Tensor, torch.Tensor]
 
@@ -93,6 +98,10 @@ class AtariQNetwork(nn.Module):
         core_dropout: float = 0.0,
         feedback_mode: DQNFeedbackMode = "none",
         detach_feedback: bool = True,
+        ssm_d_model: int = 256,
+        ssm_state_size: int = 128,
+        ssm_num_layers: int = 1,
+        ssm_context_len: int = 16,
     ) -> None:
         super().__init__()
         if model_type not in {"cnn", *RECURRENT_MODEL_TYPES}:
@@ -109,6 +118,7 @@ class AtariQNetwork(nn.Module):
         self.hidden_size = int(hidden_size)
         self.feedback_mode = feedback_mode
         self.detach_feedback = bool(detach_feedback)
+        self.ssm_context_len = int(ssm_context_len)
 
         self.features = AtariDQNConvFeatures(in_channels=self.input_channels)
         conv_out = self.features.output_size
@@ -129,6 +139,30 @@ class AtariQNetwork(nn.Module):
                 dropout=core_dropout,
             )
             head_input_size = self.core.output_size
+        elif self.model_type == "s5":
+            self.proj = None
+            from .recurrent_cores.s5 import S5Core
+
+            self.core = S5Core(
+                input_size=conv_out,
+                d_model=int(ssm_d_model),
+                state_size=int(ssm_state_size),
+                num_layers=int(ssm_num_layers),
+                dropout=core_dropout,
+            )
+            head_input_size = self.core.output_size
+        elif self.model_type == "mamba":
+            self.proj = None
+            from .recurrent_cores.mamba import MambaCore
+
+            self.core = MambaCore(
+                input_size=conv_out,
+                d_model=int(ssm_d_model),
+                num_layers=int(ssm_num_layers),
+                dropout=core_dropout,
+                d_state=int(ssm_state_size),
+            )
+            head_input_size = self.core.output_size
         else:
             self.proj = None
             core_cls = {"rnn": RNNCore, "gru": GRUCore, "lstm": LSTMCore}[self.model_type]
@@ -143,6 +177,11 @@ class AtariQNetwork(nn.Module):
     @property
     def is_recurrent(self) -> bool:
         return self.model_type in RECURRENT_MODEL_TYPES
+
+    @property
+    def uses_sequence_core(self) -> bool:
+        """S5/Mamba: whole-sequence scan cores without an O(1) recurrent state."""
+        return self.model_type in SEQUENCE_MODEL_TYPES
 
     @property
     def uses_tuple_state(self) -> bool:
@@ -172,6 +211,12 @@ class AtariQNetwork(nn.Module):
     ) -> AtariRecurrentState:
         if self.model_type == "gawf":
             return self.core.initial_state(batch_size, device, dtype)
+        if self.uses_sequence_core:
+            # Rolling-window buffer of encoded frames (see _step_sequence_core).
+            return torch.zeros(
+                batch_size, self.ssm_context_len, self.core.input_size,
+                device=device, dtype=dtype,
+            )
         shape = (1, batch_size, self.hidden_size)
         if self.uses_tuple_state:
             h = torch.zeros(shape, device=device, dtype=dtype)
@@ -286,6 +331,13 @@ class AtariQNetwork(nn.Module):
         if not self.is_recurrent:
             return self.head(self.proj(encoded)), None
 
+        if self.uses_sequence_core:
+            # S5/Mamba scan the whole window in one pass. Mid-sequence episode
+            # boundaries are not reset (a standard SSM-in-RL approximation); the
+            # DRQN sequence loss masks across boundaries via ``loss_mask``.
+            core_out, _ = self.core(encoded)
+            return self.head(core_out), None
+
         batch_size, n_steps = encoded.shape[:2]
         device = encoded.device
         dtype = encoded.dtype
@@ -307,12 +359,47 @@ class AtariQNetwork(nn.Module):
         next_state = AtariQNetworkState(recurrent, prev_q)
         return torch.stack(q_steps, dim=1), next_state
 
+    def _step_sequence_core(
+        self,
+        obs: torch.Tensor,
+        prev_done: torch.Tensor,
+        state: AtariQNetworkState | None,
+    ) -> tuple[torch.Tensor, AtariQNetworkState | None]:
+        """Online single-frame stepping for S5/Mamba via a rolling-window re-encode.
+
+        The state carries a fixed-length ``(B, ssm_context_len, F)`` buffer of the
+        most recent encoded frames. Each step shifts the buffer, appends the new
+        frame, zeroes rows whose previous step ended an episode, and re-runs the
+        scan over the window, reading out the last timestep. Cost is O(context_len)
+        per env step, which is negligible relative to the training updates.
+        """
+        encoded = self.features(obs)  # (B, F)
+        batch_size, feat_dim = encoded.shape
+        device, dtype = encoded.device, encoded.dtype
+        window = self.ssm_context_len
+        if state is None:
+            buffer = torch.zeros(batch_size, window, feat_dim, device=device, dtype=dtype)
+        else:
+            buffer = state.recurrent.to(device=device, dtype=dtype)
+        # Reset history for envs whose previous transition ended an episode.
+        keep = (1.0 - prev_done.float()).to(device).view(batch_size, 1, 1)
+        buffer = buffer * keep
+        # Shift left by one and append the newly encoded frame at the tail.
+        buffer = torch.roll(buffer, shifts=-1, dims=1)
+        buffer[:, -1, :] = encoded
+        core_out, _ = self.core(buffer)  # (B, window, H)
+        q_values = self.head(core_out[:, -1, :])
+        next_state = AtariQNetworkState(recurrent=buffer, prev_q=q_values)
+        return q_values, next_state
+
     def step(
         self,
         obs: torch.Tensor,
         prev_done: torch.Tensor,
         state: AtariQNetworkState | None = None,
     ) -> tuple[torch.Tensor, AtariQNetworkState | None]:
+        if self.uses_sequence_core:
+            return self._step_sequence_core(obs, prev_done, state)
         q_values, next_state = self.forward_sequence(
             obs.unsqueeze(1),
             prev_done.view(-1, 1),
