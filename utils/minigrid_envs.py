@@ -28,10 +28,16 @@ def make_minigrid_env(
     env_id: str,
     seed: int,
     idx: int,
+    agent_view_size: int | None = None,
     capture_video: bool = False,
     video_dir: str | None = None,
 ) -> Callable[[], object]:
-    """Return a thunk that creates one MiniGrid env with a channel-first symbolic view."""
+    """Return a thunk that creates one MiniGrid env with a channel-first symbolic view.
+
+    ``agent_view_size`` (odd, >=3) shrinks the egocentric view; a small view (e.g. 3)
+    forces the agent to rely on memory instead of seeing the whole room reactively
+    (as in Toro Icarte et al., 2020 for RedBlueDoors/Memory).
+    """
 
     def thunk():
         try:
@@ -46,7 +52,10 @@ def make_minigrid_env(
         import numpy as np
 
         render_mode = "rgb_array" if capture_video else None
-        env = gym.make(env_id, render_mode=render_mode)
+        make_kwargs = {"render_mode": render_mode}
+        if agent_view_size is not None:
+            make_kwargs["agent_view_size"] = int(agent_view_size)
+        env = gym.make(env_id, **make_kwargs)
         env = gym.wrappers.RecordEpisodeStatistics(env)
         if capture_video and idx == 0:
             if video_dir is None:
@@ -79,6 +88,7 @@ def make_vector_minigrid_env(
     env_id: str,
     seed: int,
     num_envs: int,
+    agent_view_size: int | None = None,
     capture_video: bool = False,
     video_dir: str | None = None,
 ):
@@ -93,7 +103,7 @@ def make_vector_minigrid_env(
         ) from exc
 
     env_fns = [
-        make_minigrid_env(env_id, seed, idx, capture_video, video_dir)
+        make_minigrid_env(env_id, seed, idx, agent_view_size, capture_video, video_dir)
         for idx in range(num_envs)
     ]
     return gym.vector.SyncVectorEnv(env_fns)

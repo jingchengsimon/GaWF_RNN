@@ -39,6 +39,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--algo", type=str, default="ppo", choices=["ppo"])
     p.add_argument("--model_type", type=str, default="lstm",
                    choices=["rnn", "gru", "lstm", "gawf", "s5", "mamba"])
+    p.add_argument("--agent_view_size", type=int, default=None,
+                   help="Egocentric view size (odd, >=3). Small (e.g. 3) forces memory.")
     p.add_argument("--encoder", type=str, default="mlp", choices=["mlp", "cnn"])
     p.add_argument("--encoder_output_size", type=int, default=128)
     p.add_argument("--encoder_hidden", type=int, default=128)
@@ -81,7 +83,8 @@ def train(args: argparse.Namespace) -> dict:
     ensure_dir(save_dir)
     history_path = os.path.join(save_dir, "metrics_history.jsonl")
 
-    envs = make_vector_minigrid_env(args.env_id, seed=args.seed, num_envs=args.num_envs)
+    envs = make_vector_minigrid_env(args.env_id, seed=args.seed, num_envs=args.num_envs,
+                                    agent_view_size=args.agent_view_size)
     try:
         num_actions = int(envs.single_action_space.n)
         obs_np, _ = envs.reset(seed=args.seed)

@@ -44,7 +44,9 @@ ENV_ID="${ENV_ID:-MiniGrid-MemoryS7-v0}"
 ENV_TAG="$(echo "$ENV_ID" | sed 's#MiniGrid-##; s#-v0##')"
 TOTAL_TIMESTEPS="${TOTAL_TIMESTEPS:-1000000}"
 NUM_ENVS="${NUM_ENVS:-16}"; NUM_STEPS="${NUM_STEPS:-40}"; ENCODER="${ENCODER:-mlp}"
-SUFFIX="mg_ppo_${ENV_TAG}_${MODEL}_seed${SEED}"
+VIEW_ARGS=(); VIEW_TAG=""
+if [[ -n "${AGENT_VIEW_SIZE:-}" ]]; then VIEW_ARGS=(--agent_view_size "$AGENT_VIEW_SIZE"); VIEW_TAG="_fov${AGENT_VIEW_SIZE}"; fi
+SUFFIX="mg_ppo_${ENV_TAG}${VIEW_TAG}_${MODEL}_seed${SEED}"
 
 MATCH_JSON="$ROOT/results/minigrid_param_match/atari_param_match.json"
 read -r KIND V1 V2 < <(python - "$MATCH_JSON" "$MODEL" <<'PY'
@@ -66,7 +68,7 @@ set +e
 DISABLE_TQDM=1 python train_minigrid_ppo.py --env_id "$ENV_ID" --model_type "$MODEL" \
   --encoder "$ENCODER" --total_timesteps "$TOTAL_TIMESTEPS" --num_envs "$NUM_ENVS" \
   --num_steps "$NUM_STEPS" --update_epochs 4 --seed "$SEED" --device cuda \
-  --result_suffix "$SUFFIX" "${SIZE_ARGS[@]}"
+  --result_suffix "$SUFFIX" "${SIZE_ARGS[@]}" "${VIEW_ARGS[@]}"
 rc=$?
 set -e
 if [[ "$rc" -ne 0 ]]; then echo "status=fail model=$MODEL seed=$SEED rc=$rc $(date -Is)" > "$FAIL_FILE"; exit "$rc"; fi
