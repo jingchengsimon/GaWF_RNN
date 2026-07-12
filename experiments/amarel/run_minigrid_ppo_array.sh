@@ -61,14 +61,17 @@ if [[ "$KIND" == "hidden" ]]; then SIZE_ARGS=(--hidden_size "$V1")
 elif [[ "$KIND" == "ssm" ]]; then SIZE_ARGS=(--ssm_d_model "$V1" --ssm_state_size "$V2")
 else echo "No sizing for $MODEL" >&2; exit 2; fi
 
+LR_ARGS=()
+[[ -n "${LEARNING_RATE:-}" ]] && LR_ARGS=(--learning_rate "$LEARNING_RATE")
+
 DONE_FILE="$STATUS_DIR/${SUFFIX}.done"; FAIL_FILE="$STATUS_DIR/${SUFFIX}.fail"
-echo "[$(date -Is)] task=$TASK_ID model=$MODEL seed=$SEED env=$ENV_ID steps=$TOTAL_TIMESTEPS sizing=${SIZE_ARGS[*]}"
+echo "[$(date -Is)] task=$TASK_ID model=$MODEL seed=$SEED env=$ENV_ID steps=$TOTAL_TIMESTEPS sizing=${SIZE_ARGS[*]} lr=${LEARNING_RATE:-default}"
 
 set +e
 DISABLE_TQDM=1 python train_minigrid_ppo.py --env_id "$ENV_ID" --model_type "$MODEL" \
   --encoder "$ENCODER" --total_timesteps "$TOTAL_TIMESTEPS" --num_envs "$NUM_ENVS" \
   --num_steps "$NUM_STEPS" --update_epochs 4 --seed "$SEED" --device cuda \
-  --result_suffix "$SUFFIX" "${SIZE_ARGS[@]}" "${VIEW_ARGS[@]}"
+  --result_suffix "$SUFFIX" "${SIZE_ARGS[@]}" "${VIEW_ARGS[@]}" "${LR_ARGS[@]}"
 rc=$?
 set -e
 if [[ "$rc" -ne 0 ]]; then echo "status=fail model=$MODEL seed=$SEED rc=$rc $(date -Is)" > "$FAIL_FILE"; exit "$rc"; fi

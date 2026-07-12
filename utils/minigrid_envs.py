@@ -21,6 +21,7 @@ MINIGRID_PILOT_ENVS = (
     "MiniGrid-MemoryS13-v0",
     "MiniGrid-DoorKey-5x5-v0",
     "MiniGrid-RedBlueDoors-6x6-v0",
+    "MiniGrid-RedBlueDoors-8x8-v0",
 )
 
 
