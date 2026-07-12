@@ -170,6 +170,13 @@ def _aggregate_seeds(
     curves = [c for c in curves if c is not None and c[0].size >= 2]
     if not curves:
         return None
+    # Drop clearly-incomplete seeds (e.g. an in-progress re-run) whose max step
+    # is far short of the others, so they don't truncate the overlap range.
+    if len(curves) > 1:
+        cutoff = 0.9 * float(max(c[0][-1] for c in curves))
+        kept = [c for c in curves if c[0][-1] >= cutoff]
+        if kept:
+            curves = kept
     lo = max(c[0][0] for c in curves)
     hi = min(c[0][-1] for c in curves)
     if hi <= lo:  # no overlap (e.g. one seed barely started); fall back to longest
