@@ -146,6 +146,8 @@ observed frame per environment step (`frame_skip=1`, `frame_stack=1`); new resul
 whole-sequence cuDNN fast path for RNN/GRU/LSTM windows without internal episode resets and
 falls back to the reset-aware stepwise path otherwise. Acceleration must not change replay
 sampling, update cadence, UTD, loss definitions, or recurrent/GaWF architecture.
+Amarel Pong launchers compile ANN only because the installed PyTorch 2.3 Dynamo path cannot
+reliably trace `AtariQNetworkState`; recurrent models still use BF16, TF32, and the fused scan.
 
 ### `utils/clutter_train_sector.py`
 Owns all metric and loss logic for single-char + sector/coordinate mode:

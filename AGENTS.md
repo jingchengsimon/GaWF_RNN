@@ -165,7 +165,10 @@ that assume spatial dimensions (6,6) and 32 feature channels.
 - Atari DQN acceleration belongs in `utils/atari_train_acceleration.py`. BF16 AMP, TF32,
   `torch.compile`, and the reset-safe fused RNN/GRU/LSTM scan may accelerate execution, but
   must not alter replay sampling, loss definitions, update frequency, UTD, or model structure.
-  Amarel Pong launchers enable BF16/TF32/compile explicitly and record them in `metrics.json`.
+  Amarel Pong launchers enable BF16/TF32 for every model and `torch.compile` for ANN. The
+  current Amarel PyTorch 2.3 build cannot reliably compile the recurrent-state dataclass;
+  recurrent models instead use the reset-safe fused scan where applicable. Active settings
+  are recorded in `metrics.json`.
 
 ### 2.4 GaWF Gating
 - Feedback vector: `fb ∈ ℝ^(fb_dim)`. For projected GaWF, `fb_dim = dz`

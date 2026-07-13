@@ -30,8 +30,10 @@ if (( DRY_RUN )); then
     rest=$((task / ${#MODELS[@]}))
     setting=$((rest / ${#SEEDS[@]}))
     seed="${SEEDS[$((rest % ${#SEEDS[@]}))]}"
-    printf 'task=%d model=%s setting=%d seed=%s layers=2 frame_skip=%s amp=%s\n' \
-      "$task" "$model" "$setting" "$seed" "$FRAME_SKIP" "$AMP_DTYPE"
+    compile=0
+    [[ "$model" == "ann" ]] && compile=1
+    printf 'task=%d model=%s setting=%d seed=%s layers=2 frame_skip=%s amp=%s compile=%s\n' \
+      "$task" "$model" "$setting" "$seed" "$FRAME_SKIP" "$AMP_DTYPE" "$compile"
   done
   exit 0
 fi

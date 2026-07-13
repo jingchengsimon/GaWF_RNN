@@ -64,7 +64,7 @@ SETTING=$((REST / N_SEEDS))
 SEED="${SEEDS[$((REST % N_SEEDS))]}"
 ACCEL_ARGS=(--amp_dtype bfloat16 --allow_tf32)
 COMPILE_ACTIVE=0
-if [[ "$MODEL" != "s5" && "$MODEL" != "mamba" ]]; then
+if [[ "$MODEL" == "ann" ]]; then
   ACCEL_ARGS+=(--compile_model)
   COMPILE_ACTIVE=1
 fi

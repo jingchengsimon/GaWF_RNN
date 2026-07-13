@@ -32,13 +32,6 @@ FRAME_SKIP="${FRAME_SKIP:-1}"
 AMP_DTYPE="${AMP_DTYPE:-bfloat16}"
 ALLOW_TF32="${ALLOW_TF32:-1}"
 COMPILE_MODEL="${COMPILE_MODEL:-1}"
-ACCEL_ARGS=(--amp_dtype "$AMP_DTYPE")
-if [[ "$ALLOW_TF32" == "1" ]]; then
-  ACCEL_ARGS+=(--allow_tf32)
-fi
-if [[ "$COMPILE_MODEL" == "1" ]]; then
-  ACCEL_ARGS+=(--compile_model)
-fi
 
 MODELS=(ann rnn gru lstm gawf)
 IFS=',' read -r -a SEEDS <<< "${SEEDS_CSV:-42}"
@@ -55,6 +48,18 @@ MODEL="${MODELS[$((TASK_ID % N_MODELS))]}"
 REST=$((TASK_ID / N_MODELS))
 SETTING=$((REST / N_SEEDS))
 SEED="${SEEDS[$((REST % N_SEEDS))]}"
+ACCEL_ARGS=(--amp_dtype "$AMP_DTYPE")
+COMPILE_ACTIVE=0
+if [[ "$ALLOW_TF32" == "1" ]]; then
+  ACCEL_ARGS+=(--allow_tf32)
+fi
+# Amarel PyTorch 2.3 cannot compile the recurrent-state dataclass reliably.
+# ANN has no recurrent state; recurrent models retain BF16/TF32 acceleration,
+# and RNN/GRU/LSTM use the reset-safe fused cuDNN scan in AtariQNetwork.
+if [[ "$COMPILE_MODEL" == "1" && "$MODEL" == "ann" ]]; then
+  ACCEL_ARGS+=(--compile_model)
+  COMPILE_ACTIVE=1
+fi
 if (( SETTING == 0 )); then
   FLICKER_PROB=0.0
   SUFFIX="atari_dqn_pong_fs${FRAME_SKIP}_stack1_depth2match_${MODEL}_L2_seed${SEED}"
@@ -75,7 +80,7 @@ PY
 DONE_FILE="$STATUS_DIR/${SUFFIX}.done"
 FAIL_FILE="$STATUS_DIR/${SUFFIX}.fail"
 echo "[$(date -Is)] task=$TASK_ID model=$MODEL setting=$SETTING seed=$SEED hidden=$HIDDEN layers=2"
-echo "frame_skip=$FRAME_SKIP frame_stack=1 amp=$AMP_DTYPE tf32=$ALLOW_TF32 compile=$COMPILE_MODEL"
+echo "frame_skip=$FRAME_SKIP frame_stack=1 amp=$AMP_DTYPE tf32=$ALLOW_TF32 compile=$COMPILE_ACTIVE"
 
 set +e
 DISABLE_TQDM=1 python train_atari_dqn.py \
