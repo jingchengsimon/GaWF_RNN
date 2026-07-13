@@ -28,12 +28,12 @@ FeedbackMode = Literal["none", "output"]
 class AtariActorCriticState:
     """Runtime recurrent state plus previous actor-critic outputs."""
 
-    recurrent: torch.Tensor | tuple[torch.Tensor, torch.Tensor]
+    recurrent: torch.Tensor | tuple[torch.Tensor, torch.Tensor] | list[torch.Tensor]
     prev_policy_logits: torch.Tensor
     prev_value: torch.Tensor
 
 
-AtariRecurrentState = torch.Tensor | tuple[torch.Tensor, torch.Tensor]
+AtariRecurrentState = torch.Tensor | tuple[torch.Tensor, torch.Tensor] | list[torch.Tensor]
 AtariStateLike = AtariActorCriticState | AtariRecurrentState | None
 
 
@@ -94,6 +94,7 @@ class AtariActorCritic(nn.Module):
         core_dropout: float = 0.0,
         feedback_mode: FeedbackMode = "none",
         detach_feedback: bool = True,
+        num_layers: int = 1,
     ) -> None:
         super().__init__()
         if model_type not in {"lstm", "gawf"}:
@@ -106,6 +107,9 @@ class AtariActorCritic(nn.Module):
         self.input_channels = int(input_channels)
         self.model_type = model_type
         self.hidden_size = int(hidden_size)
+        self.num_layers = int(num_layers)
+        if self.num_layers < 1:
+            raise ValueError(f"num_layers must be >= 1, got {num_layers}")
         self.feedback_mode = feedback_mode
         self.detach_feedback = bool(detach_feedback)
         self.encoder = AtariNatureEncoder(
@@ -119,16 +123,23 @@ class AtariActorCritic(nn.Module):
                 input_size=self.recurrent_input_size,
                 hidden_size=self.hidden_size,
                 dropout=core_dropout,
+                num_layers=self.num_layers,
             )
         else:
+            top_feedback_dim = max(
+                1, self.feedback_dim_for_mode(self.feedback_mode, self.num_actions)
+            )
             self.core = GaWFCore(
                 input_size=self.recurrent_input_size,
                 hidden_size=self.hidden_size,
-                feedback_dim=max(
-                    1,
-                    self.feedback_dim_for_mode(self.feedback_mode, self.num_actions),
-                ),
+                feedback_dim=top_feedback_dim,
                 dropout=core_dropout,
+                num_layers=self.num_layers,
+                layer_feedback_dims=(
+                    [self.hidden_size] * (self.num_layers - 1) + [top_feedback_dim]
+                    if self.num_layers > 1
+                    else None
+                ),
             )
         core_output_size = self.core.output_size
         self.head = AtariActorCriticHead(core_output_size, self.num_actions)
@@ -160,7 +171,7 @@ class AtariActorCritic(nn.Module):
         dtype: torch.dtype = torch.float32,
     ) -> AtariRecurrentState:
         if self.model_type == "lstm":
-            shape = (1, batch_size, self.hidden_size)
+            shape = (self.num_layers, batch_size, self.hidden_size)
             h = torch.zeros(shape, device=device, dtype=dtype)
             c = torch.zeros(shape, device=device, dtype=dtype)
             return h, c
@@ -189,6 +200,8 @@ class AtariActorCritic(nn.Module):
         recurrent = state.recurrent
         if isinstance(recurrent, tuple):
             recurrent = tuple(part.detach() for part in recurrent)
+        elif isinstance(recurrent, list):
+            recurrent = [part.detach() for part in recurrent]
         else:
             recurrent = recurrent.detach()
         return AtariActorCriticState(
@@ -216,6 +229,8 @@ class AtariActorCritic(nn.Module):
             prev_value = torch.zeros(batch_size, device=device, dtype=dtype)
         if isinstance(recurrent, tuple):
             recurrent = tuple(part.to(device=device, dtype=dtype) for part in recurrent)
+        elif isinstance(recurrent, list):
+            recurrent = [part.to(device=device, dtype=dtype) for part in recurrent]
         else:
             recurrent = recurrent.to(device=device, dtype=dtype)
         return AtariActorCriticState(recurrent, prev_logits, prev_value)
@@ -229,6 +244,8 @@ class AtariActorCritic(nn.Module):
         if isinstance(state, tuple):
             keep_lstm = keep.view(1, -1, 1)
             return state[0] * keep_lstm, state[1] * keep_lstm
+        if isinstance(state, list):
+            return [part * keep.view(-1, 1) for part in state]
         return state * keep.view(-1, 1)
 
     def _mask_output_state(
@@ -272,19 +289,6 @@ class AtariActorCritic(nn.Module):
             feedback = feedback.detach()
         return feedback
 
-    def _gawf_no_feedback_step(
-        self,
-        x_t: torch.Tensor,
-        h_prev: torch.Tensor,
-    ) -> torch.Tensor:
-        ih = F.linear(x_t, self.core.rnn.weight_ih_l0, self.core.rnn.bias_ih_l0)
-        hh = F.linear(h_prev, self.core.rnn.weight_hh_l0, self.core.rnn.bias_hh_l0)
-        h_t = torch.tanh(ih + hh)
-        h_t = self.core.norm(h_t)
-        h_t = F.relu(h_t)
-        h_t = F.dropout(h_t, p=self.core.dropout, training=self.training)
-        return h_t
-
     def _core_step(
         self,
         x_t: torch.Tensor,
@@ -295,16 +299,19 @@ class AtariActorCritic(nn.Module):
             features, next_recurrent = self.core(x_t.unsqueeze(1), recurrent)
             return features[:, 0, :], next_recurrent
         if self.feedback_mode == "none":
-            if not isinstance(recurrent, torch.Tensor):
-                raise TypeError("GaWF recurrent state must be a tensor")
-            features = self._gawf_no_feedback_step(x_t, recurrent)
-            return features, features
+            stepped = self.core.step_no_feedback(x_t, recurrent)
+            if self.num_layers == 1:
+                return stepped, stepped
+            return stepped
         if feedback is None:
             raise ValueError("GaWF output feedback mode requires feedback")
-        if not isinstance(recurrent, torch.Tensor):
-            raise TypeError("GaWF recurrent state must be a tensor")
-        features = self.core.step(x_t, recurrent, feedback)
-        return features, features
+        if self.num_layers == 1:
+            features = self.core.step(x_t, recurrent, feedback)
+            return features, features
+        if not isinstance(recurrent, list):
+            raise TypeError("multi-layer GaWF recurrent state must be a list")
+        feedbacks = [part.detach() for part in recurrent[1:]] + [feedback]
+        return self.core.step(x_t, recurrent, feedbacks)
 
     def forward_sequence(
         self,

@@ -37,19 +37,25 @@ from train_atari_dqn import (
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train MiniGrid DRQN models")
-    parser.add_argument("--env_id", type=str, default="MiniGrid-MemoryS7-v0",
-                        choices=MINIGRID_PILOT_ENVS)
+    parser.add_argument(
+        "--env_id", type=str, default="MiniGrid-MemoryS7-v0", choices=MINIGRID_PILOT_ENVS
+    )
     parser.add_argument("--algo", type=str, default="dqn", choices=["dqn"])
-    parser.add_argument("--model_type", type=str, default="ann",
-                        choices=["ann", "cnn", "rnn", "gru", "lstm", "gawf", "s5", "mamba"])
-    parser.add_argument("--feedback_mode", type=str, default=None,
-                        choices=["none", "qvalues"])
+    parser.add_argument(
+        "--model_type",
+        type=str,
+        default="ann",
+        choices=["ann", "rnn", "gru", "lstm", "gawf", "s5", "mamba"],
+    )
+    parser.add_argument("--feedback_mode", type=str, default=None, choices=["none", "qvalues"])
     # Encoder (pluggable; default mlp). output_size = recurrent input_size.
     parser.add_argument("--encoder", type=str, default="mlp", choices=["mlp", "cnn"])
     parser.add_argument("--encoder_output_size", type=int, default=128)
     parser.add_argument("--encoder_hidden", type=int, default=128)
     # Recurrent-core sizing (MiniGrid scale; anchor ~128). Param-match separately.
     parser.add_argument("--hidden_size", type=int, default=128)
+    parser.add_argument("--num_layers", type=int, default=1)
+    parser.add_argument("--gawf_feedback_lr_scale", type=float, default=1.0)
     parser.add_argument("--core_dropout", type=float, default=0.0)
     parser.add_argument("--ssm_d_model", type=int, default=128)
     parser.add_argument("--ssm_state_size", type=int, default=64)
@@ -88,6 +94,8 @@ def train(args: argparse.Namespace) -> dict:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
     logger = logging.getLogger("train_minigrid_dqn")
     args.feedback_mode = _resolve_feedback_mode(args)
+    if args.num_layers < 1:
+        raise ValueError(f"num_layers must be >= 1, got {args.num_layers}")
     set_atari_seed(args.seed)
     device = select_device(args.device)
     save_dir = args.save_dir or os.path.join("results", "train_data", args.result_suffix)
@@ -124,13 +132,33 @@ def train(args: argparse.Namespace) -> dict:
             ssm_state_size=args.ssm_state_size,
             ssm_num_layers=args.ssm_num_layers,
             ssm_context_len=ssm_context_len,
+            num_layers=args.num_layers,
             encoder_factory=encoder_factory,
         )
         model = AtariQNetwork(**model_kwargs).to(device)
         target_net = AtariQNetwork(**model_kwargs).to(device)
         target_net.load_state_dict(model.state_dict())
         target_net.eval()
-        optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+        if args.model_type == "gawf":
+            gate_params = [
+                p
+                for n, p in model.named_parameters()
+                if n.startswith("core.U") or n.startswith("core.V")
+            ]
+            gate_ids = {id(p) for p in gate_params}
+            optimizer = optim.Adam(
+                [
+                    {"params": [p for p in model.parameters() if id(p) not in gate_ids]},
+                    {
+                        "params": gate_params,
+                        "lr": args.learning_rate * args.gawf_feedback_lr_scale,
+                        "weight_decay": 0.0,
+                    },
+                ],
+                lr=args.learning_rate,
+            )
+        else:
+            optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
 
         buffer = AtariReplayBuffer(
             buffer_size=args.buffer_size,
@@ -195,29 +223,50 @@ def train(args: argparse.Namespace) -> dict:
                 target_net.load_state_dict(model.state_dict())
 
             if global_step % args.log_interval == 0:
-                rolling_return = float(np.mean(rolling_returns)) if rolling_returns else float("nan")
+                rolling_return = (
+                    float(np.mean(rolling_returns)) if rolling_returns else float("nan")
+                )
                 fps = int(global_step / max(time.time() - start_time, 1e-6))
                 logger.info(
                     "step=%d/%d return100=%.3f eps=%.3f fps=%d loss=%.5f q_mean=%.3f",
-                    global_step, args.total_timesteps, rolling_return, epsilon,
-                    fps, last_loss, last_q_mean,
+                    global_step,
+                    args.total_timesteps,
+                    rolling_return,
+                    epsilon,
+                    fps,
+                    last_loss,
+                    last_q_mean,
                 )
                 with open(history_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps({
-                        "global_step": global_step,
-                        "episodic_return_100": rolling_return,
-                        "epsilon": epsilon,
-                        "loss": last_loss,
-                        "q_values_mean": last_q_mean,
-                        "fps": fps,
-                        "wall_time_s": time.time() - start_time,
-                    }) + "\n")
+                    f.write(
+                        json.dumps(
+                            {
+                                "global_step": global_step,
+                                "episodic_return_100": rolling_return,
+                                "epsilon": epsilon,
+                                "loss": last_loss,
+                                "q_values_mean": last_q_mean,
+                                "fps": fps,
+                                "wall_time_s": time.time() - start_time,
+                            }
+                        )
+                        + "\n"
+                    )
 
         rolling_return = float(np.mean(rolling_returns)) if rolling_returns else float("nan")
         final_metrics = {
             "env_id": args.env_id,
             "algo": args.algo,
             "model_type": args.model_type,
+            "num_layers": args.num_layers,
+            "hidden_size": args.hidden_size,
+            "core_readout_params": int(
+                sum(p.numel() for p in (model.core or model.proj).parameters())
+            ),
+            "total_param_count": int(sum(p.numel() for p in model.parameters())),
+            "gawf_feedback_lr_scale": (
+                args.gawf_feedback_lr_scale if args.model_type == "gawf" else None
+            ),
             "feedback_mode": args.feedback_mode,
             "encoder": args.encoder,
             "global_step": global_step,
@@ -225,7 +274,11 @@ def train(args: argparse.Namespace) -> dict:
             "loss": last_loss,
             "q_values_mean": last_q_mean,
         }
-        ckpt_name = f"{args.algo}_{args.model_type}_{args.feedback_mode}_{args.env_id.replace('/', '_')}.pth"
+        layer_suffix = f"_L{args.num_layers}" if args.num_layers > 1 else ""
+        ckpt_name = (
+            f"{args.algo}_{args.model_type}_{args.feedback_mode}{layer_suffix}_"
+            f"{args.env_id.replace('/', '_')}.pth"
+        )
         ckpt_path = os.path.join(save_dir, ckpt_name)
         torch.save(model.state_dict(), ckpt_path)
         final_metrics["checkpoint"] = ckpt_path

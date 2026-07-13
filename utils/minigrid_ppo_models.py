@@ -30,7 +30,7 @@ STEPWISE_CORES = ("rnn", "gru", "lstm", "gawf")
 SEQUENCE_CORES = ("s5", "mamba")
 RECURRENT_CORES = (*STEPWISE_CORES, *SEQUENCE_CORES)
 
-MiniGridRecurrentState = torch.Tensor | tuple[torch.Tensor, torch.Tensor]
+MiniGridRecurrentState = torch.Tensor | tuple[torch.Tensor, torch.Tensor] | list[torch.Tensor]
 
 
 class MiniGridActorCritic(nn.Module):
@@ -47,6 +47,7 @@ class MiniGridActorCritic(nn.Module):
         ssm_state_size: int = 64,
         ssm_num_layers: int = 1,
         ssm_context_len: int = 32,
+        num_layers: int = 1,
     ) -> None:
         super().__init__()
         if model_type not in RECURRENT_CORES:
@@ -54,6 +55,9 @@ class MiniGridActorCritic(nn.Module):
         self.num_actions = int(num_actions)
         self.model_type = model_type
         self.hidden_size = int(hidden_size)
+        self.num_layers = int(num_layers)
+        if self.num_layers < 1:
+            raise ValueError(f"num_layers must be >= 1, got {num_layers}")
         self.ssm_context_len = int(ssm_context_len)
 
         self.encoder = encoder
@@ -62,21 +66,42 @@ class MiniGridActorCritic(nn.Module):
         if model_type == "gawf":
             # No output feedback in this first version: feedback_dim is a dummy 1
             # and we use the no-feedback recurrence path (still gated internally).
-            self.core = GaWFCore(input_size=enc_out, hidden_size=self.hidden_size,
-                                 feedback_dim=1, dropout=core_dropout)
+            self.core = GaWFCore(
+                input_size=enc_out,
+                hidden_size=self.hidden_size,
+                feedback_dim=1,
+                dropout=core_dropout,
+                num_layers=self.num_layers,
+                layer_feedback_dims=[1] * self.num_layers,
+            )
         elif model_type in ("rnn", "gru", "lstm"):
             cls = {"rnn": RNNCore, "gru": GRUCore, "lstm": LSTMCore}[model_type]
-            self.core = cls(input_size=enc_out, hidden_size=self.hidden_size, dropout=core_dropout)
+            self.core = cls(
+                input_size=enc_out,
+                hidden_size=self.hidden_size,
+                dropout=core_dropout,
+                num_layers=self.num_layers,
+            )
         elif model_type == "s5":
             from .recurrent_cores.s5 import S5Core
-            self.core = S5Core(input_size=enc_out, d_model=int(ssm_d_model),
-                              state_size=int(ssm_state_size), num_layers=int(ssm_num_layers),
-                              dropout=core_dropout)
+
+            self.core = S5Core(
+                input_size=enc_out,
+                d_model=int(ssm_d_model),
+                state_size=int(ssm_state_size),
+                num_layers=int(ssm_num_layers),
+                dropout=core_dropout,
+            )
         else:  # mamba
             from .recurrent_cores.mamba import MambaCore
-            self.core = MambaCore(input_size=enc_out, d_model=int(ssm_d_model),
-                                 num_layers=int(ssm_num_layers), dropout=core_dropout,
-                                 d_state=int(ssm_state_size))
+
+            self.core = MambaCore(
+                input_size=enc_out,
+                d_model=int(ssm_d_model),
+                num_layers=int(ssm_num_layers),
+                dropout=core_dropout,
+                d_state=int(ssm_state_size),
+            )
 
         core_out = int(self.core.output_size)
         self.policy = nn.Linear(core_out, self.num_actions)
@@ -101,12 +126,15 @@ class MiniGridActorCritic(nn.Module):
         if self.model_type == "gawf":
             return self.core.initial_state(batch_size, device, dtype)
         if self.uses_sequence_core:
-            return torch.zeros(batch_size, self.ssm_context_len, self.core.input_size,
-                               device=device, dtype=dtype)
-        shape = (1, batch_size, self.hidden_size)
+            return torch.zeros(
+                batch_size, self.ssm_context_len, self.core.input_size, device=device, dtype=dtype
+            )
+        shape = (self.num_layers, batch_size, self.hidden_size)
         if self.uses_tuple_state:
-            return (torch.zeros(shape, device=device, dtype=dtype),
-                    torch.zeros(shape, device=device, dtype=dtype))
+            return (
+                torch.zeros(shape, device=device, dtype=dtype),
+                torch.zeros(shape, device=device, dtype=dtype),
+            )
         return torch.zeros(shape, device=device, dtype=dtype)
 
     def detach_state(self, state):
@@ -114,6 +142,8 @@ class MiniGridActorCritic(nn.Module):
             return None
         if isinstance(state, tuple):
             return tuple(p.detach() for p in state)
+        if isinstance(state, list):
+            return [p.detach() for p in state]
         return state.detach()
 
     def _mask_state(self, state, done):
@@ -121,23 +151,18 @@ class MiniGridActorCritic(nn.Module):
         if isinstance(state, tuple):
             k = keep.view(1, -1, 1)
             return state[0] * k, state[1] * k
-        if state.dim() == 3:  # (1,B,H) rnn/gru
+        if isinstance(state, list):
+            return [part * keep.view(-1, 1) for part in state]
+        if state.dim() == 3:  # (L,B,H) rnn/gru
             return state * keep.view(1, -1, 1)
         return state * keep.view(-1, 1)  # (B,H) gawf
 
-    def _gawf_no_feedback_step(self, x_t, h_prev):
-        ih = F.linear(x_t, self.core.rnn.weight_ih_l0, self.core.rnn.bias_ih_l0)
-        hh = F.linear(h_prev, self.core.rnn.weight_hh_l0, self.core.rnn.bias_hh_l0)
-        h_t = torch.tanh(ih + hh)
-        h_t = self.core.norm(h_t)
-        h_t = F.relu(h_t)
-        h_t = F.dropout(h_t, p=self.core.dropout, training=self.training)
-        return h_t
-
     def _core_step(self, x_t, recurrent):
         if self.model_type == "gawf":
-            feat = self._gawf_no_feedback_step(x_t, recurrent)
-            return feat, feat
+            stepped = self.core.step_no_feedback(x_t, recurrent)
+            if self.num_layers == 1:
+                return stepped, stepped
+            return stepped
         feat, nxt = self.core(x_t.unsqueeze(1), recurrent)
         return feat[:, 0, :], nxt
 
@@ -160,7 +185,9 @@ class MiniGridActorCritic(nn.Module):
         recurrent = self.initial_state(b, device, dtype) if state is None else state
         logits_steps, value_steps = [], []
         for step in range(t):
-            recurrent = self._mask_state(recurrent, prev_dones[:, step].to(device=device, dtype=dtype))
+            recurrent = self._mask_state(
+                recurrent, prev_dones[:, step].to(device=device, dtype=dtype)
+            )
             feat, recurrent = self._core_step(encoded[:, step, :], recurrent)
             logits_steps.append(self.policy(feat))
             value_steps.append(self.value(feat).squeeze(-1))
@@ -171,7 +198,11 @@ class MiniGridActorCritic(nn.Module):
         encoded = self.encoder(obs)  # (B, F)
         b, f = encoded.shape
         device, dtype = encoded.device, encoded.dtype
-        buf = self.initial_state(b, device, dtype) if state is None else state.to(device=device, dtype=dtype)
+        buf = (
+            self.initial_state(b, device, dtype)
+            if state is None
+            else state.to(device=device, dtype=dtype)
+        )
         keep = (1.0 - prev_done.float()).to(device).view(b, 1, 1)
         buf = torch.roll(buf * keep, shifts=-1, dims=1)
         buf[:, -1, :] = encoded

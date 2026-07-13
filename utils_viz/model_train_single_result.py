@@ -390,6 +390,7 @@ def parse_hparams_from_filename(filename):
     layer_match = re.search(r'_L(\d+)', filename)
     if layer_match:
         hparams['gawf_layers'] = int(layer_match.group(1))
+        hparams['num_layers'] = int(layer_match.group(1))
     
     # 提取 lr (支持科学计数法，如 1e-4)
     # 使用贪婪匹配 + 只在下划线处停止

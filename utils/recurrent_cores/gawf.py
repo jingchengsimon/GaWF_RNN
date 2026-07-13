@@ -155,36 +155,89 @@ class GaWFDiagnosticsMixin:
 
 
 class GaWFCore(GaWFDiagnosticsMixin, nn.Module):
-    """Single-layer GaWF core over already-encoded timestep features."""
+    """Unified single- or multi-layer GaWF core over encoded timestep features."""
 
     def __init__(
         self,
         input_size: int,
         hidden_size: int,
-        feedback_dim: int,
+        feedback_dim: int | None = None,
         dropout: float = 0.0,
         gate_tau: float = 0.5,
+        num_layers: int = 1,
+        layer_feedback_dims: Sequence[int] | None = None,
     ) -> None:
         super().__init__()
-        if feedback_dim <= 0:
-            raise ValueError(f"feedback_dim must be > 0, got {feedback_dim}")
+        if num_layers < 1:
+            raise ValueError(f"num_layers must be >= 1, got {num_layers}")
         self.input_size = int(input_size)
         self.hidden_size = int(hidden_size)
         self.output_size = int(hidden_size)
-        self.feedback_dim = int(feedback_dim)
+        self.num_layers = int(num_layers)
         self.dropout = float(dropout)
         self.gate_tau = float(gate_tau)
-        self.rnn = nn.RNN(
-            input_size=self.input_size,
-            hidden_size=self.hidden_size,
-            num_layers=1,
-            batch_first=True,
-        )
-        self.U = nn.Parameter(torch.randn(self.hidden_size, self.feedback_dim) * 0.01)
-        self.V = nn.Parameter(
-            torch.randn(self.feedback_dim, self.input_size + self.hidden_size) * 0.01
-        )
-        self.norm = nn.LayerNorm(self.hidden_size)
+
+        if self.num_layers == 1:
+            if feedback_dim is None or feedback_dim <= 0:
+                raise ValueError(f"feedback_dim must be > 0, got {feedback_dim}")
+            if layer_feedback_dims is not None and list(layer_feedback_dims) != [feedback_dim]:
+                raise ValueError("single-layer layer_feedback_dims must equal [feedback_dim]")
+            self.feedback_dim = int(feedback_dim)
+            self.layer_feedback_dims = [self.feedback_dim]
+            # Preserve all legacy single-layer parameter names.
+            self.rnn = nn.RNN(
+                input_size=self.input_size,
+                hidden_size=self.hidden_size,
+                num_layers=1,
+                batch_first=True,
+            )
+            self.U = nn.Parameter(torch.randn(self.hidden_size, self.feedback_dim) * 0.01)
+            self.V = nn.Parameter(
+                torch.randn(self.feedback_dim, self.input_size + self.hidden_size) * 0.01
+            )
+            self.norm = nn.LayerNorm(self.hidden_size)
+        else:
+            dims = list(layer_feedback_dims) if layer_feedback_dims is not None else None
+            if dims is None:
+                if feedback_dim is None or feedback_dim <= 0:
+                    raise ValueError(
+                        "multi-layer GaWF requires layer_feedback_dims or feedback_dim"
+                    )
+                dims = [int(feedback_dim)] * self.num_layers
+            if len(dims) != self.num_layers or any(dim <= 0 for dim in dims):
+                raise ValueError(
+                    "layer_feedback_dims must contain one positive dimension per layer"
+                )
+            self.layer_feedback_dims = [int(dim) for dim in dims]
+            self.feedback_dim = self.layer_feedback_dims[-1]
+            layer_input_sizes = [self.input_size] + [self.hidden_size] * (self.num_layers - 1)
+            # Preserve the former MultiLayerGaWFCore key layout for old checkpoints.
+            self.rnns = nn.ModuleList(
+                [
+                    nn.RNN(
+                        input_size=layer_input_size,
+                        hidden_size=self.hidden_size,
+                        num_layers=1,
+                        batch_first=True,
+                    )
+                    for layer_input_size in layer_input_sizes
+                ]
+            )
+            self.norms = nn.ModuleList(
+                [nn.LayerNorm(self.hidden_size) for _ in range(self.num_layers)]
+            )
+            self.U_layers = nn.ParameterList(
+                [
+                    nn.Parameter(torch.randn(self.hidden_size, dim) * 0.01)
+                    for dim in self.layer_feedback_dims
+                ]
+            )
+            self.V_layers = nn.ParameterList(
+                [
+                    nn.Parameter(torch.randn(dim, layer_input_size + self.hidden_size) * 0.01)
+                    for dim, layer_input_size in zip(self.layer_feedback_dims, layer_input_sizes)
+                ]
+            )
         self._init_gawf_diagnostics_state()
 
     def initial_state(
@@ -192,117 +245,21 @@ class GaWFCore(GaWFDiagnosticsMixin, nn.Module):
         batch_size: int,
         device: torch.device | str,
         dtype: torch.dtype,
-    ) -> torch.Tensor:
-        return torch.zeros(batch_size, self.hidden_size, device=device, dtype=dtype)
-
-    def set_feedback_frozen(self, freeze: bool) -> None:
-        for param in (self.U, self.V):
-            param.requires_grad = not freeze
-
-    def step(
-        self,
-        x_t: torch.Tensor,
-        h_prev: torch.Tensor,
-        feedback: torch.Tensor,
-        layer_idx: int = 0,
-    ) -> torch.Tensor:
-        input_size = x_t.size(-1)
-        fb = feedback.to(device=x_t.device, dtype=torch.float32)
-        self._record_gawf_feedback(layer_idx, fb)
-        fb_t = fb.clamp(-10, 10).unsqueeze(2)
-        trans_ih, trans_hh = _compute_gawf_transforms(self.U, fb_t, self.V, input_size)
-        gate_logits_ih = trans_ih / self.gate_tau
-        gate_logits_hh = trans_hh / self.gate_tau
-        gate_ih = torch.sigmoid(gate_logits_ih)
-        gate_hh = torch.sigmoid(gate_logits_hh)
-        self._record_gawf_gate(layer_idx, gate_logits_ih, gate_logits_hh, gate_ih, gate_hh)
-
-        ih = torch.einsum("bi,bhi,hi->bh", x_t, gate_ih, self.rnn.weight_ih_l0)
-        hh = torch.einsum("bi,bhi,hi->bh", h_prev, gate_hh, self.rnn.weight_hh_l0)
-        if self.rnn.bias_ih_l0 is not None:
-            ih = ih + self.rnn.bias_ih_l0.unsqueeze(0)
-        if self.rnn.bias_hh_l0 is not None:
-            hh = hh + self.rnn.bias_hh_l0.unsqueeze(0)
-        h_t = torch.tanh(ih + hh)
-        h_t = self.norm(h_t)
-        h_t = F.relu(h_t)
-        h_t = F.dropout(h_t, p=self.dropout, training=self.training)
-        return h_t
-
-    def forward_no_feedback(self, x: torch.Tensor):
-        out, state = self.rnn(x)
-        out = self.norm(out)
-        out = F.relu(out)
-        out = F.dropout(out, p=self.dropout, training=self.training)
-        return out, state
-
-
-class MultiLayerGaWFCore(GaWFDiagnosticsMixin, nn.Module):
-    """Multi-layer GaWF core whose feedback vectors are supplied by a task wrapper."""
-
-    def __init__(
-        self,
-        input_size: int,
-        hidden_size: int,
-        layer_feedback_dims: Sequence[int],
-        dropout: float = 0.0,
-        gate_tau: float = 0.5,
-    ) -> None:
-        super().__init__()
-        if len(layer_feedback_dims) < 2:
-            raise ValueError("MultiLayerGaWFCore requires at least two layers")
-        self.input_size = int(input_size)
-        self.hidden_size = int(hidden_size)
-        self.output_size = int(hidden_size)
-        self.layer_feedback_dims = [int(dim) for dim in layer_feedback_dims]
-        if any(dim <= 0 for dim in self.layer_feedback_dims):
-            raise ValueError(f"all feedback dims must be > 0: {self.layer_feedback_dims}")
-        self.num_layers = len(self.layer_feedback_dims)
-        self.dropout = float(dropout)
-        self.gate_tau = float(gate_tau)
-
-        layer_input_sizes = [self.input_size] + [self.hidden_size] * (self.num_layers - 1)
-        self.rnns = nn.ModuleList(
-            [
-                nn.RNN(
-                    input_size=layer_input_size,
-                    hidden_size=self.hidden_size,
-                    num_layers=1,
-                    batch_first=True,
-                )
-                for layer_input_size in layer_input_sizes
-            ]
-        )
-        self.norms = nn.ModuleList([nn.LayerNorm(self.hidden_size) for _ in range(self.num_layers)])
-        self.U_layers = nn.ParameterList(
-            [
-                nn.Parameter(torch.randn(self.hidden_size, feedback_dim) * 0.01)
-                for feedback_dim in self.layer_feedback_dims
-            ]
-        )
-        self.V_layers = nn.ParameterList(
-            [
-                nn.Parameter(torch.randn(feedback_dim, layer_input_size + self.hidden_size) * 0.01)
-                for feedback_dim, layer_input_size in zip(
-                    self.layer_feedback_dims, layer_input_sizes
-                )
-            ]
-        )
-        self._init_gawf_diagnostics_state()
-
-    def initial_states(
-        self,
-        batch_size: int,
-        device: torch.device | str,
-        dtype: torch.dtype,
-    ) -> list[torch.Tensor]:
+    ) -> torch.Tensor | list[torch.Tensor]:
+        if self.num_layers == 1:
+            return torch.zeros(batch_size, self.hidden_size, device=device, dtype=dtype)
         return [
             torch.zeros(batch_size, self.hidden_size, device=device, dtype=dtype)
             for _ in range(self.num_layers)
         ]
 
     def set_feedback_frozen(self, freeze: bool) -> None:
-        for param in list(self.U_layers) + list(self.V_layers):
+        params = (
+            (self.U, self.V)
+            if self.num_layers == 1
+            else tuple(self.U_layers) + tuple(self.V_layers)
+        )
+        for param in params:
             param.requires_grad = not freeze
 
     def _step_layer(
@@ -313,9 +270,10 @@ class MultiLayerGaWFCore(GaWFDiagnosticsMixin, nn.Module):
         feedback: torch.Tensor,
     ) -> torch.Tensor:
         input_size = x_t.size(-1)
-        rnn = self.rnns[layer_idx]
-        U = self.U_layers[layer_idx]
-        V = self.V_layers[layer_idx]
+        rnn = self.rnn if self.num_layers == 1 else self.rnns[layer_idx]
+        norm = self.norm if self.num_layers == 1 else self.norms[layer_idx]
+        U = self.U if self.num_layers == 1 else self.U_layers[layer_idx]
+        V = self.V if self.num_layers == 1 else self.V_layers[layer_idx]
         fb = feedback.to(device=x_t.device, dtype=torch.float32)
         self._record_gawf_feedback(layer_idx, fb)
         fb_t = fb.clamp(-10, 10).unsqueeze(2)
@@ -324,55 +282,78 @@ class MultiLayerGaWFCore(GaWFDiagnosticsMixin, nn.Module):
         gate_logits_hh = trans_hh / self.gate_tau
         gate_ih = torch.sigmoid(gate_logits_ih)
         gate_hh = torch.sigmoid(gate_logits_hh)
-        self._record_gawf_gate(
-            layer_idx,
-            gate_logits_ih,
-            gate_logits_hh,
-            gate_ih,
-            gate_hh,
-        )
-        gated_weight_ih = gate_ih * rnn.weight_ih_l0.unsqueeze(0)
-        gated_weight_hh = gate_hh * rnn.weight_hh_l0.unsqueeze(0)
-        ih = torch.bmm(x_t.unsqueeze(1), gated_weight_ih.transpose(1, 2)).squeeze(1)
-        hh = torch.bmm(h_prev.unsqueeze(1), gated_weight_hh.transpose(1, 2)).squeeze(1)
+        self._record_gawf_gate(layer_idx, gate_logits_ih, gate_logits_hh, gate_ih, gate_hh)
+
+        ih = torch.einsum("bi,bhi,hi->bh", x_t, gate_ih, rnn.weight_ih_l0)
+        hh = torch.einsum("bi,bhi,hi->bh", h_prev, gate_hh, rnn.weight_hh_l0)
         if rnn.bias_ih_l0 is not None:
             ih = ih + rnn.bias_ih_l0.unsqueeze(0)
         if rnn.bias_hh_l0 is not None:
             hh = hh + rnn.bias_hh_l0.unsqueeze(0)
         h_t = torch.tanh(ih + hh)
-        h_t = self.norms[layer_idx](h_t)
+        h_t = norm(h_t)
         h_t = F.relu(h_t)
-        h_t = F.dropout(h_t, p=self.dropout, training=self.training)
-        return h_t
+        return F.dropout(h_t, p=self.dropout, training=self.training)
 
     def step(
         self,
         x_t: torch.Tensor,
-        h_states: Sequence[torch.Tensor],
-        feedbacks: Sequence[torch.Tensor],
-    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
-        if len(h_states) != self.num_layers or len(feedbacks) != self.num_layers:
-            raise ValueError("h_states and feedbacks must match num_layers")
+        h_prev: torch.Tensor | Sequence[torch.Tensor],
+        feedback: torch.Tensor | Sequence[torch.Tensor],
+        layer_idx: int = 0,
+    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
+        if self.num_layers == 1:
+            if not isinstance(h_prev, torch.Tensor) or not isinstance(feedback, torch.Tensor):
+                raise TypeError("single-layer GaWF expects tensor state and feedback")
+            return self._step_layer(layer_idx, x_t, h_prev, feedback)
+        if isinstance(h_prev, torch.Tensor) or isinstance(feedback, torch.Tensor):
+            raise TypeError("multi-layer GaWF expects state and feedback sequences")
+        if len(h_prev) != self.num_layers or len(feedback) != self.num_layers:
+            raise ValueError("state and feedback sequences must match num_layers")
         layer_input = x_t
-        next_h_states = []
-        for layer_idx in range(self.num_layers):
-            h_t = self._step_layer(
-                layer_idx,
-                layer_input,
-                h_states[layer_idx],
-                feedbacks[layer_idx],
-            )
-            next_h_states.append(h_t)
-            layer_input = h_t
-        return layer_input, next_h_states
+        next_states: list[torch.Tensor] = []
+        for idx in range(self.num_layers):
+            layer_input = self._step_layer(idx, layer_input, h_prev[idx], feedback[idx])
+            next_states.append(layer_input)
+        return layer_input, next_states
+
+    def step_no_feedback(
+        self,
+        x_t: torch.Tensor,
+        state: torch.Tensor | Sequence[torch.Tensor],
+    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
+        """Advance one timestep using the underlying ungated RNN weights."""
+        if self.num_layers == 1:
+            if not isinstance(state, torch.Tensor):
+                raise TypeError("single-layer GaWF expects a tensor state")
+            ih = F.linear(x_t, self.rnn.weight_ih_l0, self.rnn.bias_ih_l0)
+            hh = F.linear(state, self.rnn.weight_hh_l0, self.rnn.bias_hh_l0)
+            h_t = F.relu(self.norm(torch.tanh(ih + hh)))
+            return F.dropout(h_t, p=self.dropout, training=self.training)
+        if isinstance(state, torch.Tensor) or len(state) != self.num_layers:
+            raise TypeError("multi-layer GaWF expects one state tensor per layer")
+        layer_input = x_t
+        next_states: list[torch.Tensor] = []
+        for idx, (rnn, norm) in enumerate(zip(self.rnns, self.norms)):
+            ih = F.linear(layer_input, rnn.weight_ih_l0, rnn.bias_ih_l0)
+            hh = F.linear(state[idx], rnn.weight_hh_l0, rnn.bias_hh_l0)
+            layer_input = F.relu(norm(torch.tanh(ih + hh)))
+            layer_input = F.dropout(layer_input, p=self.dropout, training=self.training)
+            next_states.append(layer_input)
+        return layer_input, next_states
 
     def forward_no_feedback(self, x: torch.Tensor):
+        if self.num_layers == 1:
+            out, state = self.rnn(x)
+            out = self.norm(out)
+            out = F.relu(out)
+            out = F.dropout(out, p=self.dropout, training=self.training)
+            return out, state
         layer_output = x
-        final_states = []
-        for layer_idx, rnn in enumerate(self.rnns):
+        final_states: list[torch.Tensor] = []
+        for rnn, norm in zip(self.rnns, self.norms):
             layer_output, state = rnn(layer_output)
-            layer_output = self.norms[layer_idx](layer_output)
-            layer_output = F.relu(layer_output)
+            layer_output = F.relu(norm(layer_output))
             layer_output = F.dropout(layer_output, p=self.dropout, training=self.training)
             final_states.append(state.squeeze(0))
         return layer_output, final_states

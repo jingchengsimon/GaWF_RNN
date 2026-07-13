@@ -2,7 +2,7 @@
 
 Reads ``results/train_data/<suffix>/metrics_history.jsonl`` (written by
 ``train_atari_dqn.py``) and overlays ``episodic_return_100`` vs ``global_step``
-for the seven model variants (cnn/rnn/gru/lstm/gawf/s5/mamba), one coloured line
+for the seven model variants (ann/rnn/gru/lstm/gawf/s5/mamba), one coloured line
 per model. When several seeds are present the seeds are aggregated into a mean
 line with a shaded +/- std band. Style mirrors
 ``utils_viz/model_train_compare_result.py`` (matplotlib Agg, fixed per-model
@@ -35,11 +35,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 DEFAULT_PREFIX = "atari_dqn_pong1f"
-DEFAULT_MODELS = ("cnn", "rnn", "gru", "lstm", "gawf", "s5", "mamba")
+DEFAULT_MODELS = ("ann", "rnn", "gru", "lstm", "gawf", "s5", "mamba")
 
 # Fixed per-model colours so a model reads the same across every figure.
 MODEL_COLORS = {
-    "cnn": "#7f7f7f",   # grey: the memoryless control
+    "ann": "#7f7f7f",   # grey: the memoryless control
+    "cnn": "#7f7f7f",   # historical result alias
     "rnn": "#1f77b4",
     "gru": "#2ca02c",
     "lstm": "#9467bd",

@@ -41,6 +41,8 @@ from .clutter_train_sector import (
     single_char_global_eval_init,
     single_char_global_eval_update,
 )
+
+
 def _raise_unsupported_coord_engine(logger) -> None:
     """Training engine does not implement single-char coordinate mode yet."""
     msg = (
@@ -190,12 +192,17 @@ def setup_training_components(
                     )
                 OptimClass = torch.optim.AdamW
 
-        if is_gawf_multi:
+        if is_gawf:
             base_params = []
             gate_params = []
             projector_params = []
             for pname, param in mdl.named_parameters():
-                if "U_layers" in pname or "V_layers" in pname:
+                if (
+                    pname.endswith(".U")
+                    or pname.endswith(".V")
+                    or "U_layers" in pname
+                    or "V_layers" in pname
+                ):
                     gate_params.append(param)
                 elif "proj_out" in pname or "hidden_projectors" in pname:
                     projector_params.append(param)
@@ -216,29 +223,11 @@ def setup_training_components(
                 optim_kwargs["eps"] = 1e-6
             if logger is not None:
                 logger.info(
-                    "Multi-layer GaWF optimizer: base_lr=%s, feedback_lr=%s "
-                    "(feedback_lr_scale=%s)",
+                    "GaWF optimizer: base_lr=%s, feedback_lr=%s " "(feedback_lr_scale=%s)",
                     lr,
                     feedback_lr,
                     gawf_feedback_lr_scale,
                 )
-            return OptimClass(param_groups, **optim_kwargs)
-
-        if is_gawf:
-            gawf_params = []
-            base_params = []
-            for pname, param in mdl.named_parameters():
-                if "U" in pname or "V" in pname:
-                    gawf_params.append(param)
-                else:
-                    base_params.append(param)
-            param_groups = [
-                {"params": base_params, "weight_decay": wd},
-                {"params": gawf_params, "weight_decay": 0.0},
-            ]
-            optim_kwargs = {"lr": lr}
-            if OptimClass in (torch.optim.Adam, torch.optim.AdamW) and has_big_hidden:
-                optim_kwargs["eps"] = 1e-6
             return OptimClass(param_groups, **optim_kwargs)
 
         if bool(getattr(mdl, "uses_mamba_core", False)):
@@ -276,11 +265,10 @@ def setup_training_components(
             return OptimClass(param_groups, **optim_kwargs)
 
         if bool(getattr(mdl, "uses_s5_core", False)):
+
             def _is_s5_core_param(pname: str) -> bool:
                 core_prefixes = ("Lambda", "log_step", "log_dt", "inv_dt", "B")
-                return any(
-                    part.startswith(core_prefixes) for part in pname.split(".")
-                )
+                return any(part.startswith(core_prefixes) for part in pname.split("."))
 
             ssm_core = []
             no_decay = []
@@ -342,8 +330,7 @@ def setup_training_components(
 
     optim = _build_optimizer()
     has_complex_params = any(
-        param.requires_grad and torch.is_complex(param)
-        for param in mdl.parameters()
+        param.requires_grad and torch.is_complex(param) for param in mdl.parameters()
     )
     if scaler is not None and has_complex_params:
         if logger is not None:
@@ -641,7 +628,9 @@ def _assign_transition_epoch_metrics(
         components["glob_train_acc_pos"][epoch] = extra_stats["glob_acc_pos"]
         components["fg_switch_pre5_train_acc_char"][epoch] = extra_stats["fg_switch_pre5_acc_char"]
         components["fg_switch_pre5_train_acc_pos"][epoch] = extra_stats["fg_switch_pre5_acc_pos"]
-        components["fg_switch_post5_train_acc_char"][epoch] = extra_stats["fg_switch_post5_acc_char"]
+        components["fg_switch_post5_train_acc_char"][epoch] = extra_stats[
+            "fg_switch_post5_acc_char"
+        ]
         components["fg_switch_post5_train_acc_pos"][epoch] = extra_stats["fg_switch_post5_acc_pos"]
     else:
         components["glob_val_acc_char"][epoch] = extra_stats["glob_acc_char"]
@@ -659,10 +648,16 @@ def _copy_transition_epoch_metrics(components: Dict[str, Any], epoch: int) -> No
     prev = epoch - 1
     components["glob_val_acc_char"][epoch] = components["glob_val_acc_char"][prev]
     components["glob_val_acc_pos"][epoch] = components["glob_val_acc_pos"][prev]
-    components["fg_switch_pre5_val_acc_char"][epoch] = components["fg_switch_pre5_val_acc_char"][prev]
+    components["fg_switch_pre5_val_acc_char"][epoch] = components["fg_switch_pre5_val_acc_char"][
+        prev
+    ]
     components["fg_switch_pre5_val_acc_pos"][epoch] = components["fg_switch_pre5_val_acc_pos"][prev]
-    components["fg_switch_post5_val_acc_char"][epoch] = components["fg_switch_post5_val_acc_char"][prev]
-    components["fg_switch_post5_val_acc_pos"][epoch] = components["fg_switch_post5_val_acc_pos"][prev]
+    components["fg_switch_post5_val_acc_char"][epoch] = components["fg_switch_post5_val_acc_char"][
+        prev
+    ]
+    components["fg_switch_post5_val_acc_pos"][epoch] = components["fg_switch_post5_val_acc_pos"][
+        prev
+    ]
 
 
 def eval_train_subset(

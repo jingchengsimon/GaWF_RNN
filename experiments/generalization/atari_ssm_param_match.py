@@ -7,9 +7,8 @@ core to match the **LSTM core param count** at ``hidden_size=512`` (the anchor):
 
     RNN/GRU/GaWF -> search ``hidden_size``
     S5/Mamba     -> search ``d_model`` (state_size / d_state held fixed)
-    LSTM         -> the anchor itself (hidden_size=512)
-    CNN          -> the feedforward, memoryless control; NOT param-matched
-                    (it has no recurrent core), kept at the Nature-DQN dense 512.
+    LSTM         -> search hidden_size when candidate depth differs from the anchor
+    ANN          -> feedforward control; NOT param-matched, width 512 per layer
 
 RNN/GRU/GaWF/S5 are pure-torch or use the locally-available s5-pytorch, so they
 match anywhere. Mamba needs ``mamba-ssm`` (GPU box, i.e. Amarel). Run:
@@ -43,27 +42,43 @@ def count_params(module: torch.nn.Module) -> int:
 
 
 def lstm_target(conv_out: int, hidden_size: int) -> int:
-    return count_params(LSTMCore(conv_out, hidden_size))
+    """Return the fixed legacy single-layer LSTM anchor budget."""
+    return count_params(LSTMCore(conv_out, hidden_size, num_layers=1))
 
 
 # ---- hidden-size search for the torch recurrent cores ----------------------
-def _build_rnn(conv_out, hidden, **kw):
-    return RNNCore(conv_out, hidden)
+def _build_rnn(conv_out, hidden, num_layers, **kw):
+    return RNNCore(conv_out, hidden, num_layers=num_layers)
 
 
-def _build_gru(conv_out, hidden, **kw):
-    return GRUCore(conv_out, hidden)
+def _build_gru(conv_out, hidden, num_layers, **kw):
+    return GRUCore(conv_out, hidden, num_layers=num_layers)
 
 
-def _build_gawf(conv_out, hidden, num_actions, **kw):
+def _build_lstm(conv_out, hidden, num_layers, **kw):
+    return LSTMCore(conv_out, hidden, num_layers=num_layers)
+
+
+def _build_gawf(conv_out, hidden, num_actions, num_layers, **kw):
     # Matches how AtariQNetwork builds GaWF: feedback_dim = num_actions (qvalues).
-    return GaWFCore(conv_out, hidden, feedback_dim=max(1, num_actions))
+    feedback_dim = max(1, num_actions)
+    return GaWFCore(
+        conv_out,
+        hidden,
+        feedback_dim=feedback_dim,
+        num_layers=num_layers,
+        layer_feedback_dims=(
+            [hidden] * (num_layers - 1) + [feedback_dim] if num_layers > 1 else None
+        ),
+    )
 
 
-def search_hidden(build_fn, conv_out, target, num_actions, h_min=8, h_max=8192) -> dict:
+def search_hidden(build_fn, conv_out, target, num_actions, num_layers, h_min=8, h_max=8192) -> dict:
     best = None
     for hidden in range(h_min, h_max + 1):
-        params = count_params(build_fn(conv_out, hidden, num_actions=num_actions))
+        params = count_params(
+            build_fn(conv_out, hidden, num_actions=num_actions, num_layers=num_layers)
+        )
         diff = abs(params - target)
         if best is None or diff < best["abs_diff"]:
             best = {
@@ -81,19 +96,22 @@ def search_hidden(build_fn, conv_out, target, num_actions, h_min=8, h_max=8192) 
 def _build_s5(conv_out, d_model, state_size, num_layers):
     from utils.recurrent_cores.s5 import S5Core
 
-    return S5Core(input_size=conv_out, d_model=d_model, state_size=state_size,
-                  num_layers=num_layers)
+    return S5Core(
+        input_size=conv_out, d_model=d_model, state_size=state_size, num_layers=num_layers
+    )
 
 
 def _build_mamba(conv_out, d_model, state_size, num_layers):
     from utils.recurrent_cores.mamba import MambaCore
 
-    return MambaCore(input_size=conv_out, d_model=d_model, num_layers=num_layers,
-                     d_state=state_size)
+    return MambaCore(
+        input_size=conv_out, d_model=d_model, num_layers=num_layers, d_state=state_size
+    )
 
 
-def search_d_model(build_fn, conv_out, target, state_size, num_layers,
-                   d_min=16, d_max=4096) -> dict:
+def search_d_model(
+    build_fn, conv_out, target, state_size, num_layers, d_min=16, d_max=4096
+) -> dict:
     best = None
     for d_model in range(d_min, d_max + 1, 2):
         params = count_params(build_fn(conv_out, d_model, state_size, num_layers))
@@ -112,17 +130,29 @@ def search_d_model(build_fn, conv_out, target, state_size, num_layers,
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Param-match Atari DQN cores to the LSTM anchor")
-    p.add_argument("--conv_out", type=int, default=3136,
-                   help="Flattened Nature-DQN conv features (64*7*7 for 84x84).")
+    p.add_argument(
+        "--conv_out",
+        type=int,
+        default=3136,
+        help="Flattened Nature-DQN conv features (64*7*7 for 84x84).",
+    )
     p.add_argument("--hidden_size", type=int, default=512, help="LSTM anchor hidden size.")
-    p.add_argument("--num_actions", type=int, default=6,
-                   help="Action count (GaWF feedback_dim). Pong=6.")
-    p.add_argument("--ssm_state_size", type=int, default=128,
-                   help="S5 state_size / Mamba d_state held fixed while searching d_model.")
+    p.add_argument(
+        "--num_actions", type=int, default=6, help="Action count (GaWF feedback_dim). Pong=6."
+    )
+    p.add_argument(
+        "--ssm_state_size",
+        type=int,
+        default=128,
+        help="S5 state_size / Mamba d_state held fixed while searching d_model.",
+    )
     p.add_argument("--num_layers", type=int, default=1)
-    p.add_argument("--models", nargs="+",
-                   default=["rnn", "gru", "gawf", "s5", "mamba"],
-                   choices=["rnn", "gru", "gawf", "s5", "mamba"])
+    p.add_argument(
+        "--models",
+        nargs="+",
+        default=["rnn", "gru", "lstm", "gawf", "s5", "mamba"],
+        choices=["rnn", "gru", "lstm", "gawf", "s5", "mamba"],
+    )
     p.add_argument("--out_dir", type=str, default="results/atari_param_match")
     return p
 
@@ -130,45 +160,63 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_arg_parser().parse_args()
     target = lstm_target(args.conv_out, args.hidden_size)
-    print(f"LSTM anchor core params @ hidden={args.hidden_size}, conv_out={args.conv_out}: "
-          f"{target:,}\n")
+    print(
+        f"LSTM anchor core params @ hidden={args.hidden_size}, conv_out={args.conv_out}: "
+        f"{target:,}\n"
+    )
 
     matched: dict[str, dict] = {
-        "lstm": {"hidden_size": args.hidden_size, "params": target, "rel_diff_pct": 0.0},
-        "cnn": {"note": "feedforward control; not param-matched"},
+        "ann": {
+            "hidden_size": 512,
+            "num_layers": args.num_layers,
+            "note": "feedforward control; not param-matched",
+        },
     }
 
-    hidden_builders = {"rnn": _build_rnn, "gru": _build_gru, "gawf": _build_gawf}
+    hidden_builders = {
+        "rnn": _build_rnn,
+        "gru": _build_gru,
+        "lstm": _build_lstm,
+        "gawf": _build_gawf,
+    }
     ssm_builders = {"s5": _build_s5, "mamba": _build_mamba}
 
     for model in args.models:
         try:
             if model in hidden_builders:
-                best = search_hidden(hidden_builders[model], args.conv_out, target,
-                                     args.num_actions)
+                best = search_hidden(
+                    hidden_builders[model], args.conv_out, target, args.num_actions, args.num_layers
+                )
+                best["num_layers"] = args.num_layers
                 matched[model] = best
-                print(f"{model:6s} -> hidden_size={best['hidden_size']:5d} | "
-                      f"params={best['params']:,} ({best['rel_diff_pct']:+.2f}%)")
+                print(
+                    f"{model:6s} -> hidden_size={best['hidden_size']:5d} | "
+                    f"params={best['params']:,} ({best['rel_diff_pct']:+.2f}%)"
+                )
             else:
-                best = search_d_model(ssm_builders[model], args.conv_out, target,
-                                     args.ssm_state_size, args.num_layers)
+                best = search_d_model(
+                    ssm_builders[model], args.conv_out, target, args.ssm_state_size, args.num_layers
+                )
                 best["state_size"] = args.ssm_state_size
                 matched[model] = best
-                print(f"{model:6s} -> d_model={best['d_model']:5d} "
-                      f"state_size={args.ssm_state_size} | "
-                      f"params={best['params']:,} ({best['rel_diff_pct']:+.2f}%)")
+                print(
+                    f"{model:6s} -> d_model={best['d_model']:5d} "
+                    f"state_size={args.ssm_state_size} | "
+                    f"params={best['params']:,} ({best['rel_diff_pct']:+.2f}%)"
+                )
         except ImportError as exc:
             print(f"[skip {model}] optional dependency missing: {exc}")
 
     os.makedirs(args.out_dir, exist_ok=True)
     out = {
         "anchor": "lstm",
+        "anchor_num_layers": 1,
         "conv_out": args.conv_out,
         "hidden_size": args.hidden_size,
         "num_actions": args.num_actions,
         "target_core_params": target,
         "ssm_state_size": args.ssm_state_size,
-        "num_layers": args.num_layers,
+        "candidate_num_layers": args.num_layers,
         "matched": matched,
     }
     out_path = os.path.join(args.out_dir, "atari_param_match.json")

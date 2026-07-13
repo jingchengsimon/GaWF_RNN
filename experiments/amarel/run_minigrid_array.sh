@@ -63,7 +63,7 @@ SUFFIX="mg_${ENV_TAG}_${MODEL}_seed${SEED}"
 # ---- param-matched sizing from the MiniGrid JSON ---------------------------
 MATCH_JSON="$ROOT/results/minigrid_param_match/atari_param_match.json"
 SIZE_ARGS=()
-if [[ "$MODEL" != "ann" && "$MODEL" != "cnn" ]]; then
+if [[ "$MODEL" != "ann" ]]; then
   if [[ ! -f "$MATCH_JSON" ]]; then
     echo "Missing $MATCH_JSON. Run atari_ssm_param_match --out_dir results/minigrid_param_match first." >&2
     exit 2

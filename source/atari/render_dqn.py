@@ -33,7 +33,7 @@ from utils.atari_train_utils import to_channel_first_obs
 
 def _sizing_kwargs(model_type: str, args, num_actions: int) -> dict:
     """hidden_size / ssm_* for the recurrent cores, from JSON or CLI override."""
-    if model_type == "cnn":
+    if model_type == "ann":
         return {}
     match = {}
     if os.path.isfile(args.param_match_json):
@@ -48,8 +48,11 @@ def _sizing_kwargs(model_type: str, args, num_actions: int) -> dict:
     state_size = args.ssm_state_size or match.get("state_size", 128)
     if d_model is None:
         raise SystemExit(f"ssm_d_model unknown for {model_type}; pass --ssm_d_model")
-    return {"ssm_d_model": int(d_model), "ssm_state_size": int(state_size),
-            "ssm_context_len": args.seq_len}
+    return {
+        "ssm_d_model": int(d_model),
+        "ssm_state_size": int(state_size),
+        "ssm_context_len": args.seq_len,
+    }
 
 
 def _find_checkpoint(save_dir: str) -> str:
@@ -64,11 +67,22 @@ def _make_render_env(env_id: str, seed: int, flicker_prob: float, frame_stack: i
     import ale_py
 
     gym.register_envs(ale_py)
-    env = gym.make(env_id, frameskip=1, repeat_action_probability=0.0,
-                   full_action_space=False, render_mode="rgb_array")
+    env = gym.make(
+        env_id,
+        frameskip=1,
+        repeat_action_probability=0.0,
+        full_action_space=False,
+        render_mode="rgb_array",
+    )
     env = gym.wrappers.AtariPreprocessing(
-        env, noop_max=30, frame_skip=4, screen_size=84,
-        terminal_on_life_loss=False, grayscale_obs=True, scale_obs=False)
+        env,
+        noop_max=30,
+        frame_skip=4,
+        screen_size=84,
+        terminal_on_life_loss=False,
+        grayscale_obs=True,
+        scale_obs=False,
+    )
     if flicker_prob > 0:
         rng = np.random.default_rng(seed)
 
@@ -85,11 +99,16 @@ def _make_render_env(env_id: str, seed: int, flicker_prob: float, frame_stack: i
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Render a trained Atari DQN agent to mp4")
-    p.add_argument("--result_suffix", required=True,
-                   help="Run dir under results/train_data holding the checkpoint.")
+    p.add_argument(
+        "--result_suffix",
+        required=True,
+        help="Run dir under results/train_data holding the checkpoint.",
+    )
     p.add_argument("--data_root", default="results/train_data")
-    p.add_argument("--model_type", required=True,
-                   choices=["cnn", "rnn", "gru", "lstm", "gawf", "s5", "mamba"])
+    p.add_argument(
+        "--model_type", required=True, choices=["ann", "rnn", "gru", "lstm", "gawf", "s5", "mamba"]
+    )
+    p.add_argument("--num_layers", type=int, default=1)
     p.add_argument("--env_id", default="ALE/Pong-v5")
     p.add_argument("--frame_stack", type=int, default=1)
     p.add_argument("--flicker_prob", type=float, default=0.0)
@@ -124,6 +143,7 @@ def main() -> None:
         input_channels=args.frame_stack,
         model_type=args.model_type,
         feedback_mode=feedback_mode,
+        num_layers=args.num_layers,
         **_sizing_kwargs(args.model_type, args, num_actions),
     ).to(device)
     model.load_state_dict(torch.load(ckpt_path, map_location=device))

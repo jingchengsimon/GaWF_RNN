@@ -26,6 +26,7 @@ class TextSequenceClassifier(nn.Module):
         pooling: str = "last",
         padding_idx: int = PAD_ID,
         device: str = "cuda",
+        num_layers: int = 1,
     ) -> None:
         super().__init__()
         if pooling not in ("last", "mean"):
@@ -37,6 +38,9 @@ class TextSequenceClassifier(nn.Module):
         self.embed_dropout = float(embed_dropout)
         self.rnn_dropout = float(rnn_dropout)
         self.pooling = pooling
+        self.num_layers = int(num_layers)
+        if self.num_layers < 1:
+            raise ValueError(f"num_layers must be >= 1, got {num_layers}")
         self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=padding_idx)
         self.fc = nn.Linear(hidden_size, num_classes)
         self.to(self.device)
@@ -71,21 +75,27 @@ class TextSequenceClassifier(nn.Module):
 class TextRNN(TextSequenceClassifier):
     def __init__(self, vocab_size: int, **kwargs) -> None:
         super().__init__(vocab_size, **kwargs)
-        self.core = RNNCore(self.embed_dim, self.hidden_size, dropout=0.0)
+        self.core = RNNCore(
+            self.embed_dim, self.hidden_size, dropout=0.0, num_layers=self.num_layers
+        )
         self.to(self.device)
 
 
 class TextGRU(TextSequenceClassifier):
     def __init__(self, vocab_size: int, **kwargs) -> None:
         super().__init__(vocab_size, **kwargs)
-        self.core = GRUCore(self.embed_dim, self.hidden_size, dropout=0.0)
+        self.core = GRUCore(
+            self.embed_dim, self.hidden_size, dropout=0.0, num_layers=self.num_layers
+        )
         self.to(self.device)
 
 
 class TextLSTM(TextSequenceClassifier):
     def __init__(self, vocab_size: int, **kwargs) -> None:
         super().__init__(vocab_size, **kwargs)
-        self.core = LSTMCore(self.embed_dim, self.hidden_size, dropout=0.0)
+        self.core = LSTMCore(
+            self.embed_dim, self.hidden_size, dropout=0.0, num_layers=self.num_layers
+        )
         self.to(self.device)
 
 
@@ -100,6 +110,8 @@ class TextGaWF(TextSequenceClassifier):
             hidden_size=self.hidden_size,
             feedback_dim=self.feedback_dim,
             dropout=0.0,
+            num_layers=self.num_layers,
+            layer_feedback_dims=([self.hidden_size] * self.num_layers),
         )
         self.to(self.device)
 
@@ -122,8 +134,13 @@ class TextGaWF(TextSequenceClassifier):
             dtype=x.dtype,
         )
         for t in range(frame_num):
-            h = self.core.step(x[:, t, :], h, h)
-            outputs[:, t, :] = h
+            if self.num_layers == 1:
+                h = self.core.step(x[:, t, :], h, h)
+                feature = h
+            else:
+                feedbacks = [part.detach() for part in h[1:]] + [h[-1]]
+                feature, h = self.core.step(x[:, t, :], h, feedbacks)
+            outputs[:, t, :] = feature
         return outputs
 
 
@@ -140,6 +157,8 @@ class TextGaWFLogits(TextSequenceClassifier):
             hidden_size=self.hidden_size,
             feedback_dim=self.feedback_dim,
             dropout=0.0,
+            num_layers=self.num_layers,
+            layer_feedback_dims=([self.hidden_size] * (self.num_layers - 1) + [self.feedback_dim]),
         )
         self.to(self.device)
 
@@ -167,12 +186,17 @@ class TextGaWFLogits(TextSequenceClassifier):
             dtype=x.dtype,
         )
         for t in range(frame_num):
-            h = self.core.step(x[:, t, :], h, fb)
+            if self.num_layers == 1:
+                h = self.core.step(x[:, t, :], h, fb)
+                feature = h
+            else:
+                feedbacks = [part.detach() for part in h[1:]] + [fb]
+                feature, h = self.core.step(x[:, t, :], h, feedbacks)
             if apply_recurrent_dropout:
-                h = F.dropout(h, p=self.rnn_dropout, training=self.training)
-            logits_t = self.fc(h)
+                feature = F.dropout(feature, p=self.rnn_dropout, training=self.training)
+            logits_t = self.fc(feature)
             fb = logits_t.detach()
-            outputs[:, t, :] = h
+            outputs[:, t, :] = feature
         return outputs
 
     def middle(self, x: torch.Tensor) -> torch.Tensor:

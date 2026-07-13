@@ -13,7 +13,11 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from utils.atari_dqn_models import AtariQNetwork, AtariQNetworkState
+from utils.atari_dqn_models import (
+    AtariQNetwork,
+    AtariQNetworkState,
+    normalize_atari_dqn_model_type,
+)
 
 try:  # optional deps: only present on the GPU boxes (Amarel), not locally
     import s5  # noqa: F401
@@ -29,7 +33,12 @@ except ImportError:
     HAS_MAMBA = False
 
 
-def _build_model(model_type: str, feedback_mode: str = "none", num_actions: int = 6) -> AtariQNetwork:
+def _build_model(
+    model_type: str,
+    feedback_mode: str = "none",
+    num_actions: int = 6,
+    num_layers: int = 1,
+) -> AtariQNetwork:
     return AtariQNetwork(
         num_actions=num_actions,
         input_channels=4,
@@ -38,10 +47,13 @@ def _build_model(model_type: str, feedback_mode: str = "none", num_actions: int 
         encoder_feature_dim=32,
         core_dropout=0.0,
         feedback_mode=feedback_mode,
+        num_layers=num_layers,
     )
 
 
-def _build_sequence_model(model_type: str, num_actions: int = 6, context_len: int = 4) -> AtariQNetwork:
+def _build_sequence_model(
+    model_type: str, num_actions: int = 6, context_len: int = 4
+) -> AtariQNetwork:
     return AtariQNetwork(
         num_actions=num_actions,
         input_channels=1,
@@ -60,8 +72,8 @@ def _inputs(batch_size: int = 2, n_steps: int = 4):
 
 
 class AtariDQNModelSmokeTest(unittest.TestCase):
-    def test_cnn_shapes(self) -> None:
-        model = _build_model("cnn")
+    def test_ann_shapes(self) -> None:
+        model = _build_model("ann")
         self.assertFalse(model.is_recurrent)
         self.assertEqual(model.feedback_dim, 0)
         obs, prev_dones = _inputs()
@@ -103,7 +115,7 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
         self.assertEqual(q_values.shape, (2, 4, 6))
 
     def test_non_gawf_rejects_qvalues_feedback(self) -> None:
-        for model_type in ("cnn", "rnn", "gru", "lstm"):
+        for model_type in ("ann", "rnn", "gru", "lstm"):
             with self.subTest(model_type=model_type):
                 with self.assertRaises(ValueError):
                     AtariQNetwork(num_actions=4, model_type=model_type, feedback_mode="qvalues")
@@ -111,6 +123,10 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
     def test_invalid_model_type_rejected(self) -> None:
         with self.assertRaises(ValueError):
             AtariQNetwork(num_actions=4, model_type="transformer")
+
+    def test_historical_cnn_metadata_normalizes_to_ann(self) -> None:
+        self.assertEqual(normalize_atari_dqn_model_type("cnn"), "ann")
+        self.assertEqual(normalize_atari_dqn_model_type("lstm"), "lstm")
 
     def test_done_masks_state(self) -> None:
         for model_type in ("rnn", "gru", "lstm", "gawf"):
@@ -124,14 +140,16 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
                     recurrent = tuple(torch.ones_like(p) for p in clean.recurrent)
                 else:
                     recurrent = torch.ones_like(clean.recurrent)
-                dirty = AtariQNetworkState(recurrent=recurrent, prev_q=torch.ones_like(clean.prev_q))
+                dirty = AtariQNetworkState(
+                    recurrent=recurrent, prev_q=torch.ones_like(clean.prev_q)
+                )
                 q_dirty, _ = model.forward_sequence(obs, prev_dones, state=dirty)
                 q_clean, _ = model.forward_sequence(obs, prev_dones, state=None)
                 self.assertTrue(torch.allclose(q_dirty, q_clean, atol=1e-5))
 
-    def test_gradient_step_cnn_branch(self) -> None:
-        model = _build_model("cnn", num_actions=4)
-        target = _build_model("cnn", num_actions=4)
+    def test_gradient_step_ann_branch(self) -> None:
+        model = _build_model("ann", num_actions=4)
+        target = _build_model("ann", num_actions=4)
         target.load_state_dict(model.state_dict())
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
@@ -154,6 +172,25 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
         self.assertTrue(grads)
         self.assertTrue(all(torch.isfinite(g).all().item() for g in grads))
         optimizer.step()
+
+    def test_multilayer_stepwise_shapes_and_reset(self) -> None:
+        obs, prev_dones = _inputs()
+        for model_type in ("ann", "rnn", "gru", "lstm", "gawf"):
+            with self.subTest(model_type=model_type):
+                feedback_mode = "qvalues" if model_type == "gawf" else "none"
+                model = _build_model(model_type, feedback_mode, num_layers=2)
+                q_values, state = model.forward_sequence(obs, prev_dones)
+                self.assertEqual(q_values.shape, (2, 4, 6))
+                if model_type == "ann":
+                    self.assertIsNone(state)
+                elif model_type == "lstm":
+                    self.assertEqual(state.recurrent[0].shape, (2, 2, 16))
+                    self.assertEqual(state.recurrent[1].shape, (2, 2, 16))
+                elif model_type == "gawf":
+                    self.assertEqual(len(state.recurrent), 2)
+                    self.assertEqual(state.recurrent[0].shape, (2, 16))
+                else:
+                    self.assertEqual(state.recurrent.shape, (2, 2, 16))
 
     def test_gradient_step_recurrent_branch(self) -> None:
         for model_type in ("rnn", "lstm", "gawf"):
@@ -178,15 +215,14 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
                 loss_mask[0, 3] = 0.0
 
                 q_online, _ = model.forward_sequence(obs, prev_dones)
-                q_taken = q_online[:, :seq_len].gather(
-                    -1, actions[:, :seq_len].unsqueeze(-1)
-                ).squeeze(-1)
+                q_taken = (
+                    q_online[:, :seq_len].gather(-1, actions[:, :seq_len].unsqueeze(-1)).squeeze(-1)
+                )
                 with torch.no_grad():
                     q_target, _ = target.forward_sequence(obs, prev_dones)
                     q_next = q_target[:, 1:].max(-1).values
                     td_target = (
-                        rewards[:, :seq_len].clamp(-1, 1)
-                        + 0.99 * (1 - dones[:, :seq_len]) * q_next
+                        rewards[:, :seq_len].clamp(-1, 1) + 0.99 * (1 - dones[:, :seq_len]) * q_next
                     )
                 mask = loss_mask[:, :seq_len]
                 loss = (
@@ -290,9 +326,7 @@ class FlickerWrapperTest(unittest.TestCase):
 
         wrapper = _flicker(object(), self._fake_gym(), 0.5, seed=123)
         frame = np.ones((84, 84), dtype=np.uint8)
-        blanks = sum(
-            int((np.asarray(wrapper.observation(frame)) == 0).all()) for _ in range(2000)
-        )
+        blanks = sum(int((np.asarray(wrapper.observation(frame)) == 0).all()) for _ in range(2000))
         # ~50% blanked; wide tolerance to stay deterministic-ish across seeds.
         self.assertGreater(blanks, 850)
         self.assertLess(blanks, 1150)

@@ -44,6 +44,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="GaWF gate feedback source; LSTM requires 'none'.",
     )
     parser.add_argument("--hidden_size", type=int, default=256)
+    parser.add_argument("--num_layers", type=int, default=1)
+    parser.add_argument("--gawf_feedback_lr_scale", type=float, default=1.0)
     parser.add_argument("--encoder_feature_dim", type=int, default=512)
     parser.add_argument("--core_dropout", type=float, default=0.0)
     parser.add_argument("--frame_stack", type=int, default=4)
@@ -122,8 +124,29 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
             encoder_feature_dim=args.encoder_feature_dim,
             core_dropout=args.core_dropout,
             feedback_mode=args.feedback_mode,
+            num_layers=args.num_layers,
         ).to(device)
-        optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, eps=1e-5)
+        if args.model_type == "gawf":
+            gate_params = [
+                p
+                for n, p in model.named_parameters()
+                if n.startswith("core.U") or n.startswith("core.V")
+            ]
+            gate_ids = {id(p) for p in gate_params}
+            optimizer = optim.Adam(
+                [
+                    {"params": [p for p in model.parameters() if id(p) not in gate_ids]},
+                    {
+                        "params": gate_params,
+                        "lr": args.learning_rate * args.gawf_feedback_lr_scale,
+                        "weight_decay": 0.0,
+                    },
+                ],
+                lr=args.learning_rate,
+                eps=1e-5,
+            )
+        else:
+            optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, eps=1e-5)
 
         batch_size = args.num_envs * args.num_steps
         num_updates = max(1, args.total_timesteps // batch_size)
@@ -246,6 +269,17 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
                 "env_id": args.env_id,
                 "algo": args.algo,
                 "model_type": args.model_type,
+                "num_layers": args.num_layers,
+                "hidden_size": args.hidden_size,
+                "core_param_count": int(sum(p.numel() for p in model.core.parameters())),
+                "core_readout_params": int(
+                    sum(p.numel() for p in model.core.parameters())
+                    + sum(p.numel() for p in model.head.parameters())
+                ),
+                "total_param_count": int(sum(p.numel() for p in model.parameters())),
+                "gawf_feedback_lr_scale": (
+                    args.gawf_feedback_lr_scale if args.model_type == "gawf" else None
+                ),
                 "feedback_mode": args.feedback_mode,
                 "global_step": global_step,
                 "episodic_return_100": rolling_return,
@@ -268,8 +302,9 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
                     final_metrics["entropy"],
                 )
 
+        layer_suffix = f"_L{args.num_layers}" if args.num_layers > 1 else ""
         ckpt_name = (
-            f"{args.algo}_{args.model_type}_{args.feedback_mode}_"
+            f"{args.algo}_{args.model_type}_{args.feedback_mode}{layer_suffix}_"
             f"{args.env_id.replace('/', '_')}.pth"
         )
         ckpt_path = os.path.join(save_dir, ckpt_name)

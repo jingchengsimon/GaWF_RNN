@@ -61,7 +61,9 @@ LABEL_COLUMNS = [
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Export contiguous pop_act (T, H) + labels.tsv from test split.")
+    p = argparse.ArgumentParser(
+        description="Export contiguous pop_act (T, H) + labels.tsv from test split."
+    )
     p.add_argument(
         "--ckpt",
         type=str,
@@ -75,15 +77,30 @@ def parse_args() -> argparse.Namespace:
         "--model_type",
         type=str,
         default=None,
-        choices=["gawf", "gawf_multi", "rnn", "lstm", "gru"],
+        choices=["gawf", "rnn", "lstm", "gru"],
         help=(
             "Override architecture. Default: inferred from checkpoint basename prefix "
-            "(gawf_ / gawf_multi_ / rnn_ / lstm_ / gru_), same convention as training artifact names."
+            "(gawf_ / rnn_ / lstm_ / gru_); historical gawf_multi_ files are inferred automatically."
         ),
     )
-    p.add_argument("--T", type=int, default=None, help="Segment length in frames (overrides duration_sec*fps if set).")
-    p.add_argument("--duration_sec", type=float, default=2400-1, help="Segment duration in seconds if --T not set.")
-    p.add_argument("--fps", type=float, default=24.0, help="Frames per second for --duration_sec (default: 30).")
+    p.add_argument(
+        "--T",
+        type=int,
+        default=None,
+        help="Segment length in frames (overrides duration_sec*fps if set).",
+    )
+    p.add_argument(
+        "--duration_sec",
+        type=float,
+        default=2400 - 1,
+        help="Segment duration in seconds if --T not set.",
+    )
+    p.add_argument(
+        "--fps",
+        type=float,
+        default=24.0,
+        help="Frames per second for --duration_sec (default: 30).",
+    )
     p.add_argument(
         "--save_dir",
         type=str,
@@ -161,7 +178,7 @@ def infer_model_type_from_ckpt(ckpt_path: str) -> str:
     key = _HPARAM_MODEL_TO_KEY.get(raw)
     if key is None:
         raise ValueError(f"Unknown model_type {raw!r} from filename {base!r}")
-    return key
+    return "gawf" if key == "gawf_multi" else key
 
 
 def resolve_T(args: argparse.Namespace) -> int:
@@ -194,7 +211,9 @@ def stacked_frame_at(
     """One model input: (chan_num, H, W), float32, same stacking as MC_RNN_Dataset."""
     block = data[global_frame_idx - (chan_num - 1) : global_frame_idx + 1]
     if block.shape[0] != chan_num:
-        raise ValueError(f"Bad block shape {block.shape} for global_frame_idx={global_frame_idx}, C={chan_num}")
+        raise ValueError(
+            f"Bad block shape {block.shape} for global_frame_idx={global_frame_idx}, C={chan_num}"
+        )
     return np.asarray(block, dtype=np.float32)
 
 
@@ -234,6 +253,9 @@ def build_model(
 ) -> torch.nn.Module:
     ckpt_basename = os.path.basename(ckpt_path)
     hparams = parse_hparams_from_filename(ckpt_basename)
+    num_layers = int(hparams.get("num_layers", hparams.get("gawf_layers", 1)))
+    if model_type == "gawf" and num_layers > 1:
+        model_type = "gawf_multi"
     hidden_size = int(hparams.get("hidden_size", 256))
     cnn_dropout = float(hparams.get("cnn_dropout", 0.0))
     rnn_dropout = float(hparams.get("rnn_dropout", hparams.get("dropout", 0.5)))
@@ -254,7 +276,9 @@ def build_model(
         if parsed_feedback_dim is not None:
             model_kwargs["feedback_dim"] = int(parsed_feedback_dim)
         if model_type == "gawf_multi":
-            model_kwargs["num_layers"] = int(hparams.get("gawf_layers", 2))
+            model_kwargs["num_layers"] = num_layers
+    elif model_type in ("rnn", "lstm", "gru"):
+        model_kwargs["num_layers"] = num_layers
 
     mdl = ModelClass(
         num_classes=num_classes,
@@ -315,9 +339,7 @@ def run_stream_pop_act(
                 h = gated_output
                 out_np[t] = gated_output.squeeze(0).cpu().numpy()
         elif model_type == "gawf_multi":
-            fb_top = torch.zeros(
-                1, model.top_feedback_dim, device=device, dtype=torch.float32
-            )
+            fb_top = torch.zeros(1, model.top_feedback_dim, device=device, dtype=torch.float32)
             h_states = [
                 torch.zeros(1, Hdim, device=device, dtype=seq.dtype)
                 for _ in range(model.num_layers)
@@ -373,6 +395,7 @@ def run_stream_pop_act(
 def format_label_row(lbls_df: Any, iloc_idx: int, frame_id: int) -> list:
     """One TSV row: 9 fields matching GenerateMovies order."""
     row = lbls_df.iloc[iloc_idx]
+
     def _get(name: str):
         if name in row.index:
             return row[name]
@@ -410,8 +433,17 @@ def format_label_row(lbls_df: Any, iloc_idx: int, frame_id: int) -> list:
 
 def main() -> None:
     args = parse_args()
-    model_type = args.model_type if args.model_type is not None else infer_model_type_from_ckpt(args.ckpt)
-    print(f"model_type={model_type}" + (" (from --model_type)" if args.model_type is not None else " (inferred from ckpt basename)"))
+    model_type = (
+        args.model_type if args.model_type is not None else infer_model_type_from_ckpt(args.ckpt)
+    )
+    print(
+        f"model_type={model_type}"
+        + (
+            " (from --model_type)"
+            if args.model_type is not None
+            else " (inferred from ckpt basename)"
+        )
+    )
 
     set_seed(args.seed)
     device = torch.device(args.device)
@@ -430,9 +462,13 @@ def main() -> None:
         num_pos = 0
 
     abs_start = pick_segment_start(rng, stims_test.shape[0], T_seg, args.chan_num)
-    print(f"Segment: frames [{abs_start}, {abs_start + T_seg}) (T={T_seg}), chan_num={args.chan_num}")
+    print(
+        f"Segment: frames [{abs_start}, {abs_start + T_seg}) (T={T_seg}), chan_num={args.chan_num}"
+    )
 
-    x_stack = np.empty((T_seg, args.chan_num, stims_test.shape[1], stims_test.shape[2]), dtype=np.float32)
+    x_stack = np.empty(
+        (T_seg, args.chan_num, stims_test.shape[1], stims_test.shape[2]), dtype=np.float32
+    )
     for t in range(T_seg):
         g = abs_start + t
         x_stack[t] = stacked_frame_at(stims_test, g, args.chan_num)

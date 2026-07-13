@@ -56,7 +56,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export KMP_DUPLICATE_LIB_OK=TRUE
 
 # ---- task -> (model, setting, seed) ---------------------------------------
-MODELS=(cnn rnn gru lstm gawf s5 mamba)
+MODELS=(ann rnn gru lstm gawf s5 mamba)
 SEEDS=(${SEEDS_OVERRIDE:-42 1 2 3 4})
 N_MODELS=${#MODELS[@]}
 N_SEEDS=${#SEEDS[@]}
@@ -81,7 +81,7 @@ SEQ_LEN="${SEQ_LEN:-16}"
 # ---- param-matched sizing from JSON ---------------------------------------
 MATCH_JSON="$ROOT/results/atari_param_match/atari_param_match.json"
 SIZE_ARGS=()
-if [[ "$MODEL" != "cnn" ]]; then
+if [[ "$MODEL" != "ann" ]]; then
   if [[ ! -f "$MATCH_JSON" ]]; then
     echo "Missing $MATCH_JSON. Run atari_ssm_param_match.py first." >&2
     exit 2
@@ -112,7 +112,7 @@ DONE_FILE="$STATUS_DIR/${SUFFIX}.done"
 FAIL_FILE="$STATUS_DIR/${SUFFIX}.fail"
 
 echo "[$(date -Is)] task=$TASK_ID model=$MODEL setting=$SETTING seed=$SEED flicker=$FLICKER_PROB"
-echo "result_suffix=$SUFFIX total_timesteps=$TOTAL_TIMESTEPS sizing=${SIZE_ARGS[*]:-none(cnn)}"
+echo "result_suffix=$SUFFIX total_timesteps=$TOTAL_TIMESTEPS sizing=${SIZE_ARGS[*]:-none(ann)}"
 
 set +e
 DISABLE_TQDM=1 python train_atari_dqn.py \

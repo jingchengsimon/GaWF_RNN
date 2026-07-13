@@ -123,7 +123,7 @@ nn.Module
 │   └── AtariActorCritic           (utils/atari_task_models.py)
 └── recurrent cores                (utils/recurrent_cores/)
     ├── RNNCore / GRUCore / LSTMCore
-    ├── GaWFCore / MultiLayerGaWFCore
+    ├── GaWFCore (unified single/multi-layer)
     └── MambaCore / S5Core
 ```
 
@@ -166,13 +166,9 @@ that assume spatial dimensions (6,6) and 32 feature channels.
 - Gate: `sigmoid(U @ (fb * V) / gate_tau)`, `gate_tau = 0.5`
 - U shape: `(hidden_size, fb_dim)`, V shape: `(fb_dim, input_size + hidden_size)`
 - `prev_feedback` is a runtime buffer (not a parameter); **skip it** when loading state_dicts.
-- Optimizer grouping: for single-layer `gawf`, U/V are placed in a no-weight-decay
-  parameter group but use the same learning rate as the rest of the model. For
-  `gawf_multi`, base parameters use the searched learning rate directly, while
-  U/V are no-weight-decay and use the configured feedback learning-rate scale
-  (`--gawf_multi_feedback_lr_scale`, default `0.1`).
-- Multi-layer GaWF uses separate CLI model type `gawf_multi` and class
-  `MultiLayerGaWFRNNConv`; default `--gawf_layers 2`. If `--dz` is omitted or set
+- Optimizer grouping: GaWF U/V are placed in a no-weight-decay parameter group and use
+  `base_lr * --gawf_feedback_lr_scale` (default `1.0`) for every depth.
+- GaWF uses one public model type and `--num_layers` (default `1`). If `--dz` is omitted or set
   to `0`, multi-layer GaWF uses direct feedback: non-final layers receive the
   detached adjacent higher layer's previous hidden output (`hidden_size` dim), and
   the final layer receives detached previous output logits (`num_classes + num_pos`
@@ -252,8 +248,9 @@ if __name__ == "__main__":
 | `--mamba_d_models` | int+ | `train_model.py` only: Mamba sequence width `d_model`; repeat for grid (default `[170]`) |
 | `--ssm_d_models` | int+ | `train_model.py` only: SSM sequence feature width `d_model`; repeat for grid (default `[256]`) |
 | `--s5_state_sizes` | int+ | `train_model.py` only: S5 latent state size; repeat for grid (default `[128]`) |
-| `--feedback_dim` / `--dz` | int | `train_model.py` only, GaWF: feedback context dimension `dz`; default `None` keeps single-layer legacy `num_classes + num_pos`; for `gawf_multi`, `None` or `0` disables projectors and values `>0` enable projected feedback |
-| `--gawf_layers` | int | `train_model.py` only, `gawf_multi`: recurrent layer count; default `2`, must be `>=2` |
+| `--feedback_dim` / `--dz` | int | `train_model.py` only, GaWF feedback context dimension; for multi-layer GaWF, `None` or `0` uses direct feedback and values `>0` enable projectors |
+| `--num_layers` | int | ANN/RNN/GRU/LSTM/GaWF layer count; default `1`, must be `>=1` |
+| `--gawf_feedback_lr_scale` | float | GaWF U/V/projector LR multiplier for every depth; default `1.0` |
 | `--data_suffix` | str | Suffix for **train** (and default val): `stimulus_reg-train-<suffix>.npy` / `stimulus_reg-validation-<suffix>` |
 | `--eval_data_suffix` | str | Suffix for **validation only**; empty → same as `--data_suffix` (use for train/val scale mismatch, e.g. 4h train + 40h val) |
 | `--patience` | int | Early stopping on fair **`val_acc_char`** after each epoch; **`0` disables**; best weights restored before save (default `15`) |
@@ -284,8 +281,8 @@ Analysis outputs follow: `<descriptor>_<tag>.npy` where `tag = f"{mode}{idx}_{ag
 Figures follow: `<mode><idx>_<agg>_<descriptor>.png`.
 Metadata JSON follows: `<descriptor>_meta_<tag>.json`.
 Single-layer GaWF checkpoints may include optional `_dz{value}` when `--feedback_dim`
-is explicitly set. Multi-layer GaWF checkpoints use prefix `gawf_multi_` and include
-`_L{layers}`; projected multi-layer runs additionally include `_dz{value}`.
+is explicitly set. Multi-layer recurrent checkpoints include `_L{layers}`; projected
+multi-layer GaWF runs additionally include `_dz{value}`. Historical `gawf_multi_` files remain readable.
 
 ---
 

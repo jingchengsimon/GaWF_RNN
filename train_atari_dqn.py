@@ -39,8 +39,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model_type",
         type=str,
-        default="cnn",
-        choices=["cnn", "ann", "rnn", "gru", "lstm", "gawf", "s5", "mamba"],
+        default="ann",
+        choices=["ann", "rnn", "gru", "lstm", "gawf", "s5", "mamba"],
     )
     parser.add_argument(
         "--feedback_mode",
@@ -50,6 +50,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="GaWF gate feedback source; defaults to 'qvalues' for gawf, 'none' otherwise.",
     )
     parser.add_argument("--hidden_size", type=int, default=512)
+    parser.add_argument("--num_layers", type=int, default=1)
+    parser.add_argument("--gawf_feedback_lr_scale", type=float, default=1.0)
     parser.add_argument("--encoder_feature_dim", type=int, default=512)
     parser.add_argument("--core_dropout", type=float, default=0.0)
     parser.add_argument("--frame_stack", type=int, default=4)
@@ -170,9 +172,7 @@ def _drqn_sequence_loss(
     seq = buffer.sample_sequences(args.sequences_per_batch, args.seq_len)
     n_steps = args.seq_len
     q_online, _ = model.forward_sequence(seq.obs, seq.prev_dones)
-    q_taken = q_online[:, :n_steps].gather(
-        -1, seq.actions[:, :n_steps].unsqueeze(-1)
-    ).squeeze(-1)
+    q_taken = q_online[:, :n_steps].gather(-1, seq.actions[:, :n_steps].unsqueeze(-1)).squeeze(-1)
     with torch.no_grad():
         # The target network unrolls the same window from zero state with its
         # own previous Q-values as gate feedback: bootstrap targets follow the
@@ -188,9 +188,9 @@ def _drqn_sequence_loss(
             + args.gamma * (1.0 - seq.dones[:, :n_steps]) * q_next
         )
     mask = seq.loss_mask[:, :n_steps]
-    loss = (
-        F.smooth_l1_loss(q_taken, td_target, reduction="none") * mask
-    ).sum() / mask.sum().clamp(min=1.0)
+    loss = (F.smooth_l1_loss(q_taken, td_target, reduction="none") * mask).sum() / mask.sum().clamp(
+        min=1.0
+    )
     return loss, float((q_taken.detach() * mask).sum().cpu() / mask.sum().clamp(min=1.0).cpu())
 
 
@@ -198,6 +198,10 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
     logger = logging.getLogger("train_atari_dqn")
     args.feedback_mode = _resolve_feedback_mode(args)
+    if args.num_layers < 1:
+        raise ValueError(f"num_layers must be >= 1, got {args.num_layers}")
+    if args.gawf_feedback_lr_scale <= 0:
+        raise ValueError("gawf_feedback_lr_scale must be > 0")
     set_atari_seed(args.seed)
     device = select_device(args.device)
     save_dir = args.save_dir or os.path.join("results", "train_data", args.result_suffix)
@@ -235,12 +239,32 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
             ssm_state_size=args.ssm_state_size,
             ssm_num_layers=args.ssm_num_layers,
             ssm_context_len=ssm_context_len,
+            num_layers=args.num_layers,
         )
         model = AtariQNetwork(**model_kwargs).to(device)
         target_net = AtariQNetwork(**model_kwargs).to(device)
         target_net.load_state_dict(model.state_dict())
         target_net.eval()
-        optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+        if args.model_type == "gawf":
+            gate_params = [
+                param
+                for name, param in model.named_parameters()
+                if name.startswith("core.U") or name.startswith("core.V")
+            ]
+            gate_ids = {id(param) for param in gate_params}
+            base_params = [param for param in model.parameters() if id(param) not in gate_ids]
+            optimizer = optim.Adam(
+                [
+                    {"params": base_params, "lr": args.learning_rate},
+                    {
+                        "params": gate_params,
+                        "lr": args.learning_rate * args.gawf_feedback_lr_scale,
+                        "weight_decay": 0.0,
+                    },
+                ]
+            )
+        else:
+            optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
 
         buffer = AtariReplayBuffer(
             buffer_size=args.buffer_size,
@@ -346,6 +370,16 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
             "env_id": args.env_id,
             "algo": args.algo,
             "model_type": args.model_type,
+            "num_layers": args.num_layers,
+            "hidden_size": args.hidden_size,
+            "encoder_feature_dim": args.encoder_feature_dim,
+            "core_readout_params": int(
+                sum(p.numel() for p in (model.core or model.proj).parameters())
+            ),
+            "total_param_count": int(sum(p.numel() for p in model.parameters())),
+            "gawf_feedback_lr_scale": (
+                args.gawf_feedback_lr_scale if args.model_type == "gawf" else None
+            ),
             "feedback_mode": args.feedback_mode,
             "frame_stack": args.frame_stack,
             "flicker_prob": args.flicker_prob,
@@ -356,8 +390,9 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
             "q_values_mean": last_q_mean,
             "epsilon": _linear_epsilon(args, global_step),
         }
+        layer_suffix = f"_L{args.num_layers}" if args.num_layers > 1 else ""
         ckpt_name = (
-            f"{args.algo}_{args.model_type}_{args.feedback_mode}_"
+            f"{args.algo}_{args.model_type}_{args.feedback_mode}{layer_suffix}_"
             f"{args.env_id.replace('/', '_')}.pth"
         )
         ckpt_path = os.path.join(save_dir, ckpt_name)

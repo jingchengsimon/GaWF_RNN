@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .recurrent_cores.gawf import GaWFCore, MultiLayerGaWFCore
+from .recurrent_cores.gawf import GaWFCore
 from .recurrent_cores.rnn import (
     GRUCore,
     LSTMCore,
@@ -159,6 +159,7 @@ class RNNConv(ClutterSequenceModel):
         hidden_size=256,
         max_chars=15,
         predict_all_chars=False,
+        num_layers=1,
     ) -> None:
         super().__init__(
             num_classes,
@@ -171,16 +172,22 @@ class RNNConv(ClutterSequenceModel):
             max_chars=max_chars,
             predict_all_chars=predict_all_chars,
         )
-        self.core = RNNCore(self.encoder_flatten_size, hidden_size, dropout=rnn_dropout)
+        self.num_layers = int(num_layers)
+        self.core = RNNCore(
+            self.encoder_flatten_size,
+            hidden_size,
+            dropout=rnn_dropout,
+            num_layers=self.num_layers,
+        )
         self.to(self.device)
 
     @property
     def rnn(self):
-        return self.core.rnn
+        return self.core.rnn if self.num_layers == 1 else self.core.rnns
 
     @property
     def LNormRNN(self):
-        return self.core.norm
+        return self.core.norm if self.num_layers == 1 else self.core.norms
 
 
 class GRUConv(RNNConv):
@@ -197,6 +204,7 @@ class GRUConv(RNNConv):
         hidden_size=256,
         max_chars=15,
         predict_all_chars=False,
+        num_layers=1,
     ) -> None:
         ClutterSequenceModel.__init__(
             self,
@@ -210,7 +218,13 @@ class GRUConv(RNNConv):
             max_chars=max_chars,
             predict_all_chars=predict_all_chars,
         )
-        self.core = GRUCore(self.encoder_flatten_size, hidden_size, dropout=rnn_dropout)
+        self.num_layers = int(num_layers)
+        self.core = GRUCore(
+            self.encoder_flatten_size,
+            hidden_size,
+            dropout=rnn_dropout,
+            num_layers=self.num_layers,
+        )
         self.to(self.device)
 
 
@@ -228,6 +242,7 @@ class LSTMConv(RNNConv):
         hidden_size=256,
         max_chars=15,
         predict_all_chars=False,
+        num_layers=1,
     ) -> None:
         ClutterSequenceModel.__init__(
             self,
@@ -241,7 +256,13 @@ class LSTMConv(RNNConv):
             max_chars=max_chars,
             predict_all_chars=predict_all_chars,
         )
-        self.core = LSTMCore(self.encoder_flatten_size, hidden_size, dropout=rnn_dropout)
+        self.num_layers = int(num_layers)
+        self.core = LSTMCore(
+            self.encoder_flatten_size,
+            hidden_size,
+            dropout=rnn_dropout,
+            num_layers=self.num_layers,
+        )
         self.to(self.device)
 
 
@@ -560,11 +581,13 @@ class MultiLayerGaWFRNNConv(ClutterSequenceModel):
             else [hidden_size] * (self.num_layers - 1) + [self.output_feedback_dim]
         )
         self.top_feedback_dim = self.layer_feedback_dims[-1]
-        self.core = MultiLayerGaWFCore(
+        self.core = GaWFCore(
             input_size=self.encoder_flatten_size,
             hidden_size=hidden_size,
+            feedback_dim=self.layer_feedback_dims[-1],
             layer_feedback_dims=self.layer_feedback_dims,
             dropout=rnn_dropout,
+            num_layers=self.num_layers,
         )
         if self.use_feedback_projector:
             self.hidden_projectors = nn.ModuleList(
@@ -660,7 +683,7 @@ class MultiLayerGaWFRNNConv(ClutterSequenceModel):
             device=encoded.device,
             dtype=encoded.dtype,
         )
-        h_states = self.core.initial_states(batch_size, encoded.device, encoded.dtype)
+        h_states = self.core.initial_state(batch_size, encoded.device, encoded.dtype)
         for t in range(frame_num):
             feedbacks = self._feedbacks_for_layers(h_states, fb_top)
             layer_output, h_states = self.core.step(encoded[:, t, :], h_states, feedbacks)

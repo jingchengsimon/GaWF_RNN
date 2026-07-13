@@ -5,7 +5,7 @@
 | Abbreviation | Full term | Context |
 |---|---|---|
 | `gawf` | Gated-with-Feedback | Model family name |
-| `gawf_multi` | Multi-layer Gated-with-Feedback | Separate CLI model type for multi-layer GaWF |
+| `gawf` | Gated-with-Feedback | Unified single/multi-layer model selected by `--num_layers` |
 | `rnn` | Recurrent Neural Network | Model type key in CLI |
 | `gru` | Gated Recurrent Unit | Model type key |
 | `lstm` | Long Short-Term Memory | Model type key |
@@ -28,8 +28,8 @@
 | `h` | Hidden size | Filename suffix, e.g. `h256` |
 | `dmodel` | Mamba/SSM sequence width | Filename suffix for `mamba` / `ssm`, e.g. `dmodel170` |
 | `state` | SSM latent state size | Filename suffix for `ssm`, e.g. `state189` |
-| `dz` | Projected GaWF feedback context dimension | Optional filename suffix for `gawf` and projected `gawf_multi`, e.g. `dz8` |
-| `L` | GaWF recurrent layer count | `gawf_multi` filename suffix, e.g. `L2` |
+| `dz` | Projected GaWF feedback context dimension | Optional GaWF filename suffix, e.g. `dz8` |
+| `L` | Recurrent layer count | Multi-layer filename suffix, e.g. `L2` |
 | `acc` | Acceleration / accuracy | Context-dependent (filename: acceleration) |
 | `sector` | 3×3 spatial sector | Label mode name |
 | `coord` | Coordinate regression | Label mode name |
@@ -88,9 +88,10 @@ Single-layer GaWF `dz` suffix is optional:
 
 Multi-layer GaWF stems always add layer count. Projected runs also include `dz`:
 ```
-gawf_multi_{label_mode}{acc_suffix}_h{hidden}_L{layers}_lr{lr}_wd{wd}_cdo{cdo}_rdo{rdo}{_dz{dz}}{fb_suffix}_model.pth
+gawf_{label_mode}{acc_suffix}_h{hidden}_L{layers}_lr{lr}_wd{wd}_cdo{cdo}_rdo{rdo}{_dz{dz}}{fb_suffix}_model.pth
 ```
-`gawf_multi` defaults to `L=2` with direct feedback; `--dz > 0` enables projected feedback.
+`gawf` defaults to `L=1`; multi-layer direct feedback uses `--num_layers > 1`, and
+`--dz > 0` enables projected feedback.
 
 Mamba and SSM stems use model-native width/state names instead of `h`:
 ```

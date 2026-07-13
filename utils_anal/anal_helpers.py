@@ -3,6 +3,7 @@ Shared helpers for analysis scripts: test split dataset construction and GaWF ch
 
 Imports: train_model (MC_RNN_Dataset), utils.clutter_train_helpers (paths/datasets), utils_viz (hparam parsing).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,9 +39,7 @@ def resolve_device(
     """
     if require_cuda_if_requested and device_flag == "cuda":
         if not torch.cuda.is_available():
-            raise RuntimeError(
-                "CUDA requested via --device cuda but no GPU is available."
-            )
+            raise RuntimeError("CUDA requested via --device cuda but no GPU is available.")
     return torch.device(device_flag)
 
 
@@ -60,17 +59,21 @@ def build_test_dataset(args: argparse.Namespace) -> Tuple[MC_RNN_Dataset, int]:
         predict_all_chars = getattr(args, "predict_all_chars", False)
 
     base_path = PathHelper.get_base_path(override=args.data_dir or None)
-    paths = PathHelper.prepare_data_paths(
-        base_path, data_suffix=args.data_suffix, splits=("test",)
-    )
+    paths = PathHelper.prepare_data_paths(base_path, data_suffix=args.data_suffix, splits=("test",))
     stims_test, lbls_test = PathHelper.load_raw_data(
-        None, None, None, None,
+        None,
+        None,
+        None,
+        None,
         use_mmap=args.use_mmap,
         paths_tuple=paths,
     )
 
     test_ds, num_pos = create_datasets(
-        None, None, None, None,
+        None,
+        None,
+        None,
+        None,
         use_sector_mode=use_sector_mode,
         predict_all_chars=predict_all_chars,
         max_chars=15,
@@ -89,7 +92,10 @@ def build_train_dataset_allchars(args: argparse.Namespace) -> MC_RNN_Dataset:
         base_path, data_suffix=args.data_suffix, splits=("train",)
     )
     stims_train, lbls_train = PathHelper.load_raw_data(
-        None, None, None, None,
+        None,
+        None,
+        None,
+        None,
         use_mmap=args.use_mmap,
         paths_tuple=paths,
     )
@@ -132,13 +138,14 @@ def build_model_from_ckpt(
 
     hidden_size = hparams.get("hidden_size", 256)
     cnn_dropout = float(hparams.get("cnn_dropout", 0.0))
-    rnn_dropout = float(
-        hparams.get("rnn_dropout", hparams.get("dropout", 0.5))
-    )
+    rnn_dropout = float(hparams.get("rnn_dropout", hparams.get("dropout", 0.5)))
 
     num_classes = 10
     model_name = hparams.get("model_type")
     model_key = _HPARAM_MODEL_TO_KEY.get(model_name, "gawf")
+    num_layers = int(hparams.get("num_layers", hparams.get("gawf_layers", 1)))
+    if model_key == "gawf" and num_layers > 1:
+        model_key = "gawf_multi"
     model_class_map = {
         "gawf": GaWFRNNConv,
         "gawf_multi": MultiLayerGaWFRNNConv,
@@ -155,7 +162,9 @@ def build_model_from_ckpt(
         if parsed_feedback_dim is not None:
             model_kwargs["feedback_dim"] = int(parsed_feedback_dim)
         if model_key == "gawf_multi":
-            model_kwargs["num_layers"] = int(hparams.get("gawf_layers", 2))
+            model_kwargs["num_layers"] = num_layers
+    elif model_key in ("rnn", "lstm", "gru"):
+        model_kwargs["num_layers"] = num_layers
     elif model_key == "mamba":
         model_kwargs["mamba_d_model"] = int(hparams.get("d_model", 170))
     elif model_key == "s5":
@@ -201,9 +210,7 @@ def build_rnn_allchars_model_from_sector_ckpt(
 
     hidden_size = hparams.get("hidden_size", 256)
     cnn_dropout = float(hparams.get("cnn_dropout", 0.0))
-    rnn_dropout = float(
-        hparams.get("rnn_dropout", hparams.get("dropout", 0.5))
-    )
+    rnn_dropout = float(hparams.get("rnn_dropout", hparams.get("dropout", 0.5)))
 
     num_classes = 10
     model_name = hparams.get("model_type")

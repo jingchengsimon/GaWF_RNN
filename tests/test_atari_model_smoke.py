@@ -16,6 +16,29 @@ from utils.atari_task_models import AtariActorCritic
 
 
 class AtariModelSmokeTest(unittest.TestCase):
+    def test_multilayer_lstm_and_gawf_shapes(self) -> None:
+        obs, prev_actions, prev_rewards, prev_dones, _actions = self._inputs(num_actions=4)
+        for model_type, feedback_mode in (("lstm", "none"), ("gawf", "output")):
+            with self.subTest(model_type=model_type):
+                model = AtariActorCritic(
+                    num_actions=4,
+                    input_channels=4,
+                    model_type=model_type,
+                    hidden_size=16,
+                    encoder_feature_dim=32,
+                    feedback_mode=feedback_mode,
+                    num_layers=2,
+                )
+                logits, values, state = model.forward_sequence(
+                    obs, prev_actions, prev_rewards, prev_dones
+                )
+                self.assertEqual(logits.shape, (2, 4, 4))
+                self.assertEqual(values.shape, (2, 4))
+                if model_type == "lstm":
+                    self.assertEqual(state.recurrent[0].shape, (2, 2, 16))
+                else:
+                    self.assertEqual(len(state.recurrent), 2)
+
     def _inputs(self, batch_size: int = 2, n_steps: int = 4, num_actions: int = 7):
         obs = torch.randint(0, 256, (batch_size, n_steps, 4, 84, 84), dtype=torch.uint8)
         prev_actions = torch.zeros(batch_size, n_steps, dtype=torch.long)
