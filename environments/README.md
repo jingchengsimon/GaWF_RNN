@@ -18,8 +18,13 @@ Create a new environment without changing an existing one:
 ```bash
 conda env create -n aim3_rnn_next -f environments/aim3_rnn-linux-cuda.yml
 conda activate aim3_rnn_next
+bash environments/install_linux_cuda_extras.sh
 python verify_aim3_environment.py --profile linux-cuda --compile-smoke
 ```
+
+The CUDA extensions are intentionally installed in a second phase. Their build scripts import
+PyTorch, so pip build isolation would otherwise fail even though PyTorch is already present in
+the Conda environment.
 
 On macOS, use `environments/aim3_rnn-macos.yml` and profile `macos`. After the new environment
 passes, keep the old environment as a rollback copy and rename the verified environment to
@@ -40,4 +45,3 @@ python -m pip freeze
 
 The verifier reports capabilities, not only package names. In particular it catches a Python
 version that imports PyTorch but cannot execute `torch.compile`.
-
