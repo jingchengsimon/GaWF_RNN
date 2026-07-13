@@ -83,6 +83,30 @@ if (( rc != 0 )); then
   echo "status=fail task=$TASK_ID model=$MODEL seed=$SEED rc=$rc $(date -Is)" > "$FAIL_FILE"
   exit "$rc"
 fi
-echo "status=done task=$TASK_ID model=$MODEL seed=$SEED metrics=results/train_data/$SUFFIX/metrics.json $(date -Is)" > "$DONE_FILE"
-rm -f "$FAIL_FILE"
+METRICS_FILE="results/train_data/$SUFFIX/metrics.json"
+TARGET_STEPS="${TOTAL_TIMESTEPS:-1000000}"
+set +e
+python - "$METRICS_FILE" "$TARGET_STEPS" <<'PY'
+import json
+import os
+import sys
 
+metrics_path, target_steps = sys.argv[1], int(sys.argv[2])
+with open(metrics_path, encoding="utf-8") as handle:
+    metrics = json.load(handle)
+if int(metrics.get("global_step", -1)) != target_steps:
+    raise RuntimeError(
+        f"global_step={metrics.get('global_step')} does not match target={target_steps}"
+    )
+checkpoint = metrics.get("checkpoint_path") or metrics.get("checkpoint")
+if not checkpoint or not os.path.isfile(checkpoint):
+    raise RuntimeError(f"checkpoint is missing: {checkpoint!r}")
+PY
+validate_rc=$?
+set -e
+if (( validate_rc != 0 )); then
+  echo "status=fail task=$TASK_ID model=$MODEL seed=$SEED rc=$validate_rc validation=artifacts $(date -Is)" > "$FAIL_FILE"
+  exit "$validate_rc"
+fi
+echo "status=done task=$TASK_ID model=$MODEL seed=$SEED metrics=$METRICS_FILE global_step=$TARGET_STEPS $(date -Is)" > "$DONE_FILE"
+rm -f "$FAIL_FILE"
