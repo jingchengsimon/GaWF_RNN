@@ -11,12 +11,13 @@ from utils.recurrent_cores.gawf import (
     GaWFCore,
     _compute_gawf_transforms,
     _gawf_layer_preactivation,
+    configure_gawf_feedback_acceleration,
 )
 from utils.recurrent_cores.rnn import GRUCore, LSTMCore, RNNCore
 
 
 class UnifiedRecurrentCoreTest(unittest.TestCase):
-    def test_combined_gawf_transform_matches_split_reference_and_gradients(self) -> None:
+    def test_eager_gawf_transform_matches_split_reference_and_gradients(self) -> None:
         torch.manual_seed(3)
         batch_size, hidden_size, feedback_dim, input_size = 2, 5, 3, 7
         tensors = [
@@ -130,6 +131,13 @@ class UnifiedRecurrentCoreTest(unittest.TestCase):
         diagnostics = accelerated.pop_gawf_diagnostics()
         self.assertTrue(torch.allclose(diagnostic_output, expected, atol=1e-6, rtol=1e-6))
         self.assertGreater(diagnostics["gate_saturation_frac"], -1.0)
+
+    def test_shared_feedback_acceleration_helper_skips_non_cuda_cores(self) -> None:
+        core = GaWFCore(7, 5, feedback_dim=3)
+        with mock.patch.object(core, "configure_feedback_acceleration") as configure:
+            configured = configure_gawf_feedback_acceleration(core, enabled=True)
+        self.assertEqual(configured, 0)
+        configure.assert_called_once_with(False, "reduce-overhead")
 
     def test_single_layer_parameter_names_remain_legacy(self) -> None:
         expected_torch_keys = {

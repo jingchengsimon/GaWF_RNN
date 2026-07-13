@@ -34,6 +34,7 @@ from .clutter_train_acceleration import (
 )
 from .clutter_train_helpers import LoggingHelper
 from .clutter_train_predict_all_chars import build_loss_fn_all_chars, AllCharsMetricsMode
+from .recurrent_cores import configure_gawf_feedback_acceleration
 from .clutter_train_sector import (
     SingleCharMetricsMode,
     build_loss_fn_single,
@@ -131,6 +132,17 @@ def setup_training_components(
     mdl.to(device)
 
     accel_config = AccelerationConfig(use_acceleration=use_acceleration)
+    compiled_gawf_cores = configure_gawf_feedback_acceleration(
+        mdl,
+        enabled=accel_config.enable_gawf_feedback_compile,
+        compile_mode=accel_config.gawf_feedback_compile_mode,
+    )
+    if compiled_gawf_cores and logger is not None:
+        logger.info(
+            "Compiled %s shared GaWF feedback/gate core(s) with mode=%s",
+            compiled_gawf_cores,
+            accel_config.gawf_feedback_compile_mode,
+        )
 
     metrics_mode = create_metrics_mode(
         predict_all_chars, use_sector, max_chars, device, logger=logger
