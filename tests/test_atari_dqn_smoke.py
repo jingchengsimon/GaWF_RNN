@@ -29,7 +29,9 @@ except ImportError:
 try:
     import mamba_ssm  # noqa: F401
 
-    HAS_MAMBA = True
+    # The installed mamba-ssm kernels require CUDA even when import succeeds on
+    # a CPU-only login node.
+    HAS_MAMBA = torch.cuda.is_available()
 except ImportError:
     HAS_MAMBA = False
 
