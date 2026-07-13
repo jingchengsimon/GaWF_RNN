@@ -32,7 +32,7 @@ mkdir -p "$ARTIFACT_DIR/status" "$RESULT_DIR"
 python experiments/amarel/benchmark_gawf_feedback_acceleration.py \
   --output_dir "$RESULT_DIR"
 
-python - "$RESULT_DIR/gawf_feedback_benchmark.json" <<'PY'
+python - "$RESULT_DIR/gawf_feedback_benchmark_validated.json" <<'PY'
 import json
 import sys
 
@@ -49,8 +49,11 @@ if result.get("shape") != {
     "feedback_dim": 6,
 }:
     raise RuntimeError(f"Unexpected benchmark shape in {path}")
+if result.get("validation_passed") is not True:
+    raise RuntimeError(f"Numerical validation did not pass in {path}")
 PY
 
 printf 'status=done job_id=%s result=%s timestamp=%s\n' \
-  "${SLURM_JOB_ID:-manual}" "$RESULT_DIR/gawf_feedback_benchmark.json" "$(date -Is)" \
-  > "$ARTIFACT_DIR/status/gawf_feedback_benchmark.done"
+  "${SLURM_JOB_ID:-manual}" \
+  "$RESULT_DIR/gawf_feedback_benchmark_validated.json" "$(date -Is)" \
+  > "$ARTIFACT_DIR/status/gawf_feedback_benchmark_validated.done"
