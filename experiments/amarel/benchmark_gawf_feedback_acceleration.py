@@ -5,8 +5,8 @@ measures forward plus backward time for the historical split-transform formula,
 the shared-core combined transform, and its pure-tensor ``torch.compile`` path.
 
 Outputs (in ``--output_dir``):
-- ``gawf_feedback_benchmark.json`` — shape, timings, speedups, numerical deltas,
-  peak CUDA memory, PyTorch version, and GPU identity.
+- ``gawf_feedback_benchmark_validated.json`` — shape, timings, speedups, forward/backward
+  numerical checks, peak CUDA memory, PyTorch version, and GPU identity.
 """
 
 from __future__ import annotations
@@ -42,6 +42,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--iterations", type=int, default=10)
     parser.add_argument("--compile_mode", default="reduce-overhead")
     parser.add_argument("--output_dir", default="results/benchmarks/gawf_feedback")
+    parser.add_argument("--max_output_relative_rmse", type=float, default=0.02)
+    parser.add_argument("--max_gradient_relative_l2", type=float, default=0.05)
     return parser.parse_args()
 
 
@@ -77,18 +79,21 @@ def _build_tensors(args: argparse.Namespace, device: torch.device) -> list[torch
         args.hidden_size,
         args.feedback_dim,
     )
-    shapes = (
-        (batch, input_size),
-        (batch, hidden),
-        (batch, feedback_dim),
-        (hidden, feedback_dim),
-        (feedback_dim, input_size + hidden),
-        (hidden, input_size),
-        (hidden, hidden),
-        (hidden,),
-        (hidden,),
-    )
-    return [torch.randn(shape, device=device, requires_grad=True) for shape in shapes]
+    bound = hidden**-0.5
+    tensors = [
+        torch.randn((batch, input_size), device=device),
+        torch.randn((batch, hidden), device=device),
+        torch.randn((batch, feedback_dim), device=device),
+        torch.randn((hidden, feedback_dim), device=device) * 0.01,
+        torch.randn((feedback_dim, input_size + hidden), device=device) * 0.01,
+        torch.empty((hidden, input_size), device=device).uniform_(-bound, bound),
+        torch.empty((hidden, hidden), device=device).uniform_(-bound, bound),
+        torch.empty((hidden,), device=device).uniform_(-bound, bound),
+        torch.empty((hidden,), device=device).uniform_(-bound, bound),
+    ]
+    for tensor in tensors:
+        tensor.requires_grad_(True)
+    return tensors
 
 
 def _clear_gradients(tensors: list[torch.Tensor]) -> None:
@@ -113,7 +118,7 @@ def _benchmark_variant(
     fn: TensorFn,
     tensors: list[torch.Tensor],
     args: argparse.Namespace,
-) -> tuple[dict[str, float], torch.Tensor]:
+) -> dict[str, float]:
     for _ in range(args.warmup):
         _clear_gradients(tensors)
         output = _run_step(fn, tensors, args.gate_tau)
@@ -136,7 +141,36 @@ def _benchmark_variant(
         "peak_memory_mib": float(torch.cuda.max_memory_allocated() / (1024**2)),
     }
     print(f"{name}: {result}")
-    return result, output.detach().float().cpu()
+    return result
+
+
+def _capture_variant(
+    fn: TensorFn,
+    tensors: list[torch.Tensor],
+    gate_tau: float,
+) -> tuple[torch.Tensor, list[torch.Tensor]]:
+    """Capture one synchronized forward/backward result for numerical validation."""
+
+    _clear_gradients(tensors)
+    output = _run_step(fn, tensors, gate_tau)
+    torch.cuda.synchronize()
+    gradients = [tensor.grad.detach().float().clone() for tensor in tensors]
+    return output.detach().float().clone(), gradients
+
+
+def _relative_rmse(actual: torch.Tensor, expected: torch.Tensor) -> float:
+    diff_rms = (actual - expected).square().mean().sqrt()
+    expected_rms = expected.square().mean().sqrt().clamp_min(1e-12)
+    return float((diff_rms / expected_rms).item())
+
+
+def _gradient_relative_l2(
+    actual: list[torch.Tensor],
+    expected: list[torch.Tensor],
+) -> float:
+    diff_sq = sum((a - e).double().square().sum() for a, e in zip(actual, expected))
+    expected_sq = sum(e.double().square().sum() for e in expected)
+    return float((diff_sq.sqrt() / expected_sq.sqrt().clamp_min(1e-12)).item())
 
 
 def main() -> None:
@@ -161,17 +195,29 @@ def main() -> None:
         ("combined_compiled", compiled),
     ]
     timings: dict[str, dict[str, float]] = {}
-    outputs: dict[str, torch.Tensor] = {}
     for name, fn in variants:
-        timings[name], outputs[name] = _benchmark_variant(name, fn, tensors, args)
+        timings[name] = _benchmark_variant(name, fn, tensors, args)
+
+    captures = {
+        name: _capture_variant(fn, tensors, args.gate_tau) for name, fn in variants
+    }
 
     baseline_ms = timings["legacy_split_eager"]["cuda_event_ms"]
     for name, values in timings.items():
         values["speedup_vs_legacy"] = baseline_ms / values["cuda_event_ms"]
-    numerical_delta = {
-        name: float((output - outputs["legacy_split_eager"]).abs().max())
-        for name, output in outputs.items()
-    }
+    baseline_output, baseline_gradients = captures["legacy_split_eager"]
+    numerical_checks = {}
+    for name, (output, gradients) in captures.items():
+        numerical_checks[name] = {
+            "output_max_abs_delta": float((output - baseline_output).abs().max().item()),
+            "output_relative_rmse": _relative_rmse(output, baseline_output),
+            "gradient_relative_l2": _gradient_relative_l2(gradients, baseline_gradients),
+        }
+    compiled_checks = numerical_checks["combined_compiled"]
+    validation_passed = (
+        compiled_checks["output_relative_rmse"] <= args.max_output_relative_rmse
+        and compiled_checks["gradient_relative_l2"] <= args.max_gradient_relative_l2
+    )
     payload: dict[str, Any] = {
         "shape": {
             "batch_size": args.batch_size,
@@ -187,14 +233,25 @@ def main() -> None:
         "torch_version": torch.__version__,
         "gpu": torch.cuda.get_device_name(0),
         "timings": timings,
-        "max_abs_output_delta_vs_legacy": numerical_delta,
+        "initialization": (
+            "torch.nn.RNN-style recurrent parameters; GaWF U/V normal std=0.01; "
+            "standard-normal inputs, hidden state, and feedback"
+        ),
+        "numerical_checks_vs_legacy": numerical_checks,
+        "validation_thresholds": {
+            "max_output_relative_rmse": args.max_output_relative_rmse,
+            "max_gradient_relative_l2": args.max_gradient_relative_l2,
+        },
+        "validation_passed": validation_passed,
     }
     os.makedirs(args.output_dir, exist_ok=True)
-    output_path = os.path.join(args.output_dir, "gawf_feedback_benchmark.json")
+    output_path = os.path.join(args.output_dir, "gawf_feedback_benchmark_validated.json")
     with open(output_path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
         handle.write("\n")
     print(f"wrote {output_path}")
+    if not validation_passed:
+        raise RuntimeError(f"compiled GaWF numerical validation failed: {compiled_checks}")
 
 
 if __name__ == "__main__":
