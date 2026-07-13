@@ -54,12 +54,12 @@ def _run_project_cuda_smoke() -> dict[str, str]:
 
     from utils.atari_dqn_models import AtariQNetwork
     from utils.atari_train_acceleration import AtariAcceleration
-    from utils.recurrent_cores import (
+    from utils.recurrent_cores.gawf import (
         GaWFCore,
-        MambaCore,
-        S5Core,
         configure_gawf_feedback_acceleration,
     )
+    from utils.recurrent_cores.mamba import MambaCore
+    from utils.recurrent_cores.s5 import S5Core
 
     device = torch.device("cuda")
     results: dict[str, str] = {}
