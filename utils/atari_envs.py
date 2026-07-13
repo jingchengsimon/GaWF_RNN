@@ -81,6 +81,7 @@ def make_atari_env(
     flicker_prob: float = 0.0,
     capture_video: bool = False,
     video_dir: str | None = None,
+    full_action_space: bool = False,
 ) -> Callable[[], object]:
     """Return a thunk that creates one preprocessed Atari environment."""
 
@@ -101,7 +102,7 @@ def make_atari_env(
             env_id,
             frameskip=1,
             repeat_action_probability=0.0,
-            full_action_space=False,
+            full_action_space=full_action_space,
         )
         env = gym.wrappers.RecordEpisodeStatistics(env)
         if capture_video and idx == 0:
@@ -135,6 +136,7 @@ def make_vector_atari_env(
     flicker_prob: float = 0.0,
     capture_video: bool = False,
     video_dir: str | None = None,
+    full_action_space: bool = False,
 ) -> Any:
     """Create a synchronous vector Atari environment."""
     try:
@@ -156,6 +158,163 @@ def make_vector_atari_env(
             flicker_prob,
             capture_video,
             video_dir,
+            full_action_space,
+        )
+        for idx in range(num_envs)
+    ]
+    return gym.vector.SyncVectorEnv(env_fns)
+
+
+def make_multitask_atari_env(
+    env_ids: tuple[str, ...],
+    seed: int,
+    idx: int,
+    frame_stack: int = 1,
+    frame_skip: int = 1,
+    flicker_prob: float = 0.0,
+    task_schedule: str = "round_robin",
+) -> Callable[[], object]:
+    """Return one task-blind Atari env that switches games at episode resets.
+
+    All component games expose ALE's canonical 18-action space. The active
+    ``env_id`` and integer ``task_id`` are emitted in ``info`` for metrics only;
+    neither is added to the observation consumed by the agent.
+    """
+    if len(env_ids) < 2:
+        raise ValueError("Multi-task Atari requires at least two env_ids")
+    if len(set(env_ids)) != len(env_ids):
+        raise ValueError("Multi-task env_ids must be unique")
+    if task_schedule != "round_robin":
+        raise ValueError(f"Unsupported Phase0 task_schedule: {task_schedule}")
+
+    def thunk():
+        try:
+            import gymnasium as gym
+        except ImportError as exc:
+            raise ImportError(
+                "Atari experiments require gymnasium with Atari extras, e.g. "
+                "`pip install 'gymnasium[atari,accept-rom-license]'`."
+            ) from exc
+        _register_ale_envs(gym)
+
+        component_envs = [
+            make_atari_env(
+                env_id=env_id,
+                seed=seed + task_idx * 10_000,
+                idx=idx,
+                frame_stack=frame_stack,
+                frame_skip=frame_skip,
+                flicker_prob=flicker_prob,
+                full_action_space=True,
+            )()
+            for task_idx, env_id in enumerate(env_ids)
+        ]
+
+        class _EpisodeSwitchAtariEnv(gym.Env):
+            metadata = component_envs[0].metadata
+
+            def __init__(self) -> None:
+                super().__init__()
+                self._envs = component_envs
+                self._env_ids = env_ids
+                self._next_task_idx = idx % len(self._envs)
+                self._active_task_idx: int | None = None
+                self._has_reset = [False] * len(self._envs)
+                self.action_space = self._envs[0].action_space
+                self.observation_space = self._envs[0].observation_space
+                self.render_mode = getattr(self._envs[0], "render_mode", None)
+                for env_id, env in zip(self._env_ids, self._envs):
+                    if env.action_space != self.action_space:
+                        raise RuntimeError(f"Action space mismatch for {env_id}")
+                    if env.observation_space != self.observation_space:
+                        raise RuntimeError(f"Observation space mismatch for {env_id}")
+                if self.action_space.__class__.__name__ != "Discrete":
+                    raise RuntimeError("Atari multi-task action space must be Discrete")
+                if int(self.action_space.n) != 18:
+                    raise RuntimeError(
+                        "Atari multi-task Phase0 requires the canonical 18-action space"
+                    )
+
+            def _add_task_info(self, info: dict[str, Any]) -> dict[str, Any]:
+                if self._active_task_idx is None:
+                    raise RuntimeError("Multi-task environment has not been reset")
+                enriched = dict(info)
+                enriched["task_id"] = self._active_task_idx
+                enriched["env_id"] = self._env_ids[self._active_task_idx]
+                return enriched
+
+            def reset(
+                self,
+                *,
+                seed: int | None = None,
+                options: dict[str, Any] | None = None,
+            ):
+                task_idx = self._next_task_idx
+                self._next_task_idx = (task_idx + 1) % len(self._envs)
+                self._active_task_idx = task_idx
+                reset_seed = seed
+                if reset_seed is None and not self._has_reset[task_idx]:
+                    reset_seed = seed_value + task_idx * 10_000 + idx
+                obs, info = self._envs[task_idx].reset(seed=reset_seed, options=options)
+                self._has_reset[task_idx] = True
+                return obs, self._add_task_info(info)
+
+            def step(self, action: int):
+                if self._active_task_idx is None:
+                    raise RuntimeError("Call reset() before step()")
+                obs, reward, terminated, truncated, info = self._envs[
+                    self._active_task_idx
+                ].step(action)
+                return (
+                    obs,
+                    reward,
+                    terminated,
+                    truncated,
+                    self._add_task_info(info),
+                )
+
+            def render(self):
+                if self._active_task_idx is None:
+                    return None
+                return self._envs[self._active_task_idx].render()
+
+            def close(self) -> None:
+                for env in self._envs:
+                    env.close()
+
+        seed_value = seed
+        return _EpisodeSwitchAtariEnv()
+
+    return thunk
+
+
+def make_multitask_vector_atari_env(
+    env_ids: tuple[str, ...],
+    seed: int,
+    num_envs: int,
+    frame_stack: int = 1,
+    frame_skip: int = 1,
+    flicker_prob: float = 0.0,
+    task_schedule: str = "round_robin",
+) -> Any:
+    """Create synchronous task-blind Atari envs with episode-level switching."""
+    try:
+        import gymnasium as gym
+    except ImportError as exc:
+        raise ImportError(
+            "Atari experiments require gymnasium with Atari extras, e.g. "
+            "`pip install 'gymnasium[atari,accept-rom-license]'`."
+        ) from exc
+    _register_ale_envs(gym)
+    env_fns = [
+        make_multitask_atari_env(
+            env_ids=env_ids,
+            seed=seed,
+            idx=idx,
+            frame_stack=frame_stack,
+            frame_skip=frame_skip,
+            flicker_prob=flicker_prob,
+            task_schedule=task_schedule,
         )
         for idx in range(num_envs)
     ]

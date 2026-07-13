@@ -63,7 +63,7 @@ MODEL="${MODELS[$((TASK_ID % N_MODELS))]}"
 REST=$((TASK_ID / N_MODELS))
 SETTING=$((REST / N_SEEDS))
 SEED="${SEEDS[$((REST % N_SEEDS))]}"
-ACCEL_ARGS=(--amp_dtype bfloat16 --allow_tf32)
+ACCEL_ARGS=(--amp_dtype bfloat16 --allow_tf32 --cudnn_benchmark --fused_optimizer)
 COMPILE_ACTIVE=0
 if [[ "$MODEL" == "ann" ]]; then
   ACCEL_ARGS+=(--compile_model)
@@ -116,7 +116,7 @@ FAIL_FILE="$STATUS_DIR/${SUFFIX}.fail"
 
 echo "[$(date -Is)] task=$TASK_ID model=$MODEL setting=$SETTING seed=$SEED flicker=$FLICKER_PROB"
 echo "result_suffix=$SUFFIX total_timesteps=$TOTAL_TIMESTEPS sizing=${SIZE_ARGS[*]:-none(ann)}"
-echo "frame_skip=1 frame_stack=1 amp=bfloat16 tf32=1 compile=$COMPILE_ACTIVE"
+echo "frame_skip=1 frame_stack=1 amp=bfloat16 tf32=1 cudnn_benchmark=1 fused_adam=1 compile=$COMPILE_ACTIVE"
 
 set +e
 DISABLE_TQDM=1 python train_atari_dqn.py \

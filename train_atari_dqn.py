@@ -13,7 +13,7 @@ import json
 import logging
 import os
 import time
-from typing import Callable
+from typing import Any, Callable
 
 import numpy as np
 import torch
@@ -21,8 +21,12 @@ import torch.nn.functional as F
 from torch import optim
 
 from utils.atari_dqn_models import AtariQNetwork, AtariQNetworkState
-from utils.atari_envs import ATARI_PILOT_ENVS, make_vector_atari_env
-from utils.atari_replay import AtariReplayBuffer
+from utils.atari_envs import (
+    ATARI_PILOT_ENVS,
+    make_multitask_vector_atari_env,
+    make_vector_atari_env,
+)
+from utils.atari_replay import REPLAY_SAMPLING_MODES, AtariReplayBuffer
 from utils.atari_train_acceleration import (
     AtariAcceleration,
     configure_atari_acceleration,
@@ -39,7 +43,32 @@ from utils.atari_train_utils import (
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train Atari DQN models")
-    parser.add_argument("--env_id", type=str, default="ALE/Pong-v5", choices=ATARI_PILOT_ENVS)
+    env_group = parser.add_mutually_exclusive_group()
+    env_group.add_argument(
+        "--env_id", type=str, default="ALE/Pong-v5", choices=ATARI_PILOT_ENVS
+    )
+    env_group.add_argument(
+        "--env_ids",
+        type=str,
+        nargs="+",
+        default=None,
+        choices=ATARI_PILOT_ENVS,
+        help="Phase0 task list. Multiple games switch round-robin at episode boundaries.",
+    )
+    parser.add_argument(
+        "--action_space_mode",
+        type=str,
+        default="auto",
+        choices=["auto", "minimal", "full18"],
+        help="auto preserves minimal actions for one game and uses canonical 18 for multi-task.",
+    )
+    parser.add_argument(
+        "--task_schedule",
+        type=str,
+        default="round_robin",
+        choices=["round_robin"],
+        help="Phase0 episode-level game scheduler.",
+    )
     parser.add_argument("--algo", type=str, default="dqn", choices=["dqn"])
     parser.add_argument(
         "--model_type",
@@ -88,6 +117,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--total_timesteps", type=int, default=1_000_000)
     parser.add_argument("--num_envs", type=int, default=1)
     parser.add_argument("--buffer_size", type=int, default=1_000_000)
+    parser.add_argument(
+        "--replay_sampling",
+        type=str,
+        default="task_balanced",
+        choices=REPLAY_SAMPLING_MODES,
+        help="Replay sampler. Task ids are sampling/loss metadata and never model inputs.",
+    )
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--learning_starts", type=int, default=20_000)
@@ -115,6 +151,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="CUDA autocast dtype; BF16 is recommended on Amarel L40S GPUs.",
     )
     parser.add_argument("--allow_tf32", action="store_true")
+    parser.add_argument("--cudnn_benchmark", action="store_true")
+    parser.add_argument(
+        "--fused_optimizer",
+        action="store_true",
+        help="Use CUDA fused Adam while preserving Adam hyperparameters.",
+    )
     parser.add_argument("--compile_model", action="store_true")
     parser.add_argument(
         "--compile_mode",
@@ -126,7 +168,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 SequenceForward = Callable[
-    [torch.Tensor, torch.Tensor, AtariQNetworkState | None],
+    [torch.Tensor, torch.Tensor, AtariQNetworkState | None, bool | None],
     tuple[torch.Tensor, AtariQNetworkState | None],
 ]
 
@@ -141,6 +183,7 @@ def _step_with_sequence_forward(
         obs.unsqueeze(1),
         prev_done.view(-1, 1),
         state,
+        False,
     )
     return q_values[:, 0, :], next_state
 
@@ -149,6 +192,18 @@ def _resolve_feedback_mode(args: argparse.Namespace) -> str:
     if args.feedback_mode is not None:
         return args.feedback_mode
     return "qvalues" if args.model_type == "gawf" else "none"
+
+
+def _resolve_task_config(args: argparse.Namespace) -> tuple[tuple[str, ...], str]:
+    env_ids = tuple(args.env_ids) if args.env_ids is not None else (args.env_id,)
+    if len(set(env_ids)) != len(env_ids):
+        raise ValueError("env_ids must be unique")
+    action_space_mode = args.action_space_mode
+    if action_space_mode == "auto":
+        action_space_mode = "full18" if len(env_ids) > 1 else "minimal"
+    if len(env_ids) > 1 and action_space_mode != "full18":
+        raise ValueError("Multi-task Atari requires --action_space_mode full18")
+    return env_ids, action_space_mode
 
 
 # Mirrors train_atari._extract_episode_returns (kept private there; entry
@@ -178,10 +233,85 @@ def _extract_episode_returns(infos) -> list[float]:
     return returns
 
 
+def _extract_episode_records(infos: Any) -> list[tuple[str, float]]:
+    """Extract ``(env_id, return)`` pairs from current Gymnasium vector formats."""
+    records: list[tuple[str, float]] = []
+    if not isinstance(infos, dict):
+        return records
+
+    episode = infos.get("episode")
+    if isinstance(episode, dict) and "r" in episode:
+        raw_returns = np.asarray(episode["r"]).reshape(-1)
+        mask_value = infos.get("_episode")
+        mask = (
+            np.ones(raw_returns.shape, dtype=bool)
+            if mask_value is None
+            else np.asarray(mask_value).reshape(-1).astype(bool)
+        )
+        env_values = np.asarray(
+            infos.get("env_id", np.full(raw_returns.shape, "unknown", dtype=object))
+        ).reshape(-1)
+        for index, (episode_return, keep) in enumerate(zip(raw_returns, mask)):
+            if keep:
+                env_id = str(env_values[index]) if index < env_values.size else "unknown"
+                records.append((env_id, float(episode_return)))
+
+    final_infos = infos.get("final_info")
+    if final_infos is None:
+        return records
+    for final_info in final_infos:
+        if final_info and "episode" in final_info:
+            episode_return = np.asarray(final_info["episode"]["r"]).reshape(-1)[0]
+            records.append((str(final_info.get("env_id", "unknown")), float(episode_return)))
+    return records
+
+
+def _extract_step_env_ids(infos: Any, num_envs: int) -> list[str | None]:
+    """Return the task associated with each vector slot's current transition."""
+    result: list[str | None] = [None] * num_envs
+    if not isinstance(infos, dict) or "env_id" not in infos:
+        return result
+    values = np.asarray(infos["env_id"], dtype=object).reshape(-1)
+    mask_value = infos.get("_env_id")
+    mask = (
+        np.ones(values.shape, dtype=bool)
+        if mask_value is None
+        else np.asarray(mask_value).reshape(-1).astype(bool)
+    )
+    for index, (value, keep) in enumerate(zip(values, mask)):
+        if index < num_envs and keep:
+            result[index] = str(value)
+    return result
+
+
 def _linear_epsilon(args: argparse.Namespace, global_step: int) -> float:
     decay_steps = max(1.0, args.exploration_fraction * args.total_timesteps)
     slope = (args.end_epsilon - args.start_epsilon) / decay_steps
     return max(args.end_epsilon, args.start_epsilon + slope * global_step)
+
+
+def _next_state_reset_flags(dones: np.ndarray, autoreset_rows: np.ndarray) -> np.ndarray:
+    """Reset on terminal rows and again after NEXT_STEP's ignored autoreset row."""
+    return np.logical_or(dones, autoreset_rows).astype(np.uint8)
+
+
+def _aggregate_td_loss(
+    elementwise_loss: torch.Tensor,
+    task_ids: torch.Tensor,
+    loss_mask: torch.Tensor,
+    buffer: AtariReplayBuffer,
+) -> torch.Tensor:
+    """Aggregate TD errors globally or as an equal-weight mean across tasks."""
+    if buffer.sampling_mode == "global_uniform":
+        return (elementwise_loss * loss_mask).sum() / loss_mask.sum().clamp(min=1.0)
+
+    task_losses = []
+    for task_id in range(buffer.num_tasks):
+        task_mask = loss_mask * (task_ids == task_id).to(loss_mask.dtype)
+        task_losses.append(
+            (elementwise_loss * task_mask).sum() / task_mask.sum().clamp(min=1.0)
+        )
+    return torch.stack(task_losses).mean()
 
 
 def _dqn_transition_loss(
@@ -190,7 +320,7 @@ def _dqn_transition_loss(
     buffer: AtariReplayBuffer,
     args: argparse.Namespace,
     device: torch.device,
-) -> tuple[torch.Tensor, float]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     batch = buffer.sample_transitions(args.batch_size)
     zeros = torch.zeros(batch.actions.shape[0], device=device)
     q_all, _ = _step_with_sequence_forward(model_forward, batch.obs, zeros)
@@ -206,8 +336,13 @@ def _dqn_transition_loss(
         else:
             q_next = q_next_target.max(dim=1).values
         td_target = batch.rewards.clamp(-1.0, 1.0) + args.gamma * (1.0 - batch.dones) * q_next
-    loss = F.smooth_l1_loss(q_taken, td_target)
-    return loss, float(q_taken.detach().mean().cpu())
+    loss = _aggregate_td_loss(
+        F.smooth_l1_loss(q_taken, td_target, reduction="none"),
+        batch.task_ids,
+        torch.ones_like(q_taken),
+        buffer,
+    )
+    return loss, q_taken.detach().mean()
 
 
 def _drqn_sequence_loss(
@@ -216,16 +351,30 @@ def _drqn_sequence_loss(
     buffer: AtariReplayBuffer,
     args: argparse.Namespace,
     device: torch.device,
-) -> tuple[torch.Tensor, float]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     seq = buffer.sample_sequences(args.sequences_per_batch, args.seq_len)
     n_steps = args.seq_len
-    q_online, _ = model_forward(seq.obs, seq.prev_dones, None)
-    q_taken = q_online[:, :n_steps].gather(-1, seq.actions[:, :n_steps].unsqueeze(-1)).squeeze(-1)
+    q_online, _ = model_forward(
+        seq.obs,
+        seq.prev_dones,
+        None,
+        seq.has_internal_reset,
+    )
+    q_taken = (
+        q_online[:, :n_steps]
+        .gather(-1, seq.actions[:, :n_steps].unsqueeze(-1))
+        .squeeze(-1)
+    )
     with torch.no_grad():
         # The target network unrolls the same window from zero state with its
         # own previous Q-values as gate feedback: bootstrap targets follow the
         # frozen network's recurrent dynamics, as in DRQN.
-        q_target, _ = target_forward(seq.obs, seq.prev_dones, None)
+        q_target, _ = target_forward(
+            seq.obs,
+            seq.prev_dones,
+            None,
+            seq.has_internal_reset,
+        )
         if args.double_dqn:
             greedy = q_online[:, 1:].argmax(-1, keepdim=True)
             q_next = q_target[:, 1:].gather(-1, greedy).squeeze(-1)
@@ -236,16 +385,33 @@ def _drqn_sequence_loss(
             + args.gamma * (1.0 - seq.dones[:, :n_steps]) * q_next
         )
     mask = seq.loss_mask[:, :n_steps]
-    loss = (F.smooth_l1_loss(q_taken, td_target, reduction="none") * mask).sum() / mask.sum().clamp(
-        min=1.0
+    loss = _aggregate_td_loss(
+        F.smooth_l1_loss(q_taken, td_target, reduction="none"),
+        seq.task_ids[:, :n_steps],
+        mask,
+        buffer,
     )
-    return loss, float((q_taken.detach() * mask).sum().cpu() / mask.sum().clamp(min=1.0).cpu())
+    q_mean = (q_taken.detach() * mask).sum() / mask.sum().clamp(min=1.0)
+    return loss, q_mean
 
 
-def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
+def _materialize_training_stats(
+    loss: torch.Tensor | None,
+    q_mean: torch.Tensor | None,
+) -> tuple[float, float]:
+    """Copy logging-only scalars to CPU in one synchronization."""
+
+    if loss is None or q_mean is None:
+        return float("nan"), float("nan")
+    values = torch.stack((loss.detach().float(), q_mean.detach().float())).cpu().tolist()
+    return float(values[0]), float(values[1])
+
+
+def train(args: argparse.Namespace) -> dict[str, Any]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
     logger = logging.getLogger("train_atari_dqn")
     args.feedback_mode = _resolve_feedback_mode(args)
+    env_ids, action_space_mode = _resolve_task_config(args)
     if args.num_layers < 1:
         raise ValueError(f"num_layers must be >= 1, got {args.num_layers}")
     if args.frame_skip < 1:
@@ -258,6 +424,7 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
         device=device,
         amp_dtype_name=args.amp_dtype,
         allow_tf32=args.allow_tf32,
+        cudnn_benchmark=args.cudnn_benchmark,
         compile_model=args.compile_model,
         compile_mode=args.compile_mode,
     )
@@ -267,16 +434,31 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
     video_dir = os.path.join(save_dir, "videos")
     history_path = os.path.join(save_dir, "metrics_history.jsonl")
 
-    envs = make_vector_atari_env(
-        env_id=args.env_id,
-        seed=args.seed,
-        num_envs=args.num_envs,
-        frame_stack=args.frame_stack,
-        frame_skip=args.frame_skip,
-        flicker_prob=args.flicker_prob,
-        capture_video=args.capture_video,
-        video_dir=video_dir,
-    )
+    is_multitask = len(env_ids) > 1
+    if is_multitask:
+        if args.capture_video:
+            raise ValueError("Phase0 multi-task training does not support --capture_video")
+        envs = make_multitask_vector_atari_env(
+            env_ids=env_ids,
+            seed=args.seed,
+            num_envs=args.num_envs,
+            frame_stack=args.frame_stack,
+            frame_skip=args.frame_skip,
+            flicker_prob=args.flicker_prob,
+            task_schedule=args.task_schedule,
+        )
+    else:
+        envs = make_vector_atari_env(
+            env_id=env_ids[0],
+            seed=args.seed,
+            num_envs=args.num_envs,
+            frame_stack=args.frame_stack,
+            frame_skip=args.frame_skip,
+            flicker_prob=args.flicker_prob,
+            capture_video=args.capture_video,
+            video_dir=video_dir,
+            full_action_space=action_space_mode == "full18",
+        )
     try:
         assert envs.single_action_space.__class__.__name__ == "Discrete"
         num_actions = int(envs.single_action_space.n)
@@ -304,6 +486,9 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
         target_net = AtariQNetwork(**model_kwargs).to(device)
         target_net.load_state_dict(model.state_dict())
         target_net.eval()
+        target_net.requires_grad_(False)
+        use_fused_optimizer = args.fused_optimizer and device.type == "cuda"
+        adam_kwargs = {"fused": True} if use_fused_optimizer else {}
         if args.model_type == "gawf":
             gate_params = [
                 param
@@ -320,10 +505,15 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
                         "lr": args.learning_rate * args.gawf_feedback_lr_scale,
                         "weight_decay": 0.0,
                     },
-                ]
+                ],
+                **adam_kwargs,
             )
         else:
-            optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+            optimizer = optim.Adam(
+                model.parameters(),
+                lr=args.learning_rate,
+                **adam_kwargs,
+            )
         scaler = acceleration.build_grad_scaler()
         model_forward = acceleration.compile_callable(model.forward_sequence)
         target_forward = acceleration.compile_callable(target_net.forward_sequence)
@@ -334,6 +524,8 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
             obs_shape=tuple(next_obs.shape[1:]),
             device=device,
             seed=args.seed,
+            num_tasks=len(env_ids),
+            sampling_mode=args.replay_sampling,
         )
 
         state = None
@@ -342,9 +534,13 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
         global_step = 0
         start_time = time.time()
         rolling_returns: list[float] = []
-        last_loss = float("nan")
-        last_q_mean = float("nan")
-        final_metrics: dict[str, float | int | str | None] = {}
+        rolling_returns_by_env: dict[str, list[float]] = {env_id: [] for env_id in env_ids}
+        episode_counts = {env_id: 0 for env_id in env_ids}
+        environment_steps = {env_id: 0 for env_id in env_ids}
+        env_id_to_task = {env_id: task_id for task_id, env_id in enumerate(env_ids)}
+        last_loss_tensor: torch.Tensor | None = None
+        last_q_mean_tensor: torch.Tensor | None = None
+        final_metrics: dict[str, Any] = {}
 
         while global_step < args.total_timesteps:
             global_step += args.num_envs
@@ -364,6 +560,22 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
 
             next_obs_np, reward_np, terminated_np, truncated_np, infos = envs.step(action_np)
             done_np = np.logical_or(terminated_np, truncated_np).astype(np.uint8)
+            # NEXT_STEP autoreset consumes one ignored action after a terminal
+            # row. Reset before that invalid row and again before the first
+            # valid observation of the newly selected episode/task.
+            state_reset_np = _next_state_reset_flags(done_np, prev_done_np)
+
+            step_env_ids = _extract_step_env_ids(infos, args.num_envs)
+            task_ids_np = np.zeros(args.num_envs, dtype=np.int16)
+            for slot, env_id in enumerate(step_env_ids):
+                if is_multitask and env_id not in env_id_to_task:
+                    raise RuntimeError(
+                        f"Missing or unknown env_id for multi-task replay slot {slot}: {env_id!r}"
+                    )
+                if env_id in env_id_to_task:
+                    task_ids_np[slot] = env_id_to_task[env_id]
+                if env_id in environment_steps and not prev_done_np[slot]:
+                    environment_steps[env_id] += 1
 
             buffer.add(
                 obs=current_obs_np,
@@ -371,15 +583,22 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
                 rewards=np.asarray(reward_np, dtype=np.float32),
                 dones=done_np,
                 resets=prev_done_np,
+                task_ids=task_ids_np,
             )
             prev_done_np = done_np
             current_obs_np = to_channel_first_obs(next_obs_np)
             next_obs = torch.as_tensor(current_obs_np, device=device)
-            next_done = torch.as_tensor(done_np, device=device, dtype=torch.float32)
+            next_done = torch.as_tensor(state_reset_np, device=device, dtype=torch.float32)
 
             rolling_returns.extend(_extract_episode_returns(infos))
             if len(rolling_returns) > 100:
                 rolling_returns = rolling_returns[-100:]
+            for env_id, episode_return in _extract_episode_records(infos):
+                if env_id not in rolling_returns_by_env:
+                    continue
+                rolling_returns_by_env[env_id].append(episode_return)
+                rolling_returns_by_env[env_id] = rolling_returns_by_env[env_id][-100:]
+                episode_counts[env_id] += 1
 
             if global_step >= args.learning_starts and global_step % args.train_frequency == 0:
                 with acceleration.autocast():
@@ -404,14 +623,18 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
                     scaler.update()
                 else:
                     optimizer.step()
-                last_loss = float(loss.detach().float().cpu())
-                last_q_mean = q_mean
+                last_loss_tensor = loss.detach()
+                last_q_mean_tensor = q_mean.detach()
 
             if global_step % args.target_network_frequency == 0:
                 target_net.load_state_dict(model.state_dict())
 
             if global_step % args.log_interval == 0:
                 fps = int(global_step / max(time.time() - start_time, 1e-6))
+                last_loss, last_q_mean = _materialize_training_stats(
+                    last_loss_tensor,
+                    last_q_mean_tensor,
+                )
                 rolling_return = (
                     float(np.mean(rolling_returns)) if rolling_returns else float("nan")
                 )
@@ -425,6 +648,16 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
                     last_loss,
                     last_q_mean,
                 )
+                per_env_history = {
+                    env_id: {
+                        "episodic_return_100": (
+                            float(np.mean(returns)) if returns else float("nan")
+                        ),
+                        "episodes": episode_counts[env_id],
+                        "environment_steps": environment_steps[env_id],
+                    }
+                    for env_id, returns in rolling_returns_by_env.items()
+                }
                 with open(history_path, "a", encoding="utf-8") as f:
                     f.write(
                         json.dumps(
@@ -436,15 +669,36 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
                                 "q_values_mean": last_q_mean,
                                 "fps": fps,
                                 "wall_time_s": time.time() - start_time,
+                                "per_env": per_env_history,
                             }
                         )
                         + "\n"
                     )
 
         fps = int(global_step / max(time.time() - start_time, 1e-6))
+        last_loss, last_q_mean = _materialize_training_stats(
+            last_loss_tensor,
+            last_q_mean_tensor,
+        )
         rolling_return = float(np.mean(rolling_returns)) if rolling_returns else float("nan")
+        per_env_metrics = {
+            env_id: {
+                "episodic_return_100": (
+                    float(np.mean(returns)) if returns else float("nan")
+                ),
+                "episodes": episode_counts[env_id],
+                "environment_steps": environment_steps[env_id],
+            }
+            for env_id, returns in rolling_returns_by_env.items()
+        }
         final_metrics = {
-            "env_id": args.env_id,
+            "env_id": env_ids[0] if not is_multitask else None,
+            "env_ids": list(env_ids),
+            "multitask": is_multitask,
+            "action_space_mode": action_space_mode,
+            "num_actions": num_actions,
+            "task_schedule": args.task_schedule if is_multitask else None,
+            "replay_sampling": args.replay_sampling,
             "algo": args.algo,
             "model_type": args.model_type,
             "num_layers": args.num_layers,
@@ -470,13 +724,16 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
             "epsilon": _linear_epsilon(args, global_step),
             "amp_dtype": acceleration.amp_dtype_name,
             "allow_tf32": acceleration.allow_tf32,
+            "cudnn_benchmark": acceleration.cudnn_benchmark,
+            "fused_optimizer": use_fused_optimizer,
             "compile_model": acceleration.compile_model,
             "compile_mode": acceleration.compile_mode,
+            "per_env": per_env_metrics,
         }
         layer_suffix = f"_L{args.num_layers}" if args.num_layers > 1 else ""
+        env_tag = "__".join(env_id.replace("/", "_") for env_id in env_ids)
         ckpt_name = (
-            f"{args.algo}_{args.model_type}_{args.feedback_mode}{layer_suffix}_"
-            f"{args.env_id.replace('/', '_')}.pth"
+            f"{args.algo}_{args.model_type}_{args.feedback_mode}{layer_suffix}_{env_tag}.pth"
         )
         ckpt_path = os.path.join(save_dir, ckpt_name)
         torch.save(model.state_dict(), ckpt_path)

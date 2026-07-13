@@ -28,6 +28,7 @@ class AtariAcceleration:
     device: torch.device
     amp_dtype_name: str = "none"
     allow_tf32: bool = False
+    cudnn_benchmark: bool = False
     compile_model: bool = False
     compile_mode: str = "reduce-overhead"
 
@@ -77,13 +78,16 @@ def configure_atari_acceleration(
     if acceleration.device.type == "cuda":
         torch.backends.cuda.matmul.allow_tf32 = acceleration.allow_tf32
         torch.backends.cudnn.allow_tf32 = acceleration.allow_tf32
+        torch.backends.cudnn.benchmark = acceleration.cudnn_benchmark
         if acceleration.allow_tf32:
             torch.set_float32_matmul_precision("high")
     logger.info(
-        "Atari acceleration: device=%s amp=%s tf32=%s compile=%s compile_mode=%s",
+        "Atari acceleration: device=%s amp=%s tf32=%s cudnn_benchmark=%s "
+        "compile=%s compile_mode=%s",
         acceleration.device,
         acceleration.amp_dtype_name if acceleration.amp_dtype is not None else "off",
         acceleration.allow_tf32 and acceleration.device.type == "cuda",
+        acceleration.cudnn_benchmark and acceleration.device.type == "cuda",
         acceleration.compile_model and acceleration.device.type == "cuda",
         acceleration.compile_mode,
     )
