@@ -40,7 +40,9 @@ if [[ -z "$ROOT" || ! -f "$ROOT/train_atari_dqn.py" ]]; then
 fi
 cd "$ROOT"
 
-ART_ROOT="$ROOT/experiments/amarel/artifacts/atari_pong_fs1_stack1"
+ARTIFACT_TAG="${ARTIFACT_TAG:-atari_pong_fs1_stack1}"
+RESULT_TAG="${RESULT_TAG:-pong_fs1_stack1}"
+ART_ROOT="$ROOT/experiments/amarel/artifacts/$ARTIFACT_TAG"
 STATUS_DIR="$ART_ROOT/status"
 mkdir -p "$ART_ROOT" "$STATUS_DIR"
 
@@ -65,17 +67,17 @@ SETTING=$((REST / N_SEEDS))
 SEED="${SEEDS[$((REST % N_SEEDS))]}"
 ACCEL_ARGS=(--amp_dtype bfloat16 --allow_tf32 --cudnn_benchmark --fused_optimizer)
 COMPILE_ACTIVE=0
-if [[ "$MODEL" == "ann" ]]; then
+if [[ "$MODEL" == "ann" || "$MODEL" == "gawf" ]]; then
   ACCEL_ARGS+=(--compile_model)
   COMPILE_ACTIVE=1
 fi
 
 if [[ "$SETTING" -eq 0 ]]; then
   FLICKER_PROB=0.0
-  SUFFIX="atari_dqn_pong_fs1_stack1_${MODEL}_seed${SEED}"
+  SUFFIX="atari_dqn_${RESULT_TAG}_${MODEL}_seed${SEED}"
 else
   FLICKER_PROB=0.5
-  SUFFIX="atari_dqn_pong_fs1_stack1_flicker_${MODEL}_seed${SEED}"
+  SUFFIX="atari_dqn_${RESULT_TAG}_flicker_${MODEL}_seed${SEED}"
 fi
 
 TOTAL_TIMESTEPS="${TOTAL_TIMESTEPS:-1000000}"
@@ -142,6 +144,31 @@ if [[ "$train_rc" -ne 0 ]]; then
   } > "$FAIL_FILE"
   exit "$train_rc"
 fi
+
+python - "$ROOT/results/train_data/$SUFFIX" "$MODEL" "$TOTAL_TIMESTEPS" <<'PY'
+import glob
+import json
+import os
+import sys
+
+result_dir, model_type, total_timesteps = sys.argv[1], sys.argv[2], int(sys.argv[3])
+metrics_path = os.path.join(result_dir, "metrics.json")
+with open(metrics_path, encoding="utf-8") as handle:
+    metrics = json.load(handle)
+expected = {
+    "global_step": total_timesteps,
+    "frame_skip": 1,
+    "frame_stack": 1,
+    "num_layers": 1,
+    "model_type": model_type,
+}
+actual = {key: metrics.get(key) for key in expected}
+if actual != expected:
+    raise RuntimeError(f"Invalid metrics in {metrics_path}: expected={expected}, actual={actual}")
+checkpoints = glob.glob(os.path.join(result_dir, "*.pth"))
+if len(checkpoints) != 1:
+    raise RuntimeError(f"Expected one checkpoint in {result_dir}, found {checkpoints}")
+PY
 
 {
   echo "status=done task_id=$TASK_ID model=$MODEL setting=$SETTING seed=$SEED"
