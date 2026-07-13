@@ -35,6 +35,7 @@ from torch.utils.data import DataLoader
 from utils.text_sentihood_data import build_sentihood_loaders, load_meta
 from utils.text_sentihood_metrics import compute_sentihood_metrics
 from utils.text_task_models import get_text_model_classes
+from utils.recurrent_cores import configure_gawf_feedback_acceleration
 from utils.text_train_utils import (
     build_optimizer,
     count_core_params,
@@ -118,6 +119,7 @@ def train_one_config(
         device=device,
         num_layers=getattr(args, "num_layers", 1),
     )
+    configure_gawf_feedback_acceleration(model, enabled=args.use_acceleration)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = build_optimizer(
