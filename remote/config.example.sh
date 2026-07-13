@@ -21,7 +21,6 @@ SSH_OPTS=(
   -o ControlPath=~/.ssh/cm-%r@%h:%p
 )
 
-# Keep conda changes manual for now. If you later want automatic activation,
-# set this in remote/config.sh, for example:
+# Activate the verified canonical environment for remote commands:
 # REMOTE_ACTIVATE="source ~/.bashrc && conda activate aim3_rnn"
 REMOTE_ACTIVATE=""

@@ -62,11 +62,18 @@ class AtariAcceleration:
             return torch.cuda.amp.GradScaler(enabled=enabled)
 
     def compile_callable(self, fn: Callable[..., T]) -> Callable[..., T]:
-        """Compile ``fn`` when requested, otherwise return it unchanged."""
+        """Compile ``fn`` when requested, with an explicit eager fallback."""
 
         if not self.compile_model or self.device.type != "cuda":
             return fn
-        return torch.compile(fn, mode=self.compile_mode, dynamic=False)
+        try:
+            return torch.compile(fn, mode=self.compile_mode, dynamic=False)
+        except RuntimeError as exc:
+            logging.getLogger(__name__).warning(
+                "torch.compile is unavailable (%s); continuing with the eager callable",
+                exc,
+            )
+            return fn
 
 
 def configure_atari_acceleration(

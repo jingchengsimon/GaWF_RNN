@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+import warnings
 
 import torch
 import torch.nn as nn
@@ -295,12 +296,20 @@ class GaWFCore(GaWFDiagnosticsMixin, nn.Module):
             return
         if not hasattr(torch, "compile"):
             raise RuntimeError("Compiled GaWF feedback requires torch.compile")
-        self._compiled_feedback_preactivation = torch.compile(
-            _gawf_layer_preactivation,
-            mode=compile_mode,
-            fullgraph=True,
-            dynamic=False,
-        )
+        try:
+            self._compiled_feedback_preactivation = torch.compile(
+                _gawf_layer_preactivation,
+                mode=compile_mode,
+                fullgraph=True,
+                dynamic=False,
+            )
+        except RuntimeError as exc:
+            self._compiled_feedback_preactivation = None
+            warnings.warn(
+                f"Compiled GaWF feedback is unavailable ({exc}); using eager feedback",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
     def initial_state(
         self,
@@ -465,5 +474,5 @@ def configure_gawf_feedback_acceleration(
         device_type = next(child.parameters()).device.type
         compile_feedback = bool(enabled and device_type == "cuda")
         child.configure_feedback_acceleration(compile_feedback, compile_mode)
-        configured += int(compile_feedback)
+        configured += int(child._compiled_feedback_preactivation is not None)
     return configured

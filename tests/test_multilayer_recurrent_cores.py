@@ -139,6 +139,13 @@ class UnifiedRecurrentCoreTest(unittest.TestCase):
         self.assertEqual(configured, 0)
         configure.assert_called_once_with(False, "reduce-overhead")
 
+    def test_feedback_compile_runtime_error_falls_back_to_eager(self) -> None:
+        core = GaWFCore(7, 5, feedback_dim=3)
+        with mock.patch("torch.compile", side_effect=RuntimeError("unsupported runtime")):
+            with self.assertWarnsRegex(RuntimeWarning, "using eager feedback"):
+                core.configure_feedback_acceleration(True)
+        self.assertIsNone(core._compiled_feedback_preactivation)
+
     def test_single_layer_parameter_names_remain_legacy(self) -> None:
         expected_torch_keys = {
             "rnn.weight_ih_l0",

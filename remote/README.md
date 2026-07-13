@@ -1,7 +1,8 @@
 # Remote Workflow Wrappers
 
 These wrappers sync committed local code through GitHub, update the remote checkout, and run
-commands on the remote machine.
+commands on the remote machine. Git is the code source of truth; iCloud and `rsync` are not used
+to merge working trees.
 
 ## Setup
 
@@ -15,8 +16,8 @@ cp remote/config.example.sh remote/config.sh
 - remote project: `/G/MIMOlab/Codes/aim3_RNN`
 - branch: `master`
 
-Conda activation is intentionally disabled by default. Keep remote environment changes manual, or
-set `REMOTE_ACTIVATE` in `remote/config.sh` later.
+Set `REMOTE_ACTIVATE` to the verified `aim3_rnn` environment. Environment definitions and the
+verification command are documented in `environments/README.md`.
 
 ## Sync Code
 
@@ -26,6 +27,10 @@ set `REMOTE_ACTIVATE` in `remote/config.sh` later.
 
 The sync wrapper never runs `git add` or `git commit`. If local edits are uncommitted, it stops and
 prints suggested commands.
+
+For experiments, deploy an immutable commit to a fresh run directory and record the hash in
+`.source_commit`. Never update a directory while a job is running. Results flow from compute hosts
+back to the Dashboard/result store; they are not committed to Git.
 
 ## Run Commands
 

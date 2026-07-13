@@ -146,8 +146,15 @@ observed frame per environment step (`frame_skip=1`, `frame_stack=1`); new resul
 whole-sequence cuDNN fast path for RNN/GRU/LSTM windows without internal episode resets and
 falls back to the reset-aware stepwise path otherwise. Acceleration must not change replay
 sampling, update cadence, UTD, loss definitions, or recurrent/GaWF architecture.
+Task-blind multi-task collection changes games only at episode boundaries. Its default
+`transition_balanced` scheduler selects the game with the fewest collected environment steps;
+`round_robin` remains available for historical reproduction. Replay balancing is independent of
+collection scheduling and does not expose task identity to the model.
 Amarel Pong launchers compile ANN only because the installed PyTorch 2.3 Dynamo path cannot
 reliably trace `AtariQNetworkState`; recurrent models still use BF16, TF32, and the fused scan.
+Shared GaWF acceleration compiles only the task-agnostic feedback/gate tensor subgraph. When the
+active Python/PyTorch runtime cannot compile it, the code emits a warning and uses the equivalent
+eager path instead of changing training semantics.
 The completed five-seed, 70-unit historical sweep is labeled `pong_fs4_stack1`: one pooled
 observation was supplied per decision, while each chosen action advanced four ALE frames.
 The `pong_fs1_stack1` label is reserved for strict one-decision/one-ALE-frame runs.

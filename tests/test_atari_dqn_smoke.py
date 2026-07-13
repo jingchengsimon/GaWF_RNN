@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+from unittest import mock
 
 import numpy as np
 import torch
@@ -90,6 +91,33 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
         self.assertIsNone(args.env_ids)
         self.assertEqual(args.action_space_mode, "auto")
         self.assertEqual(args.replay_sampling, "task_balanced")
+        self.assertEqual(args.task_schedule, "transition_balanced")
+
+    def test_transition_balanced_collection_allows_unequal_episode_counts(self) -> None:
+        from utils.atari_envs import _EpisodeTaskScheduler
+
+        scheduler = _EpisodeTaskScheduler(
+            num_tasks=2,
+            start_idx=0,
+            mode="transition_balanced",
+        )
+        episode_lengths = (100, 20)
+        episode_counts = [0, 0]
+        for _ in range(12):
+            task_idx = scheduler.next_task()
+            episode_counts[task_idx] += 1
+            for _ in range(episode_lengths[task_idx]):
+                scheduler.record_step(task_idx)
+
+        self.assertEqual(scheduler.task_steps, [200, 200])
+        self.assertEqual(episode_counts, [2, 10])
+
+    def test_round_robin_collection_remains_selectable(self) -> None:
+        from utils.atari_envs import _EpisodeTaskScheduler
+
+        scheduler = _EpisodeTaskScheduler(num_tasks=2, start_idx=0, mode="round_robin")
+        selected = [scheduler.next_task() for _ in range(6)]
+        self.assertEqual(selected, [0, 1, 0, 1, 0, 1])
 
     def test_global_uniform_replay_remains_selectable(self) -> None:
         from train_atari_dqn import build_arg_parser
@@ -364,6 +392,17 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
         self.assertIsNone(acceleration.amp_dtype)
         fn = lambda value: value + 1
         self.assertIs(acceleration.compile_callable(fn), fn)
+
+    def test_compile_runtime_error_falls_back_to_eager_callable(self) -> None:
+        acceleration = AtariAcceleration(
+            device=torch.device("cuda"),
+            compile_model=True,
+        )
+        fn = lambda value: value + 1
+        with mock.patch("torch.compile", side_effect=RuntimeError("unsupported runtime")):
+            with self.assertLogs("utils.atari_train_acceleration", level="WARNING"):
+                compiled = acceleration.compile_callable(fn)
+        self.assertIs(compiled, fn)
 
     def test_gradient_step_recurrent_branch(self) -> None:
         for model_type in ("rnn", "lstm", "gawf"):

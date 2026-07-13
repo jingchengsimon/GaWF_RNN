@@ -23,6 +23,7 @@ from torch import optim
 from utils.atari_dqn_models import AtariQNetwork, AtariQNetworkState
 from utils.atari_envs import (
     ATARI_PILOT_ENVS,
+    ATARI_TASK_SCHEDULES,
     make_multitask_vector_atari_env,
     make_vector_atari_env,
 )
@@ -54,7 +55,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         nargs="+",
         default=None,
         choices=ATARI_PILOT_ENVS,
-        help="Phase0 task list. Multiple games switch round-robin at episode boundaries.",
+        help="Phase0 task list. Multiple games are selected only at episode boundaries.",
     )
     parser.add_argument(
         "--action_space_mode",
@@ -66,9 +67,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--task_schedule",
         type=str,
-        default="round_robin",
-        choices=["round_robin"],
-        help="Phase0 episode-level game scheduler.",
+        default="transition_balanced",
+        choices=ATARI_TASK_SCHEDULES,
+        help="Phase0 episode-boundary scheduler; default balances collected transitions.",
     )
     parser.add_argument("--algo", type=str, default="dqn", choices=["dqn"])
     parser.add_argument(

@@ -1,0 +1,25 @@
+name: aim3_rnn
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - pytorch=2.3.*
+  - pytorch-cuda=12.1
+  - numpy>=2,<3
+  - pandas>=2,<3
+  - matplotlib>=3.7,<4
+  - scipy>=1.10,<2
+  - scikit-learn>=1.3,<2
+  - tqdm>=4.65,<5
+  - pip:
+      - ale-py==0.12.0
+      - causal-conv1d==1.5.0.post8
+      - gymnasium[atari,accept-rom-license]==1.3.0
+      - mamba-ssm==2.2.4
+      - opencv-python==4.8.1.78
+      - s5-pytorch==0.2.1
+

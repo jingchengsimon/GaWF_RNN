@@ -49,7 +49,7 @@ mkdir -p "$ART_ROOT" "$STATUS_DIR"
 # ---- environment -----------------------------------------------------------
 CONDA_SH="${AIM3_CONDA_SH:-/home/js3269/enter/etc/profile.d/conda.sh}"
 source "$CONDA_SH"
-conda activate aim3_rnn
+conda activate "${AIM3_CONDA_ENV:-aim3_rnn}"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export KMP_DUPLICATE_LIB_OK=TRUE
 export AIM3_NUM_WORKERS=12

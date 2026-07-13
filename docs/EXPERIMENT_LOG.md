@@ -4,6 +4,19 @@ This file records confirmed model changes and experiment extensions for GaWF.
 Keep entries factual: what changed, why it was introduced, and the current
 implementation choice.
 
+## 2026-07-13 - Multi-host Atari acceleration baseline
+
+- Canonical code is an immutable Git commit, deployed to per-run directories with a
+  `.source_commit` marker; long-lived dirty checkouts on Mac or Amarel are not deployment sources.
+- Canonical full-training runtime is Python 3.11. Python 3.14 can import PyTorch 2.9 but cannot
+  execute `torch.compile`, so compilation requests now warn and fall back to equivalent eager
+  execution.
+- `environments/aim3_rnn-linux-cuda.yml` captures the validated Amarel-compatible CUDA stack;
+  `environments/aim3_rnn-macos.yml` is the development/test profile without CUDA-only Mamba.
+- Single-task and multi-task Atari share BF16, TF32, cuDNN benchmark, fused Adam, replay, and GaWF
+  feedback acceleration code. Multi-task collection defaults to transition-balanced scheduling;
+  this is independent from task-balanced replay sampling.
+
 ## 2026-06-14 - GaWF Feedback Generalization
 
 ### Step 1: Baseline GaWF Feedback

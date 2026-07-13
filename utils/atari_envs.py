@@ -16,6 +16,42 @@ ATARI_PILOT_ENVS = (
     "ALE/BeamRider-v5",
 )
 
+ATARI_TASK_SCHEDULES = ("transition_balanced", "round_robin")
+
+
+class _EpisodeTaskScheduler:
+    """Choose tasks at episode boundaries while tracking collected transitions."""
+
+    def __init__(self, num_tasks: int, start_idx: int, mode: str) -> None:
+        if num_tasks < 2:
+            raise ValueError("Episode task scheduling requires at least two tasks")
+        if mode not in ATARI_TASK_SCHEDULES:
+            raise ValueError(f"Unsupported Atari task schedule: {mode}")
+        self.mode = mode
+        self.task_steps = [0] * num_tasks
+        self._cursor = start_idx % num_tasks
+
+    def next_task(self) -> int:
+        """Return the next task, breaking equal-step ties cyclically."""
+        if self.mode == "round_robin":
+            selected = self._cursor
+        else:
+            minimum = min(self.task_steps)
+            selected = self._cursor
+            for offset in range(len(self.task_steps)):
+                candidate = (self._cursor + offset) % len(self.task_steps)
+                if self.task_steps[candidate] == minimum:
+                    selected = candidate
+                    break
+        self._cursor = (selected + 1) % len(self.task_steps)
+        return selected
+
+    def record_step(self, task_idx: int) -> None:
+        """Record one valid transition for the active task."""
+        if not 0 <= task_idx < len(self.task_steps):
+            raise IndexError(f"task_idx out of range: {task_idx}")
+        self.task_steps[task_idx] += 1
+
 
 def _register_ale_envs(gym) -> None:
     """Register ALE namespaces for Gymnasium versions that require explicit setup."""
@@ -172,7 +208,7 @@ def make_multitask_atari_env(
     frame_stack: int = 1,
     frame_skip: int = 1,
     flicker_prob: float = 0.0,
-    task_schedule: str = "round_robin",
+    task_schedule: str = "transition_balanced",
 ) -> Callable[[], object]:
     """Return one task-blind Atari env that switches games at episode resets.
 
@@ -184,7 +220,7 @@ def make_multitask_atari_env(
         raise ValueError("Multi-task Atari requires at least two env_ids")
     if len(set(env_ids)) != len(env_ids):
         raise ValueError("Multi-task env_ids must be unique")
-    if task_schedule != "round_robin":
+    if task_schedule not in ATARI_TASK_SCHEDULES:
         raise ValueError(f"Unsupported Phase0 task_schedule: {task_schedule}")
 
     def thunk():
@@ -217,7 +253,11 @@ def make_multitask_atari_env(
                 super().__init__()
                 self._envs = component_envs
                 self._env_ids = env_ids
-                self._next_task_idx = idx % len(self._envs)
+                self._scheduler = _EpisodeTaskScheduler(
+                    num_tasks=len(self._envs),
+                    start_idx=idx,
+                    mode=task_schedule,
+                )
                 self._active_task_idx: int | None = None
                 self._has_reset = [False] * len(self._envs)
                 self.action_space = self._envs[0].action_space
@@ -249,8 +289,7 @@ def make_multitask_atari_env(
                 seed: int | None = None,
                 options: dict[str, Any] | None = None,
             ):
-                task_idx = self._next_task_idx
-                self._next_task_idx = (task_idx + 1) % len(self._envs)
+                task_idx = self._scheduler.next_task()
                 self._active_task_idx = task_idx
                 reset_seed = seed
                 if reset_seed is None and not self._has_reset[task_idx]:
@@ -265,6 +304,7 @@ def make_multitask_atari_env(
                 obs, reward, terminated, truncated, info = self._envs[
                     self._active_task_idx
                 ].step(action)
+                self._scheduler.record_step(self._active_task_idx)
                 return (
                     obs,
                     reward,
@@ -295,9 +335,9 @@ def make_multitask_vector_atari_env(
     frame_stack: int = 1,
     frame_skip: int = 1,
     flicker_prob: float = 0.0,
-    task_schedule: str = "round_robin",
+    task_schedule: str = "transition_balanced",
 ) -> Any:
-    """Create synchronous task-blind Atari envs with episode-level switching."""
+    """Create task-blind Atari envs that select tasks only at episode boundaries."""
     try:
         import gymnasium as gym
     except ImportError as exc:
