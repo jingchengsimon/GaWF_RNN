@@ -39,6 +39,7 @@ from utils.atari_train_utils import (
     set_atari_seed,
     to_channel_first_obs,
 )
+from utils.recurrent_cores import configure_gawf_feedback_acceleration
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -489,6 +490,20 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         target_net.requires_grad_(False)
         use_fused_optimizer = args.fused_optimizer and device.type == "cuda"
         adam_kwargs = {"fused": True} if use_fused_optimizer else {}
+        compiled_gawf_cores = sum(
+            configure_gawf_feedback_acceleration(
+                network,
+                enabled=acceleration.compile_model,
+                compile_mode=acceleration.compile_mode,
+            )
+            for network in (model, target_net)
+        )
+        if compiled_gawf_cores:
+            logger.info(
+                "Compiled %d shared GaWF feedback/gate core(s) with mode=%s",
+                compiled_gawf_cores,
+                acceleration.compile_mode,
+            )
         if args.model_type == "gawf":
             gate_params = [
                 param
@@ -515,8 +530,12 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
                 **adam_kwargs,
             )
         scaler = acceleration.build_grad_scaler()
-        model_forward = acceleration.compile_callable(model.forward_sequence)
-        target_forward = acceleration.compile_callable(target_net.forward_sequence)
+        if compiled_gawf_cores:
+            model_forward = model.forward_sequence
+            target_forward = target_net.forward_sequence
+        else:
+            model_forward = acceleration.compile_callable(model.forward_sequence)
+            target_forward = acceleration.compile_callable(target_net.forward_sequence)
 
         buffer = AtariReplayBuffer(
             buffer_size=args.buffer_size,

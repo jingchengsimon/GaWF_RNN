@@ -26,14 +26,13 @@ def _compute_gawf_transforms(
     V: torch.Tensor,
     input_size: int,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Compute and split GaWF input/hidden transforms.
+    """Compute the historical eager input/hidden transforms without changing numerics."""
 
-    A single matrix multiplication replaces the historical pair of multiplications
-    against slices of ``V``. Splitting the result preserves the public helper API.
-    """
-
-    transformed = _compute_gawf_transform(U, fb_t, V)
-    return transformed[..., :input_size], transformed[..., input_size:]
+    scaled_u = U.unsqueeze(0) * fb_t.transpose(1, 2)
+    return (
+        torch.matmul(scaled_u, V[:, :input_size]),
+        torch.matmul(scaled_u, V[:, input_size:]),
+    )
 
 
 def _gawf_layer_preactivation(
@@ -356,13 +355,11 @@ class GaWFCore(GaWFDiagnosticsMixin, nn.Module):
             )
         else:
             fb_t = fb.clamp(-10, 10).unsqueeze(2)
-            transformed = _compute_gawf_transform(U, fb_t, V)
-            gate_logits = transformed / self.gate_tau
-            gate = torch.sigmoid(gate_logits)
-            gate_logits_ih = gate_logits[..., :input_size]
-            gate_logits_hh = gate_logits[..., input_size:]
-            gate_ih = gate[..., :input_size]
-            gate_hh = gate[..., input_size:]
+            trans_ih, trans_hh = _compute_gawf_transforms(U, fb_t, V, input_size)
+            gate_logits_ih = trans_ih / self.gate_tau
+            gate_logits_hh = trans_hh / self.gate_tau
+            gate_ih = torch.sigmoid(gate_logits_ih)
+            gate_hh = torch.sigmoid(gate_logits_hh)
             self._record_gawf_gate(
                 layer_idx,
                 gate_logits_ih,
@@ -445,3 +442,28 @@ class GaWFCore(GaWFDiagnosticsMixin, nn.Module):
             layer_output = F.dropout(layer_output, p=self.dropout, training=self.training)
             final_states.append(state.squeeze(0))
         return layer_output, final_states
+
+
+def configure_gawf_feedback_acceleration(
+    module: nn.Module,
+    enabled: bool,
+    compile_mode: str = "reduce-overhead",
+) -> int:
+    """Configure every nested :class:`GaWFCore` feedback subgraph.
+
+    The helper is task-agnostic so Atari, clutter, text, and future task wrappers
+    all opt into the same implementation. Compilation is enabled only for CUDA
+    cores; calling it on CPU/MPS models safely leaves their eager path active.
+
+    Returns the number of GaWF cores configured for compiled CUDA execution.
+    """
+
+    configured = 0
+    for child in module.modules():
+        if not isinstance(child, GaWFCore):
+            continue
+        device_type = next(child.parameters()).device.type
+        compile_feedback = bool(enabled and device_type == "cuda")
+        child.configure_feedback_acceleration(compile_feedback, compile_mode)
+        configured += int(compile_feedback)
+    return configured
