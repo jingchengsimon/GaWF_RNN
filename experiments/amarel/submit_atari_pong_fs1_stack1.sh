@@ -7,13 +7,13 @@
 #   2. sbatch the 70-task array (SLURM_ARRAY_TASK_ID 0..69).
 #
 # Usage:
-#   bash experiments/amarel/submit_atari_pong_1frame.sh                 # all 70
-#   ARRAY_CONCURRENCY=20 bash experiments/amarel/submit_atari_pong_1frame.sh
-#   SKIP_PARAM_MATCH=1 bash experiments/amarel/submit_atari_pong_1frame.sh
+#   bash experiments/amarel/submit_atari_pong_fs1_stack1.sh                 # all 70
+#   ARRAY_CONCURRENCY=20 bash experiments/amarel/submit_atari_pong_fs1_stack1.sh
+#   SKIP_PARAM_MATCH=1 bash experiments/amarel/submit_atari_pong_fs1_stack1.sh
 #
 # Subsets via --array, e.g. only the flickering half (settings map to tasks
 # 35-69 for the default 5 seeds):
-#   bash experiments/amarel/submit_atari_pong_1frame.sh --array 35-69
+#   bash experiments/amarel/submit_atari_pong_fs1_stack1.sh --array 35-69
 
 set -euo pipefail
 
@@ -21,8 +21,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT"
 
-RUN_SCRIPT="$SCRIPT_DIR/run_atari_pong_1frame_array.sh"
-ART_ROOT="$ROOT/experiments/amarel/artifacts/atari_pong_1frame"
+RUN_SCRIPT="$SCRIPT_DIR/run_atari_pong_fs1_stack1_array.sh"
+ART_ROOT="$ROOT/experiments/amarel/artifacts/atari_pong_fs1_stack1"
 mkdir -p "$ART_ROOT"
 
 ARRAY_SPEC="0-69"

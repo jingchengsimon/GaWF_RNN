@@ -148,6 +148,9 @@ falls back to the reset-aware stepwise path otherwise. Acceleration must not cha
 sampling, update cadence, UTD, loss definitions, or recurrent/GaWF architecture.
 Amarel Pong launchers compile ANN only because the installed PyTorch 2.3 Dynamo path cannot
 reliably trace `AtariQNetworkState`; recurrent models still use BF16, TF32, and the fused scan.
+The completed five-seed, 70-unit historical sweep is labeled `pong_fs4_stack1`: one pooled
+observation was supplied per decision, while each chosen action advanced four ALE frames.
+The `pong_fs1_stack1` label is reserved for strict one-decision/one-ALE-frame runs.
 
 ### `utils/clutter_train_sector.py`
 Owns all metric and loss logic for single-char + sector/coordinate mode:

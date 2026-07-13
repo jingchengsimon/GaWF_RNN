@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=aim3-atari-pong1f
+#SBATCH --job-name=aim3-atari-pong-fs1s1
 #SBATCH --partition=gpu-redhat
 #SBATCH --account=general
 #SBATCH --gres=gpu:1
@@ -7,8 +7,8 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 #SBATCH --time=48:00:00
-#SBATCH --output=experiments/amarel/artifacts/atari_pong_1frame/%A_%a.out
-#SBATCH --error=experiments/amarel/artifacts/atari_pong_1frame/%A_%a.err
+#SBATCH --output=experiments/amarel/artifacts/atari_pong_fs1_stack1/%A_%a.out
+#SBATCH --error=experiments/amarel/artifacts/atari_pong_fs1_stack1/%A_%a.err
 
 # Train one (model x setting x seed) cell of the Pong frame-skip-1/stack-1 sweep.
 #
@@ -17,7 +17,8 @@
 #   setting 1 = flickering Pong         (flicker_prob=0.5)   -> POMDP, needs memory
 # Both use frame_skip=1 and frame_stack=1: one ALE frame is advanced and one
 # observed frame is supplied per environment step.
-# The pre-existing 4-frame baseline sweep is separate and left untouched.
+# The historical frame-skip-4/stack-1 sweep is stored separately under the
+# explicit `pong_fs4_stack1` protocol label.
 #
 # task -> (model, setting, seed) with model varying fastest:
 #   model   = MODELS[task % 7]
@@ -39,7 +40,7 @@ if [[ -z "$ROOT" || ! -f "$ROOT/train_atari_dqn.py" ]]; then
 fi
 cd "$ROOT"
 
-ART_ROOT="$ROOT/experiments/amarel/artifacts/atari_pong_1frame"
+ART_ROOT="$ROOT/experiments/amarel/artifacts/atari_pong_fs1_stack1"
 STATUS_DIR="$ART_ROOT/status"
 mkdir -p "$ART_ROOT" "$STATUS_DIR"
 

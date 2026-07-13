@@ -142,9 +142,10 @@ that assume spatial dimensions (6,6) and 32 feature channels.
   frame stack as channels.
 - Pong DQN defaults to `--frame_skip 1 --frame_stack 1`: every environment step advances
   exactly one ALE frame and supplies one observed frame. Historical Pong pilots before this
-  convention used `frame_skip=4`; their metrics do not contain `frame_skip` and their result
-  directories retain the historical `pong1f` spelling. New result suffixes must state both
-  settings explicitly, for example `pong_fs1_stack1`.
+  convention used `frame_skip=4`. The completed 70-unit, five-seed sweep has been migrated
+  from the ambiguous `pong1f` spelling to `pong_fs4_stack1`, and its metrics explicitly record
+  the recovered protocol. Every result suffix must state both settings, for example
+  `pong_fs1_stack1` or `pong_fs4_stack1`; never use `1frame` / `pong1f` as a protocol label.
 - Atari encoder: `AtariNatureEncoder` in `utils/atari_task_models.py`:
   `Cx84x84 -> Conv32(8,s4) -> Conv64(4,s2) -> Conv64(3,s1) -> FC512`.
   This is the Nature-DQN style visual encoder; keep it separate from the clutter CNN.

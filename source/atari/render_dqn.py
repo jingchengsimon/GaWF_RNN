@@ -11,8 +11,9 @@ CPU by default (single-episode inference is cheap).
 
 Example:
     python -m source.atari.render_dqn \
-        --result_suffix atari_dqn_pong1f_gawf_seed42 --model_type gawf \
-        --frame_stack 1 --num_episodes 1 --output results/videos/gawf_seed42.mp4
+        --result_suffix atari_dqn_pong_fs4_stack1_gawf_seed42 --model_type gawf \
+        --frame_skip 4 --frame_stack 1 --num_episodes 1 \
+        --output results/videos/gawf_seed42.mp4
 """
 
 from __future__ import annotations
@@ -62,7 +63,13 @@ def _find_checkpoint(save_dir: str) -> str:
     return ckpts[0]
 
 
-def _make_render_env(env_id: str, seed: int, flicker_prob: float, frame_stack: int):
+def _make_render_env(
+    env_id: str,
+    seed: int,
+    flicker_prob: float,
+    frame_stack: int,
+    frame_skip: int,
+):
     import gymnasium as gym
     import ale_py
 
@@ -77,7 +84,7 @@ def _make_render_env(env_id: str, seed: int, flicker_prob: float, frame_stack: i
     env = gym.wrappers.AtariPreprocessing(
         env,
         noop_max=30,
-        frame_skip=4,
+        frame_skip=frame_skip,
         screen_size=84,
         terminal_on_life_loss=False,
         grayscale_obs=True,
@@ -111,6 +118,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--num_layers", type=int, default=1)
     p.add_argument("--env_id", default="ALE/Pong-v5")
     p.add_argument("--frame_stack", type=int, default=1)
+    p.add_argument("--frame_skip", type=int, default=1)
     p.add_argument("--flicker_prob", type=float, default=0.0)
     p.add_argument("--hidden_size", type=int, default=None)
     p.add_argument("--ssm_d_model", type=int, default=None)
@@ -127,14 +135,20 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    args = parse_args()
     import imageio
 
-    args = parse_args()
     device = torch.device(args.device)
     save_dir = os.path.join(args.data_root, args.result_suffix)
     ckpt_path = _find_checkpoint(save_dir)
 
-    env = _make_render_env(args.env_id, args.seed, args.flicker_prob, args.frame_stack)
+    env = _make_render_env(
+        args.env_id,
+        args.seed,
+        args.flicker_prob,
+        args.frame_stack,
+        args.frame_skip,
+    )
     num_actions = int(env.action_space.n)
     feedback_mode = "qvalues" if args.model_type == "gawf" else "none"
 

@@ -1,4 +1,4 @@
-"""Overlay Atari DQN learning curves for the 1-frame Pong sweep (multi-seed).
+"""Overlay Atari DQN curves for the frame-skip-4/stack-1 Pong sweep.
 
 Reads ``results/train_data/<suffix>/metrics_history.jsonl`` (written by
 ``train_atari_dqn.py``) and overlays ``episodic_return_100`` vs ``global_step``
@@ -8,9 +8,9 @@ line with a shaded +/- std band. Style mirrors
 ``utils_viz/model_train_compare_result.py`` (matplotlib Agg, fixed per-model
 colours, legend, output under ``results/train_figs``).
 
-Suffix convention matches the launch scripts (seed suffix optional):
-  plain 1-frame Pong      -> ``<prefix>_<model>_seed<N>``          (--setting plain)
-  1-frame flickering Pong -> ``<prefix>_flicker_<model>_seed<N>``  (--setting flicker)
+Suffix convention states both environment advance and observation history:
+  plain fs4/stack1 Pong      -> ``<prefix>_<model>_seed<N>``          (--setting plain)
+  flickering fs4/stack1 Pong -> ``<prefix>_flicker_<model>_seed<N>``  (--setting flicker)
 
 Examples:
   python -m utils_viz.atari_learning_curves --setting both
@@ -34,7 +34,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-DEFAULT_PREFIX = "atari_dqn_pong1f"
+DEFAULT_PREFIX = "atari_dqn_pong_fs4_stack1"
 DEFAULT_MODELS = ("ann", "rnn", "gru", "lstm", "gawf", "s5", "mamba")
 
 # Fixed per-model colours so a model reads the same across every figure.
@@ -50,8 +50,8 @@ MODEL_COLORS = {
 }
 
 SETTING_TITLES = {
-    "plain": "1-frame Pong (MDP control)",
-    "flicker": "1-frame Flickering Pong (POMDP, p=0.5)",
+    "plain": "Pong (frame skip 4, stack 1)",
+    "flicker": "Flickering Pong (frame skip 4, stack 1, p=0.5)",
 }
 
 N_GRID = 300  # resampling points for cross-seed aggregation
@@ -92,7 +92,7 @@ def parse_args() -> argparse.Namespace:
         help="Shaded band across seeds: std, standard error, or none.",
     )
     parser.add_argument("--data_root", default="results/train_data")
-    parser.add_argument("--output_dir", default="results/train_figs/atari_pong_1frame")
+    parser.add_argument("--output_dir", default="results/train_figs/atari_pong_fs4_stack1")
     parser.add_argument(
         "--seed",
         type=int,
@@ -247,7 +247,7 @@ def main() -> None:
         os.makedirs(args.output_dir, exist_ok=True)
         seed_tag = f"_seed{args.seed}" if args.seed is not None else ""
         out_path = os.path.join(
-            args.output_dir, f"atari_pong_1frame_{args.setting}{seed_tag}.png"
+            args.output_dir, f"atari_pong_fs4_stack1_{args.setting}{seed_tag}.png"
         )
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     fig.savefig(out_path, dpi=150)
