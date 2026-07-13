@@ -23,6 +23,10 @@ aim3_RNN/
 │   ├── text_sentihood_data.py
 │   ├── text_sentihood_metrics.py
 │   ├── text_train_utils.py
+│   ├── atari_dqn_models.py
+│   ├── atari_envs.py
+│   ├── atari_replay.py
+│   ├── atari_train_acceleration.py
 │   └── common_train_helpers.py
 │
 ├── utils_anal/              ← Post-training analysis (no matplotlib)
@@ -130,6 +134,18 @@ For complex-parameter models (e.g. S5), training keeps AMP autocast active but
 disables GradScaler to avoid `ComplexFloat` unscale limitations in CUDA AMP.
 Gradient clipping in `TrainStepper` is applied to real-valued gradients only;
 complex gradients are skipped for foreach clip ops.
+
+### Atari DQN training path
+`train_atari_dqn.py` owns the DQN/DRQN loop and composes `utils/atari_dqn_models.py`,
+`utils/atari_replay.py`, and `utils/atari_envs.py`. Pong defaults to one ALE frame and one
+observed frame per environment step (`frame_skip=1`, `frame_stack=1`); new result suffixes use
+`pong_fs1_stack1` so they cannot be confused with historical frame-skip-4 pilots.
+
+`utils/atari_train_acceleration.py` owns CUDA autocast, TF32, gradient scaling, and optional
+`torch.compile` configuration. `AtariQNetwork.forward_sequence` uses a semantics-equivalent
+whole-sequence cuDNN fast path for RNN/GRU/LSTM windows without internal episode resets and
+falls back to the reset-aware stepwise path otherwise. Acceleration must not change replay
+sampling, update cadence, UTD, loss definitions, or recurrent/GaWF architecture.
 
 ### `utils/clutter_train_sector.py`
 Owns all metric and loss logic for single-char + sector/coordinate mode:

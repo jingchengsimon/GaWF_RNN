@@ -13,15 +13,20 @@ import json
 import logging
 import os
 import time
+from typing import Callable
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import optim
 
-from utils.atari_dqn_models import AtariQNetwork
+from utils.atari_dqn_models import AtariQNetwork, AtariQNetworkState
 from utils.atari_envs import ATARI_PILOT_ENVS, make_vector_atari_env
 from utils.atari_replay import AtariReplayBuffer
+from utils.atari_train_acceleration import (
+    AtariAcceleration,
+    configure_atari_acceleration,
+)
 from utils.atari_train_utils import (
     ensure_dir,
     obs_to_tensor,
@@ -54,7 +59,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gawf_feedback_lr_scale", type=float, default=1.0)
     parser.add_argument("--encoder_feature_dim", type=int, default=512)
     parser.add_argument("--core_dropout", type=float, default=0.0)
-    parser.add_argument("--frame_stack", type=int, default=4)
+    parser.add_argument("--frame_stack", type=int, default=1)
+    parser.add_argument(
+        "--frame_skip",
+        type=int,
+        default=1,
+        help="ALE frames advanced per environment step; Pong DQN defaults to 1.",
+    )
     parser.add_argument(
         "--flicker_prob",
         type=float,
@@ -96,7 +107,42 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--save_dir", type=str, default=None)
     parser.add_argument("--capture_video", action="store_true")
     parser.add_argument("--log_interval", type=int, default=1000)
+    parser.add_argument(
+        "--amp_dtype",
+        type=str,
+        default="none",
+        choices=["none", "bfloat16", "float16"],
+        help="CUDA autocast dtype; BF16 is recommended on Amarel L40S GPUs.",
+    )
+    parser.add_argument("--allow_tf32", action="store_true")
+    parser.add_argument("--compile_model", action="store_true")
+    parser.add_argument(
+        "--compile_mode",
+        type=str,
+        default="reduce-overhead",
+        choices=["default", "reduce-overhead", "max-autotune"],
+    )
     return parser
+
+
+SequenceForward = Callable[
+    [torch.Tensor, torch.Tensor, AtariQNetworkState | None],
+    tuple[torch.Tensor, AtariQNetworkState | None],
+]
+
+
+def _step_with_sequence_forward(
+    forward_sequence: SequenceForward,
+    obs: torch.Tensor,
+    prev_done: torch.Tensor,
+    state: AtariQNetworkState | None = None,
+) -> tuple[torch.Tensor, AtariQNetworkState | None]:
+    q_values, next_state = forward_sequence(
+        obs.unsqueeze(1),
+        prev_done.view(-1, 1),
+        state,
+    )
+    return q_values[:, 0, :], next_state
 
 
 def _resolve_feedback_mode(args: argparse.Namespace) -> str:
@@ -139,20 +185,22 @@ def _linear_epsilon(args: argparse.Namespace, global_step: int) -> float:
 
 
 def _dqn_transition_loss(
-    model: AtariQNetwork,
-    target_net: AtariQNetwork,
+    model_forward: SequenceForward,
+    target_forward: SequenceForward,
     buffer: AtariReplayBuffer,
     args: argparse.Namespace,
     device: torch.device,
 ) -> tuple[torch.Tensor, float]:
     batch = buffer.sample_transitions(args.batch_size)
     zeros = torch.zeros(batch.actions.shape[0], device=device)
-    q_all, _ = model.step(batch.obs, zeros)
+    q_all, _ = _step_with_sequence_forward(model_forward, batch.obs, zeros)
     q_taken = q_all.gather(1, batch.actions.view(-1, 1)).squeeze(1)
     with torch.no_grad():
-        q_next_target, _ = target_net.step(batch.next_obs, zeros)
+        q_next_target, _ = _step_with_sequence_forward(target_forward, batch.next_obs, zeros)
         if args.double_dqn:
-            q_next_online, _ = model.step(batch.next_obs, zeros)
+            q_next_online, _ = _step_with_sequence_forward(
+                model_forward, batch.next_obs, zeros
+            )
             greedy = q_next_online.argmax(dim=1, keepdim=True)
             q_next = q_next_target.gather(1, greedy).squeeze(1)
         else:
@@ -163,21 +211,21 @@ def _dqn_transition_loss(
 
 
 def _drqn_sequence_loss(
-    model: AtariQNetwork,
-    target_net: AtariQNetwork,
+    model_forward: SequenceForward,
+    target_forward: SequenceForward,
     buffer: AtariReplayBuffer,
     args: argparse.Namespace,
     device: torch.device,
 ) -> tuple[torch.Tensor, float]:
     seq = buffer.sample_sequences(args.sequences_per_batch, args.seq_len)
     n_steps = args.seq_len
-    q_online, _ = model.forward_sequence(seq.obs, seq.prev_dones)
+    q_online, _ = model_forward(seq.obs, seq.prev_dones, None)
     q_taken = q_online[:, :n_steps].gather(-1, seq.actions[:, :n_steps].unsqueeze(-1)).squeeze(-1)
     with torch.no_grad():
         # The target network unrolls the same window from zero state with its
         # own previous Q-values as gate feedback: bootstrap targets follow the
         # frozen network's recurrent dynamics, as in DRQN.
-        q_target, _ = target_net.forward_sequence(seq.obs, seq.prev_dones)
+        q_target, _ = target_forward(seq.obs, seq.prev_dones, None)
         if args.double_dqn:
             greedy = q_online[:, 1:].argmax(-1, keepdim=True)
             q_next = q_target[:, 1:].gather(-1, greedy).squeeze(-1)
@@ -200,10 +248,20 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
     args.feedback_mode = _resolve_feedback_mode(args)
     if args.num_layers < 1:
         raise ValueError(f"num_layers must be >= 1, got {args.num_layers}")
+    if args.frame_skip < 1:
+        raise ValueError(f"frame_skip must be >= 1, got {args.frame_skip}")
     if args.gawf_feedback_lr_scale <= 0:
         raise ValueError("gawf_feedback_lr_scale must be > 0")
     set_atari_seed(args.seed)
     device = select_device(args.device)
+    acceleration = AtariAcceleration(
+        device=device,
+        amp_dtype_name=args.amp_dtype,
+        allow_tf32=args.allow_tf32,
+        compile_model=args.compile_model,
+        compile_mode=args.compile_mode,
+    )
+    configure_atari_acceleration(acceleration, logger)
     save_dir = args.save_dir or os.path.join("results", "train_data", args.result_suffix)
     ensure_dir(save_dir)
     video_dir = os.path.join(save_dir, "videos")
@@ -214,6 +272,7 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
         seed=args.seed,
         num_envs=args.num_envs,
         frame_stack=args.frame_stack,
+        frame_skip=args.frame_skip,
         flicker_prob=args.flicker_prob,
         capture_video=args.capture_video,
         video_dir=video_dir,
@@ -265,6 +324,9 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
             )
         else:
             optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+        scaler = acceleration.build_grad_scaler()
+        model_forward = acceleration.compile_callable(model.forward_sequence)
+        target_forward = acceleration.compile_callable(target_net.forward_sequence)
 
         buffer = AtariReplayBuffer(
             buffer_size=args.buffer_size,
@@ -291,8 +353,10 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
             # Always advance the model step so the GaWF recurrent state and
             # prev-Q feedback evolve identically whether or not the epsilon
             # coin picks a random action.
-            with torch.no_grad():
-                q_values, state = model.step(next_obs, next_done, state=state)
+            with torch.no_grad(), acceleration.autocast():
+                q_values, state = _step_with_sequence_forward(
+                    model_forward, next_obs, next_done, state
+                )
             greedy_action = q_values.argmax(dim=-1).cpu().numpy()
             random_action = np.random.randint(0, num_actions, size=args.num_envs)
             explore = np.random.random(size=args.num_envs) < epsilon
@@ -318,16 +382,29 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
                 rolling_returns = rolling_returns[-100:]
 
             if global_step >= args.learning_starts and global_step % args.train_frequency == 0:
-                if model.is_recurrent:
-                    loss, q_mean = _drqn_sequence_loss(model, target_net, buffer, args, device)
-                else:
-                    loss, q_mean = _dqn_transition_loss(model, target_net, buffer, args, device)
+                with acceleration.autocast():
+                    if model.is_recurrent:
+                        loss, q_mean = _drqn_sequence_loss(
+                            model_forward, target_forward, buffer, args, device
+                        )
+                    else:
+                        loss, q_mean = _dqn_transition_loss(
+                            model_forward, target_forward, buffer, args, device
+                        )
                 optimizer.zero_grad(set_to_none=True)
-                loss.backward()
+                if scaler.is_enabled():
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                else:
+                    loss.backward()
                 if args.max_grad_norm > 0:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
-                optimizer.step()
-                last_loss = float(loss.detach().cpu())
+                if scaler.is_enabled():
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    optimizer.step()
+                last_loss = float(loss.detach().float().cpu())
                 last_q_mean = q_mean
 
             if global_step % args.target_network_frequency == 0:
@@ -382,6 +459,8 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
             ),
             "feedback_mode": args.feedback_mode,
             "frame_stack": args.frame_stack,
+            "frame_skip": args.frame_skip,
+            "raw_ale_frames": global_step * args.frame_skip,
             "flicker_prob": args.flicker_prob,
             "global_step": global_step,
             "episodic_return_100": rolling_return,
@@ -389,6 +468,10 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
             "loss": last_loss,
             "q_values_mean": last_q_mean,
             "epsilon": _linear_epsilon(args, global_step),
+            "amp_dtype": acceleration.amp_dtype_name,
+            "allow_tf32": acceleration.allow_tf32,
+            "compile_model": acceleration.compile_model,
+            "compile_mode": acceleration.compile_mode,
         }
         layer_suffix = f"_L{args.num_layers}" if args.num_layers > 1 else ""
         ckpt_name = (

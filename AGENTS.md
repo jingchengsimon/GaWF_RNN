@@ -53,6 +53,7 @@ labels encode foreground digit identity and 2-D position (sector or coordinate).
 **Clutter entry point:** `train_model.py`
 **Text entry points:** `train_imdb.py`, `train_sentihood.py`
 **Atari entry point:** `train_atari.py`
+**Atari DQN entry point:** `train_atari_dqn.py`
 **Package roots:** `utils/`, `utils_anal/`, `utils_viz/`
 **Conda env:** `aim3_rnn`  |  **Python ≥ 3.10**  |  **PyTorch ≥ 2.0**
 
@@ -139,6 +140,11 @@ that assume spatial dimensions (6,6) and 32 feature channels.
 ### 2.3 Atari Architecture
 - Atari observations use Gymnasium/ALE preprocessing: grayscale 84×84 frames, optional
   frame stack as channels.
+- Pong DQN defaults to `--frame_skip 1 --frame_stack 1`: every environment step advances
+  exactly one ALE frame and supplies one observed frame. Historical Pong pilots before this
+  convention used `frame_skip=4`; their metrics do not contain `frame_skip` and their result
+  directories retain the historical `pong1f` spelling. New result suffixes must state both
+  settings explicitly, for example `pong_fs1_stack1`.
 - Atari encoder: `AtariNatureEncoder` in `utils/atari_task_models.py`:
   `Cx84x84 -> Conv32(8,s4) -> Conv64(4,s2) -> Conv64(3,s1) -> FC512`.
   This is the Nature-DQN style visual encoder; keep it separate from the clutter CNN.
@@ -156,6 +162,10 @@ that assume spatial dimensions (6,6) and 32 feature channels.
   not clutter/text switches.
 - Environment creation and ROM checks belong under `source/atari/` or `utils/atari_envs.py`;
   recurrent math remains in `utils/recurrent_cores/`.
+- Atari DQN acceleration belongs in `utils/atari_train_acceleration.py`. BF16 AMP, TF32,
+  `torch.compile`, and the reset-safe fused RNN/GRU/LSTM scan may accelerate execution, but
+  must not alter replay sampling, loss definitions, update frequency, UTD, or model structure.
+  Amarel Pong launchers enable BF16/TF32/compile explicitly and record them in `metrics.json`.
 
 ### 2.4 GaWF Gating
 - Feedback vector: `fb ∈ ℝ^(fb_dim)`. For projected GaWF, `fb_dim = dz`
@@ -250,6 +260,10 @@ if __name__ == "__main__":
 | `--s5_state_sizes` | int+ | `train_model.py` only: S5 latent state size; repeat for grid (default `[128]`) |
 | `--feedback_dim` / `--dz` | int | `train_model.py` only, GaWF feedback context dimension; for multi-layer GaWF, `None` or `0` uses direct feedback and values `>0` enable projectors |
 | `--num_layers` | int | ANN/RNN/GRU/LSTM/GaWF layer count; default `1`, must be `>=1` |
+| `--frame_skip` | int | Atari DQN ALE frames advanced per environment step; Pong default `1` |
+| `--amp_dtype` | str | Atari DQN CUDA autocast: `none\|bfloat16\|float16`; default `none` |
+| `--allow_tf32` | flag | Atari DQN: permit TF32 CUDA matmul/cuDNN kernels |
+| `--compile_model` | flag | Atari DQN: compile forward callables with `torch.compile` |
 | `--gawf_feedback_lr_scale` | float | GaWF U/V/projector LR multiplier for every depth; default `1.0` |
 | `--data_suffix` | str | Suffix for **train** (and default val): `stimulus_reg-train-<suffix>.npy` / `stimulus_reg-validation-<suffix>` |
 | `--eval_data_suffix` | str | Suffix for **validation only**; empty → same as `--data_suffix` (use for train/val scale mismatch, e.g. 4h train + 40h val) |

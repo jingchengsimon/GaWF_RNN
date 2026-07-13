@@ -30,6 +30,8 @@
 | `state` | SSM latent state size | Filename suffix for `ssm`, e.g. `state189` |
 | `dz` | Projected GaWF feedback context dimension | Optional GaWF filename suffix, e.g. `dz8` |
 | `L` | Recurrent layer count | Multi-layer filename suffix, e.g. `L2` |
+| `fs` | ALE frame skip | Pong result suffix, e.g. `fs1` = one ALE frame per env step |
+| `stack` | Observation frame stack | Pong result suffix, e.g. `stack1` |
 | `acc` | Acceleration / accuracy | Context-dependent (filename: acceleration) |
 | `sector` | 3×3 spatial sector | Label mode name |
 | `coord` | Coordinate regression | Label mode name |

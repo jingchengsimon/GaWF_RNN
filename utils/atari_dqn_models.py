@@ -386,6 +386,24 @@ class AtariQNetwork(nn.Module):
         recurrent = model_state.recurrent
         prev_q = model_state.prev_q
 
+        # Standard RNN/GRU/LSTM cores do not consume previous Q-values. When a
+        # sampled window has no internal reset, scan the complete sequence in
+        # one cuDNN call instead of issuing one recurrent call per timestep.
+        # The first-step reset is still applied exactly as in the stepwise path.
+        # With active recurrent dropout, keep the stepwise RNG behavior.
+        supports_fused_scan = self.model_type in {"rnn", "gru", "lstm"} and (
+            not self.training or self.core.dropout == 0.0
+        )
+        has_internal_reset = n_steps > 1 and bool(
+            torch.any(prev_dones[:, 1:] != 0).item()
+        )
+        if supports_fused_scan and not has_internal_reset:
+            done_0 = prev_dones[:, 0].to(device=device, dtype=dtype)
+            recurrent = self._mask_recurrent_state(recurrent, done_0)
+            features, recurrent = self.core(encoded, recurrent)
+            q_values = self.head(features)
+            return q_values, AtariQNetworkState(recurrent, q_values[:, -1, :])
+
         q_steps = []
         for t in range(n_steps):
             done_t = prev_dones[:, t].to(device=device, dtype=dtype)

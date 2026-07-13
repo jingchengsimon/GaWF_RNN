@@ -7,6 +7,7 @@ tests can run on machines without Atari ROMs or Gymnasium extras installed.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 ATARI_PILOT_ENVS = (
     "ALE/Pong-v5",
@@ -76,11 +77,15 @@ def make_atari_env(
     seed: int,
     idx: int,
     frame_stack: int = 4,
+    frame_skip: int = 4,
     flicker_prob: float = 0.0,
     capture_video: bool = False,
     video_dir: str | None = None,
 ) -> Callable[[], object]:
     """Return a thunk that creates one preprocessed Atari environment."""
+
+    if frame_skip < 1:
+        raise ValueError(f"frame_skip must be >= 1, got {frame_skip}")
 
     def thunk():
         try:
@@ -106,7 +111,7 @@ def make_atari_env(
         env = gym.wrappers.AtariPreprocessing(
             env,
             noop_max=30,
-            frame_skip=4,
+            frame_skip=frame_skip,
             screen_size=84,
             terminal_on_life_loss=False,
             grayscale_obs=True,
@@ -126,10 +131,11 @@ def make_vector_atari_env(
     seed: int,
     num_envs: int,
     frame_stack: int = 4,
+    frame_skip: int = 4,
     flicker_prob: float = 0.0,
     capture_video: bool = False,
     video_dir: str | None = None,
-):
+) -> Any:
     """Create a synchronous vector Atari environment."""
     try:
         import gymnasium as gym
@@ -142,7 +148,14 @@ def make_vector_atari_env(
 
     env_fns = [
         make_atari_env(
-            env_id, seed, idx, frame_stack, flicker_prob, capture_video, video_dir
+            env_id,
+            seed,
+            idx,
+            frame_stack,
+            frame_skip,
+            flicker_prob,
+            capture_video,
+            video_dir,
         )
         for idx in range(num_envs)
     ]

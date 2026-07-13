@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Submit the 1-frame Pong sweep: 7 models x 2 settings x 5 seeds = 70 tasks.
+# Submit the Pong frame-skip-1/stack-1 sweep: 7 models x 2 settings x 5 seeds.
 #
 # Steps:
 #   1. (once) param-match every recurrent core to the LSTM anchor, writing
@@ -35,15 +35,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---- environment (for the param-match step) --------------------------------
-if [[ -n "${AIM3_SETUP_CMD:-}" ]]; then
-  eval "$AIM3_SETUP_CMD"
-elif command -v conda >/dev/null 2>&1; then
-  CONDA_BASE="$(conda info --base 2>/dev/null || true)"
-  if [[ -n "$CONDA_BASE" && -f "$CONDA_BASE/etc/profile.d/conda.sh" ]]; then
-    source "$CONDA_BASE/etc/profile.d/conda.sh"
-    conda activate "${AIM3_CONDA_ENV:-aim3_rnn}" || true
-  fi
-fi
+source /home/js3269/enter/etc/profile.d/conda.sh
+conda activate aim3_rnn
 export KMP_DUPLICATE_LIB_OK=TRUE
 
 # ---- 1. param match (all recurrent cores incl. mamba) ----------------------

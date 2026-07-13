@@ -18,6 +18,7 @@ from utils.atari_dqn_models import (
     AtariQNetworkState,
     normalize_atari_dqn_model_type,
 )
+from utils.atari_train_acceleration import AtariAcceleration
 
 try:  # optional deps: only present on the GPU boxes (Amarel), not locally
     import s5  # noqa: F401
@@ -72,6 +73,16 @@ def _inputs(batch_size: int = 2, n_steps: int = 4):
 
 
 class AtariDQNModelSmokeTest(unittest.TestCase):
+    def test_pong_dqn_defaults_to_one_ale_frame_per_step(self) -> None:
+        from train_atari_dqn import build_arg_parser
+
+        args = build_arg_parser().parse_args([])
+        self.assertEqual(args.frame_skip, 1)
+        self.assertEqual(args.frame_stack, 1)
+        self.assertEqual(args.amp_dtype, "none")
+        self.assertFalse(args.allow_tf32)
+        self.assertFalse(args.compile_model)
+
     def test_ann_shapes(self) -> None:
         model = _build_model("ann")
         self.assertFalse(model.is_recurrent)
@@ -191,6 +202,55 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
                     self.assertEqual(state.recurrent[0].shape, (2, 16))
                 else:
                     self.assertEqual(state.recurrent.shape, (2, 2, 16))
+
+    def test_fused_standard_recurrent_scan_matches_online_steps(self) -> None:
+        batch, n_steps = 2, 5
+        obs = torch.randint(0, 256, (batch, n_steps, 4, 84, 84), dtype=torch.uint8)
+        prev_dones = torch.zeros(batch, n_steps)
+        prev_dones[:, 0] = 1.0
+        for num_layers in (1, 2):
+            for model_type in ("rnn", "gru", "lstm"):
+                with self.subTest(model_type=model_type, num_layers=num_layers):
+                    model = _build_model(model_type, num_layers=num_layers)
+                    model.eval()
+                    q_fused, state_fused = model.forward_sequence(obs, prev_dones)
+                    state_step = None
+                    q_steps = []
+                    for time_idx in range(n_steps):
+                        q_step, state_step = model.step(
+                            obs[:, time_idx], prev_dones[:, time_idx], state_step
+                        )
+                        q_steps.append(q_step)
+                    q_stepwise = torch.stack(q_steps, dim=1)
+                    self.assertTrue(torch.allclose(q_fused, q_stepwise, atol=1e-5))
+                    if model_type == "lstm":
+                        self.assertTrue(
+                            torch.allclose(
+                                state_fused.recurrent[0], state_step.recurrent[0], atol=1e-5
+                            )
+                        )
+                        self.assertTrue(
+                            torch.allclose(
+                                state_fused.recurrent[1], state_step.recurrent[1], atol=1e-5
+                            )
+                        )
+                    else:
+                        self.assertTrue(
+                            torch.allclose(
+                                state_fused.recurrent, state_step.recurrent, atol=1e-5
+                            )
+                        )
+
+    def test_cpu_acceleration_policy_disables_cuda_only_features(self) -> None:
+        acceleration = AtariAcceleration(
+            device=torch.device("cpu"),
+            amp_dtype_name="bfloat16",
+            allow_tf32=True,
+            compile_model=True,
+        )
+        self.assertIsNone(acceleration.amp_dtype)
+        fn = lambda value: value + 1
+        self.assertIs(acceleration.compile_callable(fn), fn)
 
     def test_gradient_step_recurrent_branch(self) -> None:
         for model_type in ("rnn", "lstm", "gawf"):

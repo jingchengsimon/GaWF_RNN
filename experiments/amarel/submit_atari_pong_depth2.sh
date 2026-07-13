@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 # Submit or dry-run the parameter-matched Pong depth-2 pilot.
+# Default protocol: frame_skip=1, frame_stack=1, BF16 AMP, TF32, torch.compile.
 
 set -euo pipefail
 
 SEEDS_CSV=42
 DRY_RUN=0
 CONCURRENCY=10
+FRAME_SKIP=1
+AMP_DTYPE=bfloat16
 while (( $# )); do
   case "$1" in
     --seeds) SEEDS_CSV="$2"; shift 2 ;;
     --concurrency) CONCURRENCY="$2"; shift 2 ;;
+    --frame-skip) FRAME_SKIP="$2"; shift 2 ;;
+    --amp-dtype) AMP_DTYPE="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -25,7 +30,8 @@ if (( DRY_RUN )); then
     rest=$((task / ${#MODELS[@]}))
     setting=$((rest / ${#SEEDS[@]}))
     seed="${SEEDS[$((rest % ${#SEEDS[@]}))]}"
-    printf 'task=%d model=%s setting=%d seed=%s layers=2\n' "$task" "$model" "$setting" "$seed"
+    printf 'task=%d model=%s setting=%d seed=%s layers=2 frame_skip=%s amp=%s\n' \
+      "$task" "$model" "$setting" "$seed" "$FRAME_SKIP" "$AMP_DTYPE"
   done
   exit 0
 fi
@@ -49,5 +55,5 @@ PY
 mkdir -p experiments/amarel/artifacts/atari_pong_depth2
 sbatch \
   --array="0-$((N_TASKS - 1))%${CONCURRENCY}" \
-  --export="ALL,SEEDS_CSV=${SEEDS_CSV},AIM3_NUM_WORKERS=12,AIM3_PIN_MEMORY=1" \
+  --export="ALL,SEEDS_CSV=${SEEDS_CSV},FRAME_SKIP=${FRAME_SKIP},AMP_DTYPE=${AMP_DTYPE},ALLOW_TF32=1,COMPILE_MODEL=1,AIM3_NUM_WORKERS=12,AIM3_PIN_MEMORY=1" \
   experiments/amarel/run_atari_pong_depth2_array.sh

@@ -3,19 +3,20 @@
 #SBATCH --partition=gpu-redhat
 #SBATCH --account=general
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=24G
-#SBATCH --exclude=gpu018,gpu043
+#SBATCH --constraint=adalovelace
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=64G
 #SBATCH --time=48:00:00
 #SBATCH --output=experiments/amarel/artifacts/atari_pong_1frame/%A_%a.out
 #SBATCH --error=experiments/amarel/artifacts/atari_pong_1frame/%A_%a.err
 
-# Train one (model x setting x seed) cell of the 1-frame Pong sweep.
+# Train one (model x setting x seed) cell of the Pong frame-skip-1/stack-1 sweep.
 #
 # 7 models x 2 settings x 5 seeds = 70 array tasks (SLURM_ARRAY_TASK_ID 0..69):
-#   setting 0 = plain 1-frame Pong        (flicker_prob=0.0)   -> MDP-ish control
-#   setting 1 = 1-frame flickering Pong   (flicker_prob=0.5)   -> POMDP, needs memory
-# Both use --frame_stack 1 so the recurrent core is the ONLY source of memory.
+#   setting 0 = plain Pong              (flicker_prob=0.0)   -> MDP-ish control
+#   setting 1 = flickering Pong         (flicker_prob=0.5)   -> POMDP, needs memory
+# Both use frame_skip=1 and frame_stack=1: one ALE frame is advanced and one
+# observed frame is supplied per environment step.
 # The pre-existing 4-frame baseline sweep is separate and left untouched.
 #
 # task -> (model, setting, seed) with model varying fastest:
@@ -43,17 +44,12 @@ STATUS_DIR="$ART_ROOT/status"
 mkdir -p "$ART_ROOT" "$STATUS_DIR"
 
 # ---- environment -----------------------------------------------------------
-if [[ -n "${AIM3_SETUP_CMD:-}" ]]; then
-  eval "$AIM3_SETUP_CMD"
-elif command -v conda >/dev/null 2>&1; then
-  CONDA_BASE="$(conda info --base 2>/dev/null || true)"
-  if [[ -n "$CONDA_BASE" && -f "$CONDA_BASE/etc/profile.d/conda.sh" ]]; then
-    source "$CONDA_BASE/etc/profile.d/conda.sh"
-    conda activate "${AIM3_CONDA_ENV:-aim3_rnn}" || true
-  fi
-fi
+source /home/js3269/enter/etc/profile.d/conda.sh
+conda activate aim3_rnn
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export KMP_DUPLICATE_LIB_OK=TRUE
+export AIM3_NUM_WORKERS=12
+export AIM3_PIN_MEMORY=1
 
 # ---- task -> (model, setting, seed) ---------------------------------------
 MODELS=(ann rnn gru lstm gawf s5 mamba)
@@ -66,13 +62,19 @@ MODEL="${MODELS[$((TASK_ID % N_MODELS))]}"
 REST=$((TASK_ID / N_MODELS))
 SETTING=$((REST / N_SEEDS))
 SEED="${SEEDS[$((REST % N_SEEDS))]}"
+ACCEL_ARGS=(--amp_dtype bfloat16 --allow_tf32)
+COMPILE_ACTIVE=0
+if [[ "$MODEL" != "s5" && "$MODEL" != "mamba" ]]; then
+  ACCEL_ARGS+=(--compile_model)
+  COMPILE_ACTIVE=1
+fi
 
 if [[ "$SETTING" -eq 0 ]]; then
   FLICKER_PROB=0.0
-  SUFFIX="atari_dqn_pong1f_${MODEL}_seed${SEED}"
+  SUFFIX="atari_dqn_pong_fs1_stack1_${MODEL}_seed${SEED}"
 else
   FLICKER_PROB=0.5
-  SUFFIX="atari_dqn_pong1f_flicker_${MODEL}_seed${SEED}"
+  SUFFIX="atari_dqn_pong_fs1_stack1_flicker_${MODEL}_seed${SEED}"
 fi
 
 TOTAL_TIMESTEPS="${TOTAL_TIMESTEPS:-1000000}"
@@ -113,18 +115,21 @@ FAIL_FILE="$STATUS_DIR/${SUFFIX}.fail"
 
 echo "[$(date -Is)] task=$TASK_ID model=$MODEL setting=$SETTING seed=$SEED flicker=$FLICKER_PROB"
 echo "result_suffix=$SUFFIX total_timesteps=$TOTAL_TIMESTEPS sizing=${SIZE_ARGS[*]:-none(ann)}"
+echo "frame_skip=1 frame_stack=1 amp=bfloat16 tf32=1 compile=$COMPILE_ACTIVE"
 
 set +e
 DISABLE_TQDM=1 python train_atari_dqn.py \
   --env_id "ALE/Pong-v5" \
   --model_type "$MODEL" \
   --frame_stack 1 \
+  --frame_skip 1 \
   --flicker_prob "$FLICKER_PROB" \
   --total_timesteps "$TOTAL_TIMESTEPS" \
   --seq_len "$SEQ_LEN" \
   --seed "$SEED" \
   --device cuda \
   --result_suffix "$SUFFIX" \
+  "${ACCEL_ARGS[@]}" \
   "${SIZE_ARGS[@]}"
 train_rc=$?
 set -e
