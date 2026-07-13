@@ -19,7 +19,7 @@ Create a new environment without changing an existing one:
 conda env create -n aim3_rnn_next -f environments/aim3_rnn-linux-cuda.yml
 conda activate aim3_rnn_next
 bash environments/install_linux_cuda_extras.sh
-python verify_aim3_environment.py --profile linux-cuda --compile-smoke
+python verify_aim3_environment.py --profile linux-cuda --compile-smoke --project-smoke
 ```
 
 The CUDA extensions are intentionally installed in a second phase. Their build scripts import
@@ -38,7 +38,7 @@ alongside the source commit:
 
 ```bash
 git rev-parse HEAD
-python verify_aim3_environment.py --profile linux-cuda --compile-smoke
+python verify_aim3_environment.py --profile linux-cuda --compile-smoke --project-smoke
 conda env export --from-history
 python -m pip freeze
 ```
