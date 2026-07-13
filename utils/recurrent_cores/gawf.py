@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+
+def _compute_gawf_transform(
+    U: torch.Tensor,
+    fb_t: torch.Tensor,
+    V: torch.Tensor,
+) -> torch.Tensor:
+    """Compute the complete GaWF transform as ``(U * feedback) @ V`` once."""
+
+    scaled_u = U.unsqueeze(0) * fb_t.transpose(1, 2)
+    return torch.matmul(scaled_u, V)
 
 
 def _compute_gawf_transforms(
@@ -15,11 +26,38 @@ def _compute_gawf_transforms(
     V: torch.Tensor,
     input_size: int,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Compute GaWF input/hidden transforms as ``(U * feedback) @ V``."""
-    scaled_u = U.unsqueeze(0) * fb_t.transpose(1, 2)
-    trans_ih = torch.matmul(scaled_u, V[:, :input_size])
-    trans_hh = torch.matmul(scaled_u, V[:, input_size:])
-    return trans_ih, trans_hh
+    """Compute and split GaWF input/hidden transforms.
+
+    A single matrix multiplication replaces the historical pair of multiplications
+    against slices of ``V``. Splitting the result preserves the public helper API.
+    """
+
+    transformed = _compute_gawf_transform(U, fb_t, V)
+    return transformed[..., :input_size], transformed[..., input_size:]
+
+
+def _gawf_layer_preactivation(
+    x_t: torch.Tensor,
+    h_prev: torch.Tensor,
+    feedback: torch.Tensor,
+    U: torch.Tensor,
+    V: torch.Tensor,
+    weight_ih: torch.Tensor,
+    weight_hh: torch.Tensor,
+    bias_ih: torch.Tensor,
+    bias_hh: torch.Tensor,
+    gate_tau: float,
+) -> torch.Tensor:
+    """Pure tensor GaWF gate and recurrent preactivation computation."""
+
+    input_size = x_t.size(-1)
+    fb_t = feedback.clamp(-10, 10).unsqueeze(2)
+    gate = torch.sigmoid(_compute_gawf_transform(U, fb_t, V) / gate_tau)
+    gate_ih = gate[..., :input_size]
+    gate_hh = gate[..., input_size:]
+    ih = torch.einsum("bi,bhi,hi->bh", x_t, gate_ih, weight_ih)
+    hh = torch.einsum("bi,bhi,hi->bh", h_prev, gate_hh, weight_hh)
+    return ih + hh + bias_ih.unsqueeze(0) + bias_hh.unsqueeze(0)
 
 
 class GaWFDiagnosticsMixin:
@@ -239,6 +277,31 @@ class GaWFCore(GaWFDiagnosticsMixin, nn.Module):
                 ]
             )
         self._init_gawf_diagnostics_state()
+        self._compiled_feedback_preactivation: Callable[..., torch.Tensor] | None = None
+
+    def configure_feedback_acceleration(
+        self,
+        compile_feedback: bool,
+        compile_mode: str = "reduce-overhead",
+    ) -> None:
+        """Optionally compile only the pure-tensor feedback/gate computation.
+
+        This avoids compiling task wrappers or runtime state containers. GaWF
+        diagnostics automatically use the eager equivalent so their intermediate
+        gate tensors remain available.
+        """
+
+        if not compile_feedback:
+            self._compiled_feedback_preactivation = None
+            return
+        if not hasattr(torch, "compile"):
+            raise RuntimeError("Compiled GaWF feedback requires torch.compile")
+        self._compiled_feedback_preactivation = torch.compile(
+            _gawf_layer_preactivation,
+            mode=compile_mode,
+            fullgraph=True,
+            dynamic=False,
+        )
 
     def initial_state(
         self,
@@ -276,21 +339,46 @@ class GaWFCore(GaWFDiagnosticsMixin, nn.Module):
         V = self.V if self.num_layers == 1 else self.V_layers[layer_idx]
         fb = feedback.to(device=x_t.device, dtype=torch.float32)
         self._record_gawf_feedback(layer_idx, fb)
-        fb_t = fb.clamp(-10, 10).unsqueeze(2)
-        trans_ih, trans_hh = _compute_gawf_transforms(U, fb_t, V, input_size)
-        gate_logits_ih = trans_ih / self.gate_tau
-        gate_logits_hh = trans_hh / self.gate_tau
-        gate_ih = torch.sigmoid(gate_logits_ih)
-        gate_hh = torch.sigmoid(gate_logits_hh)
-        self._record_gawf_gate(layer_idx, gate_logits_ih, gate_logits_hh, gate_ih, gate_hh)
+        if self._compiled_feedback_preactivation is not None and self._gawf_diag_state is None:
+            if rnn.bias_ih_l0 is None or rnn.bias_hh_l0 is None:
+                raise RuntimeError("Compiled GaWF feedback requires recurrent biases")
+            preactivation = self._compiled_feedback_preactivation(
+                x_t,
+                h_prev,
+                fb,
+                U,
+                V,
+                rnn.weight_ih_l0,
+                rnn.weight_hh_l0,
+                rnn.bias_ih_l0,
+                rnn.bias_hh_l0,
+                self.gate_tau,
+            )
+        else:
+            fb_t = fb.clamp(-10, 10).unsqueeze(2)
+            transformed = _compute_gawf_transform(U, fb_t, V)
+            gate_logits = transformed / self.gate_tau
+            gate = torch.sigmoid(gate_logits)
+            gate_logits_ih = gate_logits[..., :input_size]
+            gate_logits_hh = gate_logits[..., input_size:]
+            gate_ih = gate[..., :input_size]
+            gate_hh = gate[..., input_size:]
+            self._record_gawf_gate(
+                layer_idx,
+                gate_logits_ih,
+                gate_logits_hh,
+                gate_ih,
+                gate_hh,
+            )
 
-        ih = torch.einsum("bi,bhi,hi->bh", x_t, gate_ih, rnn.weight_ih_l0)
-        hh = torch.einsum("bi,bhi,hi->bh", h_prev, gate_hh, rnn.weight_hh_l0)
-        if rnn.bias_ih_l0 is not None:
-            ih = ih + rnn.bias_ih_l0.unsqueeze(0)
-        if rnn.bias_hh_l0 is not None:
-            hh = hh + rnn.bias_hh_l0.unsqueeze(0)
-        h_t = torch.tanh(ih + hh)
+            ih = torch.einsum("bi,bhi,hi->bh", x_t, gate_ih, rnn.weight_ih_l0)
+            hh = torch.einsum("bi,bhi,hi->bh", h_prev, gate_hh, rnn.weight_hh_l0)
+            preactivation = ih + hh
+            if rnn.bias_ih_l0 is not None:
+                preactivation = preactivation + rnn.bias_ih_l0.unsqueeze(0)
+            if rnn.bias_hh_l0 is not None:
+                preactivation = preactivation + rnn.bias_hh_l0.unsqueeze(0)
+        h_t = torch.tanh(preactivation)
         h_t = norm(h_t)
         h_t = F.relu(h_t)
         return F.dropout(h_t, p=self.dropout, training=self.training)
