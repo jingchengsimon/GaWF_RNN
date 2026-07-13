@@ -449,30 +449,37 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
 
     def _check_sequence_core(self, model_type: str) -> None:
         num_actions = 6
-        model = _build_sequence_model(model_type, num_actions, context_len=4)
+        device = torch.device("cuda" if model_type == "mamba" else "cpu")
+        model = _build_sequence_model(model_type, num_actions, context_len=4).to(device)
         self.assertTrue(model.is_recurrent)
         self.assertTrue(model.uses_sequence_core)
         model.eval()
 
         # One-shot training path over a (B, T, C, H, W) window.
         batch, n_steps = 2, 5
-        obs = torch.randint(0, 256, (batch, n_steps, 1, 84, 84), dtype=torch.uint8)
-        prev_dones = torch.zeros(batch, n_steps)
+        obs = torch.randint(
+            0,
+            256,
+            (batch, n_steps, 1, 84, 84),
+            dtype=torch.uint8,
+            device=device,
+        )
+        prev_dones = torch.zeros(batch, n_steps, device=device)
         q_values, next_state = model.forward_sequence(obs, prev_dones)
         self.assertEqual(q_values.shape, (batch, n_steps, num_actions))
         self.assertIsNone(next_state)
 
         # Online rolling-window step carries a (B, context_len, F) buffer.
-        q_step, state = model.step(obs[:, 0], torch.ones(batch))
+        q_step, state = model.step(obs[:, 0], torch.ones(batch, device=device))
         self.assertEqual(q_step.shape, (batch, num_actions))
         self.assertEqual(
             state.recurrent.shape, (batch, model.ssm_context_len, model.core.input_size)
         )
 
         # A prev_done=1 must clear the window: same frame with/without history match.
-        _, state2 = model.step(obs[:, 1], torch.zeros(batch), state=state)
-        q_reset, _ = model.step(obs[:, 2], torch.ones(batch), state=state2)
-        q_fresh, _ = model.step(obs[:, 2], torch.ones(batch), state=None)
+        _, state2 = model.step(obs[:, 1], torch.zeros(batch, device=device), state=state)
+        q_reset, _ = model.step(obs[:, 2], torch.ones(batch, device=device), state=state2)
+        q_fresh, _ = model.step(obs[:, 2], torch.ones(batch, device=device), state=None)
         self.assertTrue(torch.allclose(q_reset, q_fresh, atol=1e-5))
 
     @unittest.skipUnless(HAS_S5, "s5-pytorch not installed")
