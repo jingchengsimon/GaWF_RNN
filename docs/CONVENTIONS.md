@@ -127,6 +127,27 @@ interaction. The NPZ stores raw `coords_digit` / `coords_sector`, visually dodge
 as int64. The visual dodge separates overlapping conditions in dPC1/dPC2 only and must never be
 used as a replacement for raw coordinates in quantitative analysis.
 
+Condition-level representation similarity uses the original `(H, 10, 9)` condition means,
+not dPCA coordinates. Per-model RDMs and cross-model RSA/Linear CKA matrices use:
+```
+results/anal_data/5_pop_act_umap/<run>/condition_rdm.npy
+results/anal_data/5_pop_act_umap/<run>/representation_similarity_meta.json
+results/anal_data/5_pop_act_umap/representation_similarity_rsa_spearman.{npy,csv}
+results/anal_data/5_pop_act_umap/representation_similarity_linear_cka.{npy,csv}
+results/anal_figs/5_pop_act_umap/<run>/condition_rdm.png
+results/anal_figs/5_pop_act_umap/representation_similarity_rsa_cka.png
+```
+The condition order is digit-major, `flat_index = digit * 9 + sector`. RSA is the Spearman
+correlation between Euclidean-RDM upper triangles; Linear CKA compares centered condition Gram
+matrices and therefore permits different hidden widths.
+
+Multi-segment marginalized-variance outputs follow the same figure/data split:
+```
+results/anal_data/5_pop_act_umap_multiseg/<run>/dpca_variance.json
+results/anal_data/5_pop_act_umap_multiseg/dpca_marginalized_variance_*.{csv,json}
+results/anal_figs/5_pop_act_umap_multiseg/dpca_marginalized_variance_compare.png
+```
+
 ## 4. Python Identifier Conventions
 
 ### Class names

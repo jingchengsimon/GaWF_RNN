@@ -6,13 +6,16 @@ and digit-sector interaction variance fractions from condition means while exclu
 empty digit-sector cells. It also fits official dPCA RRR as a side check and stores
 summed explained-variance ratios for d/s/ds marginalizations.
 
-Outputs (in --output_dir):
+Analysis outputs (in ``--data_dir``):
 - ``<model>/dpca_variance.json``  per-model per-seed records and summary statistics
 - ``dpca_marginalized_variance_table.csv``  model × factor summary table
 - ``dpca_marginalized_variance_tests.csv``  paired t-test table
 - ``dpca_marginalized_variance_tests.json``  paired t-test records
+
+Figure output (in ``--fig_dir``):
 - ``dpca_marginalized_variance_compare.png``  grouped bar chart with CI error bars
 """
+
 from __future__ import annotations
 
 import argparse
@@ -62,10 +65,22 @@ def parse_args() -> argparse.Namespace:
         help="Root containing <model>/seed<seed>/pop_act_dpca.npy.",
     )
     p.add_argument(
-        "--output_dir",
+        "--data_dir",
+        type=str,
+        default="results/anal_data/5_pop_act_umap_multiseg",
+        help="Output directory for JSON and CSV analysis artifacts.",
+    )
+    p.add_argument(
+        "--fig_dir",
         type=str,
         default="results/anal_figs/5_pop_act_umap_multiseg",
-        help="Output directory for JSON, CSV, and figure artifacts.",
+        help="Output directory for PNG/PDF/HTML figure artifacts.",
+    )
+    p.add_argument(
+        "--output_dir",
+        type=str,
+        default="",
+        help="Deprecated alias for --fig_dir; non-figure outputs still use --data_dir.",
     )
     p.add_argument("--models", nargs="+", default=DEFAULT_MODELS)
     p.add_argument("--seeds", nargs="+", type=int, default=list(range(10)))
@@ -255,7 +270,7 @@ def paired_ttest(a: np.ndarray, b: np.ndarray) -> dict[str, float]:
 
 def analyze_model(
     data_root: str,
-    output_dir: str,
+    data_dir: str,
     model: str,
     seeds: list[int],
     segment_t: int,
@@ -292,7 +307,7 @@ def analyze_model(
         "per_seed": per_seed,
         "summary": summary,
     }
-    out_model_dir = os.path.join(output_dir, model)
+    out_model_dir = os.path.join(data_dir, model)
     os.makedirs(out_model_dir, exist_ok=True)
     with open(os.path.join(out_model_dir, "dpca_variance.json"), "w") as f:
         json.dump(payload, f, indent=2)
@@ -422,11 +437,15 @@ def plot_grouped_bars(payloads: list[dict[str, Any]], output_dir: str, errorbar:
 
 def main() -> None:
     args = parse_args()
-    os.makedirs(args.output_dir, exist_ok=True)
+    fig_dir = args.output_dir.strip() or args.fig_dir
+    if args.output_dir.strip():
+        print("[deprecated] --output_dir now aliases --fig_dir; use --data_dir for JSON/CSV.")
+    os.makedirs(args.data_dir, exist_ok=True)
+    os.makedirs(fig_dir, exist_ok=True)
     payloads = [
         analyze_model(
             args.data_root,
-            args.output_dir,
+            args.data_dir,
             model,
             args.seeds,
             args.T,
@@ -434,9 +453,9 @@ def main() -> None:
         )
         for model in args.models
     ]
-    table_path = write_summary_table(payloads, args.output_dir)
-    tests_csv, tests_json = write_tests(payloads, args.output_dir)
-    fig_path = plot_grouped_bars(payloads, args.output_dir, args.errorbar)
+    table_path = write_summary_table(payloads, args.data_dir)
+    tests_csv, tests_json = write_tests(payloads, args.data_dir)
+    fig_path = plot_grouped_bars(payloads, fig_dir, args.errorbar)
     print(f"Saved {table_path}")
     print(f"Saved {tests_csv}")
     print(f"Saved {tests_json}")
