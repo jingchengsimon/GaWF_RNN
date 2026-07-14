@@ -136,6 +136,16 @@ fi
 
 DONE_FILE="$STATUS_DIR/${SUFFIX}.done"
 FAIL_FILE="$STATUS_DIR/${SUFFIX}.fail"
+RESULT_DIR="$ROOT/results/train_data/$SUFFIX"
+
+# A preempted run may leave a partial history. Preserve it under a rerun-specific
+# name so the new 0..TOTAL_TIMESTEPS curve is not appended to stale steps.
+if [[ ! -f "$DONE_FILE" && -f "$RESULT_DIR/metrics_history.jsonl" ]]; then
+  RERUN_JOB_ID="${SLURM_ARRAY_JOB_ID:-manual}"
+  RERUN_TASK_ID="${SLURM_ARRAY_TASK_ID:-$TASK_ID}"
+  mv "$RESULT_DIR/metrics_history.jsonl" \
+    "$RESULT_DIR/metrics_history.pre_rerun_${RERUN_JOB_ID}_${RERUN_TASK_ID}.jsonl"
+fi
 
 echo "[$(date -Is)] task=$TASK_ID model=$MODEL setting=$SETTING seed=$SEED flicker=$FLICKER_PROB"
 echo "result_suffix=$SUFFIX total_timesteps=$TOTAL_TIMESTEPS sizing=${SIZE_ARGS[*]:-none(ann)}"
