@@ -79,12 +79,25 @@ def plot_condition_rdm(
     plt.close(fig)
 
 
-def _annotate_similarity(ax: Any, matrix: np.ndarray) -> None:
-    """Annotate all cells using contrast selected from the displayed value."""
+def _annotate_similarity(
+    ax: Any,
+    matrix: np.ndarray,
+    cmap: str,
+    vmin: float,
+    vmax: float,
+) -> None:
+    """Annotate cells with text contrast derived from the rendered colormap luminance."""
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import Normalize
+
+    colormap = plt.get_cmap(cmap)
+    normalizer = Normalize(vmin=vmin, vmax=vmax)
     for row in range(matrix.shape[0]):
         for col in range(matrix.shape[1]):
             value = float(matrix[row, col])
-            color = "white" if value < 0.35 or value > 0.78 else "black"
+            red, green, blue, _ = colormap(normalizer(value))
+            luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+            color = "black" if luminance > 0.55 else "white"
             ax.text(col, row, f"{value:.2f}", ha="center", va="center", color=color, fontsize=8)
 
 
@@ -121,7 +134,7 @@ def plot_cross_model_similarity(
         ax.set_xticklabels(labels, rotation=40, ha="right")
         ax.set_yticklabels(labels)
         ax.set_title(title)
-        _annotate_similarity(ax, matrix)
+        _annotate_similarity(ax, matrix, cmap, vmin, vmax)
         colorbar = fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
         colorbar.set_label("similarity")
     fig.suptitle("Cross-model similarity of the original 90-condition representations")
