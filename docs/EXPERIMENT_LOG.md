@@ -165,3 +165,17 @@ tensor shape 和数学公式，例如 `GaWF`、`--num_layers`、`val_acc_at_best
   记录。新实验使用 `transition_balanced` collection + `task_balanced` replay；外部
   `task_id` 仅用于 environment scheduling、metrics、replay sampling 和 loss aggregation，
   不进入模型输入。
+
+## 2026-07-14 — Clutter six-model 10-seed confirmation
+
+- **改动（Change）：** 固定 40h validation 选出的 GaWF/RNN/LSTM/GRU/Mamba/S5 最佳
+  hyperparameters，以 seeds 1--10 训练 60 个独立 runs；每个 run 固定 150 epochs，
+  `patience=0`，使用 40h train/validation 与 sector objective。
+- **原因（Reason）：** 单 seed test result 不能提供 model-family generalization 的
+  uncertainty；需要 independent-seed distribution 支持 test accuracy/loss error bars。
+- **协议（Protocol）：** 使用 acceleration path；119 GB training array 通过 mmap 读取，
+  因此 DataLoader 固定 `num_workers=0`、`pin_memory=False`。训练完整运行 150 epochs，最终
+  checkpoint 保存完整 trajectory 中 validation accuracy 最佳的 state。
+- **现状（Current）：** Amarel Slurm array `58171730` 已提交，并以 60 个严格 units 登记到
+  `experiments/monitoring/JOBS.md`；有效完成要求 metrics、checkpoint、pickle 同时存在，且
+  `actual_epochs=150`、seed/protocol fields 全部匹配。
