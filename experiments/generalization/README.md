@@ -75,6 +75,14 @@ The utility supports task emission, validation, status, and summarization. Summa
 best JSON/CSV, all trials, a Markdown summary, and per-scale CSV files consumed by the standard
 generalization plotter.
 
+## Fixed-best six-model multi-seed confirmation
+
+`clutter_best6_multiseed.py` freezes the selected 40h configurations for GaWF, RNN, LSTM, GRU,
+Mamba, and S5. It maps seeds 1--10 to 60 tasks, trains every task for 150 epochs with
+`--patience 0`, and validates the metrics, checkpoint, pickle, seed, and full-epoch completion.
+The 40h training and validation splits both use `40h-float32`; checkpoints retain the
+best-validation state observed during the complete 150-epoch trajectory.
+
 ## Launch environments
 
 - Amarel submission/status/rerun wrappers are documented in `experiments/amarel/README.md`.

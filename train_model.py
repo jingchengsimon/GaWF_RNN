@@ -865,6 +865,10 @@ if __name__ == "__main__":
             rnn_dropout=rnn_dropout,
             optimizer=args.optim,
         )
+        metric_summary["seed"] = int(args.seed)
+        metric_summary["patience"] = int(args.patience)
+        metric_summary["use_acceleration"] = bool(args.use_acceleration)
+        metric_summary["use_mmap"] = bool(args.use_mmap)
         if train_lr != lr:
             metric_summary["requested_lr"] = lr
             metric_summary["effective_lr"] = train_lr

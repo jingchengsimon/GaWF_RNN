@@ -63,6 +63,10 @@ Clutter training uses:
 | `--eval_data_suffix` | optional validation-only suffix |
 | `--patience` | early stopping on fair val character accuracy; `0` disables |
 
+Clutter metrics JSON records `seed`, `patience`, `use_acceleration`, and `use_mmap` in addition
+to the model/dataset hyperparameters and epoch summaries. Multi-seed result directories must
+encode the seed even though checkpoint stems retain the standard model naming contract.
+
 Atari DQN additionally uses `--frame_skip`, `--frame_stack`, `--task_schedule`,
 `--replay_sampling`, `--amp_dtype`, `--allow_tf32`, `--compile_model`, and `--feedback_mode`.
 
