@@ -112,15 +112,20 @@ tag = f"{mode}{selected_idx}_{agg}"
 # e.g. "sector3_space_avg_gate_allcomp.png"
 ```
 
-Interactive dPCA outputs from `utils_viz/pop_act_umap.py` use method-qualified names:
+Interactive dPCA outputs from `utils_viz/pop_act_umap.py` do not encode the implementation
+method in filenames. The selected method remains recorded in JSON metadata:
 ```
-dpca_3d_interactive_{method}.html
-dpca_3d_coordinates_{method}.npz
-dpca_3d_coordinates_{method}_meta.json
+results/anal_figs/<module>/<run>/dpca_3d_interactive.html
+results/anal_data/<module>/<run>/dpca_3d_coordinates.npz
+results/anal_data/<module>/<run>/dpca_3d_coordinates_meta.json
+results/anal_data/<module>/<run>/dpca_variance.json
 ```
-The HTML embeds Plotly for offline rotate/pan/zoom interaction. The NPZ stores `coords_digit`
-and `coords_sector` as `(90, 3)` float32 arrays and both condition labels as int64 arrays;
-the JSON records source, method, shapes, dtypes, and component-axis meanings.
+Only `.png`, `.pdf`, and `.html` belong under `anal_figs`; arrays and JSON belong under the
+parallel `anal_data` module/run directory. The HTML embeds Plotly for offline rotate/pan/zoom
+interaction. The NPZ stores raw `coords_digit` / `coords_sector`, visually dodged
+`coords_digit_plot` / `coords_sector_plot` as `(90, 3)` float32 arrays, and both condition labels
+as int64. The visual dodge separates overlapping conditions in dPC1/dPC2 only and must never be
+used as a replacement for raw coordinates in quantitative analysis.
 
 ## 4. Python Identifier Conventions
 

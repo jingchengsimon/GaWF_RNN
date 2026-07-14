@@ -3,9 +3,9 @@ Load export_pop_act output: pop_act.npy + labels.tsv (UMAP/PCA), or pop_act_dpca
 
 Reduce (T, D) -> (T, 3) via UMAP or PCA; save Plotly HTML under ``<save_dir>/<run_tag>/``.
 
-PCA mode also saves explained-variance bar chart. ``--reducer dpca`` saves matplotlib PNG
-diagnostics plus self-contained interactive Plotly HTML and reusable 3D coordinate data from
-either official dPCA reduced-rank regression or the legacy condensed SVD baseline.
+PCA mode also saves explained-variance bar chart. ``--reducer dpca`` keeps PNG/HTML under the
+figure tree and saves JSON/NPZ under the matching analysis-data tree. Interactive dPCA views use
+90 condition points with small visual-only offsets while preserving raw coordinates.
 
 Reducer implementations: utils_viz.dimred_reducer (UMAPReducer, PCAReducer); dPCA RRR uses
 the optional ``dpca`` PyPI package (machenslab/dPCA).
@@ -17,7 +17,6 @@ import argparse
 import csv
 import json
 import os
-import shutil
 import sys
 
 import numpy as np
@@ -47,10 +46,11 @@ def parse_args() -> argparse.Namespace:
         "--dpca_method",
         type=str,
         default="rrr",
-        choices=["rrr", "condensed"],
+        choices=["rrr"],
         help=(
-            "dPCA method when --reducer dpca: official reduced-rank regression "
-            "(rrr, default) or legacy marginalization+SVD baseline (condensed)."
+            "dPCA method when --reducer dpca. Production figures use the official imported "
+            "reduced-rank-regression implementation (rrr); condensed SVD remains internal "
+            "as a diagnostic reference only."
         ),
     )
     p.add_argument(
@@ -69,6 +69,15 @@ def parse_args() -> argparse.Namespace:
         help=(
             "When --reducer dpca: number of dPCs to fit/save for explained variance. "
             "At least three are always fit so the interactive 3D output has dPC1-dPC3."
+        ),
+    )
+    p.add_argument(
+        "--dpca_dodge_fraction",
+        type=float,
+        default=0.018,
+        help=(
+            "Visual-only spacing for overlapping dPCA condition points, as a fraction of the "
+            "symmetric coordinate span (default 0.018; raw coordinates remain unchanged)."
         ),
     )
     p.add_argument(
@@ -122,8 +131,17 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="./results/anal_figs/pop_act_umap",
         help=(
-            "Parent directory for figures; writes <save_dir>/<run_tag>/ "
-            "(HTML + PCA bar PNG if applicable)."
+            "Parent directory for PNG/PDF/HTML figures; writes <save_dir>/<run_tag>/. "
+            "dPCA arrays/JSON are written to the matching anal_data tree."
+        ),
+    )
+    p.add_argument(
+        "--anal_data_dir",
+        type=str,
+        default="",
+        help=(
+            "Parent directory for dPCA arrays/JSON. Default: derive the matching anal_data "
+            "path by replacing the anal_figs component in --save_dir."
         ),
     )
     p.add_argument(
@@ -150,6 +168,28 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     return p.parse_args()
+
+
+def resolve_dpca_output_dirs(
+    save_dir: str,
+    anal_data_dir: str,
+    run_tag: str,
+) -> tuple[str, str]:
+    """Resolve matching figure/data run directories for one dPCA invocation."""
+    fig_parent = os.path.normpath(save_dir)
+    if anal_data_dir.strip():
+        data_parent = os.path.normpath(anal_data_dir.strip())
+    else:
+        parts = fig_parent.split(os.sep)
+        matching = [idx for idx, part in enumerate(parts) if part == "anal_figs"]
+        if not matching:
+            raise ValueError(
+                "Cannot derive --anal_data_dir because --save_dir has no 'anal_figs' "
+                "path component; pass --anal_data_dir explicitly."
+            )
+        parts[matching[-1]] = "anal_data"
+        data_parent = os.sep.join(parts) or os.sep
+    return os.path.join(fig_parent, run_tag), os.path.join(data_parent, run_tag)
 
 
 def save_pca_explained_variance_bar_chart(
@@ -681,15 +721,14 @@ def print_dpca_summary(summary: dict) -> None:
     print(f"[dPCA:{summary['method']}] explained variance ratio: {ev_text}")
 
 
-def save_dpca_variance_json(out_dir: str, method_suffix: str, payload: dict) -> None:
-    os.makedirs(out_dir, exist_ok=True)
-    method_path = os.path.join(out_dir, f"dpca_variance{method_suffix}.json")
-    with open(method_path, "w") as f:
+def save_dpca_variance_json(data_dir: str, payload: dict) -> str:
+    """Save method metadata under anal_data without a method suffix."""
+    os.makedirs(data_dir, exist_ok=True)
+    out_path = os.path.join(data_dir, "dpca_variance.json")
+    with open(out_path, "w") as f:
         json.dump(payload, f, indent=2)
-    legacy_path = os.path.join(out_dir, "dpca_variance.json")
-    shutil.copyfile(method_path, legacy_path)
-    print(f"Saved {method_path}")
-    print(f"Saved {legacy_path}")
+    print(f"Saved {out_path}")
+    return out_path
 
 
 def save_dpca_scatter(
@@ -698,7 +737,6 @@ def save_dpca_scatter(
     digit_labels: np.ndarray,
     sector_labels: np.ndarray,
     out_dir: str,
-    file_suffix: str = "",
 ) -> None:
     """
     Single 1×2 figure: left = color by digit (0–9), right = by sector (0–8);
@@ -796,12 +834,9 @@ def save_dpca_scatter(
     _decorate(ax1)
 
     fig.tight_layout()
-    out_path = os.path.join(out_dir, f"dpca_scatter{file_suffix}.png")
+    out_path = os.path.join(out_dir, "dpca_scatter.png")
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    if file_suffix:
-        legacy_path = os.path.join(out_dir, "dpca_scatter.png")
-        shutil.copyfile(out_path, legacy_path)
 
 
 def save_dpca_2x2_orthogonality(
@@ -810,8 +845,7 @@ def save_dpca_2x2_orthogonality(
     digit_labels: np.ndarray,
     sector_labels: np.ndarray,
     out_dir: str,
-    file_suffix: str = "",
-    write_legacy_copy: bool = True,
+    filename: str = "dpca_2x2_orthogonality.png",
     dodge_conditions: bool = False,
 ) -> None:
     """
@@ -983,12 +1017,9 @@ def save_dpca_2x2_orthogonality(
         title += " (condition-dodged)"
     fig.suptitle(title, fontsize=12)
     fig.tight_layout(rect=[0, 0, 0.88, 0.95])
-    out_path = os.path.join(out_dir, f"dpca_2x2_orthogonality{file_suffix}.png")
+    out_path = os.path.join(out_dir, filename)
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    if file_suffix and write_legacy_copy:
-        legacy_path = os.path.join(out_dir, "dpca_2x2_orthogonality.png")
-        shutil.copyfile(out_path, legacy_path)
 
 
 def _prepare_dpca_3d_inputs(
@@ -1008,30 +1039,95 @@ def _prepare_dpca_3d_inputs(
     return digit_xyz[:, :3], sector_xyz[:, :3], digit_ids, sector_ids
 
 
-def save_dpca_3d_coordinates(
+def _dodge_condition_points(
+    coordinates: np.ndarray,
+    offset_labels: np.ndarray,
+    dodge_fraction: float,
+) -> np.ndarray:
+    """Apply the existing 90-point x/y grid dodge without altering raw dPC coordinates."""
+    xyz = np.asarray(coordinates, dtype=np.float32)
+    labels = np.asarray(offset_labels, dtype=np.int64).reshape(xyz.shape[0])
+    if xyz.ndim != 2 or xyz.shape[1] != 3:
+        raise ValueError(f"coordinates must be (N, 3), got {xyz.shape}")
+    if not np.isfinite(dodge_fraction) or dodge_fraction < 0.0:
+        raise ValueError(f"dodge_fraction must be finite and non-negative, got {dodge_fraction}")
+    if dodge_fraction == 0.0:
+        return xyz.copy()
+
+    values = sorted(int(value) for value in np.unique(labels))
+    n_cols = int(np.ceil(np.sqrt(len(values))))
+    n_rows = int(np.ceil(len(values) / n_cols))
+    span = max(float(np.max(np.abs(xyz))) * 2.0, 1e-12)
+    step = span * float(dodge_fraction)
+    offsets: dict[int, np.ndarray] = {}
+    for idx, value in enumerate(values):
+        col = idx % n_cols
+        row = idx // n_cols
+        offsets[value] = np.asarray(
+            [
+                (col - (n_cols - 1) / 2.0) * step,
+                (row - (n_rows - 1) / 2.0) * step,
+                0.0,
+            ],
+            dtype=np.float32,
+        )
+
+    plotted = xyz.copy()
+    for idx, value in enumerate(labels):
+        plotted[idx] += offsets[int(value)]
+    return plotted.astype(np.float32, copy=False)
+
+
+def build_dpca_3d_plot_coordinates(
     coords_digit: np.ndarray,
     coords_sector: np.ndarray,
     digit_labels: np.ndarray,
     sector_labels: np.ndarray,
-    out_dir: str,
-    method: str,
-    source_path: str,
-) -> tuple[str, str]:
-    """Save reusable dPC1-dPC3 coordinates and JSON provenance metadata."""
+    dodge_fraction: float = 0.018,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return raw and visually dodged dPCA coordinates plus stable condition labels."""
     digit_xyz, sector_xyz, digit_ids, sector_ids = _prepare_dpca_3d_inputs(
         coords_digit,
         coords_sector,
         digit_labels,
         sector_labels,
     )
-    os.makedirs(out_dir, exist_ok=True)
-    data_path = os.path.join(out_dir, f"dpca_3d_coordinates_{method}.npz")
-    meta_path = os.path.join(out_dir, f"dpca_3d_coordinates_{method}_meta.json")
-    html_name = f"dpca_3d_interactive_{method}.html"
+    digit_plot = _dodge_condition_points(digit_xyz, sector_ids, dodge_fraction)
+    sector_plot = _dodge_condition_points(sector_xyz, digit_ids, dodge_fraction)
+    return digit_xyz, sector_xyz, digit_plot, sector_plot, digit_ids, sector_ids
+
+
+def save_dpca_3d_coordinates(
+    coords_digit: np.ndarray,
+    coords_sector: np.ndarray,
+    digit_labels: np.ndarray,
+    sector_labels: np.ndarray,
+    data_dir: str,
+    fig_dir: str,
+    method: str,
+    source_path: str,
+    dodge_fraction: float = 0.018,
+) -> tuple[str, str]:
+    """Save reusable dPC1-dPC3 coordinates and JSON provenance metadata."""
+    digit_xyz, sector_xyz, digit_plot, sector_plot, digit_ids, sector_ids = (
+        build_dpca_3d_plot_coordinates(
+            coords_digit,
+            coords_sector,
+            digit_labels,
+            sector_labels,
+            dodge_fraction=dodge_fraction,
+        )
+    )
+    os.makedirs(data_dir, exist_ok=True)
+    data_path = os.path.join(data_dir, "dpca_3d_coordinates.npz")
+    meta_path = os.path.join(data_dir, "dpca_3d_coordinates_meta.json")
+    html_name = "dpca_3d_interactive.html"
     np.savez_compressed(
         data_path,
         coords_digit=digit_xyz.astype(np.float32, copy=False),
         coords_sector=sector_xyz.astype(np.float32, copy=False),
+        coords_digit_plot=digit_plot.astype(np.float32, copy=False),
+        coords_sector_plot=sector_plot.astype(np.float32, copy=False),
         digit_labels=digit_ids.astype(np.int64, copy=False),
         sector_labels=sector_ids.astype(np.int64, copy=False),
     )
@@ -1039,7 +1135,7 @@ def save_dpca_3d_coordinates(
         "method": method,
         "source": os.path.abspath(source_path),
         "coordinate_file": os.path.basename(data_path),
-        "interactive_html": html_name,
+        "interactive_html": os.path.abspath(os.path.join(fig_dir, html_name)),
         "coords_digit": {
             "shape": list(digit_xyz.shape),
             "dtype": "float32",
@@ -1049,6 +1145,16 @@ def save_dpca_3d_coordinates(
             "shape": list(sector_xyz.shape),
             "dtype": "float32",
             "axes": ["sector dPC1", "sector dPC2", "sector dPC3"],
+        },
+        "plot_coordinates": {
+            "digit_key": "coords_digit_plot",
+            "sector_key": "coords_sector_plot",
+            "dtype": "float32",
+            "visual_dodge_only": True,
+            "dodge_fraction": float(dodge_fraction),
+            "digit_space_offset_by": "sector",
+            "sector_space_offset_by": "digit",
+            "offset_axes": ["dPC1", "dPC2"],
         },
         "digit_labels": {"shape": list(digit_ids.shape), "dtype": "int64"},
         "sector_labels": {"shape": list(sector_ids.shape), "dtype": "int64"},
@@ -1066,8 +1172,9 @@ def save_dpca_3d_interactive_html(
     coords_sector: np.ndarray,
     digit_labels: np.ndarray,
     sector_labels: np.ndarray,
-    out_dir: str,
+    fig_dir: str,
     method: str,
+    dodge_fraction: float = 0.018,
 ) -> str:
     """Save an offline Plotly HTML with four interactive dPC1-dPC3 condition views."""
     try:
@@ -1079,11 +1186,14 @@ def save_dpca_3d_interactive_html(
             "pip install -e '.[viz]'"
         ) from e
 
-    digit_xyz, sector_xyz, digit_ids, sector_ids = _prepare_dpca_3d_inputs(
-        coords_digit,
-        coords_sector,
-        digit_labels,
-        sector_labels,
+    digit_xyz, sector_xyz, digit_plot, sector_plot, digit_ids, sector_ids = (
+        build_dpca_3d_plot_coordinates(
+            coords_digit,
+            coords_sector,
+            digit_labels,
+            sector_labels,
+            dodge_fraction=dodge_fraction,
+        )
     )
     subplot_titles = (
         "Digit dPC space — colored by digit",
@@ -1096,18 +1206,50 @@ def save_dpca_3d_interactive_html(
         cols=2,
         specs=[[{"type": "scene"}, {"type": "scene"}], [{"type": "scene"}, {"type": "scene"}]],
         subplot_titles=subplot_titles,
-        horizontal_spacing=0.04,
+        horizontal_spacing=0.19,
         vertical_spacing=0.08,
     )
-    customdata = np.column_stack([digit_ids, sector_ids]).astype(np.int64, copy=False)
     panels = [
-        (digit_xyz, "digit", digit_ids, DIGIT_COLORS, 1, 1, True),
-        (digit_xyz, "digit", sector_ids, SECTOR_COLORS, 1, 2, True),
-        (sector_xyz, "sector", digit_ids, DIGIT_COLORS, 2, 1, False),
-        (sector_xyz, "sector", sector_ids, SECTOR_COLORS, 2, 2, False),
+        (digit_plot, digit_xyz, "digit", digit_ids, DIGIT_COLORS, "digit", 1, 1, "legend"),
+        (
+            digit_plot,
+            digit_xyz,
+            "digit",
+            sector_ids,
+            SECTOR_COLORS,
+            "sector",
+            1,
+            2,
+            "legend2",
+        ),
+        (
+            sector_plot,
+            sector_xyz,
+            "sector",
+            digit_ids,
+            DIGIT_COLORS,
+            "digit",
+            2,
+            1,
+            "legend3",
+        ),
+        (
+            sector_plot,
+            sector_xyz,
+            "sector",
+            sector_ids,
+            SECTOR_COLORS,
+            "sector",
+            2,
+            2,
+            "legend4",
+        ),
     ]
-    for xyz, space, color_ids, palette, row, col, show_legend in panels:
-        color_name = "digit" if len(palette) == len(DIGIT_COLORS) else "sector"
+    for xyz, raw_xyz, space, color_ids, palette, color_name, row, col, legend_id in panels:
+        customdata = np.column_stack([digit_ids, sector_ids, raw_xyz]).astype(
+            np.float64,
+            copy=False,
+        )
         for class_id, color in enumerate(palette):
             mask = color_ids == class_id
             fig.add_trace(
@@ -1123,21 +1265,23 @@ def save_dpca_3d_interactive_html(
                         "line": {"color": "rgba(50,50,50,0.65)", "width": 0.7},
                     },
                     customdata=customdata[mask],
-                    name=f"{color_name} {class_id}",
-                    legendgroup=f"{color_name}-{class_id}",
-                    showlegend=show_legend,
+                    name=str(class_id),
+                    legend=legend_id,
+                    legendgroup=f"{row}-{col}-{color_name}-{class_id}",
+                    showlegend=True,
                     hovertemplate=(
-                        "digit=%{customdata[0]}<br>sector=%{customdata[1]}<br>"
-                        f"{space} dPC1=%{{x:.4f}}<br>"
-                        f"{space} dPC2=%{{y:.4f}}<br>"
-                        f"{space} dPC3=%{{z:.4f}}<extra></extra>"
+                        "digit=%{customdata[0]:.0f}<br>sector=%{customdata[1]:.0f}<br>"
+                        f"raw {space} dPC1=%{{customdata[2]:.4f}}<br>"
+                        f"raw {space} dPC2=%{{customdata[3]:.4f}}<br>"
+                        f"raw {space} dPC3=%{{customdata[4]:.4f}}"
+                        "<extra></extra>"
                     ),
                 ),
                 row=row,
                 col=col,
             )
 
-    for row, space, xyz in ((1, "digit", digit_xyz), (2, "sector", sector_xyz)):
+    for row, space, xyz in ((1, "digit", digit_plot), (2, "sector", sector_plot)):
         limit = max(float(np.max(np.abs(xyz))) * 1.08, 1e-12)
         axis_common = {
             "range": [-limit, limit],
@@ -1156,18 +1300,33 @@ def save_dpca_3d_interactive_html(
                 col=col,
             )
 
+    method_label = "official dPCA" if method == "rrr" else "condensed SVD baseline"
+    legend_common = {
+        "orientation": "v",
+        "itemsizing": "constant",
+        "font": {"size": 9},
+        "bgcolor": "rgba(255,255,255,0.82)",
+        "bordercolor": "rgba(120,120,120,0.45)",
+        "borderwidth": 1,
+        "xanchor": "left",
+        "yanchor": "top",
+    }
     fig.update_layout(
         title=(
-            f"Interactive dPCA condition geometry ({method})"
-            "<br><sup>Drag to rotate; shift-drag to pan; scroll to zoom; hover for labels</sup>"
+            f"Interactive dPCA condition geometry ({method_label}; 90 points)"
+            "<br><sup>Small x/y offsets separate overlaps; hover reports raw dPC values. "
+            "Drag to rotate, shift-drag to pan, and scroll to zoom.</sup>"
         ),
-        width=1500,
+        width=1780,
         height=1080,
-        margin={"l": 10, "r": 180, "t": 105, "b": 10},
-        legend={"title": {"text": "condition"}, "x": 1.01, "y": 0.98},
+        margin={"l": 10, "r": 150, "t": 105, "b": 10},
+        legend={**legend_common, "title": {"text": "digit"}, "x": 0.41, "y": 0.98},
+        legend2={**legend_common, "title": {"text": "sector"}, "x": 1.005, "y": 0.98},
+        legend3={**legend_common, "title": {"text": "digit"}, "x": 0.41, "y": 0.44},
+        legend4={**legend_common, "title": {"text": "sector"}, "x": 1.005, "y": 0.44},
     )
-    os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, f"dpca_3d_interactive_{method}.html")
+    os.makedirs(fig_dir, exist_ok=True)
+    out_path = os.path.join(fig_dir, "dpca_3d_interactive.html")
     fig.write_html(
         out_path,
         include_plotlyjs=True,
@@ -1200,10 +1359,16 @@ def discrete_equal_bins_colorscale(colors: list[str]) -> list[list]:
 def main() -> None:
     args = parse_args()
     run_tag = args.run_tag.strip() or os.path.basename(os.path.normpath(args.pop_act_dir))
-    out_dir = os.path.join(args.save_dir, run_tag)
-    os.makedirs(out_dir, exist_ok=True)
+    fig_dir = os.path.join(args.save_dir, run_tag)
+    os.makedirs(fig_dir, exist_ok=True)
 
     if args.reducer == "dpca":
+        fig_dir, data_dir = resolve_dpca_output_dirs(
+            args.save_dir,
+            args.anal_data_dir,
+            run_tag,
+        )
+        os.makedirs(data_dir, exist_ok=True)
         candidates = [
             os.path.join(args.pop_act_dir, "pop_act_dpca.npy"),
             os.path.join(args.pop_act_dir, "pop_act_digitxsector_mean.npy"),
@@ -1264,39 +1429,48 @@ def main() -> None:
                 f"sector-on-digit leakage delta={delta_leak:.4f}"
             )
 
-        method_suffix = f"_{args.dpca_method}"
         save_dpca_scatter(
             result["coords_digit"],
             result["coords_sector"],
             digit_labels,
             sector_labels,
-            out_dir,
-            file_suffix=method_suffix,
+            fig_dir,
         )
         save_dpca_2x2_orthogonality(
             result["coords_digit"],
             result["coords_sector"],
             digit_labels,
             sector_labels,
-            out_dir,
-            file_suffix=method_suffix,
+            fig_dir,
+        )
+        save_dpca_2x2_orthogonality(
+            result["coords_digit"],
+            result["coords_sector"],
+            digit_labels,
+            sector_labels,
+            fig_dir,
+            filename="dpca_2x2_orthogonality_90points.png",
+            dodge_conditions=True,
         )
         coordinate_path, coordinate_meta_path = save_dpca_3d_coordinates(
             result["coords_digit"],
             result["coords_sector"],
             digit_labels,
             sector_labels,
-            out_dir,
+            data_dir,
+            fig_dir,
             method=args.dpca_method,
             source_path=primary,
+            dodge_fraction=float(args.dpca_dodge_fraction),
         )
         interactive_html_path = save_dpca_3d_interactive_html(
             result["coords_digit"],
             result["coords_sector"],
             digit_labels,
             sector_labels,
-            out_dir,
+            fig_dir,
             method=args.dpca_method,
+            dodge_fraction=float(args.dpca_dodge_fraction),
         )
         payload = {
             "method": args.dpca_method,
@@ -1306,21 +1480,20 @@ def main() -> None:
             "condensed_reference": condensed_summary,
             "rrr_zero_regularizer_reference": stability_summary,
             "interactive_3d": {
-                "html": os.path.basename(interactive_html_path),
-                "coordinates": os.path.basename(coordinate_path),
-                "metadata": os.path.basename(coordinate_meta_path),
+                "html": os.path.abspath(interactive_html_path),
+                "coordinates": os.path.abspath(coordinate_path),
+                "metadata": os.path.abspath(coordinate_meta_path),
             },
         }
-        save_dpca_variance_json(out_dir, method_suffix, payload)
+        save_dpca_variance_json(data_dir, payload)
         save_dpca_explained_variance_bars(
-            out_dir,
+            fig_dir,
             summary,
             max_components=args.dpca_components,
         )
-        print(f"Saved {os.path.join(out_dir, f'dpca_scatter{method_suffix}.png')}")
-        print(f"Saved {os.path.join(out_dir, f'dpca_2x2_orthogonality{method_suffix}.png')}")
-        print(f"Saved compatibility copy {os.path.join(out_dir, 'dpca_scatter.png')}")
-        print("Saved compatibility copy " f"{os.path.join(out_dir, 'dpca_2x2_orthogonality.png')}")
+        print(f"Saved {os.path.join(fig_dir, 'dpca_scatter.png')}")
+        print(f"Saved {os.path.join(fig_dir, 'dpca_2x2_orthogonality.png')}")
+        print(f"Saved {os.path.join(fig_dir, 'dpca_2x2_orthogonality_90points.png')}")
         return
 
     pop_path = os.path.join(args.pop_act_dir, "pop_act.npy")
@@ -1434,12 +1607,12 @@ def main() -> None:
         html_name = f"trajectory_pca_{args.color_by}.html"
     else:
         html_name = f"trajectory_{args.color_by}.html"
-    out_html = os.path.join(out_dir, html_name)
+    out_html = os.path.join(fig_dir, html_name)
     fig.write_html(out_html, include_plotlyjs="cdn")
     print(f"Saved {out_html}")
 
     if args.reducer == "pca" and pca_ratios is not None:
-        bar_path = os.path.join(out_dir, "pca_explained_variance_bars.png")
+        bar_path = os.path.join(fig_dir, "pca_explained_variance_bars.png")
         save_pca_explained_variance_bar_chart(
             bar_path,
             pca_ratios,

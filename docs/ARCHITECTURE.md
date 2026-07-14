@@ -175,16 +175,15 @@ results/train_data/<suffix>/
         │
         ▼  utils_anal/export_*.py
 results/anal_data/<module>/
-  ├── *.npy / *.npz        ← arrays
-  └── *_meta_*.json        ← metadata
+  ├── *.npy / *.npz        ← arrays, including raw and display-only dPCA coordinates
+  └── *.json                ← metadata and dPCA variance summaries
 
         │
         ▼  utils_viz/*.py
 results/anal_figs/<module>/
   ├── *.png                 ← static figures
   ├── *.html                ← self-contained interactive 3D figures
-  ├── *.npz                 ← reusable float32 3D coordinates + int64 labels
-  └── *_meta.json           ← coordinate provenance and component definitions
+  └── *.pdf                 ← optional vector figures
 ```
 
 ---
