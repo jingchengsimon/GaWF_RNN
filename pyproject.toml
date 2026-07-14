@@ -12,6 +12,7 @@ dependencies = [
     "numpy>=1.24",
     "pandas>=2.0",
     "matplotlib>=3.7",
+    "numexpr>=2.8",
     "scipy>=1.10",
     "tqdm>=4.65",
     "statsmodels>=0.14",
