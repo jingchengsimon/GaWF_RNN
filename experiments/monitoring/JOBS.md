@@ -6,6 +6,7 @@
 
 | Job | Status | Host | Scheduler / run IDs | Units | Remote root | Description |
 |---|---|---|---|---:|---|---|
+| `amarel-clutter-best6-10seed-ep150-58172415` | queued | `amarel` | 58172415, 58172416, 58172417, 58172418, 58172419, 58172420, 58172421, 58172422, 58172423, 58172424 | 60 | `/cache/home/js3269/projects/FAW_RNN-clutter-best6-10seed` | Clutter six frozen best models, seeds 1-10, 150 full epochs, no early stopping |
 | `amarel-clutter-best6-10seed-ep150-58171730` | cancelled | `amarel` | 58171730 | 60 | `/cache/home/js3269/projects/FAW_RNN-clutter-best6-10seed` | Clutter six frozen best models, seeds 1-10, 150 full epochs, no early stopping |
 | `amarel-minigrid-redblue-200m-58165756` | running | `amarel` | 58165756 | 2 | `/cache/home/js3269/projects/FAW_RNN-minigrid-accel-200m-20260714` | MiniGrid RedBlueDoors LSTM/GaWF formal 200M accelerated run |
 | `amarel-minigrid-memory-200m-58165755` | running | `amarel` | 58165755 | 2 | `/cache/home/js3269/projects/FAW_RNN-minigrid-accel-200m-20260714` | MiniGrid MemoryS7 LSTM/GaWF formal 200M accelerated run |

@@ -8,6 +8,27 @@
   ],
   "jobs": [
     {
+      "id": "amarel-clutter-best6-10seed-ep150-58172415",
+      "description": "Clutter six frozen best models, seeds 1-10, 150 full epochs, no early stopping",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "58172415",
+        "58172416",
+        "58172417",
+        "58172418",
+        "58172419",
+        "58172420",
+        "58172421",
+        "58172422",
+        "58172423",
+        "58172424"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/FAW_RNN-clutter-best6-10seed",
+      "updated_at": "2026-07-14T21:53:58+00:00"
+    },
+    {
       "id": "amarel-minigrid-redblue-200m-58165756",
       "description": "MiniGrid RedBlueDoors LSTM/GaWF formal 200M accelerated run",
       "host": "amarel",

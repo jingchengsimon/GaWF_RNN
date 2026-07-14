@@ -176,6 +176,8 @@ tensor shape 和数学公式，例如 `GaWF`、`--num_layers`、`val_acc_at_best
 - **协议（Protocol）：** 使用 acceleration path；119 GB training array 通过 mmap 读取，
   因此 DataLoader 固定 `num_workers=0`、`pin_memory=False`。训练完整运行 150 epochs，最终
   checkpoint 保存完整 trajectory 中 validation accuracy 最佳的 state。
-- **现状（Current）：** Amarel Slurm array `58171730` 已提交，并以 60 个严格 units 登记到
-  `experiments/monitoring/JOBS.md`；有效完成要求 metrics、checkpoint、pickle 同时存在，且
-  `actual_epochs=150`、seed/protocol fields 全部匹配。
+- **现状（Current）：** 初始单一 60-task array `58171730` 在全部 tasks 尚未启动时取消。
+  正式实验改为 10 个独立 Slurm jobs `58172415`--`58172424`，每个 seed 对应一个包含六个
+  models 的 array。新旧提交均保留在 `experiments/monitoring/JOBS.md`；有效完成要求
+  metrics、checkpoint、pickle 同时存在，且 `actual_epochs=150`、seed/protocol fields
+  全部匹配。
