@@ -1,11 +1,11 @@
-"""Configure semantics-preserving CUDA acceleration for Atari training.
+"""Configure semantics-preserving CUDA acceleration for MiniGrid PPO.
 
-The helpers in this module control matrix precision, autocast, gradient scaling,
-and optional ``torch.compile`` wrapping. They do not change replay sampling,
-environment stepping, update frequency, loss definitions, or model structure.
+The policy controls CUDA math precision, autocast, gradient scaling, optional
+``torch.compile``, and logging. It does not change environment samples, PPO
+losses, rollout length, update cadence, or model structure.
 
 Outputs:
-- ``AtariAcceleration`` — runtime contexts and callable compilation helpers.
+- ``MiniGridAcceleration``: runtime contexts and callable compilation helpers.
 """
 
 from __future__ import annotations
@@ -22,8 +22,8 @@ T = TypeVar("T")
 
 
 @dataclass(frozen=True)
-class AtariAcceleration:
-    """Runtime acceleration policy for one Atari training process."""
+class MiniGridAcceleration:
+    """Runtime acceleration policy for one MiniGrid PPO process."""
 
     device: torch.device
     amp_dtype_name: str = "none"
@@ -58,19 +58,19 @@ class AtariAcceleration:
         enabled = self.amp_dtype == torch.float16
         try:
             return torch.amp.GradScaler("cuda", enabled=enabled)
-        except (AttributeError, TypeError):  # PyTorch 2.0/2.1 compatibility.
+        except (AttributeError, TypeError):
             return torch.cuda.amp.GradScaler(enabled=enabled)
 
     def compile_callable(self, fn: Callable[..., T]) -> Callable[..., T]:
-        """Compile ``fn`` when requested, otherwise return it unchanged."""
+        """Compile ``fn`` on CUDA when requested, otherwise return it unchanged."""
 
         if not self.compile_model or self.device.type != "cuda":
             return fn
         return torch.compile(fn, mode=self.compile_mode, dynamic=False)
 
 
-def configure_atari_acceleration(
-    acceleration: AtariAcceleration,
+def configure_minigrid_acceleration(
+    acceleration: MiniGridAcceleration,
     logger: logging.Logger,
 ) -> None:
     """Apply process-wide CUDA math settings and log the active policy."""
@@ -82,7 +82,7 @@ def configure_atari_acceleration(
         if acceleration.allow_tf32:
             torch.set_float32_matmul_precision("high")
     logger.info(
-        "Atari acceleration: device=%s amp=%s tf32=%s cudnn_benchmark=%s "
+        "MiniGrid acceleration: device=%s amp=%s tf32=%s cudnn_benchmark=%s "
         "compile=%s compile_mode=%s",
         acceleration.device,
         acceleration.amp_dtype_name if acceleration.amp_dtype is not None else "off",

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "amarel-pong-fs1-accelval100k-58157960",
+  "description": "Cancelled Amarel 7-model Pong fs1/stack1 100k acceleration validation",
+  "host": "amarel",
+  "status": "cancelled",
+  "created_at": "2026-07-13T23:00:00+00:00",
+  "updated_at": "2026-07-13T23:30:00+00:00",
+  "remote_root": "/home/js3269/projects/FAW_RNN-pong-fs1-accelval-9559764",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": ["58157960"],
+    "run_ids": [],
+    "tmux_session": null,
+    "process_patterns": [],
+    "collect_gpu": false
+  },
+  "paths": {
+    "log_globs": [],
+    "status_dir": "experiments/amarel/artifacts",
+    "result_paths": ["results/train_data/atari_dqn_pong_fs1_stack1_accelval100k_*_seed42"]
+  },
+  "tracking": {"expected_units": 7, "units": []},
+  "notes": ["Cancelled after the validation was moved to sjc-remote; retained for history."]
+}

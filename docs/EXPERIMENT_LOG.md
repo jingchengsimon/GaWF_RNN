@@ -1,221 +1,167 @@
-# Experiment Log
+# 实验日志（Experiment Log）
 
-This file records confirmed model changes and experiment extensions for GaWF.
-Keep entries factual: what changed, why it was introduced, and the current
-implementation choice.
+本文档用于帮助人类快速回顾项目中的模型演进、实验协议和关键结论。每条记录保持精简，
+统一使用 **改动（Change）**、**原因（Reason）**、**证据（Evidence）** 和
+**现状（Current）** 四个字段。
 
-## 2026-06-14 - GaWF Feedback Generalization
+后续记录必须以中文叙述，并保留必要的英文技术术语、模型名、CLI 参数、metric 名称、
+tensor shape 和数学公式，例如 `GaWF`、`--num_layers`、`val_acc_at_best`、`(B,H,I)`、
+`base_lr * gawf_feedback_lr_scale`。不要翻译代码 identifier，也不要在本文档中记录详细命令、
+机器路径、scheduler job ID 或普通工程重构；这些内容应放在实验 README 或结果文件中。
 
-### Step 1: Baseline GaWF Feedback
+## 2026-06-14 — GaWF feedback 泛化
 
-- Model: `gawf`.
-- Task heads: two linear classification heads are used, one for position
-classification and one for character classification.
-- Feedback source: the feedback vector is generated from the output vector of
-the combined linear head.
-- Current limitation: the legacy feedback dimension is `dz=19`, which is tied
-to the current task design. If the task design changes, or even if one digit
-class is removed from the same task, a GaWF model trained with this task-bound
-`dz=19` feedback is no longer directly reusable.
+- **改动（Change）：** 初始 Clutter GaWF 将 19 个 task logits 直接反馈给 gate。随后加入
+  linear projector，将反馈投影到与 task output 解耦的维度（如 `dz=8`）；早期 multi-layer
+  实现使用独立的 `gawf_multi` model，并为每层配置一组 U/V。
+- **原因（Reason）：** 直接使用 `dz=19` 会绑定 10 个 character classes 和 9 个 sectors；
+  task head 改变后，这种 feedback representation 无法原样复用。
+- **证据（Evidence）：** Projected runs 保留原有 `U * fb * V` gating，只改变 feedback
+  representation；没有采用 CFL paper 中的 LoRA design。
+- **现状（Current）：** `--dz > 0` 控制 projected feedback。独立 `gawf_multi` public
+  interface 已于 2026-07-12 被 `gawf --num_layers N` 取代。
 
+## 2026-06-18 — 降低 GaWF gated matmul 的显存占用
 
+- **改动（Change）：** 使用代数等价的 `torch.einsum` contraction，替代显式构造的
+  per-sample gated weight tensors `(B,H,I)` 和 `(B,H,H)`。
+- **原因（Reason）：** Single-layer GaWF 在 `hidden_size=512` 的 full grid 中发生 OOM；
+  原因是 peak activation memory，而不是 parameter count。
+- **证据（Evidence）：** 固定 seed 的 5-step A/B test 最大差异为 `4.77e-7`，重复执行优化
+  路径的差异为 `0`。在 `hidden_size=512`、`batch_size=256`、AMP 条件下，peak allocated
+  memory 从 2603.7 MB 降至 1709.5 MB。
+- **现状（Current）：** einsum path 是标准 GaWF 实现，并使 h=512 sweep 可以完成。
 
-### Step 2: Projected Feedback Dimension
+## 2026-06-18 / 2026-07-12 — 统一 GaWF optimizer groups
 
-- Goal: improve GaWF generalization by making the feedback dimension less tied
-to a specific task output structure.
-- Design reference: CFL-style projector layer.
-- Projected feedback runs use a generic feedback dimension such as `dz=8`.
-- Projected ClutterMNIST implementation: the original `dz=19` output is first
-linearly projected into a `dz=8` feedback vector, then used by the existing
-`U * fb * V` gating pathway.
-- Difference from the CFL paper: this implementation uses a projector layer
-only; it does not adopt the LoRA design from the original paper.
-- Current experimental direction: evaluate whether `dz=8` preserves GaWF
-performance while making the feedback representation more reusable across
-task designs.
+- **改动（Change）：** 删除旧的 multi-layer-only LR knobs，统一不同 depth 的 optimizer
+  parameter grouping。
+- **原因（Reason）：** 两个叠乘的 LR scales 会使实际 base LR 和 feedback LR 难以解释。
+- **证据（Evidence）：** Base parameters 使用指定或搜索得到的 learning rate 和 weight
+  decay；U、V 和 feedback projectors 进入 no-weight-decay group。
+- **现状（Current）：** Feedback parameters 使用
+  `base_lr * --gawf_feedback_lr_scale`，default 为 `1.0`。历史规则
+  `gawf_multi_feedback_lr_scale=0.1` 已废弃。
 
+## 2026-06-25 — GaWF data scale / hidden size full grid
 
+- **改动（Change）：** 在 4h、10h、20h、40h training scales 上分别搜索 hidden size、
+  learning rate 和 weight decay，并统一使用 40h validation set。
+- **原因（Reason）：** 将 training data scale 的影响与 validation distribution 的变化分离，
+  同时避免假设所有 data scales 都对应同一个最优 model capacity。
+- **证据（Evidence）：** 256 个 GaWF units 均具备 metrics、pickle 和 checkpoint companion。
+  按 validation character accuracy 选择的最佳结果如下：
 
-### Step 3: Multi-layer Projected GaWF
+| Train scale | Hidden | LR | WD | Val char | Val sector |
+|---|---:|---:|---:|---:|---:|
+| 4h | 512 | 0.001 | 0.001 | 72.34 | 86.59 |
+| 10h | 256 | 0.005 | 0.0001 | 80.51 | 89.77 |
+| 20h | 512 | 0.001 | 0.0001 | 86.26 | 92.01 |
+| 40h | 256 | 0.005 | 0.001 | 90.09 | 93.64 |
 
-- Model: `gawf_multi`.
-- Scope: implemented as a separate model type from single-layer `gawf` so
-existing legacy and projected single-layer behavior is unchanged.
-- Direct feedback is the default; specifying `--dz > 0` enables projected feedback
-such as `dz=8`.
-- Default recurrent depth: `--gawf_layers 2`; the CLI supports deeper stacks.
-- Parameter sharing choice: U and V are not shared across layers. The model uses
-one U/V pair per recurrent layer because V shape depends on each layer's input
-size.
-- Feedback source: in direct mode, the final recurrent layer uses previous
-classifier output and non-final layers use the detached previous timestep's
-adjacent upper-layer hidden state. In projected mode, both sources are linearly
-projected to `dz`.
+- **现状（Current）：** Performance 随 training scale 增长，但最佳 hidden size 依赖 data
+  scale；40h reference model 使用 `hidden_size=256`。
 
+## 2026-06-27 / 2026-07-06 — 六模型 parameter-matched comparison
 
+- **改动（Change）：** 将 RNN/LSTM/GRU/Mamba/S5 的 middle-path parameter count 匹配到
+  GaWF h=256，并在独立 40h test set 上评估六个选定 checkpoints。
+- **原因（Reason）：** 早期 comparison 允许 recurrent baselines 使用 h=512，导致 model
+  family 与 capacity 混杂。
+- **证据（Evidence）：** 所有模型与约 587K parameters 的目标相差不超过约 0.3%：
 
-## 2026-06-18 - Single-layer GaWF Gated Matmul Memory Optimization
+| Model | Params | Val char | Test char | Char gap |
+|---|---:|---:|---:|---:|
+| GaWF | 586,067 | 90.09 | 85.62 | 3.24 |
+| Mamba | 587,275 | 86.57 | 82.67 | 5.06 |
+| GRU | 586,905 | 84.83 | 80.17 | 3.93 |
+| RNN | 586,865 | 84.15 | 79.67 | 7.15 |
+| LSTM | 584,675 | 83.61 | 79.81 | 6.34 |
+| S5 | 587,475 | 80.00 | 75.39 | 6.17 |
 
-- Model: `gawf`.
-- Motivation: `gawf hidden_size=512` full-grid jobs failed with CUDA OOM during
-the first training epoch. The issue was peak activation memory, not parameter
-count.
-- Previous implementation: explicitly materialized `gated_weight_ih` and
-`gated_weight_hh` with shapes `(B, H, I)` and `(B, H, H)` before batched
-matrix multiplication.
-- Current implementation: keeps the same per-sample `gate_ih` and `gate_hh`
-definitions, but computes the contractions directly with `torch.einsum`.
-This is algebraically equivalent to `(gate * weight)` followed by the same
-input/hidden reductions, while avoiding the extra `gated_weight_*` tensors.
-- Validation: on `sjc-remote`, a synthetic 5-step training A/B with the same
-seed gave maximum loss difference `4.77e-7`; repeating the optimized path gave
-`0.0` loss difference. For `hidden_size=512`, batch size 256, AMP enabled,
-peak allocated GPU memory dropped from `2603.7 MB` to `1709.5 MB`.
-- Optimizer details for the `gawf hidden_size=512` full-grid rerun:
-the submitted job uses the single-layer `gawf` model path, not `gawf_multi`.
-Single-layer `gawf` splits optimizer parameters into base parameters and
-GaWF gating parameters (`U`, `V`). Base parameters use the task learning rate
-and searched weight decay. `U` and `V` use the same task learning rate but
-always set `weight_decay=0.0`. No `0.1` learning-rate scale is applied to
-`U` or `V` for single-layer `gawf`.
-- Related multi-layer note: `gawf_multi` uses only
-`--gawf_multi_feedback_lr_scale` (default `0.1`) for learning-rate scaling.
-Base parameters use the searched learning rate directly. U/V feedback-gating
-parameter groups use `searched_lr * gawf_multi_feedback_lr_scale` and still
-set `weight_decay=0.0`.
+- **现状（Current）：** GaWF 的 validation/test character accuracy 最高，且 char gap 最小；
+  Mamba 排名第二。S5 使用 `state_size=128`，取代参数偏多的历史 `state_size=189`。
+  详细 test metrics 位于
+  `results/train_data/clutter_best_6model_param_matched_40h/test_acc_40h_eval.json`。
 
+## 2026-07-03 — Fair evaluation 与 switch-window metrics
 
+- **改动（Change）：** 官方 train/validation curves 改为使用相同 protocol 的完整
+  evaluation pass。Sector data 可额外记录 strict global accuracy，以及 foreground switch
+  附近的 `pre5` / `post5` windows。
+- **原因（Reason）：** Online batch mean 依赖 sampling/order，且会掩盖 target identity
+  切换前后的即时性能。
+- **证据（Evidence）：** 当 label TSV 包含 `fg_switch` 时，新 metrics 与 legacy curves
+  同时保存；`predict_all_chars` protocol 不变。
+- **现状（Current）：** Model selection 和 early stopping 使用 fair validation character
+  accuracy；global 与 switch-window metrics 是 transition analysis 的首选指标。
 
-## 2026-06-18 - Multi-layer GaWF Learning-rate Scale Simplification
+## 2026-07-10 — Atari DRQN 扩展
 
-- Model: `gawf_multi`.
-- Change: removed the CLI argument `--gawf_multi_lr_scale`.
-- Reason: the previous implementation had two multiplicative scale knobs for
-multi-layer GaWF learning rates, which made the effective base and feedback
-learning rates harder to interpret.
-- Current implementation: base parameters use the searched or requested
-learning rate directly. The only multi-layer feedback-specific scale is
-`--gawf_multi_feedback_lr_scale`, default `0.1`; U/V use
-`lr * gawf_multi_feedback_lr_scale`.
-- Weight decay: U/V remain in a no-weight-decay optimizer group
-(`weight_decay=0.0`). Base parameters use the searched/requested weight decay.
+- **改动（Change）：** Atari DQN variants 共享 Nature-DQN convolutional stack 和 Q head，
+  readout slot 分别使用 ANN/RNN/GRU/LSTM/GaWF/S5/Mamba。GaWF 使用 detached previous-step
+  Q values 调制 recurrence。
+- **原因（Reason）：** 在保留 classic DQN visual observation 与 action-value objective 的
+  同时，尽量隔离 recurrent model family 的差异。
+- **证据（Evidence）：** Recurrent input 只包含 convolutional features；Q feedback 仅用于
+  GaWF。Episode reset 会同时清空 recurrent state 和 previous Q values。
+- **现状（Current）：** Public feedback modes 为 `none` 和 GaWF `qvalues`。这与 A2C 不同：
+  A2C 的 LSTM/GaWF 接收 previous action/reward，GaWF 可额外使用 policy/value output feedback。
 
+## 2026-07-12 — 统一 recurrent depth
 
+- **改动（Change）：** RNN/GRU/LSTM/GaWF 和 ANN 统一使用 `--num_layers`。GaWF 以一个
+  public model type `gawf` 同时覆盖 single-layer 和 multi-layer。
+- **原因（Reason）：** Depth-specific classes 和 flags 会重复 training/analysis logic，
+  也使 cross-task comparison 不一致。
+- **证据（Evidence）：** Direct multi-layer GaWF 中，non-final layer 接收相邻 upper layer
+  的 detached previous hidden state，final layer 接收 detached previous task output；
+  projected mode 为每层使用独立的 U/V/projector。
+- **现状（Current）：** 新 checkpoints 使用 `_L<N>` 编码 depth，并可附加 `_dz<N>`；
+  历史 `gawf_multi_` checkpoints 仍可读取。
 
-## 2026-06-25 - GAWF Full-grid Scale and Hidden-size Selection
+## 2026-07-13 — 修正 Pong frame protocol
 
-- Scope: single-layer `gawf` full hyperparameter grid over train scales `4h`,
-`10h`, `20h`, and `40h`; hidden sizes `{64, 128, 256, 512}`;
-`lr ∈ {0.0001, 0.0005, 0.001, 0.005}`; and
-`weight_decay ∈ {0.0, 1e-5, 1e-4, 0.001}`.
-- Completion: all 256 expected metrics units were present with companion `.pkl`
-and `_model.pth` files. The final Amarel array `56778872` covered only the
-`hidden_size=512` slice (`global task 240–255`, `496–511`, `752–767`, and
-`1008–1023`) and wrote those rerun outputs into the same canonical
-`gen_hparam_full_grid/task_*` result locations as the earlier full-grid jobs,
-so `56778872` must not be interpreted as the full hidden-size grid by itself.
-- Validation comparison: all entries below use
-`eval_dataset_suffix=40h-float32`.
-- Selection criterion: highest `val_acc_at_best` / character validation accuracy
-within each train scale, allowing all hidden sizes.
+- **改动（Change）：** 已完成的 five-seed sweep 被确认采用
+  `frame_skip=4, frame_stack=1`，并重命名为 `pong_fs4_stack1`；严格替代实验使用
+  `pong_fs1_stack1`。
+- **原因（Reason）：** 旧标签 `pong1f` 只表达每次 decision 提供一个 observed frame，
+  没有说明每个 action 实际推进了 4 个 ALE frames。
+- **证据（Evidence）：** Historical metrics 已记录恢复出的 protocol；result suffix 同时
+  编码 frame skip 和 frame stack。
+- **现状（Current）：** `fs4/stack1` 结果仅作为历史记录。在 strict `fs1/stack1` sweeps
+  达到 expected valid-result counts 之前，不据此形成替代实验结论。
 
+## 2026-07-13 — Phase0 multi-task task-balanced replay
 
-| Train scale   | Best task   | Hidden size | lr    | weight decay | Best val char acc | Best val sector acc | Best val loss char | Best val loss pos | Epochs |
-| ------------- | ----------- | ----------- | ----- | ------------ | ----------------- | ------------------- | ------------------ | ----------------- | ------ |
-| `4h-float32`  | `task_0251` | 512         | 0.001 | 0.001        | 72.340912         | 86.585976           | 1.095375           | 0.433275          | 69     |
-| `10h-float32` | `task_0494` | 256         | 0.005 | 0.0001       | 80.505589         | 89.774432           | 0.726175           | 0.342137          | 48     |
-| `20h-float32` | `task_0762` | 512         | 0.001 | 0.0001       | 86.255484         | 92.014076           | 0.539668           | 0.260618          | 64     |
-| `40h-float32` | `task_1007` | 256         | 0.005 | 0.001        | 90.093559         | 93.642535           | 0.361951           | 0.194324          | 72     |
+- **改动（Change）：** Atari DQN 新增 `--replay_sampling`，默认
+  `task_balanced`，并保留 `global_uniform` 作为对照。Replay 记录外部 `task_id` 作为
+  sampling/loss metadata；transition batch 对各任务等配额，recurrent batch 使用
+  task-pure windows，TD loss 再对各任务的 mean loss 等权平均。`task_id` 不进入模型。
+- **原因（Reason）：** Episode round-robin 只能平衡 episode 数，不能平衡 transitions。
+  Pong 与 Breakout 的 episode 长度不同，因此 global uniform 会把较长 episode 对应的任务
+  赋予更多 gradient updates。
+- **证据（Evidence）：** 已完成的 2M-step ANN Phase0 两个任务各 364 episodes，但有效
+  environment steps 分别为 Pong 1,686,676、Breakout 312,596；旧 replay 因而约 84% 来自
+  Pong。Smoke tests 覆盖等配额 transition sampling、保留的 global-uniform path、task-pure
+  sequence windows，以及 autoreset 后首个有效 observation 的二次 hidden-state reset。
+- **现状（Current）：** 已完成的 `frame_stack=1, frame_skip=1` Phase0 结果仍标记为历史
+  `global_uniform`，不能与新默认混为同一 protocol。后续 metrics 会显式保存
+  `replay_sampling`；模型输入仍只有 image observation，不含 task cue/embedding。
 
+## 2026-07-13 — Phase0 transition-balanced collection
 
-- Current conclusion: under the shared 40h validation set, the best GAWF model
-still improves with train scale, but the optimal hidden size is scale
-dependent. The overall best 40h model remains `hidden_size=256` from
-`task_1007` (`gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5`), which is
-slightly above the best 40h `hidden_size=512` run (`task_1019`, best val char
-`89.962573`).
-
-
-
-## 2026-06-27 - 40h Param-matched Six-model Comparison (GaWF h=256 reference)
-
-- Provenance: the earlier same-day six-model table in this file was **newly
-  aggregated in chat** from Amarel metrics; it was **not** a pre-existing log
-  entry. That table selected each model's best run from `gen_hparam_full_grid`
-  / `gen_hparam_mamba_s5_grid` without width matching, so RNN/LSTM/GRU used
-  `hidden_size=512`. This section replaces it with **parameter-count-matched**
-  widths aligned to GaWF `task_1007` (`hidden_size=256`).
-- Reference checkpoint: `gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5`
-  (`gen_hparam_full_grid` / `task_1007`).
-- Matched middle-path widths (from `utils_anal/model_param_counts.py`,
-  sector mode, `cnn_dropout=0.0`, `rnn_dropout=0.5`, legacy GaWF feedback
-  `dz=19`):
-  - `rnn` -> `hidden_size=275`
-  - `lstm` -> `hidden_size=80`
-  - `gru` -> `hidden_size=105`
-  - `gawf` -> `hidden_size=256` (reference)
-  - `mamba` -> `d_model=170` (fixed in `ssm_mamba_hparam_grid.py`)
-  - `s5` -> `d_model=256`, `state_size=128`, `s5_ssm_lr_scale=0.1` (128 chosen via
-    `model_param_counts.py` to match GaWF h=256; legacy `state=189` was copied from
-    DiagLTI and is ~8% over-parameterized)
-- Search grids (all: `train_data_suffix=40h-float32`,
-  `eval_data_suffix=40h-float32`, `lr in {0.0001, 0.0005, 0.001, 0.005}`,
-  `weight_decay in {0.0, 1e-5, 1e-4, 0.001}`, selection = highest
-  `val_acc_at_best` within each model at matched width):
-  - `gawf`: `gen_hparam_full_grid` (reference row = `task_1007`).
-  - `rnn` / `lstm` / `gru`: `gen_hparam_40h_param_match` with
-    `--gawf-ref-hidden 256` (`48/48` valid on Amarel).
-  - `mamba` / `s5`: `gen_hparam_mamba_s5_grid` (`mamba` 40h slice `39/40` valid;
-    `s5` 40h slice `20/20` valid at `state=128`, rerun complete `2026-06-28`,
-    superseding legacy `state=189` outputs; results stored on `/scratch`).
-- Test evaluation backfill: on 2026-07-06, the six copied best checkpoints in
-  `results/train_data/clutter_best_6model_param_matched_40h` were evaluated on
-  `stimulus_reg-test-40h-float32` from `/scratch/js3269/stimuli`. The output
-  artifact is
-  `results/train_data/clutter_best_6model_param_matched_40h/test_acc_40h_eval.json`.
-  Evaluation reused the training eval protocol; Mamba was run on CPU with
-  PyTorch reference kernels (`causal_conv1d_fn=None`,
-  `selective_scan_fn=selective_scan_ref`) because the installed fast kernels
-  require CUDA.
-
-| Model | Params | Grid | Best task | Width | lr | weight decay | Train char acc | Val char acc | Test char acc | Train sector acc | Val sector acc | Test sector acc | Char gap | Val loss char | Val loss pos | Epochs |
-| --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `gawf` | 586,067 | `gen_hparam_full_grid` | `task_1007` | `hidden_size=256` | 0.005 | 0.001 | 93.332563 | 90.093559 | 85.619700 | 95.230321 | 93.642535 | 92.699464 | 3.24 | 0.361951 | 0.194324 | 72 |
-| `mamba` | 587,275 | `gen_hparam_mamba_s5_grid` | `task_0131` | `d_model=170` | 0.001 | 0.001 | 91.620527 | 86.565073 | 82.672282 | 95.321002 | 93.375942 | 92.224585 | 5.06 | 0.444332 | 0.188731 | 34 |
-| `gru` | 586,905 | `gen_hparam_40h_param_match` | `task_0047` | `hidden_size=105` | 0.005 | 0.001 | 88.757107 | 84.831456 | 80.168615 | 92.553929 | 92.281887 | 90.595980 | 3.93 | 0.504102 | 0.226703 | 31 |
-| `rnn` | 586,865 | `gen_hparam_40h_param_match` | `task_0009` | `hidden_size=275` | 0.001 | 1e-05 | 91.302709 | 84.149388 | 79.674000 | 93.384007 | 91.892570 | 89.924517 | 7.15 | 0.536043 | 0.241285 | 62 |
-| `lstm` | 584,675 | `gen_hparam_40h_param_match` | `task_0027` | `hidden_size=80` | 0.001 | 0.001 | 89.948382 | 83.607920 | 79.806536 | 92.823792 | 91.607884 | 90.232043 | 6.34 | 0.557105 | 0.253663 | 42 |
-| `s5` | 587,475 | `gen_hparam_mamba_s5_grid` | `task_0148` | `d_model=256`, `state=128` | 0.001 | 0.0 | 86.168562 | 79.998780 | 75.387371 | 91.545977 | 90.728542 | 88.939664 | 6.17 | 0.653471 | 0.263917 | 98 |
-
-- Param counts: `python utils_anal/model_param_counts.py --hidden_rnn 275
-  --hidden_lstm 80 --hidden_gru 105 --hidden_gawf 256 --mamba_d_model 170
-  --s5_d_model 256 --s5_state_size 128` (Amarel `aim3_rnn`, 2026-06-27).
-  RNN/LSTM/GRU/GAWF/Mamba/S5 are within ~0.3% of each other at these widths.
-- Legacy note: the first S5 grid used `state=189` (DiagLTI default, 634,445
-  params). That campaign was removed on Amarel; reruns use the standard launcher
-  `experiments/amarel/submit_ssm_mamba_hparam_grid_batches.sh --model s5`.
-- Checkpoint stems:
-
-| Model | Checkpoint stem |
-| --- | --- |
-| `gawf` | `gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5` |
-| `mamba` | `mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5` |
-| `gru` | `gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5` |
-| `rnn` | `rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5` |
-| `lstm` | `lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5` |
-| `s5` | `s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5` |
-
-- Current conclusion (param-matched, 40h train + 40h validation):
-  1. **GAWF** (`task_1007`) still leads on val char (`90.09%`) and test char
-     (`85.62%`) with the smallest char gap (`3.24` pt) among the top models.
-  2. **Mamba** (`task_0131`) is second on char (`86.57%`) and closest on sector
-     (`93.38%` vs GAWF `93.64%`).
-  3. At matched width, **GRU/RNN/LSTM** all fall to `83.6-84.8%` val char,
-     substantially below the earlier unmatched `h=512` full-grid peaks
-     (`85.5-86.0%`), indicating the prior advantage was partly capacity-driven.
-  4. **S5** at fair `state=128` (`task_0148`) is weakest of the six: `80.00%` val
-     char and lowest val sector (`90.73%` vs GAWF `93.64%`), ran the full grid
-     without early stop (98 epochs) at a small best `lr=0.001`—suggesting weak
-     convergence/underfitting at this ~587K param budget rather than a capacity
-     gap. (Supersedes the removed legacy `state=189` campaign.)
+- **改动（Change）：** Multi-task Atari collection 默认改为 `transition_balanced`：仍然
+  只在 episode boundary 选择任务，但优先选择累计 environment steps 最少的任务，并以
+  cyclic order 处理相同步数。保留历史 `round_robin` 作为对照；不再要求 per-task episode
+  数一致。
+- **原因（Reason）：** `task_balanced` replay 只能平衡训练时的 sampling/update 数，不能
+  为短 episode 任务补充新的 transitions。若按 episode round-robin，短任务会产生更少且
+  被更频繁重复抽取的数据，导致任务间 experience coverage 不公平。
+- **证据（Evidence）：** 已完成的 `stack4/skip4` GRU Phase0 虽然 Pong 与 Breakout 均为
+  708 episodes，但有效 environment steps 分别为 1,759,600 与 238,984；Breakout 仅获得
+  约 12% 的 collected transitions。Task-balanced replay 不会改变这一采集差异。
+- **现状（Current）：** Collection balance 和 replay balance 作为两个独立协议字段
+  记录。新实验使用 `transition_balanced` collection + `task_balanced` replay；外部
+  `task_id` 仅用于 environment scheduling、metrics、replay sampling 和 loss aggregation，
+  不进入模型输入。

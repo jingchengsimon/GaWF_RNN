@@ -1,75 +1,63 @@
 # Remote Workflow Wrappers
 
-These wrappers sync committed local code through GitHub, update the remote checkout, and run
-commands on the remote machine.
+These wrappers synchronize committed code, update the configured remote checkout, run commands,
+and fetch result files. General SSH and environment rules are in
+`docs/operations/REMOTE_EXECUTION.md`.
 
-## Setup
+## Local setup
 
 ```bash
 cp remote/config.example.sh remote/config.sh
 ```
 
-`remote/config.sh` is ignored by git. It currently targets:
+Fill in the ignored `remote/config.sh` with the SSH target, remote project root, branch, result
+paths, and optional activation command. Do not put real endpoints in the tracked example.
 
-- host: `sjc@172.26.48.213`
-- remote project: `/G/MIMOlab/Codes/aim3_RNN`
-- branch: `master`
+The wrapper never runs `git add` or `git commit`. It stops if local edits make synchronization
+unsafe and prints the required manual action.
 
-Conda activation is intentionally disabled by default. Keep remote environment changes manual, or
-set `REMOTE_ACTIVATE` in `remote/config.sh` later.
-
-## Sync Code
+## Synchronize code
 
 ```bash
 ./remote/sync_code.sh --push
 ```
 
-The sync wrapper never runs `git add` or `git commit`. If local edits are uncommitted, it stops and
-prints suggested commands.
+## Run commands
 
-## Run Commands
-
-Foreground command with result fetch for files created after this run starts:
+Run in the foreground and fetch files created after the run began:
 
 ```bash
 ./remote/run.sh --push -- python train_model.py --help
 ```
 
-Long command in remote tmux:
+Run a long command in remote tmux:
 
 ```bash
-./remote/run.sh --push --detach my_session -- bash experiments/local/run_hparam_full_grid_2gpu.sh --scale 4
+./remote/run.sh --push --detach my_session -- \
+  bash experiments/local/run_hparam_full_grid_2gpu.sh --scale 4
 ```
 
-After a tmux run finishes, fetch only files newer than that run's marker:
+After a detached launch succeeds, record its run ID, tmux session, remote root, exact logs,
+results, and validity conditions with the project-local registry in
+`experiments/monitoring/README.md`. This makes the same run discoverable from Mac and Mac mini
+without an external Dashboard.
+
+The wrapper prints a marker for detached runs. Fetch only files newer than that marker:
 
 ```bash
-./remote/fetch_results.sh --since .remote_wrapper_<timestamp>_<pid>.marker
+./remote/fetch_results.sh --since <marker-file>
 ```
 
-The wrapper prints the exact marker name when it starts a tmux session.
-
-## Fetch Results
-
-Avoid fetching all results on the first run unless you really want the full remote history:
+Fetch one result subdirectory:
 
 ```bash
-./remote/fetch_results.sh --all
+./remote/fetch_results.sh train_data/<result-suffix>
 ```
 
-Fetch one subdirectory:
+Use `--all` only when the full remote history is intentionally required.
 
-```bash
-./remote/fetch_results.sh train_data/gen_phase3_short_4h_ep100
-```
+## Connections
 
-## SSH Passwords
-
-`SSH_OPTS` uses SSH ControlMaster so one successful login can be reused for sync, run, and rsync for
-about 10 minutes. For passwordless login, configure an SSH key manually:
-
-```bash
-ssh-keygen -t ed25519 -C "FAW_RNN remote"
-ssh-copy-id sjc@172.26.48.213
-ssh sjc@172.26.48.213
-```
+The example enables SSH ControlMaster so one authenticated connection can be reused briefly by
+sync, run, and fetch operations. Configure SSH keys and aliases outside the repository. Keep real
+usernames, addresses, and project paths in `remote/config.sh` and `.agents/local.md`.

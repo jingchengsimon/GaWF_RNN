@@ -6,6 +6,7 @@ import os
 import sys
 import unittest
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -83,7 +84,120 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
         self.assertEqual(args.frame_stack, 1)
         self.assertEqual(args.amp_dtype, "none")
         self.assertFalse(args.allow_tf32)
+        self.assertFalse(args.cudnn_benchmark)
+        self.assertFalse(args.fused_optimizer)
         self.assertFalse(args.compile_model)
+        self.assertIsNone(args.env_ids)
+        self.assertEqual(args.action_space_mode, "auto")
+        self.assertEqual(args.replay_sampling, "task_balanced")
+        self.assertEqual(args.task_schedule, "transition_balanced")
+
+    def test_transition_balanced_collection_allows_unequal_episode_counts(self) -> None:
+        from utils.atari_envs import _EpisodeTaskScheduler
+
+        scheduler = _EpisodeTaskScheduler(
+            num_tasks=2,
+            start_idx=0,
+            mode="transition_balanced",
+        )
+        episode_lengths = (100, 20)
+        episode_counts = [0, 0]
+        for _ in range(12):
+            task_idx = scheduler.next_task()
+            episode_counts[task_idx] += 1
+            for _ in range(episode_lengths[task_idx]):
+                scheduler.record_step(task_idx)
+
+        self.assertEqual(scheduler.task_steps, [200, 200])
+        self.assertEqual(episode_counts, [2, 10])
+
+    def test_round_robin_collection_remains_selectable(self) -> None:
+        from utils.atari_envs import _EpisodeTaskScheduler
+
+        scheduler = _EpisodeTaskScheduler(num_tasks=2, start_idx=0, mode="round_robin")
+        selected = [scheduler.next_task() for _ in range(6)]
+        self.assertEqual(selected, [0, 1, 0, 1, 0, 1])
+
+    def test_global_uniform_replay_remains_selectable(self) -> None:
+        from train_atari_dqn import build_arg_parser
+
+        args = build_arg_parser().parse_args(["--replay_sampling", "global_uniform"])
+        self.assertEqual(args.replay_sampling, "global_uniform")
+
+    def test_task_balanced_loss_gives_each_task_equal_weight(self) -> None:
+        from train_atari_dqn import _aggregate_td_loss
+        from utils.atari_replay import AtariReplayBuffer
+
+        buffer = AtariReplayBuffer(
+            buffer_size=10,
+            num_envs=1,
+            obs_shape=(1, 1, 1),
+            device="cpu",
+            seed=0,
+            num_tasks=2,
+        )
+        loss = _aggregate_td_loss(
+            elementwise_loss=torch.tensor([1.0, 1.0, 9.0]),
+            task_ids=torch.tensor([0, 0, 1]),
+            loss_mask=torch.ones(3),
+            buffer=buffer,
+        )
+        self.assertAlmostEqual(float(loss), 5.0)
+
+    def test_next_step_autoreset_resets_state_twice(self) -> None:
+        from train_atari_dqn import _next_state_reset_flags
+
+        terminal_step = _next_state_reset_flags(
+            dones=np.array([1], dtype=np.uint8),
+            autoreset_rows=np.array([0], dtype=np.uint8),
+        )
+        first_new_episode_step = _next_state_reset_flags(
+            dones=np.array([0], dtype=np.uint8),
+            autoreset_rows=np.array([1], dtype=np.uint8),
+        )
+        np.testing.assert_array_equal(terminal_step, np.array([1], dtype=np.uint8))
+        np.testing.assert_array_equal(
+            first_new_episode_step,
+            np.array([1], dtype=np.uint8),
+        )
+
+    def test_multitask_phase0_resolves_to_full_action_space(self) -> None:
+        from train_atari_dqn import _resolve_task_config, build_arg_parser
+
+        args = build_arg_parser().parse_args(
+            ["--env_ids", "ALE/Pong-v5", "ALE/Breakout-v5"]
+        )
+        env_ids, action_space_mode = _resolve_task_config(args)
+        self.assertEqual(env_ids, ("ALE/Pong-v5", "ALE/Breakout-v5"))
+        self.assertEqual(action_space_mode, "full18")
+
+    def test_single_pong_task_config_preserves_minimal_actions(self) -> None:
+        from train_atari_dqn import _resolve_task_config, build_arg_parser
+
+        args = build_arg_parser().parse_args([])
+        self.assertEqual(_resolve_task_config(args), (("ALE/Pong-v5",), "minimal"))
+
+    def test_multitask_rejects_minimal_action_space(self) -> None:
+        from train_atari_dqn import _resolve_task_config, build_arg_parser
+
+        args = build_arg_parser().parse_args(
+            [
+                "--env_ids",
+                "ALE/Pong-v5",
+                "ALE/Breakout-v5",
+                "--action_space_mode",
+                "minimal",
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, "full18"):
+            _resolve_task_config(args)
+
+    def test_ann_supports_phase0_eighteen_action_head(self) -> None:
+        model = _build_model("ann", num_actions=18)
+        obs, prev_dones = _inputs()
+        q_values, state = model.forward_sequence(obs, prev_dones)
+        self.assertEqual(q_values.shape, (2, 4, 18))
+        self.assertIsNone(state)
 
     def test_ann_shapes(self) -> None:
         model = _build_model("ann")
@@ -216,6 +330,12 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
                     model = _build_model(model_type, num_layers=num_layers)
                     model.eval()
                     q_fused, state_fused = model.forward_sequence(obs, prev_dones)
+                    q_with_cpu_hint, _ = model.forward_sequence(
+                        obs,
+                        prev_dones,
+                        has_internal_reset=False,
+                    )
+                    self.assertTrue(torch.allclose(q_fused, q_with_cpu_hint, atol=1e-5))
                     state_step = None
                     q_steps = []
                     for time_idx in range(n_steps):
@@ -242,6 +362,24 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
                                 state_fused.recurrent, state_step.recurrent, atol=1e-5
                             )
                         )
+
+    def test_cpu_reset_hint_preserves_stepwise_sequence(self) -> None:
+        obs, prev_dones = _inputs(batch_size=2, n_steps=5)
+        prev_dones.zero_()
+        prev_dones[:, 0] = 1.0
+        prev_dones[0, 3] = 1.0
+        for model_type in ("rnn", "gru", "lstm", "gawf"):
+            with self.subTest(model_type=model_type):
+                feedback_mode = "qvalues" if model_type == "gawf" else "none"
+                model = _build_model(model_type, feedback_mode)
+                model.eval()
+                q_default, _ = model.forward_sequence(obs, prev_dones)
+                q_with_cpu_hint, _ = model.forward_sequence(
+                    obs,
+                    prev_dones,
+                    has_internal_reset=True,
+                )
+                self.assertTrue(torch.allclose(q_default, q_with_cpu_hint, atol=1e-5))
 
     def test_cpu_acceleration_policy_disables_cuda_only_features(self) -> None:
         acceleration = AtariAcceleration(

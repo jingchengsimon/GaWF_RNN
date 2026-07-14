@@ -11,6 +11,7 @@ frame stacking: the recurrent core is the only source of memory.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Literal
 
 # A few canonical memory/navigation envs. MemoryS* is the standard memory
 # benchmark whose corridor length (S7<S9<S11<S13) sets the required memory horizon.
@@ -23,6 +24,9 @@ MINIGRID_PILOT_ENVS = (
     "MiniGrid-RedBlueDoors-6x6-v0",
     "MiniGrid-RedBlueDoors-8x8-v0",
 )
+
+MiniGridVectorBackend = Literal["sync", "async"]
+MINIGRID_VECTOR_BACKENDS = ("sync", "async")
 
 
 def make_minigrid_env(
@@ -92,8 +96,11 @@ def make_vector_minigrid_env(
     agent_view_size: int | None = None,
     capture_video: bool = False,
     video_dir: str | None = None,
-):
-    """Create a synchronous vector MiniGrid environment."""
+    vector_backend: MiniGridVectorBackend = "sync",
+) -> object:
+    """Create a synchronous or subprocess-parallel vector MiniGrid environment."""
+    if vector_backend not in MINIGRID_VECTOR_BACKENDS:
+        raise ValueError(f"Unsupported MiniGrid vector backend: {vector_backend}")
     try:
         import gymnasium as gym
         import minigrid  # noqa: F401
@@ -107,4 +114,8 @@ def make_vector_minigrid_env(
         make_minigrid_env(env_id, seed, idx, agent_view_size, capture_video, video_dir)
         for idx in range(num_envs)
     ]
+    if vector_backend == "async":
+        # CUDA is configured before environment construction in the trainer;
+        # spawn avoids inheriting an initialized CUDA runtime via fork.
+        return gym.vector.AsyncVectorEnv(env_fns, context="spawn")
     return gym.vector.SyncVectorEnv(env_fns)

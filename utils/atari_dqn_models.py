@@ -364,8 +364,13 @@ class AtariQNetwork(nn.Module):
         obs: torch.Tensor,
         prev_dones: torch.Tensor,
         state: AtariQNetworkState | None = None,
+        has_internal_reset: bool | None = None,
     ) -> tuple[torch.Tensor, AtariQNetworkState | None]:
-        """Run a batch-first observation sequence, returning (B, T, A) Q-values."""
+        """Run a batch-first observation sequence, returning (B, T, A) Q-values.
+
+        ``has_internal_reset`` may be supplied by a CPU replay sampler to avoid
+        a GPU synchronization solely for selecting the equivalent fused scan.
+        """
         if obs.ndim != 5:
             raise ValueError(f"obs must have shape (B,T,C,H,W), got {tuple(obs.shape)}")
         encoded = self._encode_sequence(obs)
@@ -394,9 +399,10 @@ class AtariQNetwork(nn.Module):
         supports_fused_scan = self.model_type in {"rnn", "gru", "lstm"} and (
             not self.training or self.core.dropout == 0.0
         )
-        has_internal_reset = n_steps > 1 and bool(
-            torch.any(prev_dones[:, 1:] != 0).item()
-        )
+        if has_internal_reset is None:
+            has_internal_reset = n_steps > 1 and bool(
+                torch.any(prev_dones[:, 1:] != 0).item()
+            )
         if supports_fused_scan and not has_internal_reset:
             done_0 = prev_dones[:, 0].to(device=device, dtype=dtype)
             recurrent = self._mask_recurrent_state(recurrent, done_0)

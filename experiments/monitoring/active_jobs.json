@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "active_statuses": [
+    "queued",
+    "recovering",
+    "running",
+    "unknown"
+  ],
+  "jobs": [
+    {
+      "id": "amarel-minigrid-redblue-200m-58165756",
+      "description": "MiniGrid RedBlueDoors LSTM/GaWF formal 200M accelerated run",
+      "host": "amarel",
+      "status": "running",
+      "job_ids": [
+        "58165756"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/FAW_RNN-minigrid-accel-200m-20260714",
+      "updated_at": "2026-07-14T18:10:00+00:00"
+    },
+    {
+      "id": "amarel-minigrid-memory-200m-58165755",
+      "description": "MiniGrid MemoryS7 LSTM/GaWF formal 200M accelerated run",
+      "host": "amarel",
+      "status": "running",
+      "job_ids": [
+        "58165755"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/FAW_RNN-minigrid-accel-200m-20260714",
+      "updated_at": "2026-07-14T18:05:00+00:00"
+    },
+    {
+      "id": "amarel-atari-pong-fs1-stack1-70-58160888",
+      "description": "Strict Pong fs1/stack1 full 6-action 1M: 7 models × 2 settings × 5 seeds",
+      "host": "amarel",
+      "status": "running",
+      "job_ids": [
+        "58160888"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/FAW_RNN-multitask-gru-phase0-20260713",
+      "updated_at": "2026-07-14T17:59:00+00:00"
+    }
+  ]
+}

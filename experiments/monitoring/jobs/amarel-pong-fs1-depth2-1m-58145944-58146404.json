@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "id": "amarel-pong-fs1-depth2-1m-58145944-58146404",
+  "description": "Pong strict fs1/stack1 depth-2 1M validation, verified 10/10",
+  "host": "amarel",
+  "status": "completed",
+  "created_at": "2026-07-13T00:00:00+00:00",
+  "updated_at": "2026-07-13T23:00:00+00:00",
+  "completed_at": "2026-07-13T23:00:00+00:00",
+  "remote_root": "/home/js3269/projects/FAW_RNN-pong-fs1-l2-03e8bda",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": ["58145944", "58146404"],
+    "run_ids": [],
+    "tmux_session": null,
+    "process_patterns": [],
+    "collect_gpu": false
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/atari_pong_depth2/58145944_0.*",
+      "experiments/amarel/artifacts/atari_pong_depth2/58145944_5.*",
+      "experiments/amarel/artifacts/atari_pong_depth2/58146404_*.*"
+    ],
+    "status_dir": "experiments/amarel/artifacts/atari_pong_depth2/status",
+    "result_paths": [
+      "results/train_data/atari_dqn_pong_fs1_stack1_depth2match_*_L2_seed42",
+      "results/train_data/atari_dqn_pong_fs1_stack1_flicker_depth2match_*_L2_seed42"
+    ]
+  },
+  "tracking": {
+    "expected_units": 10,
+    "auto_complete": true,
+    "result_globs": [
+      "results/train_data/atari_dqn_pong_fs1_stack1_depth2match_*_L2_seed42",
+      "results/train_data/atari_dqn_pong_fs1_stack1_flicker_depth2match_*_L2_seed42"
+    ],
+    "done_glob": "experiments/amarel/artifacts/atari_pong_depth2/status/*.done",
+    "fail_glob": "experiments/amarel/artifacts/atari_pong_depth2/status/*.fail",
+    "defaults": {
+      "metrics_file": "metrics.json",
+      "history_file": "metrics_history.jsonl",
+      "checkpoint_glob": "*.pth",
+      "checkpoint_count": 1,
+      "expected": {
+        "global_step": 1000000,
+        "frame_skip": 1,
+        "frame_stack": 1,
+        "num_layers": 2
+      }
+    },
+    "units": []
+  },
+  "notes": [
+    "Historical import: 10/10 units were previously verified with global_step=1000000, frame_skip=1, frame_stack=1, num_layers=2 and one checkpoint.",
+    "Exact result, status and successful-run log paths were backfilled by bounded inspection of the dedicated remote root."
+  ]
+}

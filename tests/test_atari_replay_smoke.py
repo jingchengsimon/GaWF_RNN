@@ -17,7 +17,13 @@ from utils.atari_replay import AtariReplayBuffer
 OBS_SHAPE = (2, 4, 4)
 
 
-def _fill(buffer: AtariReplayBuffer, n_steps: int, dones=(), resets=()) -> None:
+def _fill(
+    buffer: AtariReplayBuffer,
+    n_steps: int,
+    dones=(),
+    resets=(),
+    task_ids: tuple[int, ...] | list[int] | None = None,
+) -> None:
     """Add ``n_steps`` rows whose obs encode the global step index mod 256."""
     for step in range(n_steps):
         obs = np.full((1, *OBS_SHAPE), step % 256, dtype=np.uint8)
@@ -27,6 +33,7 @@ def _fill(buffer: AtariReplayBuffer, n_steps: int, dones=(), resets=()) -> None:
             rewards=np.array([float(step)], dtype=np.float32),
             dones=np.array([1 if step in dones else 0]),
             resets=np.array([1 if step in resets else 0]),
+            task_ids=None if task_ids is None else np.array([task_ids[step]]),
         )
 
 
@@ -57,20 +64,22 @@ class AtariReplayBufferSmokeTest(unittest.TestCase):
         # physical head boundary (steps 19->20 wrap from slot 9 to slot 0).
         self.assertTrue((obs_vals[:, 0] < 20).any().item())
         self.assertTrue((seq.prev_dones[:, 0] == 1.0).all().item())
+        self.assertTrue(seq.has_internal_reset)
         self.assertTrue((seq.loss_mask >= 0).all().item())
         for row in range(obs_vals.shape[0]):
             for col in range(obs_vals.shape[1]):
                 step = int(obs_vals[row, col])
-                expected_reset = 1.0 if step in {21, 24} else 0.0
-                self.assertEqual(float(seq.loss_mask[row, col]), 1.0 - expected_reset)
+                is_autoreset = step in {21, 24}
+                expected_state_reset = step in {21, 22, 24, 25}
+                self.assertEqual(float(seq.loss_mask[row, col]), 0.0 if is_autoreset else 1.0)
                 if col > 0:
-                    self.assertEqual(float(seq.prev_dones[row, col]), expected_reset)
-                elif expected_reset == 0.0:
+                    self.assertEqual(
+                        float(seq.prev_dones[row, col]),
+                        1.0 if expected_state_reset else 0.0,
+                    )
+                elif not expected_state_reset:
                     # Step 0 is forced to 1.0 regardless of the stored flag.
                     self.assertEqual(float(seq.prev_dones[row, col]), 1.0)
-        self.assertTrue(
-            torch_all_equal(seq.prev_dones[:, 1:], 1.0 - seq.loss_mask[:, 1:])
-        )
 
     def test_not_full_index_ranges(self) -> None:
         buffer = AtariReplayBuffer(
@@ -81,6 +90,7 @@ class AtariReplayBufferSmokeTest(unittest.TestCase):
         batch = buffer.sample_transitions(32)
         self.assertTrue((batch.obs[:, 0, 0, 0].long() <= 3).all().item())
         seq = buffer.sample_sequences(batch_size=16, seq_len=3)
+        self.assertFalse(seq.has_internal_reset)
         self.assertTrue((seq.obs[:, 0, 0, 0, 0].long() <= 1).all().item())
         with self.assertRaises(ValueError):
             buffer.sample_sequences(batch_size=1, seq_len=5)
@@ -96,6 +106,57 @@ class AtariReplayBufferSmokeTest(unittest.TestCase):
         self.assertFalse((obs_vals == 20).any().item())
         done_bases = batch.dones == 1.0
         self.assertTrue(done_bases.any().item())
+
+    def test_task_balanced_transition_sampling_ignores_task_frequency(self) -> None:
+        task_ids = [0] * 100 + [1] * 20
+        buffer = AtariReplayBuffer(
+            buffer_size=120,
+            num_envs=1,
+            obs_shape=OBS_SHAPE,
+            device="cpu",
+            seed=4,
+            num_tasks=2,
+        )
+        _fill(buffer, 120, task_ids=task_ids)
+        batch = buffer.sample_transitions(64)
+        counts = np.bincount(batch.task_ids.numpy(), minlength=2)
+        np.testing.assert_array_equal(counts, np.array([32, 32]))
+
+    def test_global_uniform_transition_sampling_remains_available(self) -> None:
+        task_ids = [0] * 100 + [1] * 20
+        buffer = AtariReplayBuffer(
+            buffer_size=120,
+            num_envs=1,
+            obs_shape=OBS_SHAPE,
+            device="cpu",
+            seed=5,
+            num_tasks=2,
+            sampling_mode="global_uniform",
+        )
+        _fill(buffer, 120, task_ids=task_ids)
+        batch = buffer.sample_transitions(4096)
+        task_zero_fraction = float((batch.task_ids == 0).float().mean())
+        self.assertGreater(task_zero_fraction, 0.75)
+
+    def test_task_balanced_sequence_windows_are_task_pure(self) -> None:
+        task_ids = [0] * 40 + [1] * 40
+        buffer = AtariReplayBuffer(
+            buffer_size=80,
+            num_envs=1,
+            obs_shape=OBS_SHAPE,
+            device="cpu",
+            seed=6,
+            num_tasks=2,
+        )
+        _fill(buffer, 80, dones={38}, resets={39}, task_ids=task_ids)
+        seq = buffer.sample_sequences(batch_size=32, seq_len=6)
+        sequence_tasks = []
+        for row in range(seq.task_ids.shape[0]):
+            valid_task_ids = seq.task_ids[row][seq.loss_mask[row].bool()]
+            self.assertEqual(valid_task_ids.unique().numel(), 1)
+            sequence_tasks.append(int(valid_task_ids[0]))
+        counts = np.bincount(sequence_tasks, minlength=2)
+        np.testing.assert_array_equal(counts, np.array([16, 16]))
 
 
 def torch_all_equal(a, b) -> bool:

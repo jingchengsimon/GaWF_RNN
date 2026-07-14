@@ -1,4 +1,4 @@
-"""Overlay Atari DQN curves for the frame-skip-4/stack-1 Pong sweep.
+"""Plot Atari DQN learning curves for sweeps or one multi-task run.
 
 Reads ``results/train_data/<suffix>/metrics_history.jsonl`` (written by
 ``train_atari_dqn.py``) and overlays ``episodic_return_100`` vs ``global_step``
@@ -15,6 +15,9 @@ Suffix convention states both environment advance and observation history:
 Examples:
   python -m utils_viz.atari_learning_curves --setting both
   python -m utils_viz.atari_learning_curves --setting flicker --smooth 20
+  python -m utils_viz.atari_learning_curves --run_dir results/train_data/<suffix>
+  python -m utils_viz.atari_learning_curves --run_dir results/train_data/<suffix> \
+      --include_combined
 """
 
 from __future__ import annotations
@@ -47,6 +50,11 @@ MODEL_COLORS = {
     "gawf": "#d62728",  # red: model of interest
     "s5": "#17becf",
     "mamba": "#ff7f0e",
+}
+
+TASK_COLORS = {
+    "ALE/Breakout-v5": "#1f77b4",
+    "ALE/Pong-v5": "#ff7f0e",
 }
 
 SETTING_TITLES = {
@@ -100,6 +108,16 @@ def parse_args() -> argparse.Namespace:
         help="Plot only this single seed (no band). Default: aggregate all seeds.",
     )
     parser.add_argument("--output", default=None, help="Explicit output png path.")
+    parser.add_argument(
+        "--run_dir",
+        default=None,
+        help="Plot one run directly, including per-environment multi-task returns.",
+    )
+    parser.add_argument(
+        "--include_combined",
+        action="store_true",
+        help="Also plot the rolling return pooled across tasks in --run_dir mode.",
+    )
     return parser.parse_args()
 
 
@@ -127,6 +145,16 @@ def _discover_run_dirs(data_root: str, base: str, seed: Optional[int] = None) ->
     return [seedless] if seedless.is_dir() else []
 
 
+def _metric_value(record: dict, metric: str):
+    """Resolve a dot-separated metric path from one JSONL record."""
+    value = record
+    for key in metric.split("."):
+        if not isinstance(value, dict) or key not in value:
+            return None
+        value = value[key]
+    return value
+
+
 def _load_curve(jsonl_path: Path, metric: str) -> Optional[tuple[np.ndarray, np.ndarray]]:
     if not jsonl_path.is_file():
         return None
@@ -140,7 +168,7 @@ def _load_curve(jsonl_path: Path, metric: str) -> Optional[tuple[np.ndarray, np.
                 rec = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            v, s = rec.get(metric), rec.get("global_step")
+            v, s = _metric_value(rec, metric), rec.get("global_step")
             if v is None or s is None:
                 continue
             v = float(v)
@@ -152,6 +180,21 @@ def _load_curve(jsonl_path: Path, metric: str) -> Optional[tuple[np.ndarray, np.
         return None
     order = np.argsort(steps)
     return np.asarray(steps)[order], np.asarray(values)[order]
+
+
+def _discover_env_ids(jsonl_path: Path) -> list[str]:
+    """Return sorted task names found in a multi-task metrics history."""
+    if not jsonl_path.is_file():
+        return []
+    with open(jsonl_path, encoding="utf-8") as f:
+        for line in f:
+            try:
+                per_env = json.loads(line).get("per_env", {})
+            except json.JSONDecodeError:
+                continue
+            if isinstance(per_env, dict) and per_env:
+                return sorted(str(env_id) for env_id in per_env)
+    return []
 
 
 def _smooth(values: np.ndarray, window: int) -> np.ndarray:
@@ -218,8 +261,88 @@ def _plot_setting(ax, args, setting: str) -> int:
     return plotted
 
 
+def _env_label(env_id: str) -> str:
+    """Convert an ALE environment id to a compact plot label."""
+    return env_id.removeprefix("ALE/").removesuffix("-v5")
+
+
+def _direct_run_title(run_dir: Path, env_ids: list[str]) -> str:
+    """Build a protocol-aware title from one run's saved metadata."""
+    metadata_path = run_dir / "metrics.json"
+    metadata = {}
+    if metadata_path.is_file():
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            metadata = {}
+
+    tasks = " + ".join(_env_label(env_id) for env_id in env_ids) or "Atari multi-task"
+    model = str(metadata.get("model_type", "DQN")).upper()
+    frame_skip = metadata.get("frame_skip")
+    frame_stack = metadata.get("frame_stack")
+    sampling = str(metadata.get("replay_sampling", "global_uniform")).replace("_", "-")
+    protocol = ""
+    if frame_skip is not None and frame_stack is not None:
+        protocol = f" (skip {frame_skip}, stack {frame_stack})"
+    return f"{tasks} {model}{protocol} — {sampling} replay"
+
+
+def _plot_direct_run(args: argparse.Namespace) -> str:
+    """Plot per-task returns for one training directory."""
+    run_dir = Path(args.run_dir)
+    history_path = run_dir / "metrics_history.jsonl"
+    if not history_path.is_file():
+        raise SystemExit(f"Missing {history_path}")
+
+    env_ids = _discover_env_ids(history_path)
+    series = []
+    if args.include_combined:
+        series.append(("episodic_return_100", "Combined", "#4c4c4c"))
+    series.extend(
+        (
+            f"per_env.{env_id}.episodic_return_100",
+            _env_label(env_id),
+            TASK_COLORS.get(env_id),
+        )
+        for env_id in env_ids
+    )
+    fig, ax = plt.subplots(figsize=(8.5, 5.2))
+    plotted = 0
+    for metric, label, color in series:
+        curve = _load_curve(history_path, metric)
+        if curve is None:
+            continue
+        steps, values = curve
+        ax.plot(steps, _smooth(values, args.smooth), label=label, color=color, linewidth=1.8)
+        plotted += 1
+    if plotted == 0:
+        plt.close(fig)
+        raise SystemExit(f"No valid curves found in {history_path}")
+
+    ax.set_title(_direct_run_title(run_dir, env_ids))
+    ax.set_xlabel("environment steps")
+    ax.set_ylabel("episodic return (last 100 episodes)")
+    ax.grid(True, alpha=0.3)
+    ax.legend(title="task")
+    fig.tight_layout()
+
+    if args.output:
+        out_path = args.output
+    else:
+        os.makedirs(args.output_dir, exist_ok=True)
+        out_path = os.path.join(args.output_dir, "atari_multitask_learning_curves.png")
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    fig.savefig(out_path, dpi=150, bbox_inches="tight", pad_inches=0.06)
+    plt.close(fig)
+    print(f"wrote {out_path}  ({plotted} curves)")
+    return out_path
+
+
 def main() -> None:
     args = parse_args()
+    if args.run_dir:
+        _plot_direct_run(args)
+        return
     settings = ("plain", "flicker") if args.setting == "both" else (args.setting,)
 
     fig, axes = plt.subplots(
@@ -250,7 +373,8 @@ def main() -> None:
             args.output_dir, f"atari_pong_fs4_stack1_{args.setting}{seed_tag}.png"
         )
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path, dpi=150, bbox_inches="tight", pad_inches=0.06)
+    plt.close(fig)
     print(f"wrote {out_path}  ({total} model curves)")
 
 

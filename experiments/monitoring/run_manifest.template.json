@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "id": "short-stable-job-id",
+  "description": "Human-readable experiment description",
+  "host": "amarel",
+  "status": "queued",
+  "created_at": "2026-01-01T00:00:00+00:00",
+  "updated_at": "2026-01-01T00:00:00+00:00",
+  "remote_root": "/absolute/remote/worktree",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/absolute/path/to/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": ["12345678"],
+    "run_ids": [],
+    "tmux_session": null,
+    "process_patterns": [],
+    "collect_gpu": false
+  },
+  "paths": {
+    "log_globs": ["experiments/amarel/artifacts/example/*.out"],
+    "status_dir": "experiments/amarel/artifacts/example/status",
+    "result_paths": ["results/train_data/example_*_seed42"]
+  },
+  "tracking": {
+    "expected_units": 1,
+    "auto_complete": true,
+    "defaults": {
+      "metrics_file": "metrics.json",
+      "history_file": "metrics_history.jsonl",
+      "checkpoint_glob": "*.pth",
+      "checkpoint_count": 1
+    },
+    "units": [
+      {
+        "id": "example-seed42",
+        "result_dir": "results/train_data/example_seed42",
+        "done_file": "experiments/amarel/artifacts/example/status/example_seed42.done",
+        "fail_file": "experiments/amarel/artifacts/example/status/example_seed42.fail",
+        "expected": {
+          "global_step": 1000000,
+          "model_type": "gawf"
+        }
+      }
+    ]
+  },
+  "notes": []
+}
