@@ -1,4 +1,4 @@
-"""Overlay Atari DQN curves for the frame-skip-4/stack-1 Pong sweep.
+"""Overlay Atari DQN learning curves for an explicitly named Pong protocol.
 
 Reads ``results/train_data/<suffix>/metrics_history.jsonl`` (written by
 ``train_atari_dqn.py``) and overlays ``episodic_return_100`` vs ``global_step``
@@ -8,9 +8,8 @@ line with a shaded +/- std band. Style mirrors
 ``utils_viz/model_train_compare_result.py`` (matplotlib Agg, fixed per-model
 colours, legend, output under ``results/train_figs``).
 
-Suffix convention states both environment advance and observation history:
-  plain fs4/stack1 Pong      -> ``<prefix>_<model>_seed<N>``          (--setting plain)
-  flickering fs4/stack1 Pong -> ``<prefix>_flicker_<model>_seed<N>``  (--setting flicker)
+The result prefix must state both environment advance and observation history,
+for example ``atari_dqn_pong_fs1_stack1`` or ``atari_dqn_pong_fs4_stack1``.
 
 Examples:
   python -m utils_viz.atari_learning_curves --setting both
@@ -47,11 +46,6 @@ MODEL_COLORS = {
     "gawf": "#d62728",  # red: model of interest
     "s5": "#17becf",
     "mamba": "#ff7f0e",
-}
-
-SETTING_TITLES = {
-    "plain": "Pong (frame skip 4, stack 1)",
-    "flicker": "Flickering Pong (frame skip 4, stack 1, p=0.5)",
 }
 
 N_GRID = 300  # resampling points for cross-seed aggregation
@@ -92,7 +86,11 @@ def parse_args() -> argparse.Namespace:
         help="Shaded band across seeds: std, standard error, or none.",
     )
     parser.add_argument("--data_root", default="results/train_data")
-    parser.add_argument("--output_dir", default="results/train_figs/atari_pong_fs4_stack1")
+    parser.add_argument(
+        "--output_dir",
+        default=None,
+        help="Output directory; defaults to results/train_figs/<protocol prefix>.",
+    )
     parser.add_argument(
         "--seed",
         type=int,
@@ -107,6 +105,22 @@ def _base_suffix(prefix: str, setting: str, model: str) -> str:
     if setting == "flicker":
         return f"{prefix}_flicker_{model}"
     return f"{prefix}_{model}"
+
+
+def _protocol_title(prefix: str, setting: str) -> str:
+    match = re.search(r"(?:^|_)fs(\d+)_stack(\d+)(?:_|$)", prefix)
+    protocol = (
+        f"frame skip {match.group(1)}, stack {match.group(2)}"
+        if match
+        else "configured frame protocol"
+    )
+    if setting == "flicker":
+        return f"Flickering Pong ({protocol}, p=0.5)"
+    return f"Pong ({protocol})"
+
+
+def _artifact_prefix(prefix: str) -> str:
+    return prefix.replace("atari_dqn_", "atari_", 1)
 
 
 def _discover_run_dirs(data_root: str, base: str, seed: Optional[int] = None) -> list[Path]:
@@ -209,7 +223,7 @@ def _plot_setting(ax, args, setting: str) -> int:
             band = std / np.sqrt(n_seeds) if args.band == "sem" else std
             ax.fill_between(grid, mean - band, mean + band, color=color, alpha=0.18, linewidth=0)
         plotted += 1
-    ax.set_title(SETTING_TITLES.get(setting, setting))
+    ax.set_title(_protocol_title(args.prefix, setting))
     ax.set_xlabel("environment steps")
     ax.set_ylabel(args.metric)
     ax.grid(True, alpha=0.3)
@@ -244,13 +258,19 @@ def main() -> None:
     if args.output:
         out_path = args.output
     else:
-        os.makedirs(args.output_dir, exist_ok=True)
+        output_dir = args.output_dir or os.path.join(
+            "results", "train_figs", _artifact_prefix(args.prefix)
+        )
+        os.makedirs(output_dir, exist_ok=True)
         seed_tag = f"_seed{args.seed}" if args.seed is not None else ""
         out_path = os.path.join(
-            args.output_dir, f"atari_pong_fs4_stack1_{args.setting}{seed_tag}.png"
+            output_dir, f"{_artifact_prefix(args.prefix)}_{args.setting}{seed_tag}.png"
         )
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    output_parent = os.path.dirname(out_path)
+    if output_parent:
+        os.makedirs(output_parent, exist_ok=True)
     fig.savefig(out_path, dpi=150)
+    plt.close(fig)
     print(f"wrote {out_path}  ({total} model curves)")
 
 
