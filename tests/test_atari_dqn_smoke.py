@@ -93,6 +93,18 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
         self.assertEqual(args.replay_sampling, "task_balanced")
         self.assertEqual(args.task_schedule, "transition_balanced")
 
+    def test_fused_adam_compatibility_rejects_complex_parameters(self) -> None:
+        from train_atari_dqn import _supports_fused_adam_params
+
+        real_model = torch.nn.Linear(3, 2)
+        complex_model = torch.nn.Module()
+        complex_model.register_parameter(
+            "weight", torch.nn.Parameter(torch.ones(2, dtype=torch.complex64))
+        )
+
+        self.assertTrue(_supports_fused_adam_params(real_model))
+        self.assertFalse(_supports_fused_adam_params(complex_model))
+
     def test_transition_balanced_collection_allows_unequal_episode_counts(self) -> None:
         from utils.atari_envs import _EpisodeTaskScheduler
 

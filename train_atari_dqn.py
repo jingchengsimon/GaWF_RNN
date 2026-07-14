@@ -196,6 +196,12 @@ def _resolve_feedback_mode(args: argparse.Namespace) -> str:
     return "qvalues" if args.model_type == "gawf" else "none"
 
 
+def _supports_fused_adam_params(model: torch.nn.Module) -> bool:
+    """Return whether every trainable parameter is real floating point."""
+
+    return all(param.is_floating_point() for param in model.parameters())
+
+
 def _resolve_task_config(args: argparse.Namespace) -> tuple[tuple[str, ...], str]:
     env_ids = tuple(args.env_ids) if args.env_ids is not None else (args.env_id,)
     if len(set(env_ids)) != len(env_ids):
@@ -489,7 +495,13 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         target_net.load_state_dict(model.state_dict())
         target_net.eval()
         target_net.requires_grad_(False)
-        use_fused_optimizer = args.fused_optimizer and device.type == "cuda"
+        fused_requested = args.fused_optimizer and device.type == "cuda"
+        use_fused_optimizer = fused_requested and _supports_fused_adam_params(model)
+        if fused_requested and not use_fused_optimizer:
+            logger.info(
+                "Fused Adam disabled for model=%s because it has non-real parameters",
+                args.model_type,
+            )
         adam_kwargs = {"fused": True} if use_fused_optimizer else {}
         compiled_gawf_cores = sum(
             configure_gawf_feedback_acceleration(
