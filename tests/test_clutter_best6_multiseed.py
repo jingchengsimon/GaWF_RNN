@@ -38,8 +38,11 @@ def test_frozen_model_hyperparameters_match_selected_checkpoints() -> None:
 def test_manifest_tracks_every_unit_with_strict_epoch_and_seed_evidence() -> None:
     """Monitoring must require all 60 full-epoch checkpoints and matching seeds."""
 
-    manifest = build_manifest("12345678", "/remote/root", "/conda/init.sh")
+    job_ids = [str(12345678 + index) for index in range(10)]
+    manifest = build_manifest(job_ids, "/remote/root", "/conda/init.sh")
     tracking = manifest["tracking"]
+    assert manifest["scheduler"]["job_ids"] == job_ids
+    assert len(manifest["paths"]["log_globs"]) == 10
     assert tracking["expected_units"] == 60
     assert tracking["auto_complete"] is True
     assert len(tracking["units"]) == 60

@@ -22,7 +22,13 @@ fi
 cd "$ROOT"
 
 GRID_UTIL="experiments/generalization/clutter_best6_multiseed.py"
-TASK_ID="${SLURM_ARRAY_TASK_ID:?SLURM_ARRAY_TASK_ID is required}"
+ARRAY_TASK_ID="${SLURM_ARRAY_TASK_ID:?SLURM_ARRAY_TASK_ID is required}"
+TASK_OFFSET="${TASK_OFFSET:-0}"
+if [[ ! "$TASK_OFFSET" =~ ^(0|6|12|18|24|30|36|42|48|54)$ ]]; then
+  echo "TASK_OFFSET must select one seed block: 0,6,...,54." >&2
+  exit 2
+fi
+TASK_ID="$((TASK_OFFSET + ARRAY_TASK_ID))"
 if [[ -z "${AIM3_CONDA_INIT:-}" || ! -f "$AIM3_CONDA_INIT" ]]; then
   echo "AIM3_CONDA_INIT must identify the Amarel Conda initialization script." >&2
   exit 2

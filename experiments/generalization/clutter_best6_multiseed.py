@@ -259,9 +259,14 @@ def validate_task_output(config: TaskConfig, root: str) -> dict[str, Any]:
     return report
 
 
-def build_manifest(job_id: str, remote_root: str, conda_init: str) -> dict[str, Any]:
-    """Build the strict 60-unit monitoring manifest for one submitted Slurm array."""
+def build_manifest(
+    job_ids: str | list[str], remote_root: str, conda_init: str
+) -> dict[str, Any]:
+    """Build the strict manifest for ten seed-level Slurm arrays and 60 units."""
 
+    normalized_job_ids = [job_ids] if isinstance(job_ids, str) else list(job_ids)
+    if not normalized_job_ids:
+        raise ValueError("At least one Slurm job ID is required.")
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     units = []
     for config in all_task_configs():
@@ -288,7 +293,7 @@ def build_manifest(job_id: str, remote_root: str, conda_init: str) -> dict[str, 
         )
     return {
         "schema_version": 1,
-        "id": f"amarel-clutter-best6-10seed-ep150-{job_id}",
+        "id": f"amarel-clutter-best6-10seed-ep150-{normalized_job_ids[0]}",
         "description": (
             "Clutter six frozen best models, seeds 1-10, 150 full epochs, no early stopping"
         ),
@@ -300,14 +305,17 @@ def build_manifest(job_id: str, remote_root: str, conda_init: str) -> dict[str, 
         "environment": {"name": "aim3_rnn", "conda_init": conda_init},
         "scheduler": {
             "type": "slurm",
-            "job_ids": [str(job_id)],
+            "job_ids": [str(job_id) for job_id in normalized_job_ids],
             "run_ids": [],
             "tmux_session": None,
             "process_patterns": [],
             "collect_gpu": False,
         },
         "paths": {
-            "log_globs": [f"experiments/amarel/artifacts/{ARTIFACT_TAG}/{job_id}_*.out"],
+            "log_globs": [
+                f"experiments/amarel/artifacts/{ARTIFACT_TAG}/{job_id}_*.out"
+                for job_id in normalized_job_ids
+            ],
             "status_dir": f"experiments/amarel/artifacts/{ARTIFACT_TAG}/status",
             "result_paths": [f"results/train_data/{RESULT_ROOT_SUFFIX}"],
         },
@@ -320,6 +328,7 @@ def build_manifest(job_id: str, remote_root: str, conda_init: str) -> dict[str, 
             "40h training stimulus is approximately 119 GB and is loaded with mmap.",
             "DataLoader uses num_workers=0 and pin_memory=False to preserve mmap safety.",
             "Saved checkpoints contain the best-validation state after all 150 epochs are run.",
+            "Submitted as ten independent Slurm arrays, one seed and six model tasks per job.",
         ],
     }
 
@@ -354,7 +363,7 @@ def parse_args() -> argparse.Namespace:
     status.add_argument("--json", action="store_true")
 
     manifest = subparsers.add_parser("emit-manifest")
-    manifest.add_argument("--job-id", required=True)
+    manifest.add_argument("--job-id", action="append", required=True)
     manifest.add_argument("--remote-root", required=True)
     manifest.add_argument("--conda-init", required=True)
     manifest.add_argument("--output")

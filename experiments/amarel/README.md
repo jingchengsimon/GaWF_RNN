@@ -61,8 +61,9 @@ The directory also contains reusable launchers for:
 - optimizer and environment smoke checks.
 
 The fixed-best Clutter confirmation run uses `submit_clutter_best6_10seed.sh` for six models by
-ten seeds and `check_clutter_best6_10seed.sh <job-id>` for strict result validation. Because the
-40h training array is larger than node memory, this launcher uses mmap with
+ten seeds. It submits ten independent Slurm jobs, one six-task model array per seed;
+`check_clutter_best6_10seed.sh <job-id>` performs strict result validation. Because the 40h
+training array is larger than node memory, this launcher uses mmap with
 `AIM3_NUM_WORKERS=0` and `AIM3_PIN_MEMORY=0`, overriding the usual Amarel DataLoader defaults.
 
 Each family must define expected result files and use a status/check script that validates result
