@@ -157,7 +157,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--fused_optimizer",
         action="store_true",
-        help="Use CUDA fused Adam while preserving Adam hyperparameters.",
+        help="Use CUDA fused Adam for supported non-S5 models.",
     )
     parser.add_argument("--compile_model", action="store_true")
     parser.add_argument(
@@ -194,6 +194,50 @@ def _resolve_feedback_mode(args: argparse.Namespace) -> str:
     if args.feedback_mode is not None:
         return args.feedback_mode
     return "qvalues" if args.model_type == "gawf" else "none"
+
+
+def _build_atari_optimizer(
+    model: torch.nn.Module,
+    *,
+    model_type: str,
+    learning_rate: float,
+    gawf_feedback_lr_scale: float,
+    use_fused_optimizer: bool,
+) -> optim.Optimizer:
+    """Build Adam with a non-fused compatibility path for S5."""
+
+    if model_type == "s5":
+        return optim.Adam(
+            model.parameters(),
+            lr=learning_rate,
+            fused=False,
+        )
+
+    parameter_groups: list[torch.nn.Parameter] | list[dict[str, object]]
+    if model_type != "gawf":
+        parameter_groups = list(model.parameters())
+    else:
+        gate_params = [
+            param
+            for name, param in model.named_parameters()
+            if name.startswith("core.U") or name.startswith("core.V")
+        ]
+        gate_ids = {id(param) for param in gate_params}
+        base_params = [param for param in model.parameters() if id(param) not in gate_ids]
+        parameter_groups = [
+            {"params": base_params, "lr": learning_rate},
+            {
+                "params": gate_params,
+                "lr": learning_rate * gawf_feedback_lr_scale,
+                "weight_decay": 0.0,
+            },
+        ]
+    adam_kwargs = {"fused": True} if use_fused_optimizer else {}
+    return optim.Adam(
+        parameter_groups,
+        lr=learning_rate,
+        **adam_kwargs,
+    )
 
 
 def _supports_fused_adam_params(model: torch.nn.Module) -> bool:
@@ -495,14 +539,6 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         target_net.load_state_dict(model.state_dict())
         target_net.eval()
         target_net.requires_grad_(False)
-        fused_requested = args.fused_optimizer and device.type == "cuda"
-        use_fused_optimizer = fused_requested and _supports_fused_adam_params(model)
-        if fused_requested and not use_fused_optimizer:
-            logger.info(
-                "Fused Adam disabled for model=%s because it has non-real parameters",
-                args.model_type,
-            )
-        adam_kwargs = {"fused": True} if use_fused_optimizer else {}
         compiled_gawf_cores = sum(
             configure_gawf_feedback_acceleration(
                 network,
@@ -517,31 +553,26 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
                 compiled_gawf_cores,
                 acceleration.compile_mode,
             )
-        if args.model_type == "gawf":
-            gate_params = [
-                param
-                for name, param in model.named_parameters()
-                if name.startswith("core.U") or name.startswith("core.V")
-            ]
-            gate_ids = {id(param) for param in gate_params}
-            base_params = [param for param in model.parameters() if id(param) not in gate_ids]
-            optimizer = optim.Adam(
-                [
-                    {"params": base_params, "lr": args.learning_rate},
-                    {
-                        "params": gate_params,
-                        "lr": args.learning_rate * args.gawf_feedback_lr_scale,
-                        "weight_decay": 0.0,
-                    },
-                ],
-                **adam_kwargs,
+        fused_requested = args.fused_optimizer and device.type == "cuda"
+        use_fused_optimizer = (
+            fused_requested
+            and args.model_type != "s5"
+            and _supports_fused_adam_params(model)
+        )
+        if fused_requested and not use_fused_optimizer:
+            logger.info(
+                "Fused Adam disabled for model=%s; using non-fused Adam",
+                args.model_type,
             )
-        else:
-            optimizer = optim.Adam(
-                model.parameters(),
-                lr=args.learning_rate,
-                **adam_kwargs,
-            )
+        optimizer = _build_atari_optimizer(
+            model,
+            model_type=args.model_type,
+            learning_rate=args.learning_rate,
+            gawf_feedback_lr_scale=args.gawf_feedback_lr_scale,
+            use_fused_optimizer=use_fused_optimizer,
+        )
+        optimizer_name = "adam"
+        logger.info("Optimizer=%s fused=%s", optimizer_name, use_fused_optimizer)
         scaler = acceleration.build_grad_scaler()
         if compiled_gawf_cores:
             model_forward = model.forward_sequence
@@ -757,6 +788,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
             "amp_dtype": acceleration.amp_dtype_name,
             "allow_tf32": acceleration.allow_tf32,
             "cudnn_benchmark": acceleration.cudnn_benchmark,
+            "optimizer": optimizer_name,
             "fused_optimizer": use_fused_optimizer,
             "compile_model": acceleration.compile_model,
             "compile_mode": acceleration.compile_mode,

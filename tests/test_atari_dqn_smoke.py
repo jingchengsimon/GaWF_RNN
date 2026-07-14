@@ -93,17 +93,44 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
         self.assertEqual(args.replay_sampling, "task_balanced")
         self.assertEqual(args.task_schedule, "transition_balanced")
 
-    def test_fused_adam_compatibility_rejects_complex_parameters(self) -> None:
-        from train_atari_dqn import _supports_fused_adam_params
+    def test_atari_optimizer_is_nonfused_adam_for_complex_parameters(self) -> None:
+        from train_atari_dqn import _build_atari_optimizer
 
-        real_model = torch.nn.Linear(3, 2)
         complex_model = torch.nn.Module()
         complex_model.register_parameter(
             "weight", torch.nn.Parameter(torch.ones(2, dtype=torch.complex64))
         )
+        optimizer = _build_atari_optimizer(
+            complex_model,
+            model_type="s5",
+            learning_rate=1e-3,
+            gawf_feedback_lr_scale=1.0,
+            use_fused_optimizer=False,
+        )
+        loss = complex_model.weight.abs().square().sum()
+        loss.backward()
+        optimizer.step()
 
-        self.assertTrue(_supports_fused_adam_params(real_model))
-        self.assertFalse(_supports_fused_adam_params(complex_model))
+        self.assertIsInstance(optimizer, torch.optim.Adam)
+        self.assertTrue(all(group["fused"] is False for group in optimizer.param_groups))
+        self.assertTrue(all(group["weight_decay"] == 0.0 for group in optimizer.param_groups))
+
+    def test_fused_adam_preserves_gawf_feedback_lr_group(self) -> None:
+        from train_atari_dqn import _build_atari_optimizer
+
+        optimizer = _build_atari_optimizer(
+            _build_model("gawf", feedback_mode="qvalues"),
+            model_type="gawf",
+            learning_rate=1e-3,
+            gawf_feedback_lr_scale=0.25,
+            use_fused_optimizer=True,
+        )
+
+        self.assertIsInstance(optimizer, torch.optim.Adam)
+        self.assertEqual(len(optimizer.param_groups), 2)
+        self.assertEqual([group["lr"] for group in optimizer.param_groups], [1e-3, 2.5e-4])
+        self.assertTrue(all(group["fused"] is True for group in optimizer.param_groups))
+        self.assertTrue(all(group["weight_decay"] == 0.0 for group in optimizer.param_groups))
 
     def test_atari_curve_title_tracks_explicit_frame_protocol(self) -> None:
         from utils_viz.atari_learning_curves import (

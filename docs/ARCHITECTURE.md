@@ -146,6 +146,10 @@ observed frame per environment step (`frame_skip=1`, `frame_stack=1`); new resul
 whole-sequence cuDNN fast path for RNN/GRU/LSTM windows without internal episode resets and
 falls back to the reset-aware stepwise path otherwise. Acceleration must not change replay
 sampling, update cadence, UTD, loss definitions, or recurrent/GaWF architecture.
+S5 uses non-fused Adam because its complex parameters are unsupported by CUDA fused Adam. Other
+Atari DQN/DRQN models continue to use fused Adam when requested on a compatible CUDA runtime.
+BF16, TF32, cuDNN benchmark, `torch.compile`, recurrent fused-scan, replay, and GaWF feedback
+acceleration remain independent of this model-specific optimizer backend.
 Task-blind multi-task collection changes games only at episode boundaries. Its default
 `transition_balanced` scheduler selects the game with the fewest collected environment steps;
 `round_robin` remains available for historical reproduction. Replay balancing is independent of

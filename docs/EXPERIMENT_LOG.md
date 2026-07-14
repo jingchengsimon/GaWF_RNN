@@ -4,6 +4,22 @@ This file records confirmed model changes and experiment extensions for GaWF.
 Keep entries factual: what changed, why it was introduced, and the current
 implementation choice.
 
+## 2026-07-14 - S5 non-fused Adam compatibility path
+
+- Scope: single-task and multi-task Atari DQN/DRQN for ANN/RNN/GRU/LSTM/GaWF/S5/Mamba.
+- Current optimizer: S5 uses `torch.optim.Adam` with `fused=False`.
+  ANN/RNN/GRU/LSTM/GaWF/Mamba continue to use fused Adam when requested on compatible CUDA.
+  GaWF keeps its separate U/V group and feedback learning-rate scale; U/V weight decay is zero.
+- Retained acceleration: BF16 autocast, TF32, cuDNN benchmark, ANN/GaWF compile paths,
+  reset-safe recurrent fused scan, accelerated replay, and shared GaWF feedback/gate kernels.
+- Reason: S5 contains complex-valued parameters, which CUDA fused Adam rejects. This is an S5
+  compatibility exception, not a reason to remove fused-optimizer acceleration from models whose
+  parameters satisfy the CUDA fused Adam requirements.
+- Historical distinction: job `58160888` was launched from the earlier fused-Adam deployment;
+  its real-parameter models used fused Adam and remain optimizer-compatible with the current
+  policy; its S5 units failed before training and must be rerun with non-fused Adam. The older
+  `frame_skip=4, frame_stack=1` campaign predated fused-optimizer acceleration.
+
 ## 2026-07-13 - Multi-host Atari acceleration baseline
 
 - Canonical code is an immutable Git commit, deployed to per-run directories with a
@@ -13,9 +29,10 @@ implementation choice.
   execution.
 - `environments/aim3_rnn-linux-cuda.yml` captures the validated Amarel-compatible CUDA stack;
   `environments/aim3_rnn-macos.yml` is the development/test profile without CUDA-only Mamba.
-- Single-task and multi-task Atari share BF16, TF32, cuDNN benchmark, fused Adam, replay, and GaWF
-  feedback acceleration code. Multi-task collection defaults to transition-balanced scheduling;
-  this is independent from task-balanced replay sampling.
+- At the time of this baseline, single-task and multi-task Atari shared BF16, TF32, cuDNN
+  benchmark, fused Adam, replay, and GaWF feedback acceleration code. The 2026-07-14 policy above
+  adds only the S5-specific non-fused Adam path. Multi-task collection defaults to
+  transition-balanced scheduling; this is independent from task-balanced replay sampling.
 
 ## 2026-06-14 - GaWF Feedback Generalization
 

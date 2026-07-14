@@ -81,6 +81,11 @@ MODEL="${MODELS[$((TASK_ID % N_MODELS))]}"
 REST=$((TASK_ID / N_MODELS))
 SETTING=$((REST / N_SEEDS))
 SEED="${SEEDS[$((REST % N_SEEDS))]}"
+OPTIMIZER_NAME=adam
+FUSED_OPTIMIZER=1
+if [[ "$MODEL" == "s5" ]]; then
+  FUSED_OPTIMIZER=0
+fi
 ACCEL_ARGS=(--amp_dtype bfloat16 --allow_tf32 --cudnn_benchmark --fused_optimizer)
 COMPILE_ACTIVE=0
 if [[ "$MODEL" == "ann" || "$MODEL" == "gawf" ]]; then
@@ -135,7 +140,8 @@ FAIL_FILE="$STATUS_DIR/${SUFFIX}.fail"
 echo "[$(date -Is)] task=$TASK_ID model=$MODEL setting=$SETTING seed=$SEED flicker=$FLICKER_PROB"
 echo "result_suffix=$SUFFIX total_timesteps=$TOTAL_TIMESTEPS sizing=${SIZE_ARGS[*]:-none(ann)}"
 echo "frame_skip=$FRAME_SKIP frame_stack=$FRAME_STACK amp=bfloat16 tf32=1 " \
-  "cudnn_benchmark=1 fused_adam=1 compile=$COMPILE_ACTIVE"
+  "cudnn_benchmark=1 optimizer=$OPTIMIZER_NAME fused_optimizer=$FUSED_OPTIMIZER " \
+  "compile=$COMPILE_ACTIVE"
 
 set +e
 DISABLE_TQDM=1 python train_atari_dqn.py \
@@ -181,6 +187,8 @@ expected = {
     "frame_stack": frame_stack,
     "num_layers": 1,
     "model_type": model_type,
+    "optimizer": "adam",
+    "fused_optimizer": model_type != "s5",
 }
 actual = {key: metrics.get(key) for key in expected}
 if actual != expected:
