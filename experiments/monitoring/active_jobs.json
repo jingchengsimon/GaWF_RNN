@@ -39,11 +39,12 @@
       "job_ids": [
         "58160888",
         "58170421",
-        "58170974"
+        "58170974",
+        "58170978"
       ],
       "run_ids": [],
       "remote_root": "/cache/home/js3269/projects/FAW_RNN-multitask-gru-phase0-20260713",
-      "updated_at": "2026-07-14T20:50:00+00:00"
+      "updated_at": "2026-07-14T20:55:00+00:00"
     }
   ]
 }
