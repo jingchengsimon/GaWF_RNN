@@ -219,3 +219,17 @@ slightly above the best 40h `hidden_size=512` run (`task_1019`, best val char
      without early stop (98 epochs) at a small best `lr=0.001`—suggesting weak
      convergence/underfitting at this ~587K param budget rather than a capacity
      gap. (Supersedes the removed legacy `state=189` campaign.)
+
+## 2026-07-14 — Foreground-switch transient latent trajectories
+
+- **改动（Change）：** 不再先按 digit/sector averaging，而是直接从同一段连续 test
+  `pop_act.npy` 中提取 `fg_switch`-aligned trials。Window 使用 half-open `[-8,20)`，并要求
+  下一次 `fg_switch` 至少相隔 20 frames。
+- **对照（Control）：** 保留全部符合 foreground 条件的 768 trials，以及完整 window 内
+  不含 `bg_switch` 的 439-trial subset。两组分别做 trial average 后，共同拟合一个 3D PCA
+  basis，保证左右 subplot 坐标可直接比较。
+- **现状（Current）：** 六个 selected models 均已生成 trial tensors、mean trajectories、
+  shared-PCA coordinates、metadata 和 self-contained Plotly HTML；start、`fg_switch` 与 end
+  points 均显式标记。结果位于 matching
+  `results/anal_data/5_pop_act_switch_trajectory/` 与
+  `results/anal_figs/5_pop_act_switch_trajectory/` trees。

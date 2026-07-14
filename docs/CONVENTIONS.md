@@ -148,6 +148,17 @@ results/anal_data/5_pop_act_umap_multiseg/dpca_marginalized_variance_*.{csv,json
 results/anal_figs/5_pop_act_umap_multiseg/dpca_marginalized_variance_compare.png
 ```
 
+Foreground-switch transient trajectories use a half-open `[-8, 20)` frame window and require
+the next `fg_switch` to be at least 20 frames away. Both the unfiltered trials and the subset
+whose full window contains no `bg_switch` are retained:
+```
+results/anal_data/5_pop_act_switch_trajectory/<run>/switch_transient_trials.npz
+results/anal_data/5_pop_act_switch_trajectory/<run>/switch_transient_pca.npz
+results/anal_data/5_pop_act_switch_trajectory/<run>/switch_transient_meta.json
+results/anal_figs/5_pop_act_switch_trajectory/<run>/switch_transient_3d.html
+```
+The two trial-mean trajectories share one PCA basis fitted to their concatenated timepoints.
+
 ## 4. Python Identifier Conventions
 
 ### Class names
