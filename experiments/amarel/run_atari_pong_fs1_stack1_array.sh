@@ -30,6 +30,8 @@
 # experiments/generalization/atari_ssm_param_match.py -> results/atari_param_match/
 # atari_param_match.json. RNN/GRU/LSTM/GaWF get --hidden_size; S5/Mamba get
 # --ssm_d_model/--ssm_state_size; CNN is the unmatched feedforward control.
+# FRAME_SKIP/FRAME_STACK overrides are used only by explicit protocol-comparison
+# launchers; their RESULT_TAG must encode the overridden values.
 
 set -euo pipefail
 
@@ -40,8 +42,19 @@ if [[ -z "$ROOT" || ! -f "$ROOT/train_atari_dqn.py" ]]; then
 fi
 cd "$ROOT"
 
-ARTIFACT_TAG="${ARTIFACT_TAG:-atari_pong_fs1_stack1}"
-RESULT_TAG="${RESULT_TAG:-pong_fs1_stack1}"
+FRAME_SKIP="${FRAME_SKIP:-1}"
+FRAME_STACK="${FRAME_STACK:-1}"
+PROTOCOL_TAG="pong_fs${FRAME_SKIP}_stack${FRAME_STACK}"
+ARTIFACT_TAG="${ARTIFACT_TAG:-atari_${PROTOCOL_TAG}}"
+RESULT_TAG="${RESULT_TAG:-$PROTOCOL_TAG}"
+if [[ "$FRAME_SKIP" -lt 1 || "$FRAME_STACK" -lt 1 ]]; then
+  echo "FRAME_SKIP and FRAME_STACK must both be >= 1" >&2
+  exit 2
+fi
+if [[ "$RESULT_TAG" != *"$PROTOCOL_TAG"* ]]; then
+  echo "RESULT_TAG must include the explicit protocol tag $PROTOCOL_TAG" >&2
+  exit 2
+fi
 ART_ROOT="$ROOT/experiments/amarel/artifacts/$ARTIFACT_TAG"
 STATUS_DIR="$ART_ROOT/status"
 mkdir -p "$ART_ROOT" "$STATUS_DIR"
@@ -121,14 +134,15 @@ FAIL_FILE="$STATUS_DIR/${SUFFIX}.fail"
 
 echo "[$(date -Is)] task=$TASK_ID model=$MODEL setting=$SETTING seed=$SEED flicker=$FLICKER_PROB"
 echo "result_suffix=$SUFFIX total_timesteps=$TOTAL_TIMESTEPS sizing=${SIZE_ARGS[*]:-none(ann)}"
-echo "frame_skip=1 frame_stack=1 amp=bfloat16 tf32=1 cudnn_benchmark=1 fused_adam=1 compile=$COMPILE_ACTIVE"
+echo "frame_skip=$FRAME_SKIP frame_stack=$FRAME_STACK amp=bfloat16 tf32=1 " \
+  "cudnn_benchmark=1 fused_adam=1 compile=$COMPILE_ACTIVE"
 
 set +e
 DISABLE_TQDM=1 python train_atari_dqn.py \
   --env_id "ALE/Pong-v5" \
   --model_type "$MODEL" \
-  --frame_stack 1 \
-  --frame_skip 1 \
+  --frame_stack "$FRAME_STACK" \
+  --frame_skip "$FRAME_SKIP" \
   --flicker_prob "$FLICKER_PROB" \
   --total_timesteps "$TOTAL_TIMESTEPS" \
   --seq_len "$SEQ_LEN" \
@@ -143,25 +157,28 @@ set -e
 if [[ "$train_rc" -ne 0 ]]; then
   {
     echo "status=train_failed task_id=$TASK_ID model=$MODEL setting=$SETTING seed=$SEED"
-    echo "flicker_prob=$FLICKER_PROB result_suffix=$SUFFIX exit_code=$train_rc timestamp=$(date -Is)"
+    echo "flicker_prob=$FLICKER_PROB result_suffix=$SUFFIX exit_code=$train_rc"
+    echo "timestamp=$(date -Is)"
   } > "$FAIL_FILE"
   exit "$train_rc"
 fi
 
-python - "$ROOT/results/train_data/$SUFFIX" "$MODEL" "$TOTAL_TIMESTEPS" <<'PY'
+python - "$ROOT/results/train_data/$SUFFIX" "$MODEL" "$TOTAL_TIMESTEPS" \
+  "$FRAME_SKIP" "$FRAME_STACK" <<'PY'
 import glob
 import json
 import os
 import sys
 
-result_dir, model_type, total_timesteps = sys.argv[1], sys.argv[2], int(sys.argv[3])
+result_dir, model_type = sys.argv[1], sys.argv[2]
+total_timesteps, frame_skip, frame_stack = map(int, sys.argv[3:6])
 metrics_path = os.path.join(result_dir, "metrics.json")
 with open(metrics_path, encoding="utf-8") as handle:
     metrics = json.load(handle)
 expected = {
     "global_step": total_timesteps,
-    "frame_skip": 1,
-    "frame_stack": 1,
+    "frame_skip": frame_skip,
+    "frame_stack": frame_stack,
     "num_layers": 1,
     "model_type": model_type,
 }
@@ -175,7 +192,7 @@ PY
 
 {
   echo "status=done task_id=$TASK_ID model=$MODEL setting=$SETTING seed=$SEED"
-  echo "flicker_prob=$FLICKER_PROB result_suffix=$SUFFIX"
+  echo "frame_skip=$FRAME_SKIP frame_stack=$FRAME_STACK result_suffix=$SUFFIX"
   echo "metrics_path=results/train_data/$SUFFIX/metrics.json timestamp=$(date -Is)"
 } > "$DONE_FILE"
 rm -f "$FAIL_FILE"

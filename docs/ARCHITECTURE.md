@@ -157,7 +157,9 @@ active Python/PyTorch runtime cannot compile it, the code emits a warning and us
 eager path instead of changing training semantics.
 The completed five-seed, 70-unit historical sweep is labeled `pong_fs4_stack1`: one pooled
 observation was supplied per decision, while each chosen action advanced four ALE frames.
-The `pong_fs1_stack1` label is reserved for strict one-decision/one-ALE-frame runs.
+The `pong_fs1_stack1` label is reserved for strict one-decision/one-ALE-frame runs. Experiments
+with four-frame action repeat and four-frame observation history use `pong_fs4_stack4`; they must
+not reuse the historical `pong_fs4_stack1` label.
 
 ### `utils/clutter_train_sector.py`
 Owns all metric and loss logic for single-char + sector/coordinate mode:

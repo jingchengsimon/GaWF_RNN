@@ -55,6 +55,10 @@
 | `dpca` | dPCA | Module/script name |
 | `umap` | UMAP | Module/script name |
 
+Pong protocol tags always encode both values. Use `pong_fs1_stack1` for strict one-frame
+decisions, historical `pong_fs4_stack1` only for the recovered legacy sweep, and
+`pong_fs4_stack4` for four-frame action repeat with four-frame observation history.
+
 ## 2. Directory Name Conventions
 
 | Directory | Purpose | Naming Rule |
