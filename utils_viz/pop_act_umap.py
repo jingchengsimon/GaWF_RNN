@@ -1,11 +1,11 @@
 """
-Load export_pop_act output: pop_act.npy + labels.tsv (UMAP/PCA), or pop_act_dpca.npy (dPCA scatter).
+Load export_pop_act output: pop_act.npy + labels.tsv (UMAP/PCA), or pop_act_dpca.npy (dPCA).
 
 Reduce (T, D) -> (T, 3) via UMAP or PCA; save Plotly HTML under ``<save_dir>/<run_tag>/``.
 
 PCA mode also saves explained-variance bar chart. ``--reducer dpca`` saves matplotlib PNG
-diagnostics from either official dPCA reduced-rank regression or the legacy condensed SVD
-baseline.
+diagnostics plus self-contained interactive Plotly HTML and reusable 3D coordinate data from
+either official dPCA reduced-rank regression or the legacy condensed SVD baseline.
 
 Reducer implementations: utils_viz.dimred_reducer (UMAPReducer, PCAReducer); dPCA RRR uses
 the optional ``dpca`` PyPI package (machenslab/dPCA).
@@ -38,7 +38,10 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="umap",
         choices=["umap", "pca", "dpca"],
-        help="UMAP / PCA (3D Plotly) or dPCA (2D PNG from pop_act_dpca.npy in --pop_act_dir).",
+        help=(
+            "UMAP / PCA (3D Plotly) or dPCA (2D PNG + interactive 3D HTML from "
+            "pop_act_dpca.npy in --pop_act_dir)."
+        ),
     )
     p.add_argument(
         "--dpca_method",
@@ -63,7 +66,10 @@ def parse_args() -> argparse.Namespace:
         "--dpca_components",
         type=int,
         default=10,
-        help="When --reducer dpca: number of dPCs to fit/save for explained variance.",
+        help=(
+            "When --reducer dpca: number of dPCs to fit/save for explained variance. "
+            "At least three are always fit so the interactive 3D output has dPC1-dPC3."
+        ),
     )
     p.add_argument(
         "--pca_variance_bars",
@@ -282,9 +288,7 @@ def load_xy_for_sector(labels_tsv: str) -> tuple[np.ndarray, np.ndarray]:
     with open(labels_tsv, "r", newline="") as f:
         r = csv.DictReader(f, delimiter="\t")
         has_xy = (
-            r.fieldnames is not None
-            and "fg_char_x" in r.fieldnames
-            and "fg_char_y" in r.fieldnames
+            r.fieldnames is not None and "fg_char_x" in r.fieldnames and "fg_char_y" in r.fieldnames
         )
         if not has_xy:
             raise ValueError(f"labels.tsv must have fg_char_x, fg_char_y; got {r.fieldnames}")
@@ -444,25 +448,31 @@ def fill_nan_digit_sector_cells(
     }
 
 
-def _flatten_component_scores(scores: np.ndarray) -> np.ndarray:
+def _flatten_component_scores(scores: np.ndarray, n_components: int = 3) -> np.ndarray:
     arr = np.asarray(scores, dtype=np.float64)
     if arr.ndim != 3 or arr.shape[1:] != (10, 9):
         raise ValueError(f"dPCA scores must be (components, 10, 9), got {arr.shape}")
-    out = np.zeros((90, 2), dtype=np.float64)
-    n = min(2, arr.shape[0])
+    n_components = max(1, int(n_components))
+    out = np.zeros((90, n_components), dtype=np.float64)
+    n = min(n_components, arr.shape[0])
     for comp in range(n):
         out[:, comp] = arr[comp].reshape(90)
     return out.astype(np.float32)
 
 
-def _ensure_two_vectors(vectors: np.ndarray, n_features: int) -> np.ndarray:
+def _ensure_component_vectors(
+    vectors: np.ndarray,
+    n_features: int,
+    n_components: int = 3,
+) -> np.ndarray:
     arr = np.asarray(vectors, dtype=np.float64)
     if arr.ndim != 2 or arr.shape[0] != n_features:
         raise ValueError(
             f"Axis vectors must have shape ({n_features}, n_components), got {arr.shape}"
         )
-    out = np.zeros((n_features, 2), dtype=np.float64)
-    n = min(2, arr.shape[1])
+    n_components = max(1, int(n_components))
+    out = np.zeros((n_features, n_components), dtype=np.float64)
+    n = min(n_components, arr.shape[1])
     out[:, :n] = arr[:, :n]
     return out
 
@@ -481,8 +491,9 @@ def run_dpca_condensed(X_dpca: np.ndarray, *, n_components: int = 10) -> dict:
 
     Legacy condensed baseline: first marginalize over sector/digit, then take left singular
     vectors for each marginalization. This does not include the official dPCA
-    reduced-rank-regression whitening/regularization step. Scatter diagnostics still use
-    the first two axes, while explained-variance output keeps up to ``n_components`` entries.
+    reduced-rank-regression whitening/regularization step. Static scatter diagnostics still use
+    the first two axes, while interactive output uses the first three and explained-variance
+    output keeps up to ``n_components`` entries.
     """
     X = np.asarray(X_dpca, dtype=np.float64)
     if X.ndim != 3 or X.shape[1:] != (10, 9):
@@ -491,15 +502,16 @@ def run_dpca_condensed(X_dpca: np.ndarray, *, n_components: int = 10) -> dict:
     X_digit = np.nanmean(X, axis=2)
     X_digit -= X_digit.mean(axis=1, keepdims=True)
     U_d, S_d, _ = np.linalg.svd(X_digit, full_matrices=False)
-    n_d = min(2, U_d.shape[1])
-    W_digit = np.zeros((U_d.shape[0], 2), dtype=np.float64)
+    n_plot_components = 3
+    n_d = min(n_plot_components, U_d.shape[1])
+    W_digit = np.zeros((U_d.shape[0], n_plot_components), dtype=np.float64)
     W_digit[:, :n_d] = U_d[:, :n_d]
 
     X_sector = np.nanmean(X, axis=1)
     X_sector -= X_sector.mean(axis=1, keepdims=True)
     U_s, S_s, _ = np.linalg.svd(X_sector, full_matrices=False)
-    n_s = min(2, U_s.shape[1])
-    W_sector = np.zeros((U_s.shape[0], 2), dtype=np.float64)
+    n_s = min(n_plot_components, U_s.shape[1])
+    W_sector = np.zeros((U_s.shape[0], n_plot_components), dtype=np.float64)
     W_sector[:, :n_s] = U_s[:, :n_s]
 
     D = X.shape[0]
@@ -547,7 +559,7 @@ def run_dpca_rrr(
     """
     dPCA = _load_official_dpca_class()
     X, imputation = fill_nan_digit_sector_cells(X_dpca, counts=counts)
-    n_components = max(2, int(n_components))
+    n_components = max(3, int(n_components))
     print(f"[dPCA] method=rrr regularizer={regularizer:g} n_components={n_components}")
     dpca = dPCA(labels="ds", n_components=n_components, regularizer=float(regularizer))
     Z = dpca.fit_transform(X)
@@ -556,14 +568,14 @@ def run_dpca_rrr(
             raise KeyError(f"Official dPCA result missing marginalization {key!r}; got {list(Z)}")
     return {
         "method": "rrr",
-        "coords_digit": _flatten_component_scores(Z["d"]),
-        "coords_sector": _flatten_component_scores(Z["s"]),
+        "coords_digit": _flatten_component_scores(Z["d"], n_components=3),
+        "coords_sector": _flatten_component_scores(Z["s"], n_components=3),
         "explained_variance_ratio": _variance_ratio_for_json(
             dpca.explained_variance_ratio_,
             max_components=n_components,
         ),
-        "digit_axes": _ensure_two_vectors(dpca.D["d"], X.shape[0]),
-        "sector_axes": _ensure_two_vectors(dpca.D["s"], X.shape[0]),
+        "digit_axes": _ensure_component_vectors(dpca.D["d"], X.shape[0], n_components=3),
+        "sector_axes": _ensure_component_vectors(dpca.D["s"], X.shape[0], n_components=3),
         "imputation": imputation,
         "regularizer": float(regularizer),
     }
@@ -630,16 +642,18 @@ def summarize_dpca_result(
 ) -> dict:
     digit_axes = np.asarray(result["digit_axes"], dtype=np.float64)
     sector_axes = np.asarray(result["sector_axes"], dtype=np.float64)
+    coords_digit_2d = np.asarray(result["coords_digit"], dtype=np.float64)[:, :2]
+    coords_sector_2d = np.asarray(result["coords_sector"], dtype=np.float64)[:, :2]
     summary = {
         "method": result["method"],
         "regularizer": result.get("regularizer"),
-        "first_axis_angle_deg": _first_axis_angle_deg(digit_axes, sector_axes),
-        "subspace_angles_deg": _principal_angles_deg(digit_axes, sector_axes),
+        "first_axis_angle_deg": _first_axis_angle_deg(digit_axes[:, :2], sector_axes[:, :2]),
+        "subspace_angles_deg": _principal_angles_deg(digit_axes[:, :2], sector_axes[:, :2]),
         "sector_leakage_on_digit_plane": _group_between_variance_ratio(
-            result["coords_digit"], sector_labels
+            coords_digit_2d, sector_labels
         ),
         "digit_leakage_on_sector_plane": _group_between_variance_ratio(
-            result["coords_sector"], digit_labels
+            coords_sector_2d, digit_labels
         ),
         "explained_variance_ratio": result["explained_variance_ratio"],
         "imputation": result.get("imputation", {}),
@@ -679,8 +693,8 @@ def save_dpca_variance_json(out_dir: str, method_suffix: str, payload: dict) -> 
 
 
 def save_dpca_scatter(
-    coords_digit_90x2: np.ndarray,
-    coords_sector_90x2: np.ndarray,
+    coords_digit: np.ndarray,
+    coords_sector: np.ndarray,
     digit_labels: np.ndarray,
     sector_labels: np.ndarray,
     out_dir: str,
@@ -696,10 +710,12 @@ def save_dpca_scatter(
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
 
-    c_digit = np.asarray(coords_digit_90x2, dtype=np.float64)
-    c_sector = np.asarray(coords_sector_90x2, dtype=np.float64)
-    if c_digit.shape != (90, 2) or c_sector.shape != (90, 2):
-        raise ValueError(f"coords must be (90, 2), got {c_digit.shape} and {c_sector.shape}")
+    c_digit = np.asarray(coords_digit, dtype=np.float64)
+    c_sector = np.asarray(coords_sector, dtype=np.float64)
+    if c_digit.ndim != 2 or c_digit.shape[0] != 90 or c_digit.shape[1] < 1:
+        raise ValueError(f"digit coords must be (90, >=1), got {c_digit.shape}")
+    if c_sector.ndim != 2 or c_sector.shape[0] != 90 or c_sector.shape[1] < 1:
+        raise ValueError(f"sector coords must be (90, >=1), got {c_sector.shape}")
     c = np.stack([c_digit[:, 0], c_sector[:, 0]], axis=1)
     digit_labels = np.asarray(digit_labels, dtype=np.int64).reshape(90)
     sector_labels = np.asarray(sector_labels, dtype=np.int64).reshape(90)
@@ -789,8 +805,8 @@ def save_dpca_scatter(
 
 
 def save_dpca_2x2_orthogonality(
-    coords_digit_90x2: np.ndarray,
-    coords_sector_90x2: np.ndarray,
+    coords_digit_90xn: np.ndarray,
+    coords_sector_90xn: np.ndarray,
     digit_labels: np.ndarray,
     sector_labels: np.ndarray,
     out_dir: str,
@@ -799,7 +815,7 @@ def save_dpca_2x2_orthogonality(
     dodge_conditions: bool = False,
 ) -> None:
     """
-    2×2 panels: digit-PC plane vs sector-PC plane × digit vs sector coloring (orthogonality check).
+    2×2 panels: digit-PC vs sector-PC plane, each colored by digit or sector.
     """
     import matplotlib
 
@@ -807,13 +823,22 @@ def save_dpca_2x2_orthogonality(
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
 
-    coords_digit = np.asarray(coords_digit_90x2, dtype=np.float64)
-    coords_sector = np.asarray(coords_sector_90x2, dtype=np.float64)
-    if coords_digit.shape != (90, 2) or coords_sector.shape != (90, 2):
+    coords_digit = np.asarray(coords_digit_90xn, dtype=np.float64)
+    coords_sector = np.asarray(coords_sector_90xn, dtype=np.float64)
+    if (
+        coords_digit.ndim != 2
+        or coords_sector.ndim != 2
+        or coords_digit.shape[0] != 90
+        or coords_sector.shape[0] != 90
+        or coords_digit.shape[1] < 2
+        or coords_sector.shape[1] < 2
+    ):
         raise ValueError(
-            f"coords_digit / coords_sector must be (90, 2), got "
+            f"coords_digit / coords_sector must be (90, >=2), got "
             f"{coords_digit.shape} and {coords_sector.shape}"
         )
+    coords_digit = coords_digit[:, :2]
+    coords_sector = coords_sector[:, :2]
     digit_labels = np.asarray(digit_labels, dtype=np.int64).reshape(90)
     sector_labels = np.asarray(sector_labels, dtype=np.int64).reshape(90)
 
@@ -966,6 +991,193 @@ def save_dpca_2x2_orthogonality(
         shutil.copyfile(out_path, legacy_path)
 
 
+def _prepare_dpca_3d_inputs(
+    coords_digit: np.ndarray,
+    coords_sector: np.ndarray,
+    digit_labels: np.ndarray,
+    sector_labels: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    digit_xyz = np.asarray(coords_digit, dtype=np.float32)
+    sector_xyz = np.asarray(coords_sector, dtype=np.float32)
+    if digit_xyz.ndim != 2 or digit_xyz.shape[0] != 90 or digit_xyz.shape[1] < 3:
+        raise ValueError(f"digit coords must be (90, >=3), got {digit_xyz.shape}")
+    if sector_xyz.ndim != 2 or sector_xyz.shape[0] != 90 or sector_xyz.shape[1] < 3:
+        raise ValueError(f"sector coords must be (90, >=3), got {sector_xyz.shape}")
+    digit_ids = np.asarray(digit_labels, dtype=np.int64).reshape(90)
+    sector_ids = np.asarray(sector_labels, dtype=np.int64).reshape(90)
+    return digit_xyz[:, :3], sector_xyz[:, :3], digit_ids, sector_ids
+
+
+def save_dpca_3d_coordinates(
+    coords_digit: np.ndarray,
+    coords_sector: np.ndarray,
+    digit_labels: np.ndarray,
+    sector_labels: np.ndarray,
+    out_dir: str,
+    method: str,
+    source_path: str,
+) -> tuple[str, str]:
+    """Save reusable dPC1-dPC3 coordinates and JSON provenance metadata."""
+    digit_xyz, sector_xyz, digit_ids, sector_ids = _prepare_dpca_3d_inputs(
+        coords_digit,
+        coords_sector,
+        digit_labels,
+        sector_labels,
+    )
+    os.makedirs(out_dir, exist_ok=True)
+    data_path = os.path.join(out_dir, f"dpca_3d_coordinates_{method}.npz")
+    meta_path = os.path.join(out_dir, f"dpca_3d_coordinates_{method}_meta.json")
+    html_name = f"dpca_3d_interactive_{method}.html"
+    np.savez_compressed(
+        data_path,
+        coords_digit=digit_xyz.astype(np.float32, copy=False),
+        coords_sector=sector_xyz.astype(np.float32, copy=False),
+        digit_labels=digit_ids.astype(np.int64, copy=False),
+        sector_labels=sector_ids.astype(np.int64, copy=False),
+    )
+    metadata = {
+        "method": method,
+        "source": os.path.abspath(source_path),
+        "coordinate_file": os.path.basename(data_path),
+        "interactive_html": html_name,
+        "coords_digit": {
+            "shape": list(digit_xyz.shape),
+            "dtype": "float32",
+            "axes": ["digit dPC1", "digit dPC2", "digit dPC3"],
+        },
+        "coords_sector": {
+            "shape": list(sector_xyz.shape),
+            "dtype": "float32",
+            "axes": ["sector dPC1", "sector dPC2", "sector dPC3"],
+        },
+        "digit_labels": {"shape": list(digit_ids.shape), "dtype": "int64"},
+        "sector_labels": {"shape": list(sector_ids.shape), "dtype": "int64"},
+        "condition_order": "digit-major: flat_index = digit * 9 + sector",
+    }
+    with open(meta_path, "w") as f:
+        json.dump(metadata, f, indent=2)
+    print(f"Saved {data_path}")
+    print(f"Saved {meta_path}")
+    return data_path, meta_path
+
+
+def save_dpca_3d_interactive_html(
+    coords_digit: np.ndarray,
+    coords_sector: np.ndarray,
+    digit_labels: np.ndarray,
+    sector_labels: np.ndarray,
+    out_dir: str,
+    method: str,
+) -> str:
+    """Save an offline Plotly HTML with four interactive dPC1-dPC3 condition views."""
+    try:
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+    except ImportError as e:
+        raise ImportError(
+            "Interactive dPCA output requires Plotly; install the viz extra: "
+            "pip install -e '.[viz]'"
+        ) from e
+
+    digit_xyz, sector_xyz, digit_ids, sector_ids = _prepare_dpca_3d_inputs(
+        coords_digit,
+        coords_sector,
+        digit_labels,
+        sector_labels,
+    )
+    subplot_titles = (
+        "Digit dPC space — colored by digit",
+        "Digit dPC space — colored by sector",
+        "Sector dPC space — colored by digit",
+        "Sector dPC space — colored by sector",
+    )
+    fig = make_subplots(
+        rows=2,
+        cols=2,
+        specs=[[{"type": "scene"}, {"type": "scene"}], [{"type": "scene"}, {"type": "scene"}]],
+        subplot_titles=subplot_titles,
+        horizontal_spacing=0.04,
+        vertical_spacing=0.08,
+    )
+    customdata = np.column_stack([digit_ids, sector_ids]).astype(np.int64, copy=False)
+    panels = [
+        (digit_xyz, "digit", digit_ids, DIGIT_COLORS, 1, 1, True),
+        (digit_xyz, "digit", sector_ids, SECTOR_COLORS, 1, 2, True),
+        (sector_xyz, "sector", digit_ids, DIGIT_COLORS, 2, 1, False),
+        (sector_xyz, "sector", sector_ids, SECTOR_COLORS, 2, 2, False),
+    ]
+    for xyz, space, color_ids, palette, row, col, show_legend in panels:
+        color_name = "digit" if len(palette) == len(DIGIT_COLORS) else "sector"
+        for class_id, color in enumerate(palette):
+            mask = color_ids == class_id
+            fig.add_trace(
+                go.Scatter3d(
+                    x=xyz[mask, 0],
+                    y=xyz[mask, 1],
+                    z=xyz[mask, 2],
+                    mode="markers",
+                    marker={
+                        "size": 5,
+                        "color": color,
+                        "opacity": 0.88,
+                        "line": {"color": "rgba(50,50,50,0.65)", "width": 0.7},
+                    },
+                    customdata=customdata[mask],
+                    name=f"{color_name} {class_id}",
+                    legendgroup=f"{color_name}-{class_id}",
+                    showlegend=show_legend,
+                    hovertemplate=(
+                        "digit=%{customdata[0]}<br>sector=%{customdata[1]}<br>"
+                        f"{space} dPC1=%{{x:.4f}}<br>"
+                        f"{space} dPC2=%{{y:.4f}}<br>"
+                        f"{space} dPC3=%{{z:.4f}}<extra></extra>"
+                    ),
+                ),
+                row=row,
+                col=col,
+            )
+
+    for row, space, xyz in ((1, "digit", digit_xyz), (2, "sector", sector_xyz)):
+        limit = max(float(np.max(np.abs(xyz))) * 1.08, 1e-12)
+        axis_common = {
+            "range": [-limit, limit],
+            "zeroline": True,
+            "zerolinecolor": "rgba(80,80,80,0.55)",
+            "gridcolor": "rgba(160,160,160,0.28)",
+        }
+        for col in (1, 2):
+            fig.update_scenes(
+                xaxis={**axis_common, "title": f"{space} dPC1"},
+                yaxis={**axis_common, "title": f"{space} dPC2"},
+                zaxis={**axis_common, "title": f"{space} dPC3"},
+                aspectmode="cube",
+                dragmode="orbit",
+                row=row,
+                col=col,
+            )
+
+    fig.update_layout(
+        title=(
+            f"Interactive dPCA condition geometry ({method})"
+            "<br><sup>Drag to rotate; shift-drag to pan; scroll to zoom; hover for labels</sup>"
+        ),
+        width=1500,
+        height=1080,
+        margin={"l": 10, "r": 180, "t": 105, "b": 10},
+        legend={"title": {"text": "condition"}, "x": 1.01, "y": 0.98},
+    )
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, f"dpca_3d_interactive_{method}.html")
+    fig.write_html(
+        out_path,
+        include_plotlyjs=True,
+        full_html=True,
+        config={"scrollZoom": True, "responsive": True, "displaylogo": False},
+    )
+    print(f"Saved {out_path}")
+    return out_path
+
+
 def discrete_equal_bins_colorscale(colors: list[str]) -> list[list]:
     """
     n equal-height strips on [0, 1]. Use with cmin=-0.5, cmax=n-0.5 so class v maps to strip v.
@@ -1069,15 +1281,35 @@ def main() -> None:
             out_dir,
             file_suffix=method_suffix,
         )
+        coordinate_path, coordinate_meta_path = save_dpca_3d_coordinates(
+            result["coords_digit"],
+            result["coords_sector"],
+            digit_labels,
+            sector_labels,
+            out_dir,
+            method=args.dpca_method,
+            source_path=primary,
+        )
+        interactive_html_path = save_dpca_3d_interactive_html(
+            result["coords_digit"],
+            result["coords_sector"],
+            digit_labels,
+            sector_labels,
+            out_dir,
+            method=args.dpca_method,
+        )
         payload = {
             "method": args.dpca_method,
             "pop_act_dpca": os.path.abspath(primary),
-            "regularizer": float(args.dpca_regularizer)
-            if args.dpca_method == "rrr"
-            else None,
+            "regularizer": float(args.dpca_regularizer) if args.dpca_method == "rrr" else None,
             "selected": summary,
             "condensed_reference": condensed_summary,
             "rrr_zero_regularizer_reference": stability_summary,
+            "interactive_3d": {
+                "html": os.path.basename(interactive_html_path),
+                "coordinates": os.path.basename(coordinate_path),
+                "metadata": os.path.basename(coordinate_meta_path),
+            },
         }
         save_dpca_variance_json(out_dir, method_suffix, payload)
         save_dpca_explained_variance_bars(
@@ -1088,10 +1320,7 @@ def main() -> None:
         print(f"Saved {os.path.join(out_dir, f'dpca_scatter{method_suffix}.png')}")
         print(f"Saved {os.path.join(out_dir, f'dpca_2x2_orthogonality{method_suffix}.png')}")
         print(f"Saved compatibility copy {os.path.join(out_dir, 'dpca_scatter.png')}")
-        print(
-            "Saved compatibility copy "
-            f"{os.path.join(out_dir, 'dpca_2x2_orthogonality.png')}"
-        )
+        print("Saved compatibility copy " f"{os.path.join(out_dir, 'dpca_2x2_orthogonality.png')}")
         return
 
     pop_path = os.path.join(args.pop_act_dir, "pop_act.npy")

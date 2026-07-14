@@ -20,7 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["black", "ruff", "mypy"]
-viz = ["umap-learn>=0.5"]
+viz = ["umap-learn>=0.5", "plotly>=5.0"]
 
 # ---------------------------------------------------------------------------
 # Black — code formatter

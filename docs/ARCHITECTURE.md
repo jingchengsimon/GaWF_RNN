@@ -45,7 +45,7 @@ aim3_RNN/
 │   ├── V_basis.py           ← V parameter basis map heatmaps
 │   ├── whh.py               ← W_hh connectivity matrix
 │   ├── dimred_reducer.py    ← Shared dimensionality reduction wrapper
-│   ├── pop_act_umap.py      ← UMAP population activity plots
+│   ├── pop_act_umap.py      ← UMAP/PCA and dPCA population activity plots
 │   ├── sample_fg+bg_frames_sample.py ← Stimulus frame examples
 │   ├── plot_generalization.py ← Phase-3 CSV → char/sector gap + train/val acc vs scale (PNG; optional PDF)
 │   └── paper_figs/          ← Publication figures (fig1.py, metrics_best_acc_bars.py)
@@ -181,7 +181,10 @@ results/anal_data/<module>/
         │
         ▼  utils_viz/*.py
 results/anal_figs/<module>/
-  └── *.png
+  ├── *.png                 ← static figures
+  ├── *.html                ← self-contained interactive 3D figures
+  ├── *.npz                 ← reusable float32 3D coordinates + int64 labels
+  └── *_meta.json           ← coordinate provenance and component definitions
 ```
 
 ---

@@ -112,6 +112,16 @@ tag = f"{mode}{selected_idx}_{agg}"
 # e.g. "sector3_space_avg_gate_allcomp.png"
 ```
 
+Interactive dPCA outputs from `utils_viz/pop_act_umap.py` use method-qualified names:
+```
+dpca_3d_interactive_{method}.html
+dpca_3d_coordinates_{method}.npz
+dpca_3d_coordinates_{method}_meta.json
+```
+The HTML embeds Plotly for offline rotate/pan/zoom interaction. The NPZ stores `coords_digit`
+and `coords_sector` as `(90, 3)` float32 arrays and both condition labels as int64 arrays;
+the JSON records source, method, shapes, dtypes, and component-axis meanings.
+
 ## 4. Python Identifier Conventions
 
 ### Class names
