@@ -49,6 +49,7 @@ MODEL_COLORS = {
 }
 
 N_GRID = 300  # resampling points for cross-seed aggregation
+STEP_SCALE = 1_000_000.0
 
 
 def parse_args() -> argparse.Namespace:
@@ -121,6 +122,10 @@ def _protocol_title(prefix: str, setting: str) -> str:
 
 def _artifact_prefix(prefix: str) -> str:
     return prefix.replace("atari_dqn_", "atari_", 1)
+
+
+def _steps_in_millions(steps: np.ndarray) -> np.ndarray:
+    return np.asarray(steps, dtype=np.float64) / STEP_SCALE
 
 
 def _discover_run_dirs(data_root: str, base: str, seed: Optional[int] = None) -> list[Path]:
@@ -218,13 +223,21 @@ def _plot_setting(ax, args, setting: str) -> int:
         grid, mean, std, n_seeds = agg
         color = MODEL_COLORS.get(model)
         label = model if args.seed is not None else f"{model} (n={n_seeds})"
-        ax.plot(grid, mean, label=label, color=color, linewidth=1.8)
+        plot_steps = _steps_in_millions(grid)
+        ax.plot(plot_steps, mean, label=label, color=color, linewidth=1.8)
         if args.band != "none" and n_seeds > 1:
             band = std / np.sqrt(n_seeds) if args.band == "sem" else std
-            ax.fill_between(grid, mean - band, mean + band, color=color, alpha=0.18, linewidth=0)
+            ax.fill_between(
+                plot_steps,
+                mean - band,
+                mean + band,
+                color=color,
+                alpha=0.18,
+                linewidth=0,
+            )
         plotted += 1
     ax.set_title(_protocol_title(args.prefix, setting))
-    ax.set_xlabel("environment steps")
+    ax.set_xlabel("environment steps (×10⁶)")
     ax.set_ylabel(args.metric)
     ax.grid(True, alpha=0.3)
     if plotted:

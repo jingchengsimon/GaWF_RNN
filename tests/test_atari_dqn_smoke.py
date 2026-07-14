@@ -106,7 +106,11 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
         self.assertFalse(_supports_fused_adam_params(complex_model))
 
     def test_atari_curve_title_tracks_explicit_frame_protocol(self) -> None:
-        from utils_viz.atari_learning_curves import _artifact_prefix, _protocol_title
+        from utils_viz.atari_learning_curves import (
+            _artifact_prefix,
+            _protocol_title,
+            _steps_in_millions,
+        )
 
         prefix = "atari_dqn_pong_fs1_stack1_accelval100k"
         self.assertEqual(_protocol_title(prefix, "plain"), "Pong (frame skip 1, stack 1)")
@@ -115,6 +119,10 @@ class AtariDQNModelSmokeTest(unittest.TestCase):
             "Flickering Pong (frame skip 1, stack 1, p=0.5)",
         )
         self.assertEqual(_artifact_prefix(prefix), "atari_pong_fs1_stack1_accelval100k")
+        np.testing.assert_allclose(
+            _steps_in_millions(np.asarray([0, 100_000, 1_000_000])),
+            np.asarray([0.0, 0.1, 1.0]),
+        )
 
     def test_transition_balanced_collection_allows_unequal_episode_counts(self) -> None:
         from utils.atari_envs import _EpisodeTaskScheduler
