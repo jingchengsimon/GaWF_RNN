@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 import tempfile
 import unittest
 
@@ -13,6 +14,7 @@ from source.GenerateMovies_joint_balanced import (
     NUM_SECTORS,
     build_balanced_condition_schedule,
     generate_balanced_joint_test,
+    load_mnist_idx_data,
     resolve_repeats_per_condition,
     sample_rendered_center_for_sector,
     sample_switch_frames,
@@ -99,6 +101,29 @@ class JointBalancedGeneratorTests(unittest.TestCase):
             stimulus = np.load(f"{output_dir}/stimulus_tiny-balanced.npy", mmap_mode="r")
             self.assertEqual(stimulus.shape, (96, 96, 96))
             self.assertEqual(stimulus.dtype, np.float32)
+
+    def test_idx_fallback_loads_requested_sample_range(self) -> None:
+        images = np.arange(6 * 4, dtype=np.uint8).reshape(6, 2, 2)
+        labels = np.asarray([0, 1, 2, 1, 2, 3], dtype=np.uint8)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            raw_dir = Path(temp_dir)
+            image_header = np.asarray([2051, 6, 2, 2], dtype=">i4").tobytes()
+            label_header = np.asarray([2049, 6], dtype=">i4").tobytes()
+            (raw_dir / "train-images-idx3-ubyte").write_bytes(
+                image_header + images.tobytes()
+            )
+            (raw_dir / "train-labels-idx1-ubyte").write_bytes(
+                label_header + labels.tobytes()
+            )
+            config = StimulusConfig(
+                output_dir=temp_dir,
+                mnist_sample_start=1,
+                mnist_sample_end=5,
+                output_mode="simple",
+            )
+            loaded = load_mnist_idx_data(config, raw_dir)
+            self.assertEqual([len(loaded[digit]) for digit in range(4)], [0, 2, 2, 0])
+            np.testing.assert_array_equal(loaded[1][0], images[1])
 
 
 if __name__ == "__main__":

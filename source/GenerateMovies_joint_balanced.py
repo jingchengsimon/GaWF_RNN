@@ -49,6 +49,83 @@ LABEL_COLUMNS = [
 ]
 
 
+def load_mnist_idx_data(
+    config: StimulusConfig,
+    raw_dir: Path | None = None,
+) -> dict[int, list[np.ndarray]]:
+    """Load held-out MNIST samples directly from raw IDX files without torchvision."""
+    source_dir = raw_dir or PROJECT_ROOT / "mnist_data_pytorch" / "MNIST" / "raw"
+    images_path = source_dir / "train-images-idx3-ubyte"
+    labels_path = source_dir / "train-labels-idx1-ubyte"
+    if not images_path.is_file() or not labels_path.is_file():
+        raise FileNotFoundError(
+            "torchvision is unavailable and raw MNIST IDX files were not found at "
+            f"{source_dir}"
+        )
+
+    with images_path.open("rb") as image_file:
+        image_header = np.frombuffer(image_file.read(16), dtype=">i4")
+    with labels_path.open("rb") as label_file:
+        label_header = np.frombuffer(label_file.read(8), dtype=">i4")
+    if image_header.tolist()[:1] != [2051] or label_header.tolist()[:1] != [2049]:
+        raise ValueError("Invalid MNIST IDX magic number")
+    num_images, rows, columns = (int(value) for value in image_header[1:])
+    num_labels = int(label_header[1])
+    if num_images != num_labels:
+        raise ValueError(f"MNIST image/label count mismatch: {num_images} != {num_labels}")
+
+    start = int(config.mnist_sample_start)
+    stop = min(int(config.mnist_sample_end), num_images)
+    if not 0 <= start < stop:
+        raise ValueError(f"Invalid MNIST sample range [{start}, {stop}) for {num_images} rows")
+    images = np.memmap(
+        images_path,
+        mode="r",
+        dtype=np.uint8,
+        offset=16,
+        shape=(num_images, rows, columns),
+    )
+    labels = np.memmap(
+        labels_path,
+        mode="r",
+        dtype=np.uint8,
+        offset=8,
+        shape=(num_labels,),
+    )
+    mnist_digits: dict[int, list[np.ndarray]] = {digit: [] for digit in range(NUM_DIGITS)}
+    selected_images: list[np.ndarray] = []
+    selected_labels: list[int] = []
+    for index in range(start, stop):
+        digit = int(labels[index])
+        image = np.array(images[index], copy=True)
+        mnist_digits[digit].append(image)
+        if config.output_mode == "full":
+            selected_images.append(image)
+            selected_labels.append(digit)
+
+    if config.output_mode == "full":
+        output_dir = Path(config.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        np.save(output_dir / f"mnist_images_{config.suffix}.npy", np.stack(selected_images))
+        np.save(
+            output_dir / f"mnist_labels_{config.suffix}.npy",
+            np.asarray(selected_labels, dtype=np.int64),
+        )
+    LOGGER.info("Loaded MNIST IDX samples [%s, %s) from %s", start, stop, source_dir)
+    return mnist_digits
+
+
+def load_balanced_mnist_data(config: StimulusConfig) -> dict[int, Sequence[np.ndarray]]:
+    """Use the canonical torchvision loader, falling back to local raw IDX files."""
+    try:
+        return load_mnist_data(config)
+    except ModuleNotFoundError as error:
+        if error.name != "torchvision":
+            raise
+        LOGGER.warning("torchvision is unavailable; using the local MNIST IDX fallback")
+        return load_mnist_idx_data(config)
+
+
 def build_balanced_condition_schedule(
     repeats_per_condition: int,
     rng: np.random.Generator,
@@ -486,7 +563,7 @@ def main() -> None:
         suffix=args.suffix,
         output_mode=args.output_mode,
     )
-    mnist_data = load_mnist_data(config)
+    mnist_data = load_balanced_mnist_data(config)
     generate_balanced_joint_test(
         config,
         mnist_data,
