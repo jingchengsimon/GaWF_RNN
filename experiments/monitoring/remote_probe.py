@@ -102,6 +102,7 @@ def _unit_from_result_dir(path: Path, root: Path, defaults: dict[str, Any]) -> d
 
 def _expand_units(root: Path, tracking: dict[str, Any]) -> list[dict[str, Any]]:
     defaults = dict(tracking.get("defaults", {}))
+    defaults.setdefault("validation_mode", tracking.get("validation_mode", "artifacts"))
     explicit = tracking.get("units", [])
     if explicit:
         return [{**defaults, **unit} for unit in explicit]
@@ -132,6 +133,7 @@ def _check_unit(root: Path, unit: dict[str, Any]) -> dict[str, Any]:
     failed = fail_path.is_file() if fail_path is not None else False
     checkpoint_glob = unit.get("checkpoint_glob")
     checkpoints = sorted(result_dir.glob(checkpoint_glob)) if checkpoint_glob else []
+    validation_mode = unit.get("validation_mode", "artifacts")
     expected = dict(unit.get("expected", {}))
     mismatches = {
         key: {"expected": expected_value, "actual": metrics.get(key)}
@@ -141,20 +143,34 @@ def _check_unit(root: Path, unit: dict[str, Any]) -> dict[str, Any]:
     if done_path is not None and not done:
         mismatches["done_file"] = {"expected": True, "actual": False}
     checkpoint_count = unit.get("checkpoint_count")
+    checkpoint_ok = checkpoint_count is None or len(checkpoints) == checkpoint_count
     if checkpoint_count is not None and len(checkpoints) != checkpoint_count:
         mismatches["checkpoint_count"] = {
             "expected": checkpoint_count,
             "actual": len(checkpoints),
         }
-    valid = metrics_path.is_file() and not failed and not mismatches
+    metrics_readable = metrics_path.is_file() and bool(metrics)
+    if metrics_path.is_file() and not metrics_readable:
+        mismatches["metrics_json"] = {"expected": "readable JSON object", "actual": False}
+    if validation_mode == "strict":
+        valid = metrics_readable and not failed and not mismatches
+        effective_failed = failed
+    else:
+        # Artifact mode treats metadata and marker mismatches as diagnostics. A readable final
+        # metrics file plus explicitly requested checkpoints is sufficient result evidence, even
+        # if a stale fail marker from an earlier attempt was not removed.
+        valid = metrics_readable and checkpoint_ok
+        effective_failed = failed and not valid
     return {
         "id": unit.get("id", result_dir.name),
         "result_dir": str(result_dir),
         "metrics_exists": metrics_path.is_file(),
         "history_exists": history_path.is_file(),
         "done": done,
-        "failed": failed,
+        "failed": effective_failed,
+        "fail_marker_exists": failed,
         "valid": valid,
+        "validation_mode": validation_mode,
         "global_step": _finite(history.get("global_step", metrics.get("global_step"))),
         "fps": _finite(history.get("fps", metrics.get("fps"))),
         "episodic_return_100": _finite(

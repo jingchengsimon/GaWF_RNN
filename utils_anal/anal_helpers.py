@@ -76,6 +76,7 @@ def build_test_dataset(args: argparse.Namespace) -> Tuple[MC_RNN_Dataset, int]:
         None,
         use_sector_mode=use_sector_mode,
         predict_all_chars=predict_all_chars,
+        chan_num=int(getattr(args, "chan_num", 2)),
         max_chars=15,
         dataset_class=MC_RNN_Dataset,
         splits=("test",),
@@ -106,6 +107,7 @@ def build_train_dataset_allchars(args: argparse.Namespace) -> MC_RNN_Dataset:
         None,
         use_sector_mode=True,
         predict_all_chars=True,
+        chan_num=int(getattr(args, "chan_num", 2)),
         max_chars=15,
         dataset_class=MC_RNN_Dataset,
         splits=("train",),
@@ -128,6 +130,7 @@ def build_model_from_ckpt(
     ckpt_path: str,
     num_pos: int,
     device: torch.device,
+    chan_num: int = 2,
 ) -> torch.nn.Module:
     """
     Instantiate a sequence model with hyperparameters parsed from the checkpoint filename,
@@ -176,6 +179,7 @@ def build_model_from_ckpt(
         num_pos=num_pos,
         kernel_size=5,
         device=str(device),
+        input_channels=chan_num,
         cnn_dropout=cnn_dropout,
         rnn_dropout=rnn_dropout,
         **({} if model_key in ("mamba", "s5") else {"hidden_size": hidden_size}),

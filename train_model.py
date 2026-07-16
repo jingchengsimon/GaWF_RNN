@@ -81,7 +81,9 @@ class MC_RNN_Dataset(Dataset):
         """
         self.data = data
         self.frame_num = frame_num
-        self.chan_num = chan_num
+        if chan_num <= 0:
+            raise ValueError(f"chan_num must be positive, got {chan_num}")
+        self.chan_num = int(chan_num)
         self.use_sector = use_sector
         self.num_sectors = num_sectors
         self.max_chars = max_chars
@@ -572,6 +574,7 @@ if __name__ == "__main__":
         lbls_val,
         use_sector_mode=args.use_sector_mode,
         predict_all_chars=args.predict_all_chars,
+        chan_num=args.chan_num,
         max_chars=max_chars,
         dataset_class=MC_RNN_Dataset,
         splits=("train", "valid"),
@@ -717,6 +720,7 @@ if __name__ == "__main__":
             num_pos=num_pos,
             kernel_size=5,
             device=device,
+            input_channels=args.chan_num,
             cnn_dropout=cnn_dropout,
             rnn_dropout=rnn_dropout,
             **{width_kwarg: model_width},
@@ -866,6 +870,7 @@ if __name__ == "__main__":
             optimizer=args.optim,
         )
         metric_summary["seed"] = int(args.seed)
+        metric_summary["chan_num"] = int(args.chan_num)
         metric_summary["patience"] = int(args.patience)
         metric_summary["use_acceleration"] = bool(args.use_acceleration)
         metric_summary["use_mmap"] = bool(args.use_mmap)

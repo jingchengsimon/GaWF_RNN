@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "id": "amarel-clutter-best6-chan1-seed42-ep150-58174672",
+  "description": "Clutter six frozen chan=2 best hyperparameters reused with chan=1, seed=42 only, 150 full epochs, no early stopping; checkpoints reserved for later fg-switch analysis",
+  "host": "amarel",
+  "status": "cancelled",
+  "created_at": "2026-07-15T03:43:33+00:00",
+  "updated_at": "2026-07-15T15:57:25+00:00",
+  "remote_root": "/cache/home/js3269/projects/FAW_RNN-clutter-best6-chan1",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58174672"
+    ],
+    "run_ids": [],
+    "tmux_session": null,
+    "process_patterns": [],
+    "collect_gpu": false
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/clutter_best6_chan1_seed42_ep150/58174672_*.out"
+    ],
+    "status_dir": "experiments/amarel/artifacts/clutter_best6_chan1_seed42_ep150/status",
+    "result_paths": [
+      "results/train_data/clutter_best6_chan1_seed42_40h_ep150"
+    ]
+  },
+  "tracking": {
+    "expected_units": 6,
+    "auto_complete": true,
+    "units": [
+      {
+        "id": "gawf-seed42",
+        "result_dir": "results/train_data/clutter_best6_chan1_seed42_40h_ep150/gawf-seed42",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_seed42_ep150/status/task_000.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_seed42_ep150/status/task_000.fail",
+        "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gawf",
+          "seed": 42,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        }
+      },
+      {
+        "id": "rnn-seed42",
+        "result_dir": "results/train_data/clutter_best6_chan1_seed42_40h_ep150/rnn-seed42",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_seed42_ep150/status/task_001.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_seed42_ep150/status/task_001.fail",
+        "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "rnn",
+          "seed": 42,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        }
+      },
+      {
+        "id": "lstm-seed42",
+        "result_dir": "results/train_data/clutter_best6_chan1_seed42_40h_ep150/lstm-seed42",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_seed42_ep150/status/task_002.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_seed42_ep150/status/task_002.fail",
+        "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "lstm",
+          "seed": 42,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        }
+      },
+      {
+        "id": "gru-seed42",
+        "result_dir": "results/train_data/clutter_best6_chan1_seed42_40h_ep150/gru-seed42",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_seed42_ep150/status/task_003.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_seed42_ep150/status/task_003.fail",
+        "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gru",
+          "seed": 42,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        }
+      },
+      {
+        "id": "mamba-seed42",
+        "result_dir": "results/train_data/clutter_best6_chan1_seed42_40h_ep150/mamba-seed42",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_seed42_ep150/status/task_004.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_seed42_ep150/status/task_004.fail",
+        "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "mamba",
+          "seed": 42,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        }
+      },
+      {
+        "id": "s5-seed42",
+        "result_dir": "results/train_data/clutter_best6_chan1_seed42_40h_ep150/s5-seed42",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_seed42_ep150/status/task_005.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_seed42_ep150/status/task_005.fail",
+        "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "s5",
+          "seed": 42,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        }
+      }
+    ]
+  },
+  "notes": [
+    "40h training stimulus is approximately 119 GB and is loaded with mmap.",
+    "DataLoader uses num_workers=0 and pin_memory=False to preserve mmap safety.",
+    "Saved checkpoints contain the best-validation state after all 150 epochs are run.",
+    "Input uses chan_num=1 consecutive stimulus frame(s).",
+    "Submitted as 1 independent Slurm array(s), one seed and six model tasks per job."
+  ]
+}

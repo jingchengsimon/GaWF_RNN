@@ -21,12 +21,25 @@ S5_DEFAULT_STATE_SIZE = 128
 class ClutterCNNEncoder(nn.Module):
     """CNN encoder for clutter frame sequences."""
 
-    def __init__(self, kernel_size: int = 3, cnn_dropout: float = 0.0) -> None:
+    def __init__(
+        self,
+        kernel_size: int = 3,
+        cnn_dropout: float = 0.0,
+        input_channels: int = 2,
+    ) -> None:
         super().__init__()
+        if input_channels <= 0:
+            raise ValueError(f"input_channels must be positive, got {input_channels}")
         self.cnn_dropout = float(cnn_dropout)
+        self.input_channels = int(input_channels)
         out_ch, out_h, out_w = 64, 12, 12
         mp2_k, mp2_s = 4, 4
-        self.conv1 = nn.Conv2d(2, 32, kernel_size=kernel_size, padding="same")
+        self.conv1 = nn.Conv2d(
+            self.input_channels,
+            32,
+            kernel_size=kernel_size,
+            padding="same",
+        )
         self.MP1 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.LNorm1 = nn.LayerNorm([32, 48, 48])
         self.conv2 = nn.Conv2d(32, out_ch, kernel_size=3, padding=1)
@@ -98,6 +111,7 @@ class ClutterSequenceModel(nn.Module):
         sequence_width: int,
         kernel_size: int = 3,
         device: str = "cuda",
+        input_channels: int = 2,
         cnn_dropout: float = 0.0,
         rnn_dropout: float = 0.5,
         max_chars: int = 15,
@@ -105,6 +119,7 @@ class ClutterSequenceModel(nn.Module):
     ) -> None:
         super().__init__()
         self.device = device
+        self.input_channels = int(input_channels)
         self.cnn_dropout = float(cnn_dropout)
         self.rnn_dropout = float(rnn_dropout)
         self.max_chars = int(max_chars)
@@ -112,7 +127,11 @@ class ClutterSequenceModel(nn.Module):
         self.num_classes = int(num_classes)
         self.num_pos = int(num_pos)
         self.hidden_size = int(sequence_width)
-        self.encoder_module = ClutterCNNEncoder(kernel_size=kernel_size, cnn_dropout=cnn_dropout)
+        self.encoder_module = ClutterCNNEncoder(
+            kernel_size=kernel_size,
+            cnn_dropout=cnn_dropout,
+            input_channels=self.input_channels,
+        )
         self.encoder_flatten_size = self.encoder_module.output_size
         self.head = ClutterCharPosHead(
             hidden_size=self.hidden_size,
@@ -154,6 +173,7 @@ class RNNConv(ClutterSequenceModel):
         num_pos,
         kernel_size=3,
         device="cuda",
+        input_channels=2,
         cnn_dropout=0.0,
         rnn_dropout=0.5,
         hidden_size=256,
@@ -167,6 +187,7 @@ class RNNConv(ClutterSequenceModel):
             hidden_size,
             kernel_size=kernel_size,
             device=device,
+            input_channels=input_channels,
             cnn_dropout=cnn_dropout,
             rnn_dropout=rnn_dropout,
             max_chars=max_chars,
@@ -199,6 +220,7 @@ class GRUConv(RNNConv):
         num_pos,
         kernel_size=3,
         device="cuda",
+        input_channels=2,
         cnn_dropout=0.0,
         rnn_dropout=0.5,
         hidden_size=256,
@@ -213,6 +235,7 @@ class GRUConv(RNNConv):
             hidden_size,
             kernel_size=kernel_size,
             device=device,
+            input_channels=input_channels,
             cnn_dropout=cnn_dropout,
             rnn_dropout=rnn_dropout,
             max_chars=max_chars,
@@ -237,6 +260,7 @@ class LSTMConv(RNNConv):
         num_pos,
         kernel_size=3,
         device="cuda",
+        input_channels=2,
         cnn_dropout=0.0,
         rnn_dropout=0.5,
         hidden_size=256,
@@ -251,6 +275,7 @@ class LSTMConv(RNNConv):
             hidden_size,
             kernel_size=kernel_size,
             device=device,
+            input_channels=input_channels,
             cnn_dropout=cnn_dropout,
             rnn_dropout=rnn_dropout,
             max_chars=max_chars,
@@ -277,6 +302,7 @@ class MambaConv(ClutterSequenceModel):
         num_pos,
         kernel_size=3,
         device="cuda",
+        input_channels=2,
         cnn_dropout=0.0,
         rnn_dropout=0.5,
         mamba_d_model=MAMBA_DEFAULT_D_MODEL,
@@ -296,6 +322,7 @@ class MambaConv(ClutterSequenceModel):
             mamba_d_model,
             kernel_size=kernel_size,
             device=device,
+            input_channels=input_channels,
             cnn_dropout=cnn_dropout,
             rnn_dropout=rnn_dropout,
             max_chars=max_chars,
@@ -338,6 +365,7 @@ class S5Conv(ClutterSequenceModel):
         num_pos,
         kernel_size=3,
         device="cuda",
+        input_channels=2,
         cnn_dropout=0.0,
         rnn_dropout=0.5,
         s5_d_model=S5_DEFAULT_D_MODEL,
@@ -354,6 +382,7 @@ class S5Conv(ClutterSequenceModel):
             s5_d_model,
             kernel_size=kernel_size,
             device=device,
+            input_channels=input_channels,
             cnn_dropout=cnn_dropout,
             rnn_dropout=rnn_dropout,
             max_chars=max_chars,
@@ -395,6 +424,7 @@ class GaWFRNNConv(ClutterSequenceModel):
         num_pos,
         kernel_size=3,
         device="cuda",
+        input_channels=2,
         cnn_dropout=0.0,
         rnn_dropout=0.5,
         hidden_size=256,
@@ -408,6 +438,7 @@ class GaWFRNNConv(ClutterSequenceModel):
             hidden_size,
             kernel_size=kernel_size,
             device=device,
+            input_channels=input_channels,
             cnn_dropout=cnn_dropout,
             rnn_dropout=rnn_dropout,
             max_chars=max_chars,
@@ -541,6 +572,7 @@ class MultiLayerGaWFRNNConv(ClutterSequenceModel):
         num_pos,
         kernel_size=3,
         device="cuda",
+        input_channels=2,
         cnn_dropout=0.0,
         rnn_dropout=0.5,
         hidden_size=256,
@@ -562,6 +594,7 @@ class MultiLayerGaWFRNNConv(ClutterSequenceModel):
             hidden_size,
             kernel_size=kernel_size,
             device=device,
+            input_channels=input_channels,
             cnn_dropout=cnn_dropout,
             rnn_dropout=rnn_dropout,
             max_chars=max_chars,

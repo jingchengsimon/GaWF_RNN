@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "id": "amarel-clutter-best6-chan1-seed01-ep150-58174675",
+  "description": "Clutter six frozen chan=2 best hyperparameters reused with chan=1, seed=1 only, 150 full epochs, no early stopping; training/checkpoints only",
+  "host": "amarel",
+  "status": "cancelled",
+  "remote_root": "/cache/home/js3269/projects/FAW_RNN-clutter-best6-chan1",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58174675"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/clutter_best6_chan1_seed01_ep150/58174675_*.out"
+    ],
+    "status_dir": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status",
+    "result_paths": [
+      "results/train_data/clutter_best6_multiseed_40h_chan1_ep150"
+    ]
+  },
+  "tracking": {
+    "expected_units": 6,
+    "auto_complete": true,
+    "result_globs": [
+      "results/train_data/clutter_best6_multiseed_40h_chan1_ep150"
+    ],
+    "done_glob": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_00[0-5].done",
+    "fail_glob": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_00[0-5].fail",
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/*-seed01/*_model.pth",
+      "checkpoint_count": 6
+    },
+    "units": []
+  },
+  "notes": [
+    "Models: gawf, rnn, lstm, gru, mamba, s5; seed=1; chan_num=1.",
+    "Valid completion requires six checkpoints plus six done markers after actual_epochs=150.",
+    "No balanced-test dependency or ongoing monitor is attached."
+  ],
+  "created_at": "2026-07-15T03:45:58+00:00",
+  "updated_at": "2026-07-15T04:07:24+00:00"
+}

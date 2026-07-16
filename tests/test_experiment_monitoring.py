@@ -67,7 +67,7 @@ class ExperimentMonitoringTests(unittest.TestCase):
             remove_job("example-job-123", human_confirmed=True, base_dir=root)
             self.assertEqual(load_jobs(root), [])
 
-    def test_exact_unit_probe_validates_metrics_done_and_checkpoint(self) -> None:
+    def test_artifact_probe_reports_metadata_mismatches_without_rejecting_results(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             result_dir = root / "results" / "train_data" / "pong_gawf_seed42"
@@ -113,11 +113,50 @@ class ExperimentMonitoringTests(unittest.TestCase):
                 json.dumps(mismatched), encoding="utf-8"
             )
             report = collect(manifest)
-            self.assertEqual(report["valid_units"], 0)
+            self.assertEqual(report["valid_units"], 1)
             self.assertEqual(
                 report["units"][0]["mismatches"]["frame_skip"],
                 {"expected": 1, "actual": 4},
             )
+
+            (status_dir / "pong_gawf_seed42.done").unlink()
+            report = collect(manifest)
+            self.assertEqual(report["valid_units"], 1)
+            self.assertFalse(report["units"][0]["done"])
+
+            (status_dir / "pong_gawf_seed42.fail").touch()
+            report = collect(manifest)
+            self.assertEqual(report["valid_units"], 1)
+            self.assertEqual(report["failed_units"], 0)
+            self.assertTrue(report["units"][0]["fail_marker_exists"])
+
+            (result_dir / "model.pth").unlink()
+            report = collect(manifest)
+            self.assertEqual(report["valid_units"], 0)
+
+    def test_strict_probe_rejects_metadata_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            result_dir = root / "results" / "train_data" / "example"
+            result_dir.mkdir(parents=True)
+            (result_dir / "metrics.json").write_text(
+                json.dumps({"global_step": 99}), encoding="utf-8"
+            )
+            manifest = _minimal_manifest(root)
+            manifest["tracking"] = {
+                "expected_units": 1,
+                "validation_mode": "strict",
+                "units": [
+                    {
+                        "id": "example",
+                        "result_dir": "results/train_data/example",
+                        "expected": {"global_step": 100},
+                    }
+                ],
+            }
+            report = collect(manifest)
+            self.assertEqual(report["valid_units"], 0)
+            self.assertEqual(report["units"][0]["validation_mode"], "strict")
 
 
 if __name__ == "__main__":

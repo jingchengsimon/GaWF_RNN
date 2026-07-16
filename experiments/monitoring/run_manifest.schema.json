@@ -52,6 +52,7 @@
       "properties": {
         "expected_units": {"type": "integer", "minimum": 0},
         "auto_complete": {"type": "boolean"},
+        "validation_mode": {"enum": ["artifacts", "strict"]},
         "done_glob": {"type": "string"},
         "fail_glob": {"type": "string"},
         "result_globs": {"type": "array", "items": {"type": "string"}},
@@ -70,6 +71,7 @@
               "fail_file": {"type": "string"},
               "checkpoint_glob": {"type": "string"},
               "checkpoint_count": {"type": "integer", "minimum": 0},
+              "validation_mode": {"enum": ["artifacts", "strict"]},
               "expected": {"type": "object"}
             }
           }

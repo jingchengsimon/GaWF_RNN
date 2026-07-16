@@ -26,8 +26,14 @@ DATA_SUFFIX = "40h-float32"
 EVAL_DATA_SUFFIX = "40h-float32"
 CNN_DROPOUT = 0.0
 RNN_DROPOUT = 0.5
+CHAN_NUM = 2
 RESULT_ROOT_SUFFIX = "clutter_best6_multiseed_40h_ep150"
 ARTIFACT_TAG = "clutter_best6_10seed_ep150"
+RUN_ID_PREFIX = "amarel-clutter-best6-10seed-ep150"
+RUN_DESCRIPTION = (
+    "Clutter six frozen best models, chan=2, seeds 1-10, 150 full epochs, "
+    "no early stopping"
+)
 
 
 @dataclass(frozen=True)
@@ -171,6 +177,7 @@ def shell_assignments(config: TaskConfig, root: str) -> str:
         "WD": repr(config.spec.weight_decay),
         "CNN_DROPOUT": repr(CNN_DROPOUT),
         "RNN_DROPOUT": repr(RNN_DROPOUT),
+        "CHAN_NUM": str(CHAN_NUM),
         "NUM_EPOCHS": str(NUM_EPOCHS),
         "PATIENCE": str(PATIENCE),
         "SEED": str(config.seed),
@@ -234,6 +241,7 @@ def validate_task_output(config: TaskConfig, root: str) -> dict[str, Any]:
         "dataset_mode": metrics.get("dataset_mode") == "sector",
         "use_acceleration": metrics.get("use_acceleration") is True,
         "use_mmap": metrics.get("use_mmap") is True,
+        "chan_num": metrics.get("chan_num", 2) == CHAN_NUM,
         "width": metrics.get("hidden_size") == config.spec.width,
         "lr": _matches_float(metrics, "lr", config.spec.lr),
         "weight_decay": _matches_float(metrics, "weight_decay", config.spec.weight_decay),
@@ -262,7 +270,7 @@ def validate_task_output(config: TaskConfig, root: str) -> dict[str, Any]:
 def build_manifest(
     job_ids: str | list[str], remote_root: str, conda_init: str
 ) -> dict[str, Any]:
-    """Build the strict manifest for ten seed-level Slurm arrays and 60 units."""
+    """Build the strict manifest for one or more seed-level Slurm arrays."""
 
     normalized_job_ids = [job_ids] if isinstance(job_ids, str) else list(job_ids)
     if not normalized_job_ids:
@@ -288,15 +296,14 @@ def build_manifest(
                     "stopped_by_patience": False,
                     "use_acceleration": True,
                     "use_mmap": True,
+                    "chan_num": CHAN_NUM,
                 },
             }
         )
     return {
         "schema_version": 1,
-        "id": f"amarel-clutter-best6-10seed-ep150-{normalized_job_ids[0]}",
-        "description": (
-            "Clutter six frozen best models, seeds 1-10, 150 full epochs, no early stopping"
-        ),
+        "id": f"{RUN_ID_PREFIX}-{normalized_job_ids[0]}",
+        "description": RUN_DESCRIPTION,
         "host": "amarel",
         "status": "queued",
         "created_at": now,
@@ -328,7 +335,11 @@ def build_manifest(
             "40h training stimulus is approximately 119 GB and is loaded with mmap.",
             "DataLoader uses num_workers=0 and pin_memory=False to preserve mmap safety.",
             "Saved checkpoints contain the best-validation state after all 150 epochs are run.",
-            "Submitted as ten independent Slurm arrays, one seed and six model tasks per job.",
+            f"Input uses chan_num={CHAN_NUM} consecutive stimulus frame(s).",
+            (
+                f"Submitted as {len(normalized_job_ids)} independent Slurm array(s), "
+                "one seed and six model tasks per job."
+            ),
         ],
     }
 

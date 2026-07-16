@@ -658,6 +658,7 @@ def create_datasets(
     lbls_val,
     use_sector_mode: bool,
     predict_all_chars: bool,
+    chan_num: int = 2,
     max_chars: int = 10,
     dataset_class=None,
     splits: tuple = ("train", "valid"),
@@ -674,6 +675,7 @@ def create_datasets(
         lbls_val: Validation labels DataFrame (required when "valid" in splits).
         use_sector_mode: Whether to use sector mode (3x3 grid).
         predict_all_chars: Whether to predict all characters (fg+bg).
+        chan_num: Number of consecutive stimulus frames exposed as input channels.
         max_chars: Maximum number of characters per frame (for predict_all_chars mode).
         dataset_class: Dataset class to use (MC_RNN_Dataset). If None, will raise error.
         splits: Which splits to create. ("train", "valid") | ("test",) | ("train", "valid", "test").
@@ -687,6 +689,8 @@ def create_datasets(
     """
     if dataset_class is None:
         raise ValueError("dataset_class must be provided (e.g., MC_RNN_Dataset)")
+    if chan_num <= 0:
+        raise ValueError(f"chan_num must be positive, got {chan_num}")
 
     if logger is not None:
         logger.info("Creating datasets...")
@@ -695,7 +699,12 @@ def create_datasets(
 
     if predict_all_chars:
         num_pos = 0
-        _kw = {"use_sector": False, "predict_all_chars": True, "max_chars": max_chars}
+        _kw = {
+            "chan_num": chan_num,
+            "use_sector": False,
+            "predict_all_chars": True,
+            "max_chars": max_chars,
+        }
         if logger is not None:
             logger.info(
                 "Using all-chars mode: predict all characters (fg+bg) per frame, max_chars=%s",
@@ -703,12 +712,17 @@ def create_datasets(
             )
     elif use_sector_mode:
         num_pos = 9
-        _kw = {"use_sector": True, "num_sectors": num_pos, "predict_all_chars": False}
+        _kw = {
+            "chan_num": chan_num,
+            "use_sector": True,
+            "num_sectors": num_pos,
+            "predict_all_chars": False,
+        }
         if logger is not None:
             logger.info("Using sector mode (3x3 grid, 9 sectors)")
     else:
         num_pos = 2
-        _kw = {"use_sector": False, "predict_all_chars": False}
+        _kw = {"chan_num": chan_num, "use_sector": False, "predict_all_chars": False}
         if logger is not None:
             logger.info("Using coordinate mode (directly predict x, y coordinates)")
 
@@ -975,6 +989,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help=(
             "Load stimuli with memory mapping (mmap_mode='r'). "
             "If not set, load as ndarray in memory so num_workers can be used (default: False)"
+        ),
+    )
+    parser.add_argument(
+        "--chan_num",
+        type=int,
+        default=2,
+        help=(
+            "Number of consecutive stimulus frames presented as CNN input channels "
+            "(default: 2; use 1 to remove the previous-frame image)."
         ),
     )
     parser.add_argument(
