@@ -1,8 +1,8 @@
 __pycache__/
 *.pyc
 
-results/
-stimuli/
+/results
+/stimuli
 remote/config.sh
 .agents/local.md
 .claude/settings.local.json
