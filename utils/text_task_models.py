@@ -102,6 +102,8 @@ class TextLSTM(TextSequenceClassifier):
 class TextGaWF(TextSequenceClassifier):
     """GaWF text model using previous hidden state as feedback."""
 
+    feedback_mode = "hidden"
+
     def __init__(self, vocab_size: int, **kwargs) -> None:
         super().__init__(vocab_size, **kwargs)
         self.feedback_dim = self.hidden_size
@@ -148,6 +150,7 @@ class TextGaWFLogits(TextSequenceClassifier):
     """GaWF text model using previous classifier logits as feedback."""
 
     include_fc_in_core_params = True
+    feedback_mode = "logits"
 
     def __init__(self, vocab_size: int, **kwargs) -> None:
         super().__init__(vocab_size, **kwargs)

@@ -13,7 +13,7 @@ core to match the **LSTM core param count** at ``hidden_size=512`` (the anchor):
 RNN/GRU/GaWF/S5 are pure-torch or use the locally-available s5-pytorch, so they
 match anywhere. Mamba needs ``mamba-ssm`` (GPU box, i.e. Amarel). Run:
 
-    python -m experiments.generalization.atari_ssm_param_match \
+    python -m experiments.atari.atari_ssm_param_match \
         --conv_out 3136 --hidden_size 512 --ssm_state_size 128 \
         --num_actions 6 --num_layers 1
 

@@ -18,7 +18,7 @@ BATCH_SIZE="${BATCH_SIZE:-48}"
 ARRAY_CONCURRENCY="${ARRAY_CONCURRENCY:-16}"
 POLL_SECONDS="${POLL_SECONDS:-120}"
 RUN_SCRIPT="$SCRIPT_DIR/run_imdb_hparam_grid_array.sh"
-GRID_UTIL="$ROOT/experiments/generalization/imdb_hparam_grid.py"
+GRID_UTIL="$ROOT/experiments/text/imdb_hparam_grid.py"
 SUBMIT_LOG_DIR="$ROOT/experiments/amarel/artifacts/imdb_lstm_hparam_grid"
 SUBMIT_LOG="$SUBMIT_LOG_DIR/submissions_$(date +%Y%m%d_%H%M%S).log"
 TASK_LIST_DIR="$SUBMIT_LOG_DIR/task_lists"
@@ -46,8 +46,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 mkdir -p "$SUBMIT_LOG_DIR" "$TASK_LIST_DIR"
+: "${AIM3_RESULTS_PATH:?Set AIM3_RESULTS_PATH to the configured Amarel result root}"
 
-export AIM3_NUM_WORKERS="${AIM3_NUM_WORKERS:-4}"
+export AIM3_NUM_WORKERS="${AIM3_NUM_WORKERS:-12}"
 export AIM3_PIN_MEMORY="${AIM3_PIN_MEMORY:-1}"
 
 log() {
@@ -104,7 +105,7 @@ log "hidden_grid=128 256 512"
 log "task_list=$TASK_LIST_FILE"
 log "total_tasks=$TOTAL_TASKS"
 log "batch_size=$BATCH_SIZE array_concurrency=$ARRAY_CONCURRENCY"
-log "cpus_per_task=8 mem=32G gres=gpu:1"
+log "cpus_per_task=16 mem=64G gres=gpu:1 constraint=adalovelace"
 log "AIM3_NUM_WORKERS=$AIM3_NUM_WORKERS AIM3_PIN_MEMORY=$AIM3_PIN_MEMORY"
 log "run_script=$RUN_SCRIPT"
 log "submit_log=$SUBMIT_LOG"
@@ -128,7 +129,8 @@ while [[ "$start" -lt "$TOTAL_TASKS" ]]; do
   log "Submitting task-list rows ${start}-${end} as array 0-${array_last}%${throttle}"
   job_id="$(
     sbatch --parsable \
-      --export=ALL,AIM3_ROOT="$ROOT",AIM3_NUM_WORKERS="$AIM3_NUM_WORKERS",AIM3_PIN_MEMORY="$AIM3_PIN_MEMORY",TASK_ID_FILE="$TASK_LIST_FILE",TASK_FILE_OFFSET="$start" \
+      --export=ALL,AIM3_ROOT="$ROOT",AIM3_RESULTS_PATH="$AIM3_RESULTS_PATH",AIM3_NUM_WORKERS="$AIM3_NUM_WORKERS",AIM3_PIN_MEMORY="$AIM3_PIN_MEMORY",TASK_ID_FILE="$TASK_LIST_FILE",TASK_FILE_OFFSET="$start" \
+      --constraint=adalovelace --cpus-per-task=16 --mem=64G --gres=gpu:1 \
       --array="0-${array_last}%${throttle}" \
       "$RUN_SCRIPT"
   )"
@@ -139,4 +141,4 @@ done
 
 log ""
 log "All selected batches completed. Summarize with:"
-log "  python experiments/generalization/imdb_hparam_grid.py summarize --root \"$ROOT\""
+log "  python experiments/text/imdb_hparam_grid.py summarize --root \"$AIM3_RESULTS_PATH\""

@@ -41,7 +41,7 @@ fi
 source /home/js3269/enter/etc/profile.d/conda.sh
 conda activate aim3_rnn
 MATCH_DIR=results/atari_param_match_depth2
-python -m experiments.generalization.atari_ssm_param_match \
+python -m experiments.atari.atari_ssm_param_match \
   --num_layers 2 \
   --models rnn gru lstm gawf \
   --out_dir "$MATCH_DIR"

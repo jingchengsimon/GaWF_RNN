@@ -8,9 +8,9 @@ import os
 from typing import Any, Dict
 
 
-def expected_paths(root: str, result_suffix: str) -> Dict[str, str]:
+def expected_paths(results_root: str, result_suffix: str) -> Dict[str, str]:
     stem = "lstm_sentihood_h50_emb50_lr0.01_wd0.0_edo0.001_rdo0.001"
-    base = os.path.join(root, "results", "train_data", result_suffix)
+    base = os.path.join(results_root, "train_data", result_suffix)
     return {
         "metrics": os.path.join(base, f"{stem}_metrics.json"),
         "pkl": os.path.join(base, f"{stem}.pkl"),
@@ -25,13 +25,18 @@ def load_json(path: str) -> Dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", default=os.getcwd())
+    parser.add_argument(
+        "--results_dir",
+        default=os.environ.get("AIM3_RESULTS_PATH")
+        or os.environ.get("FAW_RNN_RESULTS_PATH")
+        or os.path.join(os.getcwd(), "results"),
+    )
     parser.add_argument("--result_suffix", default="sentihood_lstm_final")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable summary.")
     args = parser.parse_args()
 
-    root = os.path.abspath(args.root)
-    paths = expected_paths(root, args.result_suffix)
+    results_root = os.path.abspath(args.results_dir)
+    paths = expected_paths(results_root, args.result_suffix)
     summary: Dict[str, Any] = {
         "result_suffix": args.result_suffix,
         "paths": paths,

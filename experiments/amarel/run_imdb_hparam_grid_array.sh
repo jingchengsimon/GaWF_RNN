@@ -3,15 +3,15 @@
 #SBATCH --partition=gpu-redhat
 #SBATCH --account=general
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
+#SBATCH --constraint=adalovelace
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=64G
 #SBATCH --time=24:00:00
 #SBATCH --output=experiments/amarel/artifacts/imdb_lstm_hparam_grid/%A_%a.out
 #SBATCH --error=experiments/amarel/artifacts/imdb_lstm_hparam_grid/%A_%a.err
 
 # Run one IMDB LSTM hparam-grid task. Submit via
 # experiments/amarel/submit_imdb_hparam_grid_batches.sh.
-# IMDB jobs are light (no CNN, short sequences) -> smaller cpu/mem than the vision grid.
 
 set -euo pipefail
 
@@ -26,10 +26,10 @@ cd "$ROOT"
 # LSTM anchor grid (default) and the GaWF param-match grid. Override at submit
 # time via --export=...,AIM3_IMDB_GRID_UTIL=...,AIM3_IMDB_GRID_NAME=... (and set
 # sbatch --job-name / --output accordingly).
-GRID_UTIL="${AIM3_IMDB_GRID_UTIL:-experiments/generalization/imdb_hparam_grid.py}"
+GRID_UTIL="${AIM3_IMDB_GRID_UTIL:-experiments/text/imdb_hparam_grid.py}"
 GRID_NAME="${AIM3_IMDB_GRID_NAME:-imdb_lstm_hparam_grid}"
 ART_ROOT="$ROOT/experiments/amarel/artifacts/$GRID_NAME"
-STATUS_DIR="$ROOT/experiments/generalization/artifacts/$GRID_NAME/status"
+STATUS_DIR="$ROOT/experiments/text/artifacts/$GRID_NAME/status"
 mkdir -p "$ART_ROOT" "$STATUS_DIR"
 
 if [[ -n "${TASK_ID_FILE:-}" ]]; then
@@ -52,17 +52,13 @@ fi
 DONE_FILE="$STATUS_DIR/task_$(printf '%04d' "$TASK_ID").done"
 FAIL_FILE="$STATUS_DIR/task_$(printf '%04d' "$TASK_ID").fail"
 
-if [[ -n "${AIM3_SETUP_CMD:-}" ]]; then
-  eval "$AIM3_SETUP_CMD"
-elif command -v conda >/dev/null 2>&1; then
-  CONDA_BASE="$(conda info --base 2>/dev/null || true)"
-  if [[ -n "$CONDA_BASE" && -f "$CONDA_BASE/etc/profile.d/conda.sh" ]]; then
-    source "$CONDA_BASE/etc/profile.d/conda.sh"
-    conda activate "${AIM3_CONDA_ENV:-aim3_rnn}" || true
-  fi
-fi
+source /home/js3269/enter/etc/profile.d/conda.sh
+conda activate aim3_rnn
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+: "${AIM3_RESULTS_PATH:?AIM3_RESULTS_PATH must be exported at submission}"
+export AIM3_NUM_WORKERS="${AIM3_NUM_WORKERS:-12}"
+export AIM3_PIN_MEMORY="${AIM3_PIN_MEMORY:-1}"
 
 if [[ -n "${AIM3_DATA_DIR:-}" ]]; then
   DATA_DIR="$AIM3_DATA_DIR"
@@ -77,14 +73,14 @@ else
   exit 2
 fi
 
-eval "$(python "$GRID_UTIL" emit-task --task-id "$TASK_ID" --root "$ROOT")"
+eval "$(python "$GRID_UTIL" emit-task --task-id "$TASK_ID" --root "$AIM3_RESULTS_PATH")"
 
 echo "[$(date -Is)] task_id=$TASK_ID model=$MODEL_TYPE hidden=$HIDDEN lr=$LR wd=$WD"
 echo "data_dir=$DATA_DIR"
 echo "result_suffix=$RESULT_SUFFIX"
 echo "metrics_path=$METRICS_PATH"
 
-if python "$GRID_UTIL" validate --task-id "$TASK_ID" --root "$ROOT" >/dev/null 2>&1; then
+if python "$GRID_UTIL" validate --task-id "$TASK_ID" --root "$AIM3_RESULTS_PATH" >/dev/null 2>&1; then
   echo "Task $TASK_ID already complete; skipping."
   {
     echo "status=skipped_existing"
@@ -100,7 +96,7 @@ set +e
 DISABLE_TQDM=1 python train_imdb.py \
   --model_types "$MODEL_TYPE" \
   --data_dir "$DATA_DIR" \
-  --result_dir "$ROOT" \
+  --results_dir "$AIM3_RESULTS_PATH" \
   --result_suffix "$RESULT_SUFFIX" \
   --embed_dim "$EMBED_DIM" \
   --hidden_sizes "$HIDDEN" \
@@ -114,7 +110,7 @@ DISABLE_TQDM=1 python train_imdb.py \
   --patience "$PATIENCE" \
   --seed "$SEED" \
   --batch_size "$BATCH_SIZE" \
-  --num_workers "${AIM3_NUM_WORKERS:-4}" \
+  --num_workers "$AIM3_NUM_WORKERS" \
   --device cuda \
   --use_acceleration
 train_rc=$?
@@ -135,7 +131,7 @@ if [[ "$train_rc" -ne 0 ]]; then
   exit "$train_rc"
 fi
 
-if python "$GRID_UTIL" validate --task-id "$TASK_ID" --root "$ROOT" --json; then
+if python "$GRID_UTIL" validate --task-id "$TASK_ID" --root "$AIM3_RESULTS_PATH" --json; then
   {
     echo "status=done"
     echo "task_id=$TASK_ID"

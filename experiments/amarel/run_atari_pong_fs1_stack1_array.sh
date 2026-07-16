@@ -27,7 +27,7 @@
 #   seed    = SEEDS[rest % 5]
 #
 # All recurrent cores are param-matched to the LSTM anchor (hidden=512) via
-# experiments/generalization/atari_ssm_param_match.py -> results/atari_param_match/
+# experiments/atari/atari_ssm_param_match.py -> results/atari_param_match/
 # atari_param_match.json. RNN/GRU/LSTM/GaWF get --hidden_size; S5/Mamba get
 # --ssm_d_model/--ssm_state_size; CNN is the unmatched feedforward control.
 # FRAME_SKIP/FRAME_STACK overrides are used only by explicit protocol-comparison

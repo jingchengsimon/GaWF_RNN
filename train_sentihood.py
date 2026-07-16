@@ -40,14 +40,13 @@ from utils.text_train_utils import (
     build_optimizer,
     count_core_params,
     maybe_subset,
+    resolve_results_root,
     select_device,
 )
 from utils.common_train_helpers import set_seed
 
 DISABLE_TQDM = os.environ.get("DISABLE_TQDM", "0").lower() in ("1", "true", "yes")
-SENTIHOOD_MODEL_CHOICES = sorted(
-    model_name for model_name in get_text_model_classes() if model_name != "gawf_multi"
-)
+SENTIHOOD_MODEL_CHOICES = sorted(get_text_model_classes())
 
 
 def _autocast(device: str, use_acceleration: bool):
@@ -228,6 +227,9 @@ def train_one_config(
             if cfg["model"].startswith("gawf")
             else None
         ),
+        "feedback_mode": getattr(model, "feedback_mode", None),
+        "feedback_dim": getattr(model, "feedback_dim", None),
+        "layer_feedback_dims": getattr(getattr(model, "core", None), "layer_feedback_dims", None),
         "lr": cfg["lr"],
         "weight_decay": cfg["wd"],
         "embed_dropout": args.embed_dropout,
@@ -268,7 +270,10 @@ def result_stem(cfg: Dict, embed_dim: int, edo: float, rdo: float) -> str:
 
 
 def save_outputs(args, cfg: Dict, out: Dict) -> str:
-    result_dir = os.path.join(args.result_dir, "results", "train_data", args.result_suffix)
+    results_root = resolve_results_root(
+        getattr(args, "results_dir", None), getattr(args, "result_dir", ".")
+    )
+    result_dir = os.path.join(results_root, "train_data", args.result_suffix)
     os.makedirs(result_dir, exist_ok=True)
     stem = result_stem(cfg, args.embed_dim, args.embed_dropout, args.rnn_dropout)
     metrics_path = os.path.join(result_dir, f"{stem}_metrics.json")
@@ -294,6 +299,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--data_dir", default=None, help="Base data dir (CLI -> env -> <repo>/stimuli).")
     p.add_argument("--result_dir", default=".", help="Repo root under which results/ is written.")
+    p.add_argument(
+        "--results_dir",
+        default=None,
+        help="Physical results root; overrides AIM3_RESULTS_PATH and legacy --result_dir.",
+    )
     p.add_argument("--result_suffix", default="sentihood_hparam")
     p.add_argument("--embed_dim", type=int, default=50)
     p.add_argument("--hidden_sizes", type=int, nargs="+", default=[50])

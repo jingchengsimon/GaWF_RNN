@@ -42,7 +42,7 @@ export KMP_DUPLICATE_LIB_OK=TRUE
 # ---- 1. param match (all recurrent cores incl. mamba) ----------------------
 if [[ -z "${SKIP_PARAM_MATCH:-}" ]]; then
   echo "[submit] param-matching cores to the LSTM anchor..."
-  python -m experiments.generalization.atari_ssm_param_match \
+  python -m experiments.atari.atari_ssm_param_match \
     --conv_out 3136 --hidden_size 512 --ssm_state_size 128 --num_actions 6 --num_layers 1
 fi
 

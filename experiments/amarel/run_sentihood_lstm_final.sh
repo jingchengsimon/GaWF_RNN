@@ -24,22 +24,19 @@ cd "$ROOT"
 
 RUN_TAG="${RUN_TAG:-sentihood_lstm_final}"
 ART_ROOT="$ROOT/experiments/amarel/artifacts/$RUN_TAG"
-STATUS_DIR="$ROOT/experiments/generalization/artifacts/$RUN_TAG/status"
+STATUS_DIR="$ROOT/experiments/text/artifacts/$RUN_TAG/status"
 mkdir -p "$ART_ROOT" "$STATUS_DIR"
 
 DONE_FILE="$STATUS_DIR/lstm_final.done"
 FAIL_FILE="$STATUS_DIR/lstm_final.fail"
 
-if [[ -n "${AIM3_SETUP_CMD:-}" ]]; then
-  eval "$AIM3_SETUP_CMD"
-else
-  source /home/js3269/enter/etc/profile.d/conda.sh
-  conda activate aim3_rnn
-fi
+source /home/js3269/enter/etc/profile.d/conda.sh
+conda activate aim3_rnn
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export AIM3_NUM_WORKERS="${AIM3_NUM_WORKERS:-12}"
 export AIM3_PIN_MEMORY="${AIM3_PIN_MEMORY:-1}"
+: "${AIM3_RESULTS_PATH:?AIM3_RESULTS_PATH must be exported at submission}"
 
 if [[ -n "${AIM3_DATA_DIR:-}" ]]; then
   DATA_DIR="$AIM3_DATA_DIR"
@@ -73,9 +70,9 @@ BALANCE_TRAIN_LABELS="${BALANCE_TRAIN_LABELS:-1}"
 
 RESULT_STEM="${MODEL_TYPE}_sentihood_h${HIDDEN}_emb${EMBED_DIM}"
 RESULT_STEM+="_lr${LR}_wd${WD}_edo${EMBED_DROPOUT}_rdo${RNN_DROPOUT}"
-METRICS_PATH="$ROOT/results/train_data/$RESULT_SUFFIX/${RESULT_STEM}_metrics.json"
-PKL_PATH="$ROOT/results/train_data/$RESULT_SUFFIX/${RESULT_STEM}.pkl"
-MODEL_PATH="$ROOT/results/train_data/$RESULT_SUFFIX/${RESULT_STEM}_model.pth"
+METRICS_PATH="$AIM3_RESULTS_PATH/train_data/$RESULT_SUFFIX/${RESULT_STEM}_metrics.json"
+PKL_PATH="$AIM3_RESULTS_PATH/train_data/$RESULT_SUFFIX/${RESULT_STEM}.pkl"
+MODEL_PATH="$AIM3_RESULTS_PATH/train_data/$RESULT_SUFFIX/${RESULT_STEM}_model.pth"
 
 echo "[$(date -Is)] SentiHood LSTM-Final"
 echo "root=$ROOT"
@@ -108,7 +105,7 @@ set +e
 DISABLE_TQDM=1 python train_sentihood.py \
   --model_types "$MODEL_TYPE" \
   --data_dir "$DATA_DIR" \
-  --result_dir "$ROOT" \
+  --results_dir "$AIM3_RESULTS_PATH" \
   --result_suffix "$RESULT_SUFFIX" \
   --embed_dim "$EMBED_DIM" \
   --hidden_sizes "$HIDDEN" \

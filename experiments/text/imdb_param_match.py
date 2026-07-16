@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""Hyperparameter grid utilities for the IMDB LSTM anchor search.
+"""IMDB param-matched grid for rnn / gru (anchor LSTM H*=128).
 
-Mirrors ``ssm_mamba_hparam_grid.py`` but for the text task: a single model
-(``lstm``) is swept over ``lr x weight_decay x hidden`` with dropout fixed to the
-vision config (``embed_dropout=0.0``, ``rnn_dropout=0.5``; not searched). Selection
-is by validation accuracy. The best ``hidden`` (``H*``) becomes the anchor that a
-later iteration param-matches the GaWF-family cores to.
+Phase E of the IMDB pilot. The LSTM anchor search (``imdb_hparam_grid.py``)
+selected ``H* = 128`` (LSTM recurrent core = 132,352 params). Here rnn and gru are
+swept over ``lr x weight_decay`` at the single ``hidden`` whose recurrent core
+matches that anchor (empirically, ``count_core_params`` on ``embed_dim=128``):
 
-Used both to emit per-task shell config for the SLURM array and to validate /
-summarize results. Result paths match ``train_imdb.py``'s layout exactly.
+- ``rnn``  -> ``hidden=304`` (132,544, +0.15%)
+- ``gru``  -> ``hidden=155`` (132,835, +0.37%)
+
+``lstm`` itself is **not re-run here**: its matched point is ``hidden=128``, which
+the anchor grid (``imdb_lstm_hparam_grid``) already searched at identical config —
+that best run is the lstm row of the four-model comparison. ``gawf`` is matched
+separately in ``imdb_gawf_param_match.py`` (``hidden=171``, 132,183). Dropout fixed
+(``embed_dropout=0.0``, ``rnn_dropout=0.5``; not searched); selection by validation
+accuracy. Mirrors ``imdb_hparam_grid.py`` but with a per-model matched hidden.
 """
 from __future__ import annotations
 
@@ -23,10 +29,12 @@ from glob import glob
 from itertools import product
 from typing import Any, Dict, Iterable, List, Sequence
 
-MODELS = ["lstm"]
-LRS = [1e-4, 5e-4, 1e-3, 5e-3]  # vision range with the 1e-2 top-end dropped (text diverges)
+MODELS = ["rnn", "gru"]  # lstm (h=128) is reused from the anchor grid, not re-run here
+# Per-model hidden whose recurrent core matches the LSTM anchor (132,352) at embed_dim=128.
+# (lstm=128 kept for reference / param-match provenance.)
+MODEL_HIDDEN = {"rnn": 304, "lstm": 128, "gru": 155}
+LRS = [1e-4, 5e-4, 1e-3, 5e-3]
 WDS = [0.0, 1e-5, 1e-4, 1e-3]
-HIDDENS = [128, 256, 512]
 EMBED_DIM = 128
 EMBED_DROPOUT = 0.0
 RNN_DROPOUT = 0.5
@@ -36,9 +44,9 @@ NUM_EPOCHS = 50
 PATIENCE = 10
 SEED = 42
 BATCH_SIZE = 64
-RESULT_ROOT_SUFFIX = "imdb_lstm_hparam_grid"
-CSV_TAG = "_imdb_lstm_hparam_grid"
-TOTAL_TASKS = len(MODELS) * len(LRS) * len(WDS) * len(HIDDENS)
+RESULT_ROOT_SUFFIX = "imdb_param_match"
+CSV_TAG = "_imdb_param_match"
+TOTAL_TASKS = len(MODELS) * len(LRS) * len(WDS)
 
 
 @dataclass(frozen=True)
@@ -72,19 +80,23 @@ class TaskConfig:
 
     @property
     def metrics_relpath(self) -> str:
-        return f"results/train_data/{self.result_suffix}/{self.result_stem}_metrics.json"
+        return f"train_data/{self.result_suffix}/{self.result_stem}_metrics.json"
 
     @property
     def pkl_relpath(self) -> str:
-        return f"results/train_data/{self.result_suffix}/{self.result_stem}.pkl"
+        return f"train_data/{self.result_suffix}/{self.result_stem}.pkl"
 
     @property
     def model_relpath(self) -> str:
-        return f"results/train_data/{self.result_suffix}/{self.result_stem}_model.pth"
+        return f"train_data/{self.result_suffix}/{self.result_stem}_model.pth"
 
 
-def repo_root() -> str:
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+def default_results_root() -> str:
+    for env_name in ("AIM3_RESULTS_PATH", "FAW_RNN_RESULTS_PATH"):
+        if value := os.environ.get(env_name):
+            return os.path.abspath(os.path.expanduser(value))
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    return os.path.join(repo_root, "results")
 
 
 def artifact_dir() -> str:
@@ -93,8 +105,10 @@ def artifact_dir() -> str:
 
 def iter_task_configs() -> Iterable[TaskConfig]:
     task_id = 0
-    for model, hidden, lr, wd in product(MODELS, HIDDENS, LRS, WDS):
-        yield TaskConfig(task_id=task_id, model=model, hidden=hidden, lr=lr, weight_decay=wd)
+    for model, lr, wd in product(MODELS, LRS, WDS):
+        yield TaskConfig(
+            task_id=task_id, model=model, hidden=MODEL_HIDDEN[model], lr=lr, weight_decay=wd
+        )
         task_id += 1
 
 
@@ -287,11 +301,13 @@ def best_summary_rows(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def write_markdown_summary(path: str, best_rows: Sequence[Dict[str, Any]]) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        f.write("# IMDB LSTM Hyperparameter Search Summary\n\n")
+        f.write("# IMDB Param-matched RNN/GRU Summary\n\n")
         f.write(
             "Selection criterion: highest `val_acc_at_best`. Dropout fixed "
-            "(`embed_dropout=0.0`, `rnn_dropout=0.5`). The best `hidden` is the anchor "
-            "`H*` for later GaWF core param-matching.\n\n"
+            "(`embed_dropout=0.0`, `rnn_dropout=0.5`). Each model's `hidden` is core "
+            "param-matched to the LSTM anchor `H*=128` (132,352): rnn=304, gru=155. "
+            "`lstm` (h=128) is reused from the anchor grid; `gawf` (h=171) is "
+            "summarized separately.\n\n"
         )
         f.write("| Model | Hidden | Embed | LR | WD | Core params | Val | Train | Test | Gap | Epochs |\n")
         f.write("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n")
@@ -340,7 +356,7 @@ def cmd_status(args: argparse.Namespace) -> None:
     failed = [r for r in rows if not r["valid"]]
     ok = [r for r in rows if r["valid"]]
 
-    status_csv = os.path.join(out_dir, "imdb_lstm_hparam_status.csv")
+    status_csv = os.path.join(out_dir, "imdb_param_match_status.csv")
     fieldnames = [
         "task_id", "model", "hidden", "lr", "weight_decay", "valid", "reason",
         "metrics_exists", "pkl_exists", "model_exists", "val_acc_at_best",
@@ -362,7 +378,7 @@ def cmd_status(args: argparse.Namespace) -> None:
         "failed_task_ids_path": failed_path,
         "status_csv": status_csv,
     }
-    write_json(os.path.join(out_dir, "imdb_lstm_hparam_status.json"), summary)
+    write_json(os.path.join(out_dir, "imdb_param_match_status.json"), summary)
     print(json.dumps(summary, indent=2))
     if failed and args.fail_on_missing:
         raise SystemExit(1)
@@ -378,23 +394,23 @@ def cmd_summarize(args: argparse.Namespace) -> None:
 
     best_rows = best_summary_rows(rows)
     best_json = {row["model"]: row for row in best_rows}
-    write_json(os.path.join(out_dir, "imdb_lstm_hparam_best.json"), best_json)
+    write_json(os.path.join(out_dir, "imdb_param_match_best.json"), best_json)
     write_csv(
-        os.path.join(out_dir, "imdb_lstm_hparam_best.csv"),
+        os.path.join(out_dir, "imdb_param_match_best.csv"),
         best_rows,
         list(best_rows[0].keys()),
     )
     write_markdown_summary(
-        os.path.join(out_dir, "imdb_lstm_hparam_best_summary.md"), best_rows
+        os.path.join(out_dir, "imdb_param_match_best_summary.md"), best_rows
     )
 
     all_rows = [trial_csv_row(m) for m in rows]
     write_csv(
-        os.path.join(out_dir, "imdb_lstm_hparam_all_trials.csv"),
+        os.path.join(out_dir, "imdb_param_match_all_trials.csv"),
         all_rows,
         list(all_rows[0].keys()),
     )
-    print(f"Wrote IMDB LSTM hparam summaries under {out_dir}")
+    print(f"Wrote IMDB param-match summaries under {out_dir}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -403,24 +419,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     emit = sub.add_parser("emit-task", help="Emit config for one task id")
     emit.add_argument("--task-id", type=int, required=True)
-    emit.add_argument("--root", default=".")
+    emit.add_argument("--root", default=default_results_root())
     emit.add_argument("--format", choices=["shell", "json"], default="shell")
     emit.set_defaults(func=cmd_emit_task)
 
     val = sub.add_parser("validate", help="Validate one task output")
     val.add_argument("--task-id", type=int, required=True)
-    val.add_argument("--root", default=".")
+    val.add_argument("--root", default=default_results_root())
     val.add_argument("--json", action="store_true")
     val.set_defaults(func=cmd_validate)
 
     status = sub.add_parser("status", help="Check all expected task outputs")
-    status.add_argument("--root", default=".")
+    status.add_argument("--root", default=default_results_root())
     status.add_argument("--out-dir", default="")
     status.add_argument("--fail-on-missing", action="store_true")
     status.set_defaults(func=cmd_status)
 
     summ = sub.add_parser("summarize", help="Aggregate best hparams")
-    summ.add_argument("--root", default=".")
+    summ.add_argument("--root", default=default_results_root())
     summ.add_argument("--out-dir", default="")
     summ.set_defaults(func=cmd_summarize)
     return parser

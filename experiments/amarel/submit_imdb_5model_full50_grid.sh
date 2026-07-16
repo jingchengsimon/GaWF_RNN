@@ -11,16 +11,16 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT"
 
 GRID_NAME="imdb_5model_full50_grid"
-GRID_UTIL_REL="experiments/generalization/imdb_5model_full50_grid.py"
+GRID_UTIL_REL="experiments/text/imdb_5model_full50_grid.py"
 GRID_UTIL="$ROOT/$GRID_UTIL_REL"
 RUN_SCRIPT="$SCRIPT_DIR/run_imdb_hparam_grid_array.sh"
 ART_DIR="$ROOT/experiments/amarel/artifacts/$GRID_NAME"
 TASK_LIST_DIR="$ART_DIR/task_lists"
 mkdir -p "$ART_DIR" "$TASK_LIST_DIR"
+: "${AIM3_RESULTS_PATH:?Set AIM3_RESULTS_PATH to the configured Amarel result root}"
 
 export AIM3_NUM_WORKERS=12
 export AIM3_PIN_MEMORY=1
-AIM3_SETUP_CMD="source /home/js3269/enter/etc/profile.d/conda.sh && conda activate aim3_rnn"
 
 if ! command -v sbatch >/dev/null 2>&1; then
   echo "sbatch not found. Run this on an Amarel login node." >&2
@@ -50,11 +50,11 @@ seq 0 "$((total_grid_tasks - 1))" > "$TASK_LIST_FILE"
 
 export_arg="ALL"
 export_arg+=",AIM3_ROOT=$ROOT"
+export_arg+=",AIM3_RESULTS_PATH=$AIM3_RESULTS_PATH"
 export_arg+=",AIM3_IMDB_GRID_UTIL=$GRID_UTIL_REL"
 export_arg+=",AIM3_IMDB_GRID_NAME=$GRID_NAME"
 export_arg+=",AIM3_NUM_WORKERS=$AIM3_NUM_WORKERS"
 export_arg+=",AIM3_PIN_MEMORY=$AIM3_PIN_MEMORY"
-export_arg+=",AIM3_SETUP_CMD=$AIM3_SETUP_CMD"
 export_arg+=",TASK_ID_FILE=$TASK_LIST_FILE"
 export_arg+=",TASK_FILE_OFFSET=0"
 
@@ -80,4 +80,4 @@ echo "grid=$GRID_NAME"
 echo "tasks=0-79%16"
 echo "task_list=$TASK_LIST_FILE"
 echo "resources=partition=gpu-redhat gres=gpu:1 constraint=adalovelace cpus=16 mem=64G"
-echo "env=AIM3_NUM_WORKERS=12 AIM3_PIN_MEMORY=1 AIM3_SETUP_CMD=$AIM3_SETUP_CMD"
+echo "env=AIM3_RESULTS_PATH=$AIM3_RESULTS_PATH AIM3_NUM_WORKERS=12 AIM3_PIN_MEMORY=1 conda=aim3_rnn"

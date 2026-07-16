@@ -212,7 +212,6 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         actions_buffer = torch.zeros((num_steps, num_envs), device=device, dtype=torch.long)
         old_logprobs_buffer = torch.zeros((num_steps, num_envs), device=device)
         rewards_buffer = torch.zeros((num_steps, num_envs), device=device)
-        dones_buffer = torch.zeros((num_steps, num_envs), device=device)
         prev_dones_buffer = torch.zeros((num_steps, num_envs), device=device)
         values_buffer = torch.zeros((num_steps, num_envs), device=device)
 
@@ -273,7 +272,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
                 )
                 advantages, returns = compute_gae(
                     rewards_buffer,
-                    dones_buffer,
+                    prev_dones_buffer,
                     values_buffer,
                     next_value,
                     next_done,

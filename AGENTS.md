@@ -15,6 +15,7 @@ The repository trains and analyses recurrent models, especially GaWF
 | Any model or training change | `train_*.py`, `utils/` | `docs/ARCHITECTURE.md` |
 | CLI, filenames, saved results | all public scripts | `docs/CONVENTIONS.md` |
 | Analysis or visualisation | `utils_anal/`, `utils_viz/` | `docs/DEVELOPMENT_WORKFLOWS.md` |
+| Task experiment definitions | `experiments/{clutter,atari,minigrid,text}/` | `experiments/README.md` and the task README |
 | Generalization experiments | `experiments/generalization/` | `experiments/generalization/README.md` |
 | Amarel jobs | `experiments/amarel/` | `experiments/amarel/README.md` and `docs/operations/REMOTE_EXECUTION.md` |
 | sjc-remote jobs | `remote/`, `experiments/local/` | `remote/README.md` and `docs/operations/REMOTE_EXECUTION.md` |
@@ -107,6 +108,8 @@ is missing, copy `.agents/local.example.md` and fill it in. Do not guess remote 
 - Reusable launchers may be tracked. Generated Slurm scripts stay under
   `experiments/amarel/generated/`; clearly marked one-off scripts must be removed before branch
   synchronization.
+- Maintain one long-lived repository per endpoint. Task-named worktrees are temporary local
+  development aids only; formal runs use an explicit commit or read-only snapshot.
 
 ## Documentation maintenance
 

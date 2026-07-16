@@ -1,4 +1,4 @@
-# Generalization Experiments
+# Clutter Generalization Experiments
 
 These launchers compare training-data scale against a fixed 40h validation set. Training always
 uses `train_model.py`; aggregation uses `collect_results.py`; plotting uses

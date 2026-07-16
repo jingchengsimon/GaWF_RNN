@@ -6,11 +6,26 @@ and small-loader subsetting consistent across IMDB and SentiHood text tasks.
 
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Subset
+
+
+def resolve_results_root(
+    explicit_results_dir: Optional[str] = None,
+    legacy_project_root: Optional[str] = ".",
+) -> str:
+    """Resolve the physical ``results`` root with the repository-wide precedence."""
+    if explicit_results_dir:
+        return os.path.abspath(os.path.expanduser(explicit_results_dir))
+    for env_name in ("AIM3_RESULTS_PATH", "FAW_RNN_RESULTS_PATH"):
+        value = os.environ.get(env_name)
+        if value:
+            return os.path.abspath(os.path.expanduser(value))
+    return os.path.abspath(os.path.join(legacy_project_root or ".", "results"))
 
 
 def select_device(requested: str) -> str:

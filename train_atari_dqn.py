@@ -105,7 +105,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "(Flickering-Atari POMDP, Hausknecht & Stone 2015). 0 disables it.",
     )
     # S5/Mamba core sizing (parameter-matched to the LSTM anchor by default; see
-    # experiments/generalization/atari_ssm_param_match.py). For Mamba, --ssm_state_size
+    # experiments/atari/atari_ssm_param_match.py). For Mamba, --ssm_state_size
     # maps to d_state.
     parser.add_argument("--ssm_d_model", type=int, default=256)
     parser.add_argument("--ssm_state_size", type=int, default=128)

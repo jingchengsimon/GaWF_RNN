@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=imdb-gawf2
+#SBATCH --job-name=imdb-gawf-depth2
 #SBATCH --partition=gpu-redhat
 #SBATCH --account=general
 #SBATCH --gres=gpu:1
@@ -7,8 +7,8 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 #SBATCH --time=24:00:00
-#SBATCH --output=experiments/amarel/artifacts/imdb_gawf_multi_grid/%A_%a.out
-#SBATCH --error=experiments/amarel/artifacts/imdb_gawf_multi_grid/%A_%a.err
+#SBATCH --output=experiments/amarel/artifacts/imdb_gawf_depth_grid/%A_%a.out
+#SBATCH --error=experiments/amarel/artifacts/imdb_gawf_depth_grid/%A_%a.err
 
 # Run one IMDB 2-layer GaWF grid task.
 
@@ -21,10 +21,10 @@ if [[ -z "$ROOT" || ! -f "$ROOT/train_imdb.py" ]]; then
 fi
 cd "$ROOT"
 
-GRID_UTIL="experiments/generalization/imdb_gawf_multi_grid.py"
-GRID_NAME="imdb_gawf_multi_grid"
+GRID_UTIL="experiments/text/imdb_gawf_depth_grid.py"
+GRID_NAME="imdb_gawf_depth_grid"
 ART_ROOT="$ROOT/experiments/amarel/artifacts/$GRID_NAME"
-STATUS_DIR="$ROOT/experiments/generalization/artifacts/imdb_gawf_multi_2layer_grid/status"
+STATUS_DIR="$ROOT/experiments/text/artifacts/imdb_gawf_depth2_grid/status"
 mkdir -p "$ART_ROOT" "$STATUS_DIR"
 
 TASKS_PER_ARRAY="${TASKS_PER_ARRAY:-1}"
@@ -52,6 +52,7 @@ conda activate aim3_rnn
 export AIM3_NUM_WORKERS="${AIM3_NUM_WORKERS:-12}"
 export AIM3_PIN_MEMORY="${AIM3_PIN_MEMORY:-1}"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+: "${AIM3_RESULTS_PATH:?AIM3_RESULTS_PATH must be exported at submission}"
 
 if [[ -n "${AIM3_DATA_DIR:-}" ]]; then
   DATA_DIR="$AIM3_DATA_DIR"
@@ -67,15 +68,15 @@ else
   exit 2
 fi
 
-eval "$(python "$GRID_UTIL" emit-task --task-id "$TASK_ID" --root "$ROOT")"
+eval "$(python "$GRID_UTIL" emit-task --task-id "$TASK_ID" --root "$AIM3_RESULTS_PATH")"
 
-echo "[$(date -Is)] task_id=$TASK_ID model=$MODEL_TYPE h=$HIDDEN lr=$LR wd=$WD layers=$GAWF_LAYERS dz=$FEEDBACK_DIM fb_lr_scale=$GAWF_MULTI_FEEDBACK_LR_SCALE"
+echo "[$(date -Is)] task_id=$TASK_ID model=$MODEL_TYPE h=$HIDDEN lr=$LR wd=$WD layers=$NUM_LAYERS fb_lr_scale=$GAWF_FEEDBACK_LR_SCALE"
 echo "data_dir=$DATA_DIR"
 echo "result_suffix=$RESULT_SUFFIX"
 echo "metrics_path=$METRICS_PATH"
 echo "AIM3_NUM_WORKERS=$AIM3_NUM_WORKERS AIM3_PIN_MEMORY=$AIM3_PIN_MEMORY"
 
-if python "$GRID_UTIL" validate --task-id "$TASK_ID" --root "$ROOT" >/dev/null 2>&1; then
+if python "$GRID_UTIL" validate --task-id "$TASK_ID" --root "$AIM3_RESULTS_PATH" >/dev/null 2>&1; then
   echo "Task $TASK_ID already complete; skipping."
   {
     echo "status=skipped_existing"
@@ -91,7 +92,7 @@ set +e
 DISABLE_TQDM=1 python train_imdb.py \
   --model_types "$MODEL_TYPE" \
   --data_dir "$DATA_DIR" \
-  --result_dir "$ROOT" \
+  --results_dir "$AIM3_RESULTS_PATH" \
   --result_suffix "$RESULT_SUFFIX" \
   --embed_dim "$EMBED_DIM" \
   --hidden_sizes "$HIDDEN" \
@@ -103,9 +104,8 @@ DISABLE_TQDM=1 python train_imdb.py \
   --optim "$OPTIM" \
   --num_epochs "$NUM_EPOCHS" \
   --patience "$PATIENCE" \
-  --gawf_layers "$GAWF_LAYERS" \
-  --feedback_dim "$FEEDBACK_DIM" \
-  --gawf_multi_feedback_lr_scale "$GAWF_MULTI_FEEDBACK_LR_SCALE" \
+  --num_layers "$NUM_LAYERS" \
+  --gawf_feedback_lr_scale "$GAWF_FEEDBACK_LR_SCALE" \
   --seed "$SEED" \
   --batch_size "$BATCH_SIZE" \
   --num_workers "$AIM3_NUM_WORKERS" \
@@ -129,7 +129,7 @@ if [[ "$train_rc" -ne 0 ]]; then
   exit "$train_rc"
 fi
 
-if python "$GRID_UTIL" validate --task-id "$TASK_ID" --root "$ROOT" --json; then
+if python "$GRID_UTIL" validate --task-id "$TASK_ID" --root "$AIM3_RESULTS_PATH" --json; then
   {
     echo "status=done"
     echo "task_id=$TASK_ID"

@@ -31,7 +31,6 @@ from utils.text_imdb_data import build_imdb_loaders  # noqa: E402
 from utils.text_task_models import (
     TextGaWF,
     TextGaWFLogits,
-    TextGaWFMulti,
     TextLSTM,
     get_text_model_classes,
 )  # noqa: E402
@@ -86,16 +85,15 @@ def _make_args(seed=42):
         use_acceleration=False,
         num_epochs=6,
         patience=10,
-        gawf_layers=2,
-        feedback_dim=0,
-        gawf_multi_feedback_lr_scale=0.1,
+        num_layers=2,
+        gawf_feedback_lr_scale=0.1,
         batch_size=32,
     )
 
 
 class TestIMDBSmoke(unittest.TestCase):
     def test_models_instantiate_and_forward(self):
-        for cls in (TextLSTM, TextGaWF, TextGaWFLogits, TextGaWFMulti):
+        for cls in (TextLSTM, TextGaWF, TextGaWFLogits):
             model = cls(vocab_size=VOCAB_SIZE, embed_dim=16, hidden_size=24, device="cpu")
             ids = torch.randint(0, VOCAB_SIZE, (4, MAX_LEN))
             lengths = torch.randint(1, MAX_LEN + 1, (4,))
@@ -120,33 +118,34 @@ class TestIMDBSmoke(unittest.TestCase):
             train_imdb.count_core_params(model), 24 * 24 + 24 * 16 + 10 * 24 + 2 * 16 + 2
         )
 
-    def test_gawf_multi_default_direct_feedback_dims(self):
-        model = TextGaWFMulti(vocab_size=VOCAB_SIZE, embed_dim=16, hidden_size=24, device="cpu")
-        self.assertEqual(model.num_layers, 2)
-        self.assertFalse(model.use_feedback_projector)
-        self.assertEqual(model.feedback_dim, 0)
-        self.assertEqual(model.layer_feedback_dims, [24, 2])
-        self.assertEqual(tuple(model.U_layers[0].shape), (24, 24))
-        self.assertEqual(tuple(model.V_layers[0].shape), (24, 16 + 24))
-        self.assertEqual(tuple(model.U_layers[1].shape), (24, 2))
-        self.assertEqual(tuple(model.V_layers[1].shape), (2, 24 + 24))
-        self.assertTrue(model.include_fc_in_core_params)
-
-    def test_gawf_multi_projected_feedback_dims(self):
-        model = TextGaWFMulti(
+    def test_gawf_logits_multilayer_direct_feedback_dims(self):
+        model = TextGaWFLogits(
             vocab_size=VOCAB_SIZE,
             embed_dim=16,
             hidden_size=24,
-            feedback_dim=8,
+            num_layers=2,
+            device="cpu",
+        )
+        self.assertEqual(model.num_layers, 2)
+        self.assertEqual(model.feedback_dim, 2)
+        self.assertEqual(model.core.layer_feedback_dims, [24, 2])
+        self.assertEqual(tuple(model.core.U_layers[0].shape), (24, 24))
+        self.assertEqual(tuple(model.core.V_layers[0].shape), (24, 16 + 24))
+        self.assertEqual(tuple(model.core.U_layers[1].shape), (24, 2))
+        self.assertEqual(tuple(model.core.V_layers[1].shape), (2, 24 + 24))
+        self.assertTrue(model.include_fc_in_core_params)
+
+    def test_gawf_hidden_multilayer_feedback_dims(self):
+        model = TextGaWF(
+            vocab_size=VOCAB_SIZE,
+            embed_dim=16,
+            hidden_size=24,
             num_layers=3,
             device="cpu",
         )
         self.assertEqual(model.num_layers, 3)
-        self.assertTrue(model.use_feedback_projector)
-        self.assertEqual(model.feedback_dim, 8)
-        self.assertEqual(model.layer_feedback_dims, [8, 8, 8])
-        self.assertEqual(len(model.hidden_projectors), 2)
-        self.assertIsNotNone(model.proj_out)
+        self.assertEqual(model.feedback_dim, 24)
+        self.assertEqual(model.core.layer_feedback_dims, [24, 24, 24])
 
     def test_optimizer_excludes_UV_from_weight_decay(self):
         model = TextGaWF(vocab_size=VOCAB_SIZE, embed_dim=16, hidden_size=24, device="cpu")
@@ -158,8 +157,14 @@ class TestIMDBSmoke(unittest.TestCase):
         self.assertIn(id(model.U), no_decay_ids)
         self.assertIn(id(model.V), no_decay_ids)
 
-    def test_optimizer_scales_gawf_multi_feedback_lr(self):
-        model = TextGaWFMulti(vocab_size=VOCAB_SIZE, embed_dim=16, hidden_size=24, device="cpu")
+    def test_optimizer_scales_multilayer_gawf_feedback_lr(self):
+        model = TextGaWFLogits(
+            vocab_size=VOCAB_SIZE,
+            embed_dim=16,
+            hidden_size=24,
+            num_layers=2,
+            device="cpu",
+        )
         optim = train_imdb.build_optimizer(
             model,
             lr=1e-3,
@@ -171,13 +176,13 @@ class TestIMDBSmoke(unittest.TestCase):
         self.assertEqual(optim.param_groups[2]["lr"], 2.5e-4)
         self.assertEqual(optim.param_groups[2]["weight_decay"], 0.0)
         gate_ids = {id(p) for p in optim.param_groups[2]["params"]}
-        self.assertIn(id(model.U_layers[0]), gate_ids)
-        self.assertIn(id(model.V_layers[1]), gate_ids)
+        self.assertIn(id(model.core.U_layers[0]), gate_ids)
+        self.assertIn(id(model.core.V_layers[1]), gate_ids)
 
     def test_end_to_end_train_both_models(self):
         self.assertEqual(
             set(get_text_model_classes()),
-            {"rnn", "lstm", "gru", "gawf", "gawf_logits", "gawf_multi"},
+            {"rnn", "lstm", "gru", "gawf", "gawf_logits"},
         )
         with tempfile.TemporaryDirectory() as tmp:
             meta = _write_synthetic_dataset(tmp)
@@ -209,26 +214,32 @@ class TestIMDBSmoke(unittest.TestCase):
                     m["best_val_acc"], 0.6, f"{model_name}: val acc not above chance"
                 )
 
-    def test_gawf_multi_train_path_records_layer_metadata(self):
+    def test_unified_gawf_depth_train_path_records_layer_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
             meta = _write_synthetic_dataset(tmp)
             loaders = build_imdb_loaders(tmp, batch_size=32, num_workers=0, seed=42)
             args = _make_args()
             args.num_epochs = 1
             args.rnn_dropout = 0.0
-            cfg = {"model": "gawf_multi", "hidden": 12, "lr": 1e-2, "wd": 0.0}
+            cfg = {
+                "model": "gawf_logits",
+                "hidden": 12,
+                "lr": 1e-2,
+                "wd": 0.0,
+                "num_layers": 2,
+            }
             out = train_imdb.train_one_config(args, cfg, loaders, "cpu", meta)
             metrics = out["metrics"]
-            self.assertEqual(metrics["model_type"], "gawf_multi")
-            self.assertEqual(metrics["gawf_layers"], 2)
-            self.assertEqual(metrics["feedback_dim"], 0)
-            self.assertFalse(metrics["use_feedback_projector"])
+            self.assertEqual(metrics["model_type"], "gawf_logits")
+            self.assertEqual(metrics["num_layers"], 2)
+            self.assertEqual(metrics["feedback_mode"], "logits")
+            self.assertEqual(metrics["feedback_dim"], 2)
             self.assertEqual(metrics["layer_feedback_dims"], [12, 2])
             args.result_dir = tmp
-            args.result_suffix = "imdb_gawf_multi_smoke"
+            args.result_suffix = "imdb_gawf_depth_smoke"
             metrics_path = train_imdb.save_outputs(args, cfg, out)
             self.assertTrue(os.path.isfile(metrics_path))
-            self.assertIn("_L2_metrics.json", metrics_path)
+            self.assertIn("_h12_L2_emb", metrics_path)
 
     def test_save_outputs_writes_metrics_json(self):
         with tempfile.TemporaryDirectory() as tmp:

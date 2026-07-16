@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Hyperparameter grid for IMDB 2-layer GaWF direct-feedback search.
+"""Hyperparameter grid for the unified IMDB 2-layer GaWF search.
 
-Task C searches only ``hidden x lr x weight_decay`` for ``gawf_multi``. The
-multi-layer-specific settings are fixed to ``gawf_layers=2``, direct feedback
-(``feedback_dim=0``), and ``gawf_multi_feedback_lr_scale=0.1``.
+Task C searches only ``hidden x lr x weight_decay`` for the unified
+``gawf_logits --num_layers 2`` model. Lower layers receive detached adjacent
+hidden feedback; the final layer receives detached classifier logits. U/V use
+``base_lr * gawf_feedback_lr_scale`` with scale 0.1.
 """
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ from glob import glob
 from itertools import product
 from typing import Any, Dict, Iterable, List, Sequence
 
-MODELS = ["gawf_multi"]
+MODELS = ["gawf_logits"]
 LRS = [1e-4, 5e-4, 1e-3, 5e-3]
 WDS = [0.0, 1e-5, 1e-4, 1e-3]
 HIDDENS = [64, 96, 128, 192]
@@ -31,10 +32,9 @@ NUM_EPOCHS = 50
 PATIENCE = 10
 SEED = 42
 BATCH_SIZE = 64
-GAWF_LAYERS = 2
-FEEDBACK_DIM = 0
-GAWF_MULTI_FEEDBACK_LR_SCALE = 0.1
-RESULT_ROOT_SUFFIX = "imdb_gawf_multi_2layer_grid"
+NUM_LAYERS = 2
+GAWF_FEEDBACK_LR_SCALE = 0.1
+RESULT_ROOT_SUFFIX = "imdb_gawf_depth2_grid"
 TOTAL_TASKS = len(MODELS) * len(LRS) * len(WDS) * len(HIDDENS)
 
 
@@ -53,22 +53,22 @@ class TaskConfig:
     @property
     def result_stem(self) -> str:
         return (
-            f"{self.model}_imdb_h{self.hidden}_emb{EMBED_DIM}"
+            f"{self.model}_imdb_h{self.hidden}_L{NUM_LAYERS}_emb{EMBED_DIM}"
             f"_lr{self.lr}_wd{self.weight_decay}"
-            f"_edo{EMBED_DROPOUT}_rdo{RNN_DROPOUT}_L{GAWF_LAYERS}"
+            f"_edo{EMBED_DROPOUT}_rdo{RNN_DROPOUT}"
         )
 
     @property
     def metrics_relpath(self) -> str:
-        return f"results/train_data/{self.result_suffix}/{self.result_stem}_metrics.json"
+        return f"train_data/{self.result_suffix}/{self.result_stem}_metrics.json"
 
     @property
     def pkl_relpath(self) -> str:
-        return f"results/train_data/{self.result_suffix}/{self.result_stem}.pkl"
+        return f"train_data/{self.result_suffix}/{self.result_stem}.pkl"
 
     @property
     def model_relpath(self) -> str:
-        return f"results/train_data/{self.result_suffix}/{self.result_stem}_model.pth"
+        return f"train_data/{self.result_suffix}/{self.result_stem}_model.pth"
 
 
 def iter_task_configs() -> Iterable[TaskConfig]:
@@ -126,10 +126,11 @@ def metrics_matches_task(metrics: Dict[str, Any], cfg: TaskConfig) -> bool:
             _isclose(metrics.get("embed_dropout"), EMBED_DROPOUT),
             _isclose(metrics.get("rnn_dropout"), RNN_DROPOUT),
             int(metrics.get("num_epochs", -1)) == NUM_EPOCHS,
-            int(metrics.get("gawf_layers", -1)) == GAWF_LAYERS,
-            int(metrics.get("feedback_dim", -1)) == FEEDBACK_DIM,
-            metrics.get("use_feedback_projector") is False,
-            _isclose(metrics.get("gawf_multi_feedback_lr_scale"), GAWF_MULTI_FEEDBACK_LR_SCALE),
+            int(metrics.get("num_layers", -1)) == NUM_LAYERS,
+            metrics.get("feedback_mode") == "logits",
+            int(metrics.get("feedback_dim", -1)) == 2,
+            list(metrics.get("layer_feedback_dims", [])) == [cfg.hidden, 2],
+            _isclose(metrics.get("gawf_feedback_lr_scale"), GAWF_FEEDBACK_LR_SCALE),
         ]
     )
 
@@ -196,9 +197,8 @@ def shell_assignments(cfg: TaskConfig, root: str) -> str:
         "PATIENCE": str(PATIENCE),
         "SEED": str(SEED),
         "BATCH_SIZE": str(BATCH_SIZE),
-        "GAWF_LAYERS": str(GAWF_LAYERS),
-        "FEEDBACK_DIM": str(FEEDBACK_DIM),
-        "GAWF_MULTI_FEEDBACK_LR_SCALE": repr(GAWF_MULTI_FEEDBACK_LR_SCALE),
+        "NUM_LAYERS": str(NUM_LAYERS),
+        "GAWF_FEEDBACK_LR_SCALE": repr(GAWF_FEEDBACK_LR_SCALE),
         "RESULT_SUFFIX": cfg.result_suffix,
         "RESULT_STEM": cfg.result_stem,
         "METRICS_PATH": os.path.join(root, cfg.metrics_relpath),
@@ -213,11 +213,11 @@ def status(root: str) -> Dict[str, Any]:
     valid = sum(1 for row in rows if row["valid"])
     out_dir = os.path.join(os.path.dirname(__file__), "artifacts", RESULT_ROOT_SUFFIX)
     write_json(
-        os.path.join(out_dir, "imdb_gawf_multi_grid_status.json"),
+        os.path.join(out_dir, "imdb_gawf_depth_grid_status.json"),
         {"expected_total": TOTAL_TASKS, "valid": valid, "rows": rows},
     )
     write_csv(
-        os.path.join(out_dir, "imdb_gawf_multi_grid_status.csv"),
+        os.path.join(out_dir, "imdb_gawf_depth_grid_status.csv"),
         rows,
         [
             "task_id",
@@ -247,25 +247,29 @@ def load_all_metrics(result_root: str) -> List[Dict[str, Any]]:
     return rows
 
 
+def default_results_root() -> str:
+    """Resolve the physical results root without importing the training stack."""
+    for env_name in ("AIM3_RESULTS_PATH", "FAW_RNN_RESULTS_PATH"):
+        value = os.environ.get(env_name)
+        if value:
+            return os.path.abspath(os.path.expanduser(value))
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    return os.path.join(repo_root, "results")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
     emit = sub.add_parser("emit-task")
     emit.add_argument("--task-id", type=int, required=True)
-    emit.add_argument(
-        "--root", default=os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    )
+    emit.add_argument("--root", default=default_results_root())
     val = sub.add_parser("validate")
     val.add_argument("--task-id", type=int, required=True)
-    val.add_argument(
-        "--root", default=os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    )
+    val.add_argument("--root", default=default_results_root())
     val.add_argument("--json", action="store_true")
     sub.add_parser("list-task-ids")
     stat = sub.add_parser("status")
-    stat.add_argument(
-        "--root", default=os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    )
+    stat.add_argument("--root", default=default_results_root())
     args = parser.parse_args()
 
     if args.cmd == "emit-task":

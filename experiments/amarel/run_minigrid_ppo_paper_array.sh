@@ -25,6 +25,7 @@ conda activate aim3_rnn
 export AIM3_NUM_WORKERS=12
 export AIM3_PIN_MEMORY=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+: "${AIM3_RESULTS_PATH:?AIM3_RESULTS_PATH must be exported at submission}"
 
 MODELS=(paper_lstm lstm_core rnn gru gawf s5 mamba)
 TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
@@ -37,6 +38,7 @@ ENV_TAG="${ENV_TAG%-v0}"
 SUFFIX="mg_ppo_paper_${ENV_TAG}_fov3_${MODEL}_seed${SEED}_100m"
 ART="$ROOT/experiments/amarel/artifacts/minigrid_ppo_paper"
 STATUS_DIR="$ART/status"
+SAVE_DIR="$AIM3_RESULTS_PATH/train_data/$SUFFIX"
 mkdir -p "$ART" "$STATUS_DIR"
 
 case "$MODEL" in
@@ -56,7 +58,7 @@ DISABLE_TQDM=1 python train_minigrid_ppo_paper.py \
   --env_id "$ENV_ID" --model_type "$MODEL" --seed "$SEED" \
   --total_timesteps "$TOTAL_TIMESTEPS" --num_envs 8 --num_steps 128 \
   --num_minibatches 8 --update_epochs 4 --device cuda \
-  --result_suffix "$SUFFIX" "${SIZE_ARGS[@]}"
+  --result_suffix "$SUFFIX" --save_dir "$SAVE_DIR" "${SIZE_ARGS[@]}"
 rc=$?
 set -e
 if [[ "$rc" -ne 0 ]]; then
@@ -64,5 +66,5 @@ if [[ "$rc" -ne 0 ]]; then
   exit "$rc"
 fi
 echo \
-  "status=done model=$MODEL seed=$SEED metrics=results/train_data/$SUFFIX/metrics.json" \
+  "status=done model=$MODEL seed=$SEED metrics=$SAVE_DIR/metrics.json" \
   > "$STATUS_FILE"

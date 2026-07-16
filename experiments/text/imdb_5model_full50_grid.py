@@ -1,19 +1,10 @@
 #!/usr/bin/env python3
-"""Hyperparameter grid for the IMDB GaWF core param-match search.
+"""IMDB five-model 50-epoch full grid without early stopping.
 
-Phase E of the IMDB pilot: the LSTM anchor search (``imdb_hparam_grid.py``)
-selected ``H* = 128`` (LSTM recurrent core = 132,352 params). Here ``gawf`` is
-swept over ``lr x weight_decay`` at the single ``hidden`` whose recurrent core
-matches that anchor within tolerance:
-
-- ``TextGaWF`` core(H) = ``3H^2 + 2*H*embed_dim + 4H`` (rnn + U + V + LayerNorm).
-- At ``embed_dim=128``: ``H=171`` -> core 132,183 (``-0.128%`` vs LSTM 132,352),
-  the closest integer match (``H=170`` is ``-1.10%``, ``H=172`` is ``+0.85%``).
-
-Dropout is fixed to the vision config (``embed_dropout=0.0``, ``rnn_dropout=0.5``;
-not searched). Selection is by validation accuracy. Mirrors
-``imdb_hparam_grid.py`` exactly so ``emit-task`` / ``validate`` / ``status`` /
-``summarize`` and result paths behave identically.
+Runs one unified, fair comparison over LSTM/RNN/GRU/hidden-feedback GaWF and
+logit-feedback GaWF. Every task trains for 50 epochs by setting patience to a
+large value, while preserving the same ``lr x weight_decay`` grid used by the
+earlier IMDB sweeps.
 """
 from __future__ import annotations
 
@@ -28,22 +19,28 @@ from glob import glob
 from itertools import product
 from typing import Any, Dict, Iterable, List, Sequence
 
-MODELS = ["gawf"]
-LRS = [1e-4, 5e-4, 1e-3, 5e-3]  # same range as the LSTM anchor search
+MODELS = ["lstm", "rnn", "gru", "gawf", "gawf_logits"]
+MODEL_HIDDEN = {
+    "lstm": 128,
+    "rnn": 304,
+    "gru": 155,
+    "gawf": 171,
+    "gawf_logits": 301,
+}
+LRS = [1e-4, 5e-4, 1e-3, 5e-3]
 WDS = [0.0, 1e-5, 1e-4, 1e-3]
-HIDDENS = [171]  # core-matched to LSTM H*=128: GaWF core(171)=132,183 vs 132,352 (-0.13%)
 EMBED_DIM = 128
 EMBED_DROPOUT = 0.0
 RNN_DROPOUT = 0.5
 POOLING = "last"
 OPTIM = "adam"
 NUM_EPOCHS = 50
-PATIENCE = 10
+PATIENCE = 999_999
 SEED = 42
 BATCH_SIZE = 64
-RESULT_ROOT_SUFFIX = "imdb_gawf_param_match"
-CSV_TAG = "_imdb_gawf_param_match"
-TOTAL_TASKS = len(MODELS) * len(LRS) * len(WDS) * len(HIDDENS)
+RESULT_ROOT_SUFFIX = "imdb_5model_full50_grid"
+CSV_TAG = "_imdb_5model_full50_grid"
+TOTAL_TASKS = len(MODELS) * len(LRS) * len(WDS)
 
 
 @dataclass(frozen=True)
@@ -77,19 +74,23 @@ class TaskConfig:
 
     @property
     def metrics_relpath(self) -> str:
-        return f"results/train_data/{self.result_suffix}/{self.result_stem}_metrics.json"
+        return f"train_data/{self.result_suffix}/{self.result_stem}_metrics.json"
 
     @property
     def pkl_relpath(self) -> str:
-        return f"results/train_data/{self.result_suffix}/{self.result_stem}.pkl"
+        return f"train_data/{self.result_suffix}/{self.result_stem}.pkl"
 
     @property
     def model_relpath(self) -> str:
-        return f"results/train_data/{self.result_suffix}/{self.result_stem}_model.pth"
+        return f"train_data/{self.result_suffix}/{self.result_stem}_model.pth"
 
 
-def repo_root() -> str:
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+def default_results_root() -> str:
+    for env_name in ("AIM3_RESULTS_PATH", "FAW_RNN_RESULTS_PATH"):
+        if value := os.environ.get(env_name):
+            return os.path.abspath(os.path.expanduser(value))
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    return os.path.join(repo_root, "results")
 
 
 def artifact_dir() -> str:
@@ -98,8 +99,14 @@ def artifact_dir() -> str:
 
 def iter_task_configs() -> Iterable[TaskConfig]:
     task_id = 0
-    for model, hidden, lr, wd in product(MODELS, HIDDENS, LRS, WDS):
-        yield TaskConfig(task_id=task_id, model=model, hidden=hidden, lr=lr, weight_decay=wd)
+    for model, lr, wd in product(MODELS, LRS, WDS):
+        yield TaskConfig(
+            task_id=task_id,
+            model=model,
+            hidden=MODEL_HIDDEN[model],
+            lr=lr,
+            weight_decay=wd,
+        )
         task_id += 1
 
 
@@ -138,6 +145,13 @@ def score_row(m: Dict[str, Any]) -> float:
     return float(m.get("best_val_acc") or 0.0)
 
 
+def final_val(m: Dict[str, Any]) -> Any:
+    vals = m.get("val_acc")
+    if isinstance(vals, list) and vals:
+        return vals[-1]
+    return None
+
+
 def _isclose(a: Any, b: float) -> bool:
     try:
         return math.isclose(float(a), b, rel_tol=0, abs_tol=1e-12)
@@ -157,6 +171,9 @@ def metrics_matches_task(metrics: Dict[str, Any], cfg: TaskConfig) -> bool:
             _isclose(metrics.get("embed_dropout"), cfg.embed_dropout),
             _isclose(metrics.get("rnn_dropout"), cfg.rnn_dropout),
             int(metrics.get("num_epochs", -1)) == cfg.num_epochs,
+            int(metrics.get("patience", cfg.patience)) == cfg.patience,
+            int(metrics.get("actual_epochs", -1)) == cfg.num_epochs,
+            metrics.get("stopped_by_patience") is False,
         ]
     )
 
@@ -190,6 +207,9 @@ def validate_task_output(cfg: TaskConfig, root: str) -> Dict[str, Any]:
         return row
     if not metrics_matches_task(metrics, cfg):
         row["reason"] = "metrics_mismatch"
+        row["actual_epochs"] = metrics.get("actual_epochs")
+        row["stopped_by_patience"] = metrics.get("stopped_by_patience")
+        row["patience"] = metrics.get("patience")
         return row
     if not row["pkl_exists"]:
         row["reason"] = "missing_pkl"
@@ -200,6 +220,7 @@ def validate_task_output(cfg: TaskConfig, root: str) -> Dict[str, Any]:
     row["valid"] = True
     row["reason"] = "ok"
     row["val_acc_at_best"] = metrics.get("val_acc_at_best")
+    row["final_val_acc"] = final_val(metrics)
     row["test_acc_at_best"] = metrics.get("test_acc_at_best")
     row["core_param_count"] = metrics.get("core_param_count")
     row["actual_epochs"] = metrics.get("actual_epochs")
@@ -236,14 +257,14 @@ def trial_csv_row(m: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "model": m.get("model_type"),
         "hidden": m.get("hidden_size"),
-        "embed_dim": m.get("embed_dim"),
         "lr": m.get("lr"),
         "wd": m.get("weight_decay"),
         "core_param_count": m.get("core_param_count"),
         "total_param_count": m.get("total_param_count"),
-        "val_acc": m.get("val_acc_at_best", m.get("best_val_acc")),
-        "train_acc": m.get("train_acc_at_best_val"),
-        "test_acc": m.get("test_acc_at_best"),
+        "best_val_acc": m.get("val_acc_at_best", m.get("best_val_acc")),
+        "final_val_acc": final_val(m),
+        "train_acc_at_best_val": m.get("train_acc_at_best_val"),
+        "test_acc_at_best": m.get("test_acc_at_best"),
         "overfit_gap": m.get("overfit_gap"),
         "best_epoch_val_acc_1based": m.get("best_epoch_val_acc_1based"),
         "actual_epochs": m.get("actual_epochs"),
@@ -272,17 +293,15 @@ def best_summary_rows(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
         out.append(
             {
                 "model": model,
+                "params_k": round(float(best.get("total_param_count", 0)) / 1000.0, 1),
                 "hidden": best.get("hidden_size"),
-                "embed_dim": best.get("embed_dim"),
                 "lr": best.get("lr"),
                 "weight_decay": best.get("weight_decay"),
-                "core_param_count": best.get("core_param_count"),
-                "val_acc_at_best": score_row(best),
-                "train_acc_at_best_val": best.get("train_acc_at_best_val"),
+                "best_val_acc": score_row(best),
+                "final_val_acc": final_val(best),
                 "test_acc_at_best": best.get("test_acc_at_best"),
-                "overfit_gap": best.get("overfit_gap"),
+                "best_epoch": best.get("best_epoch_val_acc_1based"),
                 "actual_epochs": best.get("actual_epochs"),
-                "stopped_by_patience": best.get("stopped_by_patience"),
                 "metrics_path": best.get("_path"),
             }
         )
@@ -292,20 +311,20 @@ def best_summary_rows(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def write_markdown_summary(path: str, best_rows: Sequence[Dict[str, Any]]) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        f.write("# IMDB GaWF Param-match Search Summary\n\n")
+        f.write("# IMDB Five-model Full-50 Summary\n\n")
         f.write(
-            "Selection criterion: highest `val_acc_at_best`. Dropout fixed "
-            "(`embed_dropout=0.0`, `rnn_dropout=0.5`). GaWF `hidden=171` is core "
-            "param-matched to the LSTM anchor `H*=128` (132,352 -> 132,183, -0.13%).\n\n"
+            "Selection criterion: highest `val_acc_at_best`. All runs use "
+            "`num_epochs=50`, `patience=999999`, seed 42, last pooling, "
+            "`embed_dropout=0.0`, and `rnn_dropout=0.5`.\n\n"
         )
-        f.write("| Model | Hidden | Embed | LR | WD | Core params | Val | Train | Test | Gap | Epochs |\n")
-        f.write("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+        f.write("| Model | Params | Width | lr | wd | Best Val | Final Val | Test | Best Ep |\n")
+        f.write("|---|---:|---|---:|---:|---:|---:|---:|---:|\n")
         for r in best_rows:
             f.write(
-                f"| {r['model']} | {r.get('hidden')} | {r.get('embed_dim')} | {r['lr']} | "
-                f"{r['weight_decay']} | {r.get('core_param_count')} | {r.get('val_acc_at_best')} | "
-                f"{r.get('train_acc_at_best_val')} | {r.get('test_acc_at_best')} | "
-                f"{r.get('overfit_gap')} | {r.get('actual_epochs')} |\n"
+                f"| `{r['model']}` | {r.get('params_k')}k | h{r.get('hidden')} | "
+                f"{r['lr']} | {r['weight_decay']} | {r.get('best_val_acc')} | "
+                f"{r.get('final_val_acc')} | {r.get('test_acc_at_best')} | "
+                f"{r.get('best_epoch')} |\n"
             )
 
 
@@ -345,12 +364,28 @@ def cmd_status(args: argparse.Namespace) -> None:
     failed = [r for r in rows if not r["valid"]]
     ok = [r for r in rows if r["valid"]]
 
-    status_csv = os.path.join(out_dir, "imdb_gawf_param_match_status.csv")
+    status_csv = os.path.join(out_dir, "imdb_5model_full50_status.csv")
     fieldnames = [
-        "task_id", "model", "hidden", "lr", "weight_decay", "valid", "reason",
-        "metrics_exists", "pkl_exists", "model_exists", "val_acc_at_best",
-        "test_acc_at_best", "core_param_count", "actual_epochs", "stopped_by_patience",
-        "metrics_path", "pkl_path", "model_path",
+        "task_id",
+        "model",
+        "hidden",
+        "lr",
+        "weight_decay",
+        "valid",
+        "reason",
+        "metrics_exists",
+        "pkl_exists",
+        "model_exists",
+        "val_acc_at_best",
+        "final_val_acc",
+        "test_acc_at_best",
+        "core_param_count",
+        "actual_epochs",
+        "stopped_by_patience",
+        "patience",
+        "metrics_path",
+        "pkl_path",
+        "model_path",
     ]
     write_csv(status_csv, rows, fieldnames)
 
@@ -367,7 +402,7 @@ def cmd_status(args: argparse.Namespace) -> None:
         "failed_task_ids_path": failed_path,
         "status_csv": status_csv,
     }
-    write_json(os.path.join(out_dir, "imdb_gawf_param_match_status.json"), summary)
+    write_json(os.path.join(out_dir, "imdb_5model_full50_status.json"), summary)
     print(json.dumps(summary, indent=2))
     if failed and args.fail_on_missing:
         raise SystemExit(1)
@@ -383,23 +418,21 @@ def cmd_summarize(args: argparse.Namespace) -> None:
 
     best_rows = best_summary_rows(rows)
     best_json = {row["model"]: row for row in best_rows}
-    write_json(os.path.join(out_dir, "imdb_gawf_param_match_best.json"), best_json)
+    write_json(os.path.join(out_dir, "imdb_5model_full50_best.json"), best_json)
     write_csv(
-        os.path.join(out_dir, "imdb_gawf_param_match_best.csv"),
+        os.path.join(out_dir, "imdb_5model_full50_best.csv"),
         best_rows,
         list(best_rows[0].keys()),
     )
-    write_markdown_summary(
-        os.path.join(out_dir, "imdb_gawf_param_match_best_summary.md"), best_rows
-    )
+    write_markdown_summary(os.path.join(out_dir, "imdb_5model_full50_summary.md"), best_rows)
 
     all_rows = [trial_csv_row(m) for m in rows]
     write_csv(
-        os.path.join(out_dir, "imdb_gawf_param_match_all_trials.csv"),
+        os.path.join(out_dir, "imdb_5model_full50_all_trials.csv"),
         all_rows,
         list(all_rows[0].keys()),
     )
-    print(f"Wrote IMDB GaWF param-match summaries under {out_dir}")
+    print(f"Wrote IMDB five-model full-50 summaries under {out_dir}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -408,24 +441,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     emit = sub.add_parser("emit-task", help="Emit config for one task id")
     emit.add_argument("--task-id", type=int, required=True)
-    emit.add_argument("--root", default=".")
+    emit.add_argument("--root", default=default_results_root())
     emit.add_argument("--format", choices=["shell", "json"], default="shell")
     emit.set_defaults(func=cmd_emit_task)
 
     val = sub.add_parser("validate", help="Validate one task output")
     val.add_argument("--task-id", type=int, required=True)
-    val.add_argument("--root", default=".")
+    val.add_argument("--root", default=default_results_root())
     val.add_argument("--json", action="store_true")
     val.set_defaults(func=cmd_validate)
 
     status = sub.add_parser("status", help="Check all expected task outputs")
-    status.add_argument("--root", default=".")
+    status.add_argument("--root", default=default_results_root())
     status.add_argument("--out-dir", default="")
     status.add_argument("--fail-on-missing", action="store_true")
     status.set_defaults(func=cmd_status)
 
     summ = sub.add_parser("summarize", help="Aggregate best hparams")
-    summ.add_argument("--root", default=".")
+    summ.add_argument("--root", default=default_results_root())
     summ.add_argument("--out-dir", default="")
     summ.set_defaults(func=cmd_summarize)
     return parser
