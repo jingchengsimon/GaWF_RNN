@@ -60,4 +60,3 @@ echo "resources=partition=gpu-redhat gres=gpu:1 constraint=adalovelace cpus=16 m
 echo "env=AIM3_NUM_WORKERS=$AIM3_NUM_WORKERS AIM3_PIN_MEMORY=$AIM3_PIN_MEMORY"
 echo "setup=$AIM3_SETUP_CMD"
 echo "next=python experiments/amarel/check_sentihood_lstm_final_status.py"
-echo "dashboard=python experiments/amarel/register_sentihood_lstm_final_dashboard.py --job_id $job_id"
