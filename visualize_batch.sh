@@ -125,6 +125,22 @@ fi
 echo "============================================================"
 echo ""
 
+# MiniGrid RedBlue JSONL runs use one subdirectory per model rather than PKL files.
+if [ -f "$RESULTS_DIR/lstm/metrics_history.jsonl" ] && \
+   [ -f "$RESULTS_DIR/gawf/metrics_history.jsonl" ]; then
+    python -m utils_viz.minigrid_learning_curves \
+        --data_dir "$RESULTS_DIR" \
+        --output_dir "$OUTPUT_DIR"
+    if [ $? -ne 0 ]; then
+        echo "MiniGrid RedBlue 学习曲线生成失败"
+        exit 1
+    fi
+    echo "MiniGrid RedBlue 学习曲线生成成功"
+    echo "输出目录: $OUTPUT_DIR"
+    ls -lh "$OUTPUT_DIR"/*.png 2>/dev/null
+    exit 0
+fi
+
 # 查找所有 pkl 文件（排除 _model.pth 文件）
 PKL_FILES=($(find "$RESULTS_DIR" -maxdepth 1 -name "*.pkl" -type f))
 

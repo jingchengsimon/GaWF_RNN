@@ -36,6 +36,7 @@ NUM_DIGITS = 10
 NUM_SECTORS = 9
 GRID_SIZE = 3
 DEFAULT_SUFFIX = "reg-test-40h-float32-jointswitch-balanced"
+DEFAULT_UNIQUE_SUFFIX = f"{DEFAULT_SUFFIX}-10digit-unique"
 LABEL_COLUMNS = [
     "frame",
     "fg_char_id",
@@ -265,6 +266,48 @@ def _build_background(
     return bg_char_count, bg_mean_speed, background_chars
 
 
+def _build_unique_digit_background(
+    config: StimulusConfig,
+    mnist_data: dict[int, Sequence[np.ndarray]],
+    rng: np.random.Generator,
+    foreground_digit: int,
+    foreground_sector: int,
+) -> tuple[int, float, list[MovingCharacter], int]:
+    """Build nine unique backgrounds whose onset slots cover all sectors."""
+
+    if not 0 <= foreground_digit < NUM_DIGITS:
+        raise ValueError(f"foreground_digit must be in [0, {NUM_DIGITS - 1}]")
+    if not 0 <= foreground_sector < NUM_SECTORS:
+        raise ValueError(f"foreground_sector must be in [0, {NUM_SECTORS - 1}]")
+    background_digits = np.asarray(
+        [digit for digit in range(NUM_DIGITS) if digit != foreground_digit],
+        dtype=np.int64,
+    )
+    rng.shuffle(background_digits)
+    duplicate_sector = int(rng.integers(0, NUM_SECTORS))
+    background_sectors = list(range(NUM_SECTORS)) + [duplicate_sector]
+    background_sectors.remove(foreground_sector)
+    rng.shuffle(background_sectors)
+    bg_mean_speed = float(rng.choice(config.bg_mean_speeds))
+    background_chars: list[MovingCharacter] = []
+    for digit_value, sector in zip(background_digits, background_sectors):
+        digit = int(digit_value)
+        image = _sample_digit_image(mnist_data, digit, rng)
+        angle = float(rng.uniform(0, 2 * np.pi))
+        velocity = np.asarray([np.cos(angle), np.sin(angle)]) * bg_mean_speed
+        target_center = sample_rendered_center_for_sector(
+            sector,
+            config.width,
+            config.height,
+            int(image.shape[1]),
+            int(image.shape[0]),
+            rng,
+        )
+        position = target_center - velocity
+        background_chars.append(MovingCharacter(digit, image, position, velocity))
+    return len(background_chars), bg_mean_speed, background_chars, duplicate_sector
+
+
 def _prepare_scheduled_foreground(
     fg_char: MovingCharacter,
     digit: int,
@@ -322,6 +365,7 @@ def generate_balanced_joint_test(
     *,
     seed: int,
     mean_switch_interval_seconds: float,
+    all_digits_unique: bool = False,
 ) -> dict[str, object]:
     """Generate one balanced joint-switch test and return validated metadata."""
     if schedule.shape != (switch_frames.size, 2):
@@ -355,12 +399,39 @@ def generate_balanced_joint_test(
         shape=(total_frames, config.height, config.width),
     )
     fg_char = _initialize_foreground(config, mnist_data, rng)
-    _, bg_mean_speed, background_chars = _build_background(config, mnist_data, rng)
+    if all_digits_unique:
+        initial_sector = int(rng.integers(0, NUM_SECTORS))
+        initial_target_center = _prepare_scheduled_foreground(
+            fg_char,
+            fg_char.label,
+            initial_sector,
+            config,
+            mnist_data,
+            rng,
+        )
+        (
+            _,
+            bg_mean_speed,
+            background_chars,
+            onset_duplicate_sector,
+        ) = _build_unique_digit_background(
+            config,
+            mnist_data,
+            rng,
+            fg_char.label,
+            initial_sector,
+        )
+    else:
+        initial_target_center = None
+        onset_duplicate_sector = None
+        _, bg_mean_speed, background_chars = _build_background(config, mnist_data, rng)
     switch_lookup = {
         int(frame): (int(condition[0]), int(condition[1]))
         for frame, condition in zip(switch_frames, schedule)
     }
     observed_counts = np.zeros((NUM_DIGITS, NUM_SECTORS), dtype=np.int64)
+    onset_duplicate_sector_counts = np.zeros(NUM_SECTORS, dtype=np.int64)
+    onset_coverage_count = 0
 
     with tsv_path.open("w", newline="") as tsv_file:
         writer = csv.writer(tsv_file, delimiter="\t")
@@ -368,6 +439,7 @@ def generate_balanced_joint_test(
         for frame_idx in tqdm(range(total_frames), desc="Generating balanced joint test"):
             fg_switch_flag = 0
             bg_switch_flag = 0
+            target_center = initial_target_center if frame_idx == 0 else None
             scheduled = switch_lookup.get(frame_idx)
             if scheduled is not None:
                 digit, sector = scheduled
@@ -381,15 +453,30 @@ def generate_balanced_joint_test(
                     mnist_data,
                     rng,
                 )
-                _, bg_mean_speed, background_chars = _build_background(
-                    config, mnist_data, rng
-                )
-            else:
-                target_center = None
-
+                if all_digits_unique:
+                    (
+                        _,
+                        bg_mean_speed,
+                        background_chars,
+                        onset_duplicate_sector,
+                    ) = _build_unique_digit_background(
+                        config,
+                        mnist_data,
+                        rng,
+                        fg_char.label,
+                        sector,
+                    )
+                else:
+                    _, bg_mean_speed, background_chars = _build_background(
+                        config, mnist_data, rng
+                    )
+            clutter_onset = frame_idx == 0 or scheduled is not None
             fg_char.update_position(frame_dims)
             for character in background_chars:
-                character.update_random_walk(frame_dims, bg_mean_speed)
+                if all_digits_unique and clutter_onset:
+                    character.update_position(frame_dims)
+                else:
+                    character.update_random_walk(frame_dims, bg_mean_speed)
 
             if target_center is not None and not np.allclose(fg_char.pos, target_center):
                 raise RuntimeError(
@@ -402,6 +489,48 @@ def generate_balanced_joint_test(
                 paste_character(frame, character)
             paste_character(frame, fg_char)
             npy_data[frame_idx] = frame
+
+            if all_digits_unique:
+                rendered_digits = [fg_char.label]
+                rendered_digits.extend(character.label for character in background_chars)
+                if sorted(rendered_digits) != list(range(NUM_DIGITS)):
+                    raise RuntimeError(
+                        f"Frame {frame_idx}: expected digits 0-9 exactly once, got "
+                        f"{rendered_digits}"
+                    )
+                if clutter_onset:
+                    rendered_sectors = [
+                        sector_from_center(
+                            fg_char.center_x,
+                            fg_char.center_y,
+                            config.width,
+                            config.height,
+                        )
+                    ]
+                    rendered_sectors.extend(
+                        sector_from_center(
+                            character.center_x,
+                            character.center_y,
+                            config.width,
+                            config.height,
+                        )
+                        for character in background_chars
+                    )
+                    sector_counts = np.bincount(
+                        np.asarray(rendered_sectors, dtype=np.int64),
+                        minlength=NUM_SECTORS,
+                    )
+                    expected_sector_counts = np.ones(NUM_SECTORS, dtype=np.int64)
+                    if onset_duplicate_sector is None:
+                        raise RuntimeError("Missing duplicate sector for unique clutter onset")
+                    expected_sector_counts[onset_duplicate_sector] += 1
+                    if not np.array_equal(sector_counts, expected_sector_counts):
+                        raise RuntimeError(
+                            f"Frame {frame_idx}: onset sector counts {sector_counts.tolist()} "
+                            f"!= expected {expected_sector_counts.tolist()}"
+                        )
+                    onset_duplicate_sector_counts[onset_duplicate_sector] += 1
+                    onset_coverage_count += 1
 
             if scheduled is not None:
                 digit, sector = scheduled
@@ -476,6 +605,24 @@ def generate_balanced_joint_test(
             "strict_event_balance": True,
             "strict_frame_occupancy_balance": False,
         },
+        "clutter_composition": {
+            "all_digits_unique_per_frame": all_digits_unique,
+            "num_characters_per_frame": NUM_DIGITS if all_digits_unique else None,
+            "num_background_characters": NUM_DIGITS - 1 if all_digits_unique else None,
+            "digit_set_per_frame": list(range(NUM_DIGITS)) if all_digits_unique else None,
+            "all_sectors_occupied_at_clutter_onset": all_digits_unique,
+            "onset_sector_slot_rule": (
+                "one slot per sector plus one independently uniform duplicate sector"
+                if all_digits_unique
+                else None
+            ),
+            "num_validated_clutter_onsets": (
+                int(onset_coverage_count) if all_digits_unique else None
+            ),
+            "duplicate_sector_counts_at_onset": (
+                onset_duplicate_sector_counts.tolist() if all_digits_unique else None
+            ),
+        },
         "switch_timing": {
             "sampling": "sorted unique uniform frames (Poisson event times conditional on count)",
             "requested_mean_interval_seconds": mean_switch_interval_seconds,
@@ -529,6 +676,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mnist-sample-start", type=int, default=50000)
     parser.add_argument("--mnist-sample-end", type=int, default=60000)
     parser.add_argument("--output-mode", choices=("simple", "full"), default="simple")
+    parser.add_argument(
+        "--all-digits-unique",
+        action="store_true",
+        help=(
+            "Render one foreground plus nine backgrounds so digits 0-9 occur exactly once "
+            "in every frame. At each clutter onset, all nine sectors are occupied and one "
+            "independently uniform sector contains the extra digit. With the default suffix, "
+            "writes to a distinct '-10digit-unique' dataset."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -546,6 +703,9 @@ def main() -> None:
     schedule = build_balanced_condition_schedule(repeats, rng)
     total_frames = args.duration_seconds * args.fps
     switch_frames = sample_switch_frames(total_frames, schedule.shape[0], rng)
+    suffix = args.suffix
+    if args.all_digits_unique and suffix == DEFAULT_SUFFIX:
+        suffix = DEFAULT_UNIQUE_SUFFIX
 
     config = StimulusConfig(
         width=96,
@@ -553,14 +713,14 @@ def main() -> None:
         duration_seconds=args.duration_seconds,
         fps=args.fps,
         fg_speeds=[1.0, 0.0, 2.0, 3.0, 4.0, 6.0, 8.0],
-        bg_char_counts=[1, 2, 4, 8, 12],
+        bg_char_counts=[9] if args.all_digits_unique else [1, 2, 4, 8, 12],
         bg_mean_speeds=[1.0, 2.0, 4.0, 6.0, 8.0],
         mean_switch_interval_seconds=args.mean_switch_interval_seconds,
         switch_mode="joint",
         output_dir=args.output_dir,
         mnist_sample_start=args.mnist_sample_start,
         mnist_sample_end=args.mnist_sample_end,
-        suffix=args.suffix,
+        suffix=suffix,
         output_mode=args.output_mode,
     )
     mnist_data = load_balanced_mnist_data(config)
@@ -572,6 +732,7 @@ def main() -> None:
         rng,
         seed=args.seed,
         mean_switch_interval_seconds=args.mean_switch_interval_seconds,
+        all_digits_unique=args.all_digits_unique,
     )
 
 

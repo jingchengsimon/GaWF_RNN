@@ -1,18 +1,20 @@
-"""Visualize per-offset switch-window accuracies as bar charts per model.
+"""Plot multi-model fg/bg-switch recovery curves from offset-accuracy exports.
 
-Reads exported npz from ``utils_anal/export_fg_switch_offset_acc.py``:
-- ``fg_switch_offset_acc_*.npz`` / ``bg_switch_offset_acc_*.npz``: 1x2 panels
-  (foreground character + sector); bg uses **bg_switch** windows only in the export script.
-  Legacy bg npz files without ``sector_acc`` fall back to a single character panel.
+Reads all matching ``fg_switch_offset_acc_*.npz`` or ``bg_switch_offset_acc_*.npz``
+files in ``--data_dir``. Each switch kind is rendered as one two-panel figure with every
+model overlaid: foreground digit accuracy on the left and sector accuracy on the right.
 
-Outputs (in ``--save_dir``):
-- ``fg_<ckpt_tag>_switch_offset_acc.png`` or ``bg_<ckpt_tag>_switch_offset_acc.png``
+Outputs (in ``--save_dir/fg`` or ``--save_dir/bg``):
+- ``[<condition_tag>_]fg_switch_offset_acc_models.png`` — models aligned to fg switches.
+- ``[<condition_tag>_]bg_switch_offset_acc_models.png`` — models aligned to bg switches.
 """
 from __future__ import annotations
 
 import argparse
+import glob
 import os
-from typing import List, Tuple
+import re
+from typing import Dict, List, Tuple
 
 import matplotlib
 
@@ -22,131 +24,279 @@ from matplotlib.axes import Axes  # noqa: E402
 import numpy as np  # noqa: E402
 
 
+MODEL_ORDER = ("gawf", "rnn", "lstm", "gru", "mamba", "s5")
+MODEL_LABELS = {
+    "gawf": "GaWF",
+    "rnn": "RNN",
+    "lstm": "LSTM",
+    "gru": "GRU",
+    "mamba": "Mamba",
+    "s5": "S5",
+}
+MODEL_COLORS = {
+    "gawf": "#4C78A8",
+    "rnn": "#F58518",
+    "lstm": "#54A24B",
+    "gru": "#E45756",
+    "mamba": "#B279A2",
+    "s5": "#72B7B2",
+}
+MODEL_MARKERS = {
+    "gawf": "o",
+    "rnn": "s",
+    "lstm": "^",
+    "gru": "D",
+    "mamba": "P",
+    "s5": "X",
+}
+
+
 def parse_args() -> argparse.Namespace:
+    """Parse input, output, title, kind, and legacy-cleanup options."""
+
     parser = argparse.ArgumentParser(
-        description="Plot per-model fg/bg-switch offset accuracy bar charts."
+        description="Plot all switch-offset model curves together in a two-panel figure."
     )
     parser.add_argument(
         "--data_dir",
         type=str,
         default="./results/anal_data/fg_switch_offset_acc",
-        help="Directory containing fg_switch_offset_acc_* / bg_switch_offset_acc_*.npz files.",
+        help="Directory containing fg/bg_switch_offset_acc_*.npz files.",
     )
     parser.add_argument(
         "--save_dir",
         type=str,
         default="./results/anal_figs/fg_switch_offset_acc",
-        help="Output directory for figures.",
+        help="Output directory for combined model figures.",
+    )
+    parser.add_argument(
+        "--kind",
+        choices=("auto", "fg", "bg"),
+        default="auto",
+        help="Plot both kinds found in the directory, or restrict to fg/bg.",
+    )
+    parser.add_argument(
+        "--title",
+        type=str,
+        default="",
+        help="Optional figure title. Default identifies the switch kind.",
+    )
+    parser.add_argument(
+        "--condition_tag",
+        type=str,
+        default="",
+        help="Optional filename prefix used to distinguish conditions in one figure folder.",
+    )
+    parser.add_argument(
+        "--clean_legacy_individuals",
+        action="store_true",
+        help="After saving, delete legacy per-model bar-chart PNGs for the plotted kind.",
     )
     return parser.parse_args()
 
 
-def _collect_npz(data_dir: str) -> List[str]:
-    names = sorted(
-        n
-        for n in os.listdir(data_dir)
-        if n.endswith(".npz")
-        and (
-            n.startswith("fg_switch_offset_acc_") or n.startswith("bg_switch_offset_acc_")
-        )
-    )
-    return [os.path.join(data_dir, n) for n in names]
+def _kind_and_tag(npz_path: str) -> Tuple[str, str]:
+    """Return switch kind and checkpoint tag from an exported NPZ path."""
 
-
-def _npz_kind_and_tag(npz_path: str) -> Tuple[str, str]:
     base = os.path.basename(npz_path)
-    if base.startswith("fg_switch_offset_acc_"):
-        return "fg", base[len("fg_switch_offset_acc_") : -len(".npz")]
-    if base.startswith("bg_switch_offset_acc_"):
-        return "bg", base[len("bg_switch_offset_acc_") : -len(".npz")]
-    raise ValueError(base)
+    for kind in ("fg", "bg"):
+        prefix = f"{kind}_switch_offset_acc_"
+        if base.startswith(prefix) and base.endswith(".npz"):
+            return kind, base[len(prefix) : -len(".npz")]
+    raise ValueError(f"Unrecognized switch-offset filename: {base}")
 
 
-def _style_axes_spines(ax: Axes) -> None:
+def _model_key(ckpt_tag: str) -> str:
+    """Extract the stable model key encoded at the start of a checkpoint tag."""
+
+    lowered = ckpt_tag.lower()
+    for key in MODEL_ORDER:
+        if lowered.startswith(f"{key}_"):
+            return key
+    return lowered.split("_", 1)[0]
+
+
+def _model_sort_key(npz_path: str) -> Tuple[int, str]:
+    """Sort known models in the project-standard order, then unknown models by name."""
+
+    _, tag = _kind_and_tag(npz_path)
+    key = _model_key(tag)
+    try:
+        return MODEL_ORDER.index(key), key
+    except ValueError:
+        return len(MODEL_ORDER), key
+
+
+def _collect_by_kind(data_dir: str, requested_kind: str) -> Dict[str, List[str]]:
+    """Collect and model-sort exported NPZ paths for each requested switch kind."""
+
+    kinds = ("fg", "bg") if requested_kind == "auto" else (requested_kind,)
+    collected: Dict[str, List[str]] = {}
+    for kind in kinds:
+        paths = glob.glob(os.path.join(data_dir, f"{kind}_switch_offset_acc_*.npz"))
+        if paths:
+            collected[kind] = sorted(paths, key=_model_sort_key)
+    if not collected:
+        raise RuntimeError(f"No requested switch-offset NPZ files found in {data_dir}")
+    return collected
+
+
+def _style_axis(ax: Axes) -> None:
+    """Apply the shared recovery-curve axis style."""
+
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+    ax.grid(axis="y", alpha=0.25)
 
 
-def _plot_one(npz_path: str, save_dir: str) -> None:
-    data = np.load(npz_path)
-    labels = data["offset_labels"].tolist()
-    char_acc = data["char_acc"].astype(np.float32)
-    counts = data["frame_counts"].astype(np.int64)
+def _load_curves(
+    npz_paths: List[str],
+) -> Tuple[np.ndarray, List[str], List[Tuple[str, np.ndarray, np.ndarray]]]:
+    """Load aligned offsets and char/sector curves for every checkpoint."""
 
-    x = np.arange(len(labels), dtype=np.int64)
-    kind, ckpt_tag = _npz_kind_and_tag(npz_path)
-    model_name = ckpt_tag.split("_", 1)[0].upper()
-    has_sector = "sector_acc" in data.files
+    reference_offsets: np.ndarray | None = None
+    reference_labels: List[str] | None = None
+    curves: List[Tuple[str, np.ndarray, np.ndarray]] = []
+    seen_models: set[str] = set()
 
-    if has_sector:
-        sector_acc = data["sector_acc"].astype(np.float32)
-        fig, axes = plt.subplots(1, 2, figsize=(13.0, 4.2), sharex=True)
+    for npz_path in npz_paths:
+        _, ckpt_tag = _kind_and_tag(npz_path)
+        model_key = _model_key(ckpt_tag)
+        if model_key in seen_models:
+            raise RuntimeError(
+                f"Multiple NPZ files map to model {model_key!r} in one data directory"
+            )
+        seen_models.add(model_key)
+        with np.load(npz_path) as data:
+            if "sector_acc" not in data.files:
+                raise RuntimeError(f"Missing sector_acc required for two-panel plot: {npz_path}")
+            offsets = data["offset_order"].astype(np.int64)
+            labels = [str(value) for value in data["offset_labels"].tolist()]
+            char_acc = data["char_acc"].astype(np.float32)
+            sector_acc = data["sector_acc"].astype(np.float32)
+        if reference_offsets is None:
+            reference_offsets = offsets
+            reference_labels = labels
+        elif not np.array_equal(offsets, reference_offsets) or labels != reference_labels:
+            raise RuntimeError(f"Offset layout differs across model files: {npz_path}")
+        curves.append((model_key, char_acc, sector_acc))
 
-        ax0 = axes[0]
-        ax0.bar(x, char_acc, color="#4472C4", alpha=0.90, width=0.75)
-        ax0.set_title("Character accuracy (fg digit)", fontsize=12)
-        ax0.set_ylabel("Accuracy (%)")
-        ax0.set_ylim(0.0, 100.0)
-        ax0.set_xticks(x)
-        ax0.set_xticklabels(labels, rotation=30, ha="right")
-        ax0.grid(axis="y", alpha=0.3)
-        _style_axes_spines(ax0)
+    if reference_offsets is None or reference_labels is None:
+        raise RuntimeError("No model curves were loaded")
+    return reference_offsets, reference_labels, curves
 
-        ax1 = axes[1]
-        ax1.bar(x, sector_acc, color="#ED7D31", alpha=0.90, width=0.75)
-        ax1.set_title("Sector accuracy", fontsize=12)
-        ax1.set_ylabel("Accuracy (%)")
-        ax1.set_ylim(0.0, 100.0)
-        ax1.set_xticks(x)
-        ax1.set_xticklabels(labels, rotation=30, ha="right")
-        ax1.grid(axis="y", alpha=0.3)
-        _style_axes_spines(ax1)
 
-        sw = "fg" if kind == "fg" else "bg"
-        fig.suptitle(
-            f"{model_name} test {sw}-switch windows ({ckpt_tag})",
-            fontsize=12,
+def _plot_kind(
+    kind: str,
+    npz_paths: List[str],
+    save_dir: str,
+    title: str,
+    condition_tag: str,
+    clean_legacy_individuals: bool,
+) -> str:
+    """Render one combined two-panel model comparison for a switch kind."""
+
+    offsets, labels, curves = _load_curves(npz_paths)
+    x = np.arange(offsets.size, dtype=np.int64)
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.0), sharex=True, sharey=True)
+
+    for ax, value_idx, panel_title, chance_level, chance_label in (
+        (axes[0], 1, "Character readout (FG digit)", 10.0, "chance = 10%"),
+        (axes[1], 2, "Sector readout", 100.0 / 9.0, "chance = 11.1%"),
+    ):
+        for curve in curves:
+            model_key = curve[0]
+            values = curve[value_idx]
+            ax.plot(
+                x,
+                values,
+                marker=MODEL_MARKERS.get(model_key, "o"),
+                linewidth=1.9,
+                markersize=4.2,
+                label=MODEL_LABELS.get(model_key, model_key.upper()),
+                color=MODEL_COLORS.get(model_key),
+            )
+        ax.set_title(panel_title)
+        ax.set_xlabel(f"Frames relative to {kind}_switch")
+        ax.set_ylim(0.0, 100.0)
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=35, ha="right")
+        ax.axhline(
+            chance_level,
+            color="0.3",
+            linewidth=1.1,
+            linestyle=(0, (4, 3)),
+            zorder=0,
         )
-    else:
-        fig, ax0 = plt.subplots(1, 1, figsize=(7.5, 4.2))
-        ax0.bar(x, char_acc, color="#4472C4", alpha=0.90, width=0.75)
-        ax0.set_title("Character accuracy (legacy bg export)", fontsize=12)
-        ax0.set_ylabel("Accuracy (%)")
-        ax0.set_ylim(0.0, 100.0)
-        ax0.set_xticks(x)
-        ax0.set_xticklabels(labels, rotation=30, ha="right")
-        ax0.grid(axis="y", alpha=0.3)
-        _style_axes_spines(ax0)
-        fig.suptitle(
-            f"{model_name} test bg-switch offset (legacy) ({ckpt_tag})",
-            fontsize=12,
+        ax.text(
+            0.99,
+            chance_level + 1.2,
+            chance_label,
+            transform=ax.get_yaxis_transform(),
+            ha="right",
+            va="bottom",
+            color="0.3",
+            fontsize=8,
         )
+        pre_count = int(np.count_nonzero(offsets < 0))
+        if 0 < pre_count < offsets.size:
+            ax.axvline(pre_count - 0.5, color="0.35", linewidth=1.0, linestyle="--")
+        _style_axis(ax)
 
-    count_text = "frames: " + " | ".join(f"{lbl}={int(n)}" for lbl, n in zip(labels, counts))
-    fig.text(0.5, 0.01, count_text, ha="center", va="bottom", fontsize=8)
-
-    fig.tight_layout(rect=[0.0, 0.05, 1.0, 0.94])
-    os.makedirs(save_dir, exist_ok=True)
-    out_path = os.path.join(save_dir, f"{kind}_{ckpt_tag}_switch_offset_acc.png")
+    axes[0].set_ylabel("Accuracy (%)")
+    handles, legend_labels = axes[1].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        legend_labels,
+        frameon=False,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.925),
+        ncol=min(len(legend_labels), 6),
+        fontsize=9,
+    )
+    figure_title = title or f"{kind.upper()}-switch recovery across models"
+    fig.suptitle(figure_title, fontsize=13)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.86])
+    kind_dir = os.path.join(save_dir, kind)
+    os.makedirs(kind_dir, exist_ok=True)
+    filename_prefix = f"{condition_tag}_" if condition_tag else ""
+    out_path = os.path.join(
+        kind_dir,
+        f"{filename_prefix}{kind}_switch_offset_acc_models.png",
+    )
     fig.savefig(out_path, dpi=150, bbox_inches="tight", pad_inches=0.06)
     plt.close(fig)
     print(f"Saved figure: {out_path}")
 
+    if clean_legacy_individuals:
+        legacy_pattern = os.path.join(kind_dir, f"{kind}_*_switch_offset_acc.png")
+        for legacy_path in glob.glob(legacy_pattern):
+            os.remove(legacy_path)
+            print(f"Removed legacy per-model figure: {legacy_path}")
+    return out_path
+
 
 def main() -> None:
+    """Create one combined recovery figure for every requested switch kind."""
+
     args = parse_args()
     data_dir = os.path.abspath(args.data_dir)
     save_dir = os.path.abspath(args.save_dir)
-    os.makedirs(save_dir, exist_ok=True)
-
-    npz_paths = _collect_npz(data_dir)
-    if not npz_paths:
-        raise RuntimeError(
-            f"No fg_switch_offset_acc_* or bg_switch_offset_acc_*.npz files found in {data_dir}"
+    if args.condition_tag and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", args.condition_tag):
+        raise ValueError(
+            "--condition_tag must start with an alphanumeric character and contain only "
+            "letters, digits, underscores, or hyphens"
         )
-
-    for npz_path in npz_paths:
-        _plot_one(npz_path, save_dir)
+    grouped_paths = _collect_by_kind(data_dir, args.kind)
+    for kind, npz_paths in grouped_paths.items():
+        _plot_kind(
+            kind,
+            npz_paths,
+            save_dir,
+            args.title,
+            args.condition_tag,
+            args.clean_legacy_individuals,
+        )
 
 
 if __name__ == "__main__":

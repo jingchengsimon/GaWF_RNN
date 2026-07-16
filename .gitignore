@@ -5,6 +5,7 @@ results/
 stimuli/
 remote/config.sh
 .agents/local.md
+.claude/settings.local.json
 mimo_pack.egg-info/
 .DS_Store
 .ipynb_checkpoints/
@@ -28,6 +29,7 @@ logs_hparam/
 # 实验结果 artifacts
 experiments/*/artifacts/
 experiments/amarel/generated/
+experiments/local/generated/
 
 *.pth
 *.pkl
