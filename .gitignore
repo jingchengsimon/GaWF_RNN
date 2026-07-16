@@ -4,6 +4,7 @@ __pycache__/
 results/
 stimuli/
 remote/config.sh
+.agents/local.md
 mimo_pack.egg-info/
 .DS_Store
 .ipynb_checkpoints/
