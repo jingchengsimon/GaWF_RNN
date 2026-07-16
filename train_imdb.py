@@ -2,8 +2,8 @@
 """Train text sequence-classification models on the IMDB sentiment benchmark.
 
 A self-contained entry point parallel to ``train_model.py`` (vision). It reuses the
-lightweight helpers (``set_seed``) and the text subsystem (``utils.imdb_data``,
-``utils.text_models``) but keeps its own compact train loop because the vision
+lightweight helpers (``set_seed``) and the text subsystem (``utils.text_imdb_data``,
+``utils.text_task_models``) but keeps its own compact train loop because the vision
 engine is fused to the dual (char, pos) head structure.
 
 Sweeps the cartesian product of ``--model_types x --hidden_sizes x --lrs x --wds``
@@ -31,15 +31,16 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from utils.imdb_data import build_imdb_loaders, load_meta
-from utils.text_models import get_text_model_classes
+from utils.text_imdb_data import build_imdb_loaders, load_meta
+from utils.text_task_models import get_text_model_classes
+from utils.recurrent_cores import configure_gawf_feedback_acceleration
 from utils.text_train_utils import (
     build_optimizer,
     count_core_params,
     maybe_subset,
     select_device,
 )
-from utils.train_helpers import set_seed
+from utils.common_train_helpers import set_seed
 
 DISABLE_TQDM = os.environ.get("DISABLE_TQDM", "0").lower() in ("1", "true", "yes")
 
@@ -77,10 +78,14 @@ def train_one_config(
         rnn_dropout=args.rnn_dropout,
         pooling=args.pooling,
         device=device,
+        num_layers=getattr(args, "num_layers", 1),
     )
+    configure_gawf_feedback_acceleration(model, enabled=args.use_acceleration)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = build_optimizer(model, cfg["lr"], cfg["wd"], args.optim)
+    optimizer = build_optimizer(
+        model, cfg["lr"], cfg["wd"], args.optim, getattr(args, "gawf_feedback_lr_scale", 1.0)
+    )
 
     use_amp = device == "cuda" and args.use_acceleration
     autocast_fn = (
@@ -165,6 +170,12 @@ def train_one_config(
         "max_len": meta["max_len"],
         "embed_dim": args.embed_dim,
         "hidden_size": cfg["hidden"],
+        "num_layers": getattr(args, "num_layers", 1),
+        "gawf_feedback_lr_scale": (
+            getattr(args, "gawf_feedback_lr_scale", 1.0)
+            if cfg["model"].startswith("gawf")
+            else None
+        ),
         "lr": cfg["lr"],
         "weight_decay": cfg["wd"],
         "embed_dropout": args.embed_dropout,
@@ -196,8 +207,10 @@ def train_one_config(
 
 
 def result_stem(cfg: Dict, embed_dim: int, edo: float, rdo: float) -> str:
+    num_layers = int(cfg.get("num_layers", 1))
+    layer_suffix = f"_L{num_layers}" if num_layers > 1 else ""
     return (
-        f"{cfg['model']}_imdb_h{cfg['hidden']}_emb{embed_dim}"
+        f"{cfg['model']}_imdb_h{cfg['hidden']}{layer_suffix}_emb{embed_dim}"
         f"_lr{cfg['lr']}_wd{cfg['wd']}_edo{edo}_rdo{rdo}"
     )
 
@@ -235,6 +248,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--embed_dim", type=int, default=128)
     p.add_argument("--hidden_sizes", type=int, nargs="+", default=[256])
+    p.add_argument("--num_layers", type=int, default=1)
+    p.add_argument("--gawf_feedback_lr_scale", type=float, default=1.0)
     p.add_argument("--lrs", type=float, nargs="+", default=[1e-3])
     p.add_argument("--wds", type=float, nargs="+", default=[0.0])
     p.add_argument(
@@ -288,7 +303,7 @@ def main() -> None:
     )
 
     configs = [
-        {"model": m, "hidden": h, "lr": lr, "wd": wd}
+        {"model": m, "hidden": h, "lr": lr, "wd": wd, "num_layers": args.num_layers}
         for m, h, lr, wd in product(args.model_types, args.hidden_sizes, args.lrs, args.wds)
     ]
     for cfg in configs:

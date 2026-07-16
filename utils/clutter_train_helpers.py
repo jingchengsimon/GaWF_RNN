@@ -4,6 +4,7 @@ Contains utility functions for data loading, path management, result saving,
 random seed setting, GPU memory management, model class mapping, logging,
 and experiment metrics summaries (SummaryStatsHelper).
 """
+
 import argparse
 import logging
 import os
@@ -33,6 +34,7 @@ class LoggingHelper:
                 msg = self.format(record)
                 try:
                     from tqdm import tqdm
+
                     tqdm.write(msg)
                 except Exception:
                     self.stream.write(msg + self.terminator)
@@ -539,10 +541,20 @@ def _gpu_has_train_rnn_process(gpu_index: int) -> bool:
     Used to avoid placing a second training job on the same GPU.
     """
     import subprocess
+
     try:
         out = subprocess.run(
-            ["nvidia-smi", "-i", str(gpu_index), "--query-compute-apps=pid", "--format=csv,noheader"],
-            capture_output=True, text=True, timeout=5)
+            [
+                "nvidia-smi",
+                "-i",
+                str(gpu_index),
+                "--query-compute-apps=pid",
+                "--format=csv,noheader",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
         if out.returncode != 0:
             return False
         lines = [x.strip() for x in out.stdout.strip().splitlines() if x.strip()]
@@ -698,9 +710,7 @@ def create_datasets(
         num_pos = 2
         _kw = {"use_sector": False, "predict_all_chars": False}
         if logger is not None:
-            logger.info(
-                "Using coordinate mode (directly predict x, y coordinates)"
-            )
+            logger.info("Using coordinate mode (directly predict x, y coordinates)")
 
     def make_ds(stims, lbls):
         return dataset_class(stims, lbls, **_kw)
@@ -731,7 +741,7 @@ def set_seed(seed: int):
 def worker_init_fn(worker_id, seed):
     """Worker initialization function for DataLoader workers.
     This function must be at module level to be picklable for multiprocessing.
-    
+
     Args:
         worker_id: Worker process ID
         seed: Base random seed
@@ -745,23 +755,17 @@ def get_model_classes(
     lstm_conv_class,
     gru_conv_class,
     gawf_rnn_conv_class,
-    feedforward_conv_class,
-    dendritic_ann_conv_class,
     mamba_conv_class=None,
-    diaglti_conv_class=None,
     s5_conv_class=None,
-    gawf_multi_conv_class=None,
 ):
     """Return mapping from model type name to model class.
-    
+
     Args:
         rnn_conv_class: RNNConv class
         lstm_conv_class: LSTMConv class
         gru_conv_class: GRUConv class
         gawf_rnn_conv_class: GaWFRNNConv class
-        feedforward_conv_class: FeedForwardConv class
-        dendritic_ann_conv_class: DendriticANNConv class
-    
+
     Returns:
         Dictionary mapping model type names to model classes
     """
@@ -770,15 +774,9 @@ def get_model_classes(
         "lstm": lstm_conv_class,
         "gru": gru_conv_class,
         "gawf": gawf_rnn_conv_class,
-        "ffn": feedforward_conv_class,
-        "dann": dendritic_ann_conv_class,
     }
-    if gawf_multi_conv_class is not None:
-        model_classes["gawf_multi"] = gawf_multi_conv_class
     if mamba_conv_class is not None:
         model_classes["mamba"] = mamba_conv_class
-    if diaglti_conv_class is not None:
-        model_classes["diaglti"] = diaglti_conv_class
     if s5_conv_class is not None:
         model_classes["ssm"] = s5_conv_class
         model_classes["s5"] = s5_conv_class
@@ -798,15 +796,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "lstm",
             "gru",
             "gawf",
-            "gawf_multi",
-            "ffn",
-            "dann",
             "mamba",
-            "diaglti",
             "ssm",
             "s5",
         ],
         help='Model types to train (default: ["rnn"])',
+    )
+    parser.add_argument(
+        "--num_layers",
+        type=int,
+        default=1,
+        help="Number of ANN/RNN/GRU/LSTM/GaWF layers (default: 1).",
     )
     parser.add_argument(
         "--hidden_sizes",
@@ -821,20 +821,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         nargs="+",
         default=[170],
         help="Mamba d_model values to test (default: [170]).",
-    )
-    parser.add_argument(
-        "--diaglti_d_models",
-        type=int,
-        nargs="+",
-        default=[256],
-        help="DiagLTI sequence feature width d_model values to test (default: [256]).",
-    )
-    parser.add_argument(
-        "--diaglti_state_sizes",
-        type=int,
-        nargs="+",
-        default=[189],
-        help="DiagLTI latent state sizes to test (default: [189]).",
     )
     parser.add_argument(
         "--s5_d_models",
@@ -916,28 +902,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "GaWFRNN only: feedback context dimension dz. "
-            "For model_type=gawf, omitting this keeps legacy feedback dim "
-            "(num_classes + num_pos). For model_type=gawf_multi, omitting this "
-            "or setting 0 disables feedback projectors; values > 0 enable projected dz."
+            "For single-layer GaWF, omitting this keeps the legacy output dimension. "
+            "For multi-layer GaWF, omitting this or setting 0 uses direct feedback; "
+            "values > 0 enable projected dz."
         ),
     )
     parser.add_argument(
-        "--gawf_layers",
-        type=int,
-        default=2,
-        help=(
-            "gawf_multi only: number of recurrent GaWF layers. "
-            "Must be >= 2; default 2."
-        ),
-    )
-    parser.add_argument(
-        "--gawf_multi_feedback_lr_scale",
+        "--gawf_feedback_lr_scale",
         type=float,
-        default=0.1,
+        default=1.0,
         help=(
-            "gawf_multi only: learning-rate scale for U/V and feedback projector "
-            "parameter groups, relative to the already scaled multi-layer base lr. "
-            "Single-layer gawf is unchanged. Default: 0.1."
+            "GaWF U/V and feedback-projector learning-rate scale relative to base LR "
+            "for every depth (default: 1.0)."
         ),
     )
     parser.add_argument(
@@ -1144,8 +1120,7 @@ def summarize_experiment_metrics(
     gap_char = SummaryStatsHelper.gap(final_train_acc_char, final_val_acc_char)
     gap_pos = SummaryStatsHelper.gap(final_train_acc_pos, final_val_acc_pos)
     overfit_flag = bool(
-        (gap_char is not None and gap_char > 10.0)
-        or (gap_pos is not None and gap_pos > 10.0)
+        (gap_char is not None and gap_char > 10.0) or (gap_pos is not None and gap_pos > 10.0)
     )
 
     glob_train_acc_char = results.get("glob_train_acc_char")
@@ -1159,7 +1134,9 @@ def summarize_experiment_metrics(
     final_fg_pre5_train_char = SummaryStatsHelper.safe_last(
         results.get("fg_switch_pre5_train_acc_char")
     )
-    final_fg_pre5_val_char = SummaryStatsHelper.safe_last(results.get("fg_switch_pre5_val_acc_char"))
+    final_fg_pre5_val_char = SummaryStatsHelper.safe_last(
+        results.get("fg_switch_pre5_val_acc_char")
+    )
     final_fg_post5_train_char = SummaryStatsHelper.safe_last(
         results.get("fg_switch_post5_train_acc_char")
     )

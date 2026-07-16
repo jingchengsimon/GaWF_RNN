@@ -28,7 +28,7 @@ import torch
 
 from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset, resolve_device
 from utils_anal.export_gate_sample import collect_gate_matrices_for_digits
-from utils.train_helpers import set_seed
+from utils.clutter_train_helpers import set_seed
 
 try:
     import umap

@@ -35,7 +35,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from utils.train_helpers import set_seed
+from utils.clutter_train_helpers import set_seed
 from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset
 
 

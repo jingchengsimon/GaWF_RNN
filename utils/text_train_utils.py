@@ -3,6 +3,7 @@
 This module keeps optimizer construction, parameter counting, device selection,
 and small-loader subsetting consistent across IMDB and SentiHood text tasks.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -36,21 +37,39 @@ def count_core_params(model: nn.Module) -> int:
     return total
 
 
-def build_optimizer(model: nn.Module, lr: float, weight_decay: float, optim_name: str):
+def build_optimizer(
+    model: nn.Module,
+    lr: float,
+    weight_decay: float,
+    optim_name: str,
+    gawf_feedback_lr_scale: float = 1.0,
+):
     """Adam(W) with GaWF U/V excluded from weight decay."""
-    decay, no_decay = [], []
+    decay, no_decay, gate = [], [], []
     for name, p in model.named_parameters():
         if not p.requires_grad:
             continue
-        leaf = name.rsplit(".", 1)[-1]
-        if leaf in ("U", "V") or p.ndim <= 1:
+        if name.endswith(".U") or name.endswith(".V") or "U_layers" in name or "V_layers" in name:
+            gate.append(p)
+        elif p.ndim <= 1:
             no_decay.append(p)
         else:
             decay.append(p)
+    if gawf_feedback_lr_scale == 1.0:
+        no_decay.extend(gate)
+        gate = []
     groups = [
         {"params": decay, "weight_decay": weight_decay},
         {"params": no_decay, "weight_decay": 0.0},
     ]
+    if gate:
+        groups.append(
+            {
+                "params": gate,
+                "weight_decay": 0.0,
+                "lr": lr * gawf_feedback_lr_scale,
+            }
+        )
     if optim_name == "adamw":
         return torch.optim.AdamW(groups, lr=lr)
     return torch.optim.Adam(groups, lr=lr)

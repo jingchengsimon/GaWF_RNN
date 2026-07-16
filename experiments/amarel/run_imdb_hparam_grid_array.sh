@@ -73,7 +73,7 @@ elif [[ -d "/cache/${USER}/stimuli/imdb" ]]; then
 elif [[ -d "$ROOT/stimuli/imdb" ]]; then
   DATA_DIR="$ROOT/stimuli"
 else
-  echo "IMDB data not found. Run scripts/prepare_imdb_data.py or set AIM3_DATA_DIR." | tee "$FAIL_FILE"
+  echo "IMDB data not found. Run source/text/prepare_imdb_data.py or set AIM3_DATA_DIR." | tee "$FAIL_FILE"
   exit 2
 fi
 

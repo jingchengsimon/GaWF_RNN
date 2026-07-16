@@ -36,13 +36,13 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from utils.train_acceleration import (
+from utils.clutter_train_acceleration import (
     AccelerationConfig,
     run_forward_with_feedback,
     setup_acceleration,
 )
-from utils.train_predict_all_chars import loss_char_all_chars
-from utils.train_helpers import pick_cuda_device_index_prefer_no_python
+from utils.clutter_train_predict_all_chars import loss_char_all_chars
+from utils.clutter_train_helpers import pick_cuda_device_index_prefer_no_python
 from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset, resolve_device
 
 DEFAULT_WINDOW_RADIUS = 5
@@ -129,6 +129,12 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_WINDOW_RADIUS,
         help="Number of frames before/after each switch to export (default: 5).",
     )
+    parser.add_argument(
+        "--debug_switch_map",
+        type=int,
+        default=0,
+        help="Print this many switch raw-frame to output-index mappings, then continue.",
+    )
     parser.add_argument("--use_mmap", action="store_true", default=True)
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
@@ -210,6 +216,38 @@ def _tensor_to_cpu_np(x: torch.Tensor | np.ndarray) -> np.ndarray:
     if isinstance(x, torch.Tensor):
         return x.detach().cpu().numpy()
     return np.asarray(x)
+
+
+def _debug_print_switch_map(
+    switch_arr: np.ndarray,
+    offset_targets: np.ndarray,
+    *,
+    frame_num: int,
+    chan_num: int,
+    limit: int,
+    prefix: str,
+) -> None:
+    if limit <= 0:
+        return
+    print(f"[debug_switch_map] {prefix}: raw_frame -> sequence/output_t/offset")
+    printed = 0
+    for raw_frame in np.flatnonzero(np.asarray(switch_arr) != 0):
+        seq_pos = int(raw_frame) - int(chan_num)
+        if seq_pos < 0:
+            sample_idx = -1
+            output_t = -1
+        else:
+            sample_idx = seq_pos // int(frame_num)
+            output_t = seq_pos % int(frame_num)
+        assigned = int(offset_targets[int(raw_frame)])
+        print(
+            "[debug_switch_map] "
+            f"raw_frame={int(raw_frame)} sample={sample_idx} "
+            f"output_t={output_t} assigned_offset={assigned}"
+        )
+        printed += 1
+        if printed >= limit:
+            break
 
 
 def evaluate_ckpt_offset_acc(
@@ -542,6 +580,23 @@ def main() -> None:
     test_ds, num_pos = build_test_dataset(args)
     print(f"Test dataset size: {len(test_ds)}")
     print(f"Window radius: {args.window_radius}; offsets: {offset_labels}")
+    if args.debug_switch_map > 0:
+        switch_attr = "fg_switch" if args.switch_target == "fg" else "bg_switch"
+        switch_arr = getattr(test_ds, switch_attr, None)
+        if switch_arr is None:
+            raise RuntimeError(f"Test dataset does not expose {switch_attr}.")
+        debug_targets = _build_offset_targets_from_switch(
+            switch_arr,
+            window_radius=args.window_radius,
+        )
+        _debug_print_switch_map(
+            switch_arr,
+            debug_targets,
+            frame_num=int(getattr(test_ds, "frame_num", 32)),
+            chan_num=int(getattr(test_ds, "chan_num", 2)),
+            limit=args.debug_switch_map,
+            prefix=f"export_{args.switch_target}",
+        )
 
     ckpt_paths = _collect_ckpts(args)
     print(f"Found {len(ckpt_paths)} checkpoints.")

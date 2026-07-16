@@ -5,7 +5,7 @@
 #   bash experiments/amarel/submit_imdb_hparam_grid_batches.sh
 #   bash experiments/amarel/submit_imdb_hparam_grid_batches.sh --start-task 0 --end-task 3   # dry-run slice
 #
-# Prerequisite: run scripts/prepare_imdb_data.py once on a login node so the
+# Prerequisite: run source/text/prepare_imdb_data.py once on a login node so the
 # pre-tokenized tensors exist under the data dir.
 
 set -euo pipefail

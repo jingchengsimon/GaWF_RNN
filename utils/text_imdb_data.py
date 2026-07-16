@@ -1,6 +1,6 @@
 """IMDB sentiment dataset + dataloader utilities (text task).
 
-Loads the pre-tokenized tensors produced by ``scripts/prepare_imdb_data.py`` and
+Loads the pre-tokenized tensors produced by ``source/text/prepare_imdb_data.py`` and
 exposes them to ``train_imdb.py``. Compute jobs load everything offline; no
 torchtext / HuggingFace ``datasets`` dependency.
 
@@ -21,7 +21,7 @@ from typing import Dict, Optional, Tuple
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from .train_helpers import worker_init_fn
+from .common_train_helpers import worker_init_fn
 
 PAD_ID = 0
 UNK_ID = 1
@@ -47,7 +47,7 @@ def load_meta(cli_data_dir: Optional[str]) -> Dict:
     if not os.path.isfile(meta_path):
         raise FileNotFoundError(
             f"IMDB metadata not found at {meta_path}. "
-            "Run scripts/prepare_imdb_data.py first (login node)."
+            "Run source/text/prepare_imdb_data.py first (login node)."
         )
     with open(meta_path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -96,7 +96,7 @@ def build_imdb_loaders(
 ) -> Dict[str, DataLoader]:
     """Build DataLoaders for the requested splits.
 
-    Mirrors ``utils/train_acceleration.build_loaders`` conventions: train shuffles
+    Mirrors ``utils/clutter_train_acceleration.build_loaders`` conventions: train shuffles
     and drops the last partial batch; eval splits keep every example in order.
     """
     worker_init = partial(worker_init_fn, seed=seed) if num_workers > 0 else None

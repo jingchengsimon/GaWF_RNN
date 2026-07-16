@@ -12,7 +12,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader, Subset
 
-from .train_helpers import worker_init_fn
+from .clutter_train_helpers import worker_init_fn
 
 
 # -----------------------------------------------------------------------------
@@ -42,7 +42,9 @@ class AccelerationConfig:
     """
     def __init__(self, use_acceleration=False, enable_amp=True, enable_dataloader_opt=True, 
                  enable_batch_auto=True, enable_gradient_scale=True, enable_grad_accum=False,
-                 grad_accum_steps=4, enable_memory_opt=True, dataloader_prefetch_factor=2):
+                 grad_accum_steps=4, enable_memory_opt=True, dataloader_prefetch_factor=2,
+                 enable_gawf_feedback_compile=True,
+                 gawf_feedback_compile_mode="reduce-overhead"):
         """
         Args:
             use_acceleration: Master switch for all acceleration features
@@ -54,6 +56,8 @@ class AccelerationConfig:
             grad_accum_steps: Number of accumulation steps (effective_batch = batch_size * grad_accum_steps)
             enable_memory_opt: Enable memory optimization (cache clearing, gradient checkpointing prep)
             dataloader_prefetch_factor: Prefetch factor for DataLoader (reduces 2 if memory tight)
+            enable_gawf_feedback_compile: Compile the shared GaWF feedback/gate tensor subgraph
+            gawf_feedback_compile_mode: ``torch.compile`` mode for the GaWF subgraph
         """
         self.use_acceleration = use_acceleration
         self.enable_amp = use_acceleration and enable_amp
@@ -64,6 +68,8 @@ class AccelerationConfig:
         self.grad_accum_steps = grad_accum_steps if self.enable_grad_accum else 1
         self.enable_memory_opt = use_acceleration and enable_memory_opt
         self.dataloader_prefetch_factor = dataloader_prefetch_factor if use_acceleration else 2
+        self.enable_gawf_feedback_compile = use_acceleration and enable_gawf_feedback_compile
+        self.gawf_feedback_compile_mode = gawf_feedback_compile_mode
         
         # If use_acceleration=False, all sub-features are disabled
         if not use_acceleration:
@@ -75,6 +81,7 @@ class AccelerationConfig:
             self.grad_accum_steps = 1
             self.enable_memory_opt = False
             self.dataloader_prefetch_factor = 2
+            self.enable_gawf_feedback_compile = False
     
     def summary(self, logger=None):
         """Log acceleration configuration summary."""
@@ -96,6 +103,11 @@ class AccelerationConfig:
                 self.grad_accum_steps,
             )
             log.info("  - Memory Optimization: %s", self.enable_memory_opt)
+            log.info(
+                "  - GaWF Feedback Compile: %s (mode=%s)",
+                self.enable_gawf_feedback_compile,
+                self.gawf_feedback_compile_mode,
+            )
             log.info(
                 "  - DataLoader Prefetch Factor: %s",
                 self.dataloader_prefetch_factor,

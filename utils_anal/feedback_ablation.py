@@ -27,7 +27,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from utils.train_helpers import set_seed
+from utils.clutter_train_helpers import set_seed
 from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset
 
 
@@ -86,6 +86,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=0,
         help="Optional smoke-test limit; 0 evaluates the full test split.",
+    )
+    parser.add_argument(
+        "--debug_switch_map",
+        type=int,
+        default=0,
+        help="Print this many fg_switch raw-frame to output-index mappings, then continue.",
     )
     return parser.parse_args()
 
@@ -260,18 +266,69 @@ def _build_switch_offset_targets(
     pre_k: int,
 ) -> np.ndarray:
     switch_arr = np.asarray(switch_arr).astype(np.int32, copy=False)
-    offsets = np.zeros(switch_arr.shape[0], dtype=np.int16)
+    n_frames = int(switch_arr.shape[0])
+    post_offsets = np.zeros(n_frames, dtype=np.int16)
+    pre_offsets = np.zeros(n_frames, dtype=np.int16)
     switches = np.flatnonzero(switch_arr != 0)
+
+    forbidden = np.zeros(n_frames, dtype=bool)
+    close_threshold = int(pre_k) + int(post_k)
+    if close_threshold > 0:
+        for i in range(1, len(switches)):
+            s_prev, s_curr = int(switches[i - 1]), int(switches[i])
+            if s_curr - s_prev < close_threshold:
+                forbidden[s_prev + 1 : s_curr] = True
+
     for s in switches:
-        for dt in range(1, post_k + 1):
+        for dt in range(0, post_k):
             t = int(s + dt)
-            if 0 <= t < offsets.shape[0] and offsets[t] == 0:
-                offsets[t] = np.int16(dt)
+            if 0 <= t < n_frames:
+                post_offsets[t] = np.int16(dt + 1)
         for dt in range(1, pre_k + 1):
             t = int(s - dt)
-            if 0 <= t < offsets.shape[0] and offsets[t] == 0:
-                offsets[t] = np.int16(-dt)
+            if 0 <= t < n_frames:
+                pre_offsets[t] = np.int16(-dt)
+
+    post_offsets[forbidden] = 0
+    pre_offsets[forbidden] = 0
+    pre_offsets[post_offsets != 0] = 0
+
+    offsets = np.zeros(n_frames, dtype=np.int16)
+    offsets[pre_offsets != 0] = pre_offsets[pre_offsets != 0]
+    offsets[post_offsets != 0] = post_offsets[post_offsets != 0]
     return offsets
+
+
+def _debug_print_switch_map(
+    switch_arr: np.ndarray,
+    offset_targets: np.ndarray,
+    *,
+    frame_num: int,
+    chan_num: int,
+    limit: int,
+    prefix: str,
+) -> None:
+    if limit <= 0:
+        return
+    print(f"[debug_switch_map] {prefix}: raw_frame -> sequence/output_t/offset")
+    printed = 0
+    for raw_frame in np.flatnonzero(np.asarray(switch_arr) != 0):
+        seq_pos = int(raw_frame) - int(chan_num)
+        if seq_pos < 0:
+            sample_idx = -1
+            output_t = -1
+        else:
+            sample_idx = seq_pos // int(frame_num)
+            output_t = seq_pos % int(frame_num)
+        assigned = int(offset_targets[int(raw_frame)])
+        print(
+            "[debug_switch_map] "
+            f"raw_frame={int(raw_frame)} sample={sample_idx} "
+            f"output_t={output_t} assigned_offset={assigned}"
+        )
+        printed += 1
+        if printed >= limit:
+            break
 
 
 def _empty_condition_state(offset_values: np.ndarray) -> Dict[str, Any]:
@@ -414,6 +471,14 @@ def main() -> None:
         fg_switch,
         post_k=args.K,
         pre_k=args.pre_K,
+    )
+    _debug_print_switch_map(
+        fg_switch,
+        offset_targets,
+        frame_num=frame_num,
+        chan_num=chan_num,
+        limit=args.debug_switch_map,
+        prefix="feedback_ablation",
     )
     offset_values = np.asarray(
         list(range(-args.pre_K, 0)) + list(range(1, args.K + 1)),

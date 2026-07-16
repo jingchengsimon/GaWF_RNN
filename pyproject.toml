@@ -21,6 +21,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+atari = ["gymnasium[atari,accept-rom-license]>=1.0", "ale-py>=0.10"]
 dev = ["black", "ruff", "mypy"]
 viz = ["umap-learn>=0.5", "plotly>=5.0"]
 

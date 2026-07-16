@@ -23,7 +23,7 @@ HuggingFace ``datasets`` dependency is added to the environment.
 
 Usage (run once on a login node)::
 
-    python scripts/prepare_imdb_data.py --data_dir /scratch/$USER/stimuli
+    python source/text/prepare_imdb_data.py --data_dir /scratch/$USER/stimuli
     # or rely on AIM3_STIMULI_PATH / FAW_RNN_DATA_PATH
 """
 from __future__ import annotations
@@ -56,7 +56,7 @@ _TOKEN_RE = re.compile(r"[a-z0-9']+")
 
 
 def repo_root() -> str:
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def resolve_data_dir(cli_data_dir: str | None) -> str:

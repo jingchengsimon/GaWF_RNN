@@ -7,6 +7,7 @@ Device support: CUDA (Linux/NVIDIA) as default, CPU as fallback.
 Smoke-test (run 1 epoch, minimal config):
   CUDA:  python train_model.py --num_epochs 1
 """
+
 import os
 import sys
 import time
@@ -15,7 +16,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from utils.train_helpers import (
+from utils.clutter_train_helpers import (
     LoggingHelper,
     PathHelper,
     create_datasets,
@@ -26,9 +27,9 @@ from utils.train_helpers import (
     summarize_experiment_metrics,
 )
 
-from utils.train_sector import compute_fg_transition_masks
+from utils.clutter_train_sector import compute_fg_transition_masks
 
-from utils.train_rnn_engine import (
+from utils.clutter_train_engine import (
     setup_training_components,
     cleanup_dataloaders,
     stop_requested,
@@ -39,12 +40,15 @@ from utils.train_rnn_engine import (
     eval_valid,
 )
 
-from utils.train_rnn_core import RNNConv, GRUConv, LSTMConv
-from utils.train_gawf_core import GaWFRNNConv, MultiLayerGaWFRNNConv
-from utils.train_ann_core import DendriticANNConv, FeedForwardConv
-from utils.train_mamba_core import MambaConv
-from utils.train_diaglti_core import DiagLTIConv
-from utils.train_s5_core import S5Conv
+from utils.clutter_task_models import (
+    GaWFRNNConv,
+    GRUConv,
+    LSTMConv,
+    MambaConv,
+    MultiLayerGaWFRNNConv,
+    RNNConv,
+    S5Conv,
+)
 
 
 torch.set_num_threads(4)
@@ -52,8 +56,17 @@ torch.set_num_threads(4)
 
 # ==================== Dataset Class ====================
 class MC_RNN_Dataset(Dataset):
-    def __init__(self, data, labels, frame_num=32, chan_num=2, use_sector=False, num_sectors=9,
-                 max_chars=15, predict_all_chars=False):
+    def __init__(
+        self,
+        data,
+        labels,
+        frame_num=32,
+        chan_num=2,
+        use_sector=False,
+        num_sectors=9,
+        max_chars=15,
+        predict_all_chars=False,
+    ):
         """
         Args:
             data (np.ndarray): Array of shape (num_frames_total, height, width); supports float32 for faster loading.
@@ -77,8 +90,8 @@ class MC_RNN_Dataset(Dataset):
 
         if predict_all_chars:
             self.labels_df = labels
-            self.fg_char_ids = labels['fg_char_id'].values
-            raw_bg = labels['bg_char_ids'].values
+            self.fg_char_ids = labels["fg_char_id"].values
+            raw_bg = labels["bg_char_ids"].values
             self.bg_char_ids_parsed = []
             for i in range(len(raw_bg)):
                 s = str(raw_bg[i]) if raw_bg[i] is not None else ""
@@ -90,7 +103,7 @@ class MC_RNN_Dataset(Dataset):
                 else:
                     self.bg_char_ids_parsed.append([])
         else:
-            self.labels = labels[['fg_char_id', 'fg_char_x', 'fg_char_y']].values
+            self.labels = labels[["fg_char_id", "fg_char_x", "fg_char_y"]].values
             if use_sector:
                 # Sector precomputation (one-time): full sequence sector labels so __getitem__ only slices.
                 N = self.data.shape[0]
@@ -103,11 +116,17 @@ class MC_RNN_Dataset(Dataset):
                     )
                 x = self.labels[:, 1].astype(np.float64)
                 y = self.labels[:, 2].astype(np.float64)
-                col = np.clip((x / max(width - 1, 1)) * grid_size, 0, grid_size - 1).astype(np.int64)
-                row = np.clip((y / max(height - 1, 1)) * grid_size, 0, grid_size - 1).astype(np.int64)
+                col = np.clip((x / max(width - 1, 1)) * grid_size, 0, grid_size - 1).astype(
+                    np.int64
+                )
+                row = np.clip((y / max(height - 1, 1)) * grid_size, 0, grid_size - 1).astype(
+                    np.int64
+                )
                 sector = row * grid_size + col
                 char_id = self.labels[:, 0].astype(np.int64)
-                self.labels_sector = np.stack([char_id, sector], axis=1).astype(np.int64, copy=False)
+                self.labels_sector = np.stack([char_id, sector], axis=1).astype(
+                    np.int64, copy=False
+                )
             else:
                 # Coordinate mode: one-time float32 conversion for labels.
                 self.labels_coord = self.labels.astype(np.float32, copy=False)
@@ -122,7 +141,9 @@ class MC_RNN_Dataset(Dataset):
         else:
             self.bg_switch = np.zeros(self.data.shape[0], dtype=np.int32)
         if not predict_all_chars and use_sector:
-            self.pre5_mask_global, self.post5_mask_global = compute_fg_transition_masks(self.fg_switch)
+            self.pre5_mask_global, self.post5_mask_global = compute_fg_transition_masks(
+                self.fg_switch
+            )
         else:
             self.pre5_mask_global = None
             self.post5_mask_global = None
@@ -170,9 +191,15 @@ class MC_RNN_Dataset(Dataset):
             all_chars_per_frame = []
             for frame_idx in range(start_idx, end_idx):
                 fg_char_id = int(self.fg_char_ids[frame_idx])
-                bg_char_ids = self.bg_char_ids_parsed[frame_idx] if frame_idx < len(self.bg_char_ids_parsed) else []
+                bg_char_ids = (
+                    self.bg_char_ids_parsed[frame_idx]
+                    if frame_idx < len(self.bg_char_ids_parsed)
+                    else []
+                )
                 all_chars = [fg_char_id] + bg_char_ids
-                padded_chars = all_chars[: self.max_chars] + [-1] * max(0, self.max_chars - len(all_chars))
+                padded_chars = all_chars[: self.max_chars] + [-1] * max(
+                    0, self.max_chars - len(all_chars)
+                )
                 all_chars_per_frame.append(padded_chars)
             labels = np.array(all_chars_per_frame, dtype=np.int64)
         else:
@@ -303,9 +330,7 @@ def network_train(
             if val_acc > best_val_acc:
                 best_val_acc = val_acc
                 best_epoch_idx = epoch
-                best_state = {
-                    k: v.detach().cpu().clone() for k, v in mdl.state_dict().items()
-                }
+                best_state = {k: v.detach().cpu().clone() for k, v in mdl.state_dict().items()}
                 epochs_without_improvement = 0
             else:
                 epochs_without_improvement += 1
@@ -331,7 +356,9 @@ def network_train(
         # Use Ctrl+C (SIGINT) to stop training; kill -9 skips this and can leave workers running.
         cleanup_dataloaders(components)
 
-    if components["device"] == "cuda" or (isinstance(components["device"], str) and components["device"].startswith("cuda:")):
+    if components["device"] == "cuda" or (
+        isinstance(components["device"], str) and components["device"].startswith("cuda:")
+    ):
         torch.cuda.empty_cache()
 
     # Epochs actually completed (epoch is last finished epoch index, or -1 if none).
@@ -429,7 +456,9 @@ def network_train(
         out["fg_switch_pre5_train_acc_char"] = components["fg_switch_pre5_train_acc_char"][
             :actual_epochs
         ]
-        out["fg_switch_pre5_val_acc_char"] = components["fg_switch_pre5_val_acc_char"][:actual_epochs]
+        out["fg_switch_pre5_val_acc_char"] = components["fg_switch_pre5_val_acc_char"][
+            :actual_epochs
+        ]
         out["fg_switch_pre5_train_acc_pos"] = components["fg_switch_pre5_train_acc_pos"][
             :actual_epochs
         ]
@@ -437,11 +466,15 @@ def network_train(
         out["fg_switch_post5_train_acc_char"] = components["fg_switch_post5_train_acc_char"][
             :actual_epochs
         ]
-        out["fg_switch_post5_val_acc_char"] = components["fg_switch_post5_val_acc_char"][:actual_epochs]
+        out["fg_switch_post5_val_acc_char"] = components["fg_switch_post5_val_acc_char"][
+            :actual_epochs
+        ]
         out["fg_switch_post5_train_acc_pos"] = components["fg_switch_post5_train_acc_pos"][
             :actual_epochs
         ]
-        out["fg_switch_post5_val_acc_pos"] = components["fg_switch_post5_val_acc_pos"][:actual_epochs]
+        out["fg_switch_post5_val_acc_pos"] = components["fg_switch_post5_val_acc_pos"][
+            :actual_epochs
+        ]
     gawf_diagnostics = components.get("gawf_diagnostics")
     if gawf_diagnostics is not None:
         diag_result = gawf_diagnostics.to_result_dict()
@@ -449,11 +482,14 @@ def network_train(
             out["gawf_diagnostics"] = diag_result
     return out
 
+
 if __name__ == "__main__":
     parser = build_arg_parser()
     args = parser.parse_args()
-    if args.gawf_multi_feedback_lr_scale <= 0:
-        parser.error("--gawf_multi_feedback_lr_scale must be > 0")
+    if args.num_layers <= 0:
+        parser.error("--num_layers must be >= 1")
+    if args.gawf_feedback_lr_scale <= 0:
+        parser.error("--gawf_feedback_lr_scale must be > 0")
     if args.feedback_dim is not None and args.feedback_dim < 0:
         parser.error("--feedback_dim/--dz must be >= 0")
     if args.gawf_diag_every <= 0:
@@ -480,9 +516,7 @@ if __name__ == "__main__":
     disable_tqdm_env = os.environ.get("DISABLE_TQDM", "").lower() in ["1", "true", "yes"]
     enable_tqdm_env = os.environ.get("ENABLE_TQDM", "").lower() in ["1", "true", "yes"]
     term_ok = os.environ.get("TERM", "").lower() not in ["", "dumb"]
-    use_tqdm = enable_tqdm_env or (
-        not disable_tqdm_env and sys.stdout.isatty() and term_ok
-    )
+    use_tqdm = enable_tqdm_env or (not disable_tqdm_env and sys.stdout.isatty() and term_ok)
 
     results_root = PathHelper.get_results_root(override=args.results_dir or None)
     results_dir = os.path.join(results_root, "train_data", args.result_suffix)
@@ -549,19 +583,13 @@ if __name__ == "__main__":
         LSTMConv,
         GRUConv,
         GaWFRNNConv,
-        FeedForwardConv,
-        DendriticANNConv,
         MambaConv,
-        DiagLTIConv,
         S5Conv,
-        gawf_multi_conv_class=MultiLayerGaWFRNNConv,
     )
 
     model_types = args.model_types
     hidden_sizes = args.hidden_sizes
     mamba_d_models = args.mamba_d_models
-    diaglti_d_models = args.diaglti_d_models
-    diaglti_state_sizes = args.diaglti_state_sizes
     s5_d_models = args.s5_d_models
     s5_state_sizes = args.s5_state_sizes
     feedback_dim = args.feedback_dim
@@ -569,7 +597,7 @@ if __name__ == "__main__":
     wds = args.wds
     cnn_dropout_grid = args.cnn_dropout
     rnn_dropout = args.rnn_dropout
-    gawf_layers = args.gawf_layers
+    num_layers = args.num_layers
 
     # Build hyperparameter combinations with model-specific width/state names.
     experiment_configs = []
@@ -584,21 +612,6 @@ if __name__ == "__main__":
                         "model_width": mamba_d_model,
                         "width_label": "dmodel",
                         "state_size": None,
-                        "lr": lr,
-                        "weight_decay": weight_decay,
-                        "cnn_dropout": cnn_dropout,
-                    }
-                )
-        elif model_type == "diaglti":
-            for diaglti_d_model, diaglti_state_size, lr, weight_decay, cnn_dropout in product(
-                diaglti_d_models, diaglti_state_sizes, lrs, wds, cnn_dropout_grid
-            ):
-                experiment_configs.append(
-                    {
-                        "model_type": model_type,
-                        "model_width": diaglti_d_model,
-                        "width_label": "dmodel",
-                        "state_size": diaglti_state_size,
                         "lr": lr,
                         "weight_decay": weight_decay,
                         "cnn_dropout": cnn_dropout,
@@ -679,14 +692,15 @@ if __name__ == "__main__":
             logger.warning("Unsupported model_type: %s, skipping...", model_type)
             continue
 
-        ModelClass = model_classes[model_type]
+        ModelClass = (
+            MultiLayerGaWFRNNConv
+            if model_type == "gawf" and num_layers > 1
+            else model_classes[model_type]
+        )
         model_kwargs = {}
         width_kwarg = "hidden_size"
         if model_type == "mamba":
             width_kwarg = "mamba_d_model"
-        elif model_type == "diaglti":
-            width_kwarg = "diaglti_d_model"
-            model_kwargs["diaglti_state_size"] = state_size
         elif model_type in ("ssm", "s5"):
             width_kwarg = "s5_d_model"
             model_kwargs["s5_state_size"] = state_size
@@ -694,51 +708,56 @@ if __name__ == "__main__":
             model_kwargs["s5_dropout"] = args.s5_dropout
         elif model_type == "gawf":
             model_kwargs["feedback_dim"] = feedback_dim
-        elif model_type == "gawf_multi":
-            model_kwargs["feedback_dim"] = feedback_dim
-            model_kwargs["num_layers"] = gawf_layers
+            if num_layers > 1:
+                model_kwargs["num_layers"] = num_layers
+        elif model_type in ("rnn", "gru", "lstm"):
+            model_kwargs["num_layers"] = num_layers
         mdl = ModelClass(
-                num_classes=10,
-                num_pos=num_pos,
-                kernel_size=5,
-                device=device,
-                cnn_dropout=cnn_dropout,
-                rnn_dropout=rnn_dropout,
-                **{width_kwarg: model_width},
-                max_chars=max_chars,
-                predict_all_chars=predict_all_chars,
-                **model_kwargs,
-            )
+            num_classes=10,
+            num_pos=num_pos,
+            kernel_size=5,
+            device=device,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
+            **{width_kwarg: model_width},
+            max_chars=max_chars,
+            predict_all_chars=predict_all_chars,
+            **model_kwargs,
+        )
 
         width_desc = f"{width_label}={model_width}"
-        if model_type == "diaglti":
-            width_desc = f"diaglti_d_model={model_width}, diaglti_state_size={state_size}"
-        elif model_type in ("ssm", "s5"):
+        if model_type in ("ssm", "s5"):
             width_desc = f"s5_d_model={model_width}, s5_state_size={state_size}"
         elif model_type == "gawf" and feedback_dim is not None:
             width_desc = f"{width_desc}, dz={feedback_dim}"
-        elif model_type == "gawf_multi":
+        elif model_type == "gawf" and num_layers > 1:
             if getattr(mdl, "use_feedback_projector", False):
                 feedback_desc = f"dz={mdl.feedback_dim}"
             else:
                 feedback_desc = "direct_feedback"
-            width_desc = f"{width_desc}, layers={gawf_layers}, {feedback_desc}"
+            width_desc = f"{width_desc}, layers={num_layers}, {feedback_desc}"
         logger.info(
             "Created %s model (predict_all_chars=%s, max_chars=%s, cnn_dropout=%s, rnn_dropout=%s, %s, cnn_feature_size=large)",
-            model_type.upper(), predict_all_chars, max_chars, cnn_dropout, rnn_dropout, width_desc,
+            model_type.upper(),
+            predict_all_chars,
+            max_chars,
+            cnn_dropout,
+            rnn_dropout,
+            width_desc,
         )
 
         train_lr = lr
-        gawf_feedback_lr_scale = 1.0
-        if model_type == "gawf_multi":
-            gawf_feedback_lr_scale = args.gawf_multi_feedback_lr_scale
+        gawf_feedback_lr_scale = args.gawf_feedback_lr_scale
+        if model_type == "gawf":
             logger.info(
-                "gawf_multi optimizer lr: base_lr=%s, feedback_lr_scale=%s",
+                "gawf optimizer lr: base_lr=%s, feedback_lr_scale=%s",
                 lr,
-                args.gawf_multi_feedback_lr_scale,
+                args.gawf_feedback_lr_scale,
             )
 
-        mode_suffix = "allchars" if predict_all_chars else ("sector" if use_sector_mode else "coord")
+        mode_suffix = (
+            "allchars" if predict_all_chars else ("sector" if use_sector_mode else "coord")
+        )
         acc_suffix = "_acc" if use_acceleration else ""
         hp_suffix = f"_lr{train_lr}_wd{weight_decay}_cdo{cnn_dropout}_rdo{rnn_dropout}"
         # nofb/fb_start_epoch in result path: nofb only -> _nofb; nofb + fb_start_epoch -> _fb{N} only
@@ -750,15 +769,19 @@ if __name__ == "__main__":
         else:
             fb_path_suffix = ""
         width_suffix = f"_{width_label}{model_width}"
-        if model_type in ("diaglti", "ssm", "s5"):
+        if model_type in ("ssm", "s5"):
             width_suffix = f"_dmodel{model_width}_state{state_size}"
         layer_suffix = ""
-        if model_type == "gawf_multi":
-            layer_suffix = f"_L{gawf_layers}"
+        if model_type in ("rnn", "gru", "lstm", "gawf") and num_layers > 1:
+            layer_suffix = f"_L{num_layers}"
         dz_suffix = ""
         if model_type == "gawf" and feedback_dim is not None:
             dz_suffix = f"_dz{feedback_dim}"
-        elif model_type == "gawf_multi" and getattr(mdl, "use_feedback_projector", False):
+        elif (
+            model_type == "gawf"
+            and num_layers > 1
+            and getattr(mdl, "use_feedback_projector", False)
+        ):
             dz_suffix = f"_dz{mdl.feedback_dim}"
         results_stem = (
             f"{model_type}_{mode_suffix}{acc_suffix}{width_suffix}"
@@ -767,7 +790,7 @@ if __name__ == "__main__":
         results_path = os.path.join(results_dir, results_stem)
 
         gawf_diag_path = None
-        if args.gawf_diag and model_type in ("gawf", "gawf_multi"):
+        if args.gawf_diag and model_type == "gawf":
             diag_dir = args.gawf_diag_dir.strip() or os.path.join(
                 results_dir,
                 "gawf_diagnostics",
@@ -776,7 +799,7 @@ if __name__ == "__main__":
                 diag_dir,
                 f"{results_stem}_gawf_diag.jsonl",
             )
-       
+
         # # [COMPILE] compile model for speed (PyTorch 2.x)
         # try:
         #     mdl = torch.compile(mdl)  # 可选：torch.compile(mdl, mode="max-autotune")
@@ -785,8 +808,11 @@ if __name__ == "__main__":
 
         # Train model
         logger.info("Starting training...")
-        logger.info("Acceleration training enabled" if use_acceleration else "Using standard training method")
-        
+        logger.info(
+            "Acceleration training enabled"
+            if use_acceleration
+            else "Using standard training method"
+        )
 
         run_label = f"{args.result_suffix}|e{experiment_num:03d}|{model_type}"
         results = network_train(
@@ -842,32 +868,31 @@ if __name__ == "__main__":
         if train_lr != lr:
             metric_summary["requested_lr"] = lr
             metric_summary["effective_lr"] = train_lr
+        if model_type in ("rnn", "gru", "lstm", "gawf"):
+            metric_summary["num_layers"] = int(num_layers)
+        metric_summary["core_param_count"] = int(sum(p.numel() for p in mdl.core.parameters()))
+        metric_summary["total_param_count"] = int(sum(p.numel() for p in mdl.parameters()))
         if model_type == "mamba":
             metric_summary["mamba_d_model"] = model_width
-        elif model_type == "diaglti":
-            metric_summary["diaglti_d_model"] = model_width
-            metric_summary["diaglti_state_size"] = state_size
         elif model_type in ("ssm", "s5"):
             metric_summary["s5_d_model"] = model_width
             metric_summary["s5_state_size"] = state_size
             metric_summary["s5_num_layers"] = args.s5_num_layers
             metric_summary["s5_dropout"] = args.s5_dropout
             metric_summary["s5_ssm_lr_scale"] = args.s5_ssm_lr_scale
-        elif model_type in ("gawf", "gawf_multi"):
+        elif model_type == "gawf":
             metric_summary["feedback_dim"] = (
                 int(mdl.feedback_dim) if hasattr(mdl, "feedback_dim") else None
             )
-            if model_type == "gawf_multi":
-                metric_summary["gawf_layers"] = int(mdl.num_layers)
+            metric_summary["num_layers"] = int(num_layers)
+            metric_summary["gawf_feedback_lr_scale"] = args.gawf_feedback_lr_scale
+            if num_layers > 1:
                 metric_summary["use_feedback_projector"] = bool(
                     getattr(mdl, "use_feedback_projector", False)
                 )
                 metric_summary["layer_feedback_dims"] = [
                     int(dim) for dim in getattr(mdl, "layer_feedback_dims", [])
                 ]
-                metric_summary["gawf_multi_feedback_lr_scale"] = (
-                    args.gawf_multi_feedback_lr_scale
-                )
         if gawf_diag_path is not None:
             metric_summary["gawf_diag_path"] = gawf_diag_path
             metric_summary["gawf_diag_every"] = args.gawf_diag_every
@@ -878,5 +903,7 @@ if __name__ == "__main__":
         logger.info("Experiment %s/%s completed!", experiment_num, total_experiments)
 
     logger.info("=" * 60)
-    logger.info("All %s experiments completed! Results saved to: %s/", total_experiments, results_dir)
+    logger.info(
+        "All %s experiments completed! Results saved to: %s/", total_experiments, results_dir
+    )
     logger.info("=" * 60)

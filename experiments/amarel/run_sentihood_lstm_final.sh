@@ -50,7 +50,7 @@ elif [[ -d "/cache/${USER}/stimuli/sentihood" ]]; then
 elif [[ -d "$ROOT/stimuli/sentihood" ]]; then
   DATA_DIR="$ROOT/stimuli"
 else
-  echo "SentiHood data not found. Run scripts/prepare_sentihood_data.py first." | tee "$FAIL_FILE"
+  echo "SentiHood data not found. Run source/text/prepare_sentihood_data.py first." | tee "$FAIL_FILE"
   exit 2
 fi
 

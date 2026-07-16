@@ -24,7 +24,7 @@ import torch.nn as nn
 
 from tqdm import tqdm
 
-from .train_acceleration import (
+from .clutter_train_acceleration import (
     AccelerationConfig,
     setup_acceleration,
     build_loaders,
@@ -32,19 +32,16 @@ from .train_acceleration import (
     TrainStepper,
     GawfDiagnosticsRecorder,
 )
-from .train_helpers import LoggingHelper
-from .train_predict_all_chars import build_loss_fn_all_chars, AllCharsMetricsMode
-from .train_sector import (
+from .clutter_train_helpers import LoggingHelper
+from .clutter_train_predict_all_chars import build_loss_fn_all_chars, AllCharsMetricsMode
+from .recurrent_cores import configure_gawf_feedback_acceleration
+from .clutter_train_sector import (
     SingleCharMetricsMode,
     build_loss_fn_single,
     single_char_global_eval_finalize,
     single_char_global_eval_init,
     single_char_global_eval_update,
 )
-from .train_gawf_core import GaWFRNNConv, MultiLayerGaWFRNNConv
-from .train_mamba_core import MambaConv
-from .train_s5_core import S5Conv
-from .train_diaglti_core import DiagLTIConv
 
 
 def _raise_unsupported_coord_engine(logger) -> None:
@@ -135,6 +132,17 @@ def setup_training_components(
     mdl.to(device)
 
     accel_config = AccelerationConfig(use_acceleration=use_acceleration)
+    compiled_gawf_cores = configure_gawf_feedback_acceleration(
+        mdl,
+        enabled=accel_config.enable_gawf_feedback_compile,
+        compile_mode=accel_config.gawf_feedback_compile_mode,
+    )
+    if compiled_gawf_cores and logger is not None:
+        logger.info(
+            "Compiled %s shared GaWF feedback/gate core(s) with mode=%s",
+            compiled_gawf_cores,
+            accel_config.gawf_feedback_compile_mode,
+        )
 
     metrics_mode = create_metrics_mode(
         predict_all_chars, use_sector, max_chars, device, logger=logger
@@ -146,8 +154,8 @@ def setup_training_components(
         logger=logger,
     )
 
-    is_gawf = isinstance(mdl, (GaWFRNNConv, MultiLayerGaWFRNNConv))
-    is_gawf_multi = isinstance(mdl, MultiLayerGaWFRNNConv)
+    is_gawf = bool(getattr(mdl, "is_gawf_model", False))
+    is_gawf_multi = bool(getattr(mdl, "is_gawf_multi_model", False))
     train_dl, train_eval_dl, val_dl = build_loaders(
         train_data,
         val_data,
@@ -196,12 +204,17 @@ def setup_training_components(
                     )
                 OptimClass = torch.optim.AdamW
 
-        if is_gawf_multi:
+        if is_gawf:
             base_params = []
             gate_params = []
             projector_params = []
             for pname, param in mdl.named_parameters():
-                if "U_layers" in pname or "V_layers" in pname:
+                if (
+                    pname.endswith(".U")
+                    or pname.endswith(".V")
+                    or "U_layers" in pname
+                    or "V_layers" in pname
+                ):
                     gate_params.append(param)
                 elif "proj_out" in pname or "hidden_projectors" in pname:
                     projector_params.append(param)
@@ -222,32 +235,14 @@ def setup_training_components(
                 optim_kwargs["eps"] = 1e-6
             if logger is not None:
                 logger.info(
-                    "Multi-layer GaWF optimizer: base_lr=%s, feedback_lr=%s "
-                    "(feedback_lr_scale=%s)",
+                    "GaWF optimizer: base_lr=%s, feedback_lr=%s " "(feedback_lr_scale=%s)",
                     lr,
                     feedback_lr,
                     gawf_feedback_lr_scale,
                 )
             return OptimClass(param_groups, **optim_kwargs)
 
-        if is_gawf:
-            gawf_params = []
-            base_params = []
-            for pname, param in mdl.named_parameters():
-                if "U" in pname or "V" in pname:
-                    gawf_params.append(param)
-                else:
-                    base_params.append(param)
-            param_groups = [
-                {"params": base_params, "weight_decay": wd},
-                {"params": gawf_params, "weight_decay": 0.0},
-            ]
-            optim_kwargs = {"lr": lr}
-            if OptimClass in (torch.optim.Adam, torch.optim.AdamW) and has_big_hidden:
-                optim_kwargs["eps"] = 1e-6
-            return OptimClass(param_groups, **optim_kwargs)
-
-        if isinstance(mdl, (MambaConv, DiagLTIConv)):
+        if bool(getattr(mdl, "uses_mamba_core", False)):
             decay = []
             no_decay = []
             for pname, param in mdl.named_parameters():
@@ -260,7 +255,7 @@ def setup_training_components(
 
             if logger is not None:
                 logger.info(
-                    "Mamba/DiagLTI no_decay: %s",
+                    "Mamba no_decay: %s",
                     [name for name, _param in no_decay],
                 )
 
@@ -281,12 +276,11 @@ def setup_training_components(
                 optim_kwargs["eps"] = 1e-6
             return OptimClass(param_groups, **optim_kwargs)
 
-        if isinstance(mdl, S5Conv):
+        if bool(getattr(mdl, "uses_s5_core", False)):
+
             def _is_s5_core_param(pname: str) -> bool:
                 core_prefixes = ("Lambda", "log_step", "log_dt", "inv_dt", "B")
-                return any(
-                    part.startswith(core_prefixes) for part in pname.split(".")
-                )
+                return any(part.startswith(core_prefixes) for part in pname.split("."))
 
             ssm_core = []
             no_decay = []
@@ -348,8 +342,7 @@ def setup_training_components(
 
     optim = _build_optimizer()
     has_complex_params = any(
-        param.requires_grad and torch.is_complex(param)
-        for param in mdl.parameters()
+        param.requires_grad and torch.is_complex(param) for param in mdl.parameters()
     )
     if scaler is not None and has_complex_params:
         if logger is not None:
@@ -647,7 +640,9 @@ def _assign_transition_epoch_metrics(
         components["glob_train_acc_pos"][epoch] = extra_stats["glob_acc_pos"]
         components["fg_switch_pre5_train_acc_char"][epoch] = extra_stats["fg_switch_pre5_acc_char"]
         components["fg_switch_pre5_train_acc_pos"][epoch] = extra_stats["fg_switch_pre5_acc_pos"]
-        components["fg_switch_post5_train_acc_char"][epoch] = extra_stats["fg_switch_post5_acc_char"]
+        components["fg_switch_post5_train_acc_char"][epoch] = extra_stats[
+            "fg_switch_post5_acc_char"
+        ]
         components["fg_switch_post5_train_acc_pos"][epoch] = extra_stats["fg_switch_post5_acc_pos"]
     else:
         components["glob_val_acc_char"][epoch] = extra_stats["glob_acc_char"]
@@ -665,10 +660,16 @@ def _copy_transition_epoch_metrics(components: Dict[str, Any], epoch: int) -> No
     prev = epoch - 1
     components["glob_val_acc_char"][epoch] = components["glob_val_acc_char"][prev]
     components["glob_val_acc_pos"][epoch] = components["glob_val_acc_pos"][prev]
-    components["fg_switch_pre5_val_acc_char"][epoch] = components["fg_switch_pre5_val_acc_char"][prev]
+    components["fg_switch_pre5_val_acc_char"][epoch] = components["fg_switch_pre5_val_acc_char"][
+        prev
+    ]
     components["fg_switch_pre5_val_acc_pos"][epoch] = components["fg_switch_pre5_val_acc_pos"][prev]
-    components["fg_switch_post5_val_acc_char"][epoch] = components["fg_switch_post5_val_acc_char"][prev]
-    components["fg_switch_post5_val_acc_pos"][epoch] = components["fg_switch_post5_val_acc_pos"][prev]
+    components["fg_switch_post5_val_acc_char"][epoch] = components["fg_switch_post5_val_acc_char"][
+        prev
+    ]
+    components["fg_switch_post5_val_acc_pos"][epoch] = components["fg_switch_post5_val_acc_pos"][
+        prev
+    ]
 
 
 def eval_train_subset(

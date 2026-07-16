@@ -29,7 +29,7 @@ _REPO_ROOT = Path(__file__).resolve().parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from utils.train_helpers import PathHelper, summarize_experiment_metrics
+from utils.clutter_train_helpers import PathHelper, summarize_experiment_metrics
 
 
 # New stem: ..._cdo{X}_rdo{Y}_... ; legacy: ..._do{X}_...
