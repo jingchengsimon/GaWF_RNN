@@ -21,7 +21,7 @@ if [[ -z "$ROOT" || ! -f "$ROOT/train_model.py" ]]; then
 fi
 cd "$ROOT"
 
-GRID_UTIL="experiments/generalization/clutter_best6_multiseed.py"
+GRID_UTIL="${AIM3_GRID_UTIL:-experiments/generalization/clutter_best6_multiseed.py}"
 ARRAY_TASK_ID="${SLURM_ARRAY_TASK_ID:?SLURM_ARRAY_TASK_ID is required}"
 TASK_OFFSET="${TASK_OFFSET:-0}"
 if [[ ! "$TASK_OFFSET" =~ ^(0|6|12|18|24|30|36|42|48|54)$ ]]; then
@@ -81,7 +81,7 @@ fi
 
 echo "[$(date -Is)] task=$TASK_ID unit=$UNIT_ID model=$MODEL_TYPE seed=$SEED"
 echo "epochs=$NUM_EPOCHS patience=$PATIENCE data=$DATA_SUFFIX eval=$EVAL_DATA_SUFFIX"
-echo "lr=$LR wd=$WD width=$MODEL_WIDTH mmap=true workers=0 pin_memory=false"
+echo "lr=$LR wd=$WD width=$MODEL_WIDTH chan_num=$CHAN_NUM mmap=true workers=0 pin_memory=false"
 echo "result_suffix=$RESULT_SUFFIX"
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
@@ -89,6 +89,7 @@ DISABLE_TQDM=1 python train_model.py \
   --model_types "$MODEL_TYPE" \
   "${MODEL_WIDTH_ARGS[@]}" \
   --num_layers 1 \
+  --chan_num "$CHAN_NUM" \
   --data_suffix "$DATA_SUFFIX" \
   --eval_data_suffix "$EVAL_DATA_SUFFIX" \
   --data_dir "$DATA_DIR" \

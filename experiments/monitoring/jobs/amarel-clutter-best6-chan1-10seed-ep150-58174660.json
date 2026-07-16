@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "id": "amarel-clutter-best6-10seed-ep150-58172415",
-  "description": "Clutter six frozen best models, seeds 1-10, 150 full epochs, no early stopping",
+  "id": "amarel-clutter-best6-chan1-10seed-ep150-58174660",
+  "description": "Clutter six frozen chan=2 best hyperparameters reused with chan=1, seeds 1-10, 150 full epochs, no early stopping",
   "host": "amarel",
-  "status": "running",
-  "created_at": "2026-07-14T21:53:58+00:00",
-  "updated_at": "2026-07-15T15:34:40+00:00",
-  "remote_root": "/cache/home/js3269/projects/FAW_RNN-clutter-best6-10seed",
+  "status": "cancelled",
+  "created_at": "2026-07-15T03:40:00+00:00",
+  "updated_at": "2026-07-15T03:45:58+00:00",
+  "remote_root": "/cache/home/js3269/projects/FAW_RNN-clutter-best6-chan1",
   "environment": {
     "name": "aim3_rnn",
     "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
@@ -14,16 +14,16 @@
   "scheduler": {
     "type": "slurm",
     "job_ids": [
-      "58172415",
-      "58172416",
-      "58172417",
-      "58172418",
-      "58172419",
-      "58172420",
-      "58172421",
-      "58172422",
-      "58172423",
-      "58172424"
+      "58174660",
+      "58174661",
+      "58174662",
+      "58174663",
+      "58174664",
+      "58174665",
+      "58174666",
+      "58174667",
+      "58174668",
+      "58174669"
     ],
     "run_ids": [],
     "tmux_session": null,
@@ -32,20 +32,20 @@
   },
   "paths": {
     "log_globs": [
-      "experiments/amarel/artifacts/clutter_best6_10seed_ep150/58172415_*.out",
-      "experiments/amarel/artifacts/clutter_best6_10seed_ep150/58172416_*.out",
-      "experiments/amarel/artifacts/clutter_best6_10seed_ep150/58172417_*.out",
-      "experiments/amarel/artifacts/clutter_best6_10seed_ep150/58172418_*.out",
-      "experiments/amarel/artifacts/clutter_best6_10seed_ep150/58172419_*.out",
-      "experiments/amarel/artifacts/clutter_best6_10seed_ep150/58172420_*.out",
-      "experiments/amarel/artifacts/clutter_best6_10seed_ep150/58172421_*.out",
-      "experiments/amarel/artifacts/clutter_best6_10seed_ep150/58172422_*.out",
-      "experiments/amarel/artifacts/clutter_best6_10seed_ep150/58172423_*.out",
-      "experiments/amarel/artifacts/clutter_best6_10seed_ep150/58172424_*.out"
+      "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/58174660_*.out",
+      "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/58174661_*.out",
+      "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/58174662_*.out",
+      "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/58174663_*.out",
+      "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/58174664_*.out",
+      "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/58174665_*.out",
+      "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/58174666_*.out",
+      "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/58174667_*.out",
+      "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/58174668_*.out",
+      "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/58174669_*.out"
     ],
-    "status_dir": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status",
+    "status_dir": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status",
     "result_paths": [
-      "results/train_data/clutter_best6_multiseed_40h_ep150"
+      "results/train_data/clutter_best6_multiseed_40h_chan1_ep150"
     ]
   },
   "tracking": {
@@ -54,10 +54,10 @@
     "units": [
       {
         "id": "gawf-seed01",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gawf-seed01",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed01",
         "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_000.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_000.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_000.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_000.fail",
         "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -68,15 +68,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "rnn-seed01",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/rnn-seed01",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed01",
         "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_001.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_001.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_001.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_001.fail",
         "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -87,15 +88,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "lstm-seed01",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/lstm-seed01",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed01",
         "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_002.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_002.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_002.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_002.fail",
         "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -106,15 +108,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gru-seed01",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gru-seed01",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed01",
         "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_003.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_003.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_003.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_003.fail",
         "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -125,15 +128,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "mamba-seed01",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/mamba-seed01",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed01",
         "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_004.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_004.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_004.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_004.fail",
         "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -144,15 +148,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "s5-seed01",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/s5-seed01",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed01",
         "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_005.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_005.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_005.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_005.fail",
         "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -163,15 +168,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gawf-seed02",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gawf-seed02",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed02",
         "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_006.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_006.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_006.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_006.fail",
         "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -182,15 +188,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "rnn-seed02",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/rnn-seed02",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed02",
         "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_007.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_007.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_007.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_007.fail",
         "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -201,15 +208,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "lstm-seed02",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/lstm-seed02",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed02",
         "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_008.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_008.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_008.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_008.fail",
         "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -220,15 +228,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gru-seed02",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gru-seed02",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed02",
         "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_009.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_009.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_009.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_009.fail",
         "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -239,15 +248,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "mamba-seed02",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/mamba-seed02",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed02",
         "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_010.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_010.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_010.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_010.fail",
         "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -258,15 +268,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "s5-seed02",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/s5-seed02",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed02",
         "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_011.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_011.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_011.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_011.fail",
         "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -277,15 +288,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gawf-seed03",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gawf-seed03",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed03",
         "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_012.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_012.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_012.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_012.fail",
         "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -296,15 +308,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "rnn-seed03",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/rnn-seed03",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed03",
         "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_013.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_013.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_013.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_013.fail",
         "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -315,15 +328,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "lstm-seed03",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/lstm-seed03",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed03",
         "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_014.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_014.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_014.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_014.fail",
         "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -334,15 +348,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gru-seed03",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gru-seed03",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed03",
         "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_015.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_015.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_015.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_015.fail",
         "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -353,15 +368,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "mamba-seed03",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/mamba-seed03",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed03",
         "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_016.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_016.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_016.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_016.fail",
         "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -372,15 +388,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "s5-seed03",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/s5-seed03",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed03",
         "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_017.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_017.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_017.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_017.fail",
         "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -391,15 +408,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gawf-seed04",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gawf-seed04",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed04",
         "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_018.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_018.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_018.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_018.fail",
         "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -410,15 +428,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "rnn-seed04",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/rnn-seed04",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed04",
         "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_019.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_019.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_019.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_019.fail",
         "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -429,15 +448,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "lstm-seed04",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/lstm-seed04",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed04",
         "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_020.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_020.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_020.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_020.fail",
         "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -448,15 +468,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gru-seed04",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gru-seed04",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed04",
         "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_021.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_021.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_021.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_021.fail",
         "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -467,15 +488,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "mamba-seed04",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/mamba-seed04",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed04",
         "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_022.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_022.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_022.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_022.fail",
         "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -486,15 +508,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "s5-seed04",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/s5-seed04",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed04",
         "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_023.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_023.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_023.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_023.fail",
         "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -505,15 +528,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gawf-seed05",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gawf-seed05",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed05",
         "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_024.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_024.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_024.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_024.fail",
         "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -524,15 +548,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "rnn-seed05",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/rnn-seed05",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed05",
         "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_025.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_025.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_025.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_025.fail",
         "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -543,15 +568,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "lstm-seed05",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/lstm-seed05",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed05",
         "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_026.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_026.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_026.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_026.fail",
         "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -562,15 +588,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gru-seed05",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gru-seed05",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed05",
         "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_027.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_027.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_027.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_027.fail",
         "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -581,15 +608,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "mamba-seed05",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/mamba-seed05",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed05",
         "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_028.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_028.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_028.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_028.fail",
         "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -600,15 +628,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "s5-seed05",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/s5-seed05",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed05",
         "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_029.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_029.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_029.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_029.fail",
         "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -619,15 +648,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gawf-seed06",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gawf-seed06",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed06",
         "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_030.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_030.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_030.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_030.fail",
         "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -638,15 +668,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "rnn-seed06",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/rnn-seed06",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed06",
         "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_031.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_031.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_031.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_031.fail",
         "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -657,15 +688,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "lstm-seed06",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/lstm-seed06",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed06",
         "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_032.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_032.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_032.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_032.fail",
         "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -676,15 +708,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gru-seed06",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gru-seed06",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed06",
         "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_033.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_033.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_033.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_033.fail",
         "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -695,15 +728,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "mamba-seed06",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/mamba-seed06",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed06",
         "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_034.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_034.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_034.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_034.fail",
         "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -714,15 +748,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "s5-seed06",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/s5-seed06",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed06",
         "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_035.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_035.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_035.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_035.fail",
         "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -733,15 +768,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gawf-seed07",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gawf-seed07",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed07",
         "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_036.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_036.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_036.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_036.fail",
         "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -752,15 +788,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "rnn-seed07",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/rnn-seed07",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed07",
         "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_037.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_037.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_037.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_037.fail",
         "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -771,15 +808,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "lstm-seed07",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/lstm-seed07",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed07",
         "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_038.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_038.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_038.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_038.fail",
         "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -790,15 +828,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gru-seed07",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gru-seed07",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed07",
         "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_039.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_039.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_039.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_039.fail",
         "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -809,15 +848,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "mamba-seed07",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/mamba-seed07",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed07",
         "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_040.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_040.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_040.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_040.fail",
         "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -828,15 +868,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "s5-seed07",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/s5-seed07",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed07",
         "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_041.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_041.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_041.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_041.fail",
         "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -847,15 +888,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gawf-seed08",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gawf-seed08",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed08",
         "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_042.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_042.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_042.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_042.fail",
         "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -866,15 +908,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "rnn-seed08",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/rnn-seed08",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed08",
         "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_043.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_043.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_043.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_043.fail",
         "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -885,15 +928,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "lstm-seed08",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/lstm-seed08",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed08",
         "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_044.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_044.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_044.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_044.fail",
         "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -904,15 +948,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gru-seed08",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gru-seed08",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed08",
         "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_045.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_045.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_045.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_045.fail",
         "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -923,15 +968,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "mamba-seed08",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/mamba-seed08",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed08",
         "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_046.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_046.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_046.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_046.fail",
         "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -942,15 +988,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "s5-seed08",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/s5-seed08",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed08",
         "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_047.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_047.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_047.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_047.fail",
         "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -961,15 +1008,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gawf-seed09",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gawf-seed09",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed09",
         "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_048.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_048.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_048.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_048.fail",
         "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -980,15 +1028,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "rnn-seed09",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/rnn-seed09",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed09",
         "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_049.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_049.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_049.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_049.fail",
         "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -999,15 +1048,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "lstm-seed09",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/lstm-seed09",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed09",
         "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_050.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_050.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_050.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_050.fail",
         "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -1018,15 +1068,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gru-seed09",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gru-seed09",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed09",
         "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_051.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_051.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_051.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_051.fail",
         "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -1037,15 +1088,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "mamba-seed09",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/mamba-seed09",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed09",
         "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_052.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_052.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_052.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_052.fail",
         "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -1056,15 +1108,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "s5-seed09",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/s5-seed09",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed09",
         "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_053.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_053.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_053.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_053.fail",
         "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -1075,15 +1128,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gawf-seed10",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gawf-seed10",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed10",
         "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_054.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_054.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_054.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_054.fail",
         "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -1094,15 +1148,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "rnn-seed10",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/rnn-seed10",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed10",
         "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_055.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_055.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_055.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_055.fail",
         "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -1113,15 +1168,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "lstm-seed10",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/lstm-seed10",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed10",
         "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_056.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_056.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_056.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_056.fail",
         "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -1132,15 +1188,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "gru-seed10",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/gru-seed10",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed10",
         "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_057.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_057.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_057.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_057.fail",
         "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -1151,15 +1208,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "mamba-seed10",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/mamba-seed10",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed10",
         "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_058.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_058.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_058.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_058.fail",
         "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -1170,15 +1228,16 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       },
       {
         "id": "s5-seed10",
-        "result_dir": "results/train_data/clutter_best6_multiseed_40h_ep150/s5-seed10",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed10",
         "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
-        "done_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_059.done",
-        "fail_file": "experiments/amarel/artifacts/clutter_best6_10seed_ep150/status/task_059.fail",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_059.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_059.fail",
         "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
         "checkpoint_count": 1,
         "expected": {
@@ -1189,7 +1248,8 @@
           "patience": 0,
           "stopped_by_patience": false,
           "use_acceleration": true,
-          "use_mmap": true
+          "use_mmap": true,
+          "chan_num": 1
         }
       }
     ]
@@ -1198,6 +1258,7 @@
     "40h training stimulus is approximately 119 GB and is loaded with mmap.",
     "DataLoader uses num_workers=0 and pin_memory=False to preserve mmap safety.",
     "Saved checkpoints contain the best-validation state after all 150 epochs are run.",
+    "Input uses chan_num=1 consecutive stimulus frame(s).",
     "Submitted as ten independent Slurm arrays, one seed and six model tasks per job."
   ]
 }

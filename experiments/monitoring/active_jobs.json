@@ -8,10 +8,22 @@
   ],
   "jobs": [
     {
+      "id": "sjc-clutter-best6-chan1-seed42-ep150-aim3-clutter-c1-s42-ep150",
+      "description": "Clutter six frozen chan=2 best hyperparameters reused with chan=1, seed=42 only, 150 full epochs, no early stopping; checkpoints reserved for later fg-switch analysis; training/checkpoints only",
+      "host": "sjc-remote",
+      "status": "running",
+      "job_ids": [],
+      "run_ids": [
+        "aim3-clutter-c1-s42-ep150"
+      ],
+      "remote_root": "/G/MIMOlab/Codes/FAW_RNN-clutter-best6-chan1",
+      "updated_at": "2026-07-15T15:57:25+00:00"
+    },
+    {
       "id": "amarel-clutter-best6-10seed-ep150-58172415",
       "description": "Clutter six frozen best models, seeds 1-10, 150 full epochs, no early stopping",
       "host": "amarel",
-      "status": "queued",
+      "status": "running",
       "job_ids": [
         "58172415",
         "58172416",
@@ -26,46 +38,36 @@
       ],
       "run_ids": [],
       "remote_root": "/cache/home/js3269/projects/FAW_RNN-clutter-best6-10seed",
-      "updated_at": "2026-07-14T21:53:58+00:00"
-    },
-    {
-      "id": "amarel-minigrid-redblue-200m-58165756",
-      "description": "MiniGrid RedBlueDoors LSTM/GaWF formal 200M accelerated run",
-      "host": "amarel",
-      "status": "running",
-      "job_ids": [
-        "58165756"
-      ],
-      "run_ids": [],
-      "remote_root": "/cache/home/js3269/projects/FAW_RNN-minigrid-accel-200m-20260714",
-      "updated_at": "2026-07-14T18:10:00+00:00"
+      "updated_at": "2026-07-15T15:34:40+00:00"
     },
     {
       "id": "amarel-minigrid-memory-200m-58165755",
       "description": "MiniGrid MemoryS7 LSTM/GaWF formal 200M accelerated run",
       "host": "amarel",
-      "status": "running",
+      "status": "recovering",
       "job_ids": [
-        "58165755"
+        "58165755",
+        "58177788"
       ],
       "run_ids": [],
       "remote_root": "/cache/home/js3269/projects/FAW_RNN-minigrid-accel-200m-20260714",
-      "updated_at": "2026-07-14T18:05:00+00:00"
+      "updated_at": "2026-07-15T15:44:06+00:00"
     },
     {
       "id": "amarel-atari-pong-fs1-stack1-70-58160888",
       "description": "Strict Pong fs1/stack1 full 6-action 1M: 7 models × 2 settings × 5 seeds",
       "host": "amarel",
-      "status": "running",
+      "status": "recovering",
       "job_ids": [
         "58160888",
         "58170421",
         "58170974",
-        "58170978"
+        "58170978",
+        "58180330"
       ],
       "run_ids": [],
       "remote_root": "/cache/home/js3269/projects/FAW_RNN-multitask-gru-phase0-20260713",
-      "updated_at": "2026-07-14T20:55:00+00:00"
+      "updated_at": "2026-07-15T17:48:49+00:00"
     }
   ]
 }

@@ -118,6 +118,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--data_dir", type=str, default="")
     parser.add_argument(
+        "--chan_num",
+        type=int,
+        default=2,
+        help="Checkpoint/test input channel count (default: 2; chan=1 uses only the current frame).",
+    )
+    parser.add_argument(
         "--data_suffix",
         type=str,
         default="40h-float32",
@@ -603,7 +609,12 @@ def main() -> None:
 
     for ckpt in ckpt_paths:
         print(f"\n[eval] {ckpt}")
-        model = build_model_from_ckpt(ckpt, num_pos=num_pos, device=device)
+        model = build_model_from_ckpt(
+            ckpt,
+            num_pos=num_pos,
+            device=device,
+            chan_num=args.chan_num,
+        )
         char_acc, pos_acc, frame_counts = evaluate_ckpt_offset_acc(
             ckpt_path=ckpt,
             model=model,

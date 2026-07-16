@@ -1,0 +1,1551 @@
+{
+  "schema_version": 1,
+  "id": "sjc-clutter-best6-chan1-10seed-ep150-aim3-clutter-c1-10seed-ep150",
+  "description": "Clutter six frozen chan=2 best hyperparameters reused with chan=1, seeds 1-10, 150 full epochs, no early stopping; each valid checkpoint is then evaluated on the strict jointswitch-balanced test set",
+  "host": "sjc-remote",
+  "status": "cancelled",
+  "created_at": "2026-07-15T02:27:37+00:00",
+  "updated_at": "2026-07-15T03:44:26+00:00",
+  "remote_root": "/G/MIMOlab/Codes/FAW_RNN-clutter-best6-chan1",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/G/anaconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "process",
+    "job_ids": [],
+    "run_ids": [
+      "aim3-clutter-c1-10seed-ep150"
+    ],
+    "tmux_session": "aim3-clutter-c1-10seed-ep150",
+    "process_patterns": [
+      "run_clutter_best6_chan1_2gpu.sh"
+    ],
+    "collect_gpu": true
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/aim3-clutter-c1-10seed-ep150.log"
+    ],
+    "status_dir": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status",
+    "result_paths": [
+      "results/train_data/clutter_best6_multiseed_40h_chan1_ep150",
+      "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1"
+    ]
+  },
+  "tracking": {
+    "expected_units": 60,
+    "auto_complete": true,
+    "units": [
+      {
+        "id": "gawf-seed01",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed01",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_000.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_000.fail",
+        "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gawf",
+          "seed": 1,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gawf-seed01",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "rnn-seed01",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed01",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_001.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_001.fail",
+        "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "rnn",
+          "seed": 1,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/rnn-seed01",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "lstm-seed01",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed01",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_002.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_002.fail",
+        "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "lstm",
+          "seed": 1,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/lstm-seed01",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gru-seed01",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed01",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_003.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_003.fail",
+        "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gru",
+          "seed": 1,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gru-seed01",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "mamba-seed01",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed01",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_004.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_004.fail",
+        "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "mamba",
+          "seed": 1,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/mamba-seed01",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "s5-seed01",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed01",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_005.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_005.fail",
+        "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "s5",
+          "seed": 1,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/s5-seed01",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gawf-seed02",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed02",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_006.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_006.fail",
+        "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gawf",
+          "seed": 2,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gawf-seed02",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "rnn-seed02",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed02",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_007.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_007.fail",
+        "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "rnn",
+          "seed": 2,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/rnn-seed02",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "lstm-seed02",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed02",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_008.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_008.fail",
+        "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "lstm",
+          "seed": 2,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/lstm-seed02",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gru-seed02",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed02",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_009.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_009.fail",
+        "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gru",
+          "seed": 2,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gru-seed02",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "mamba-seed02",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed02",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_010.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_010.fail",
+        "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "mamba",
+          "seed": 2,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/mamba-seed02",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "s5-seed02",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed02",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_011.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_011.fail",
+        "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "s5",
+          "seed": 2,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/s5-seed02",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gawf-seed03",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed03",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_012.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_012.fail",
+        "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gawf",
+          "seed": 3,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gawf-seed03",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "rnn-seed03",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed03",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_013.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_013.fail",
+        "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "rnn",
+          "seed": 3,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/rnn-seed03",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "lstm-seed03",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed03",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_014.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_014.fail",
+        "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "lstm",
+          "seed": 3,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/lstm-seed03",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gru-seed03",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed03",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_015.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_015.fail",
+        "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gru",
+          "seed": 3,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gru-seed03",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "mamba-seed03",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed03",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_016.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_016.fail",
+        "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "mamba",
+          "seed": 3,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/mamba-seed03",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "s5-seed03",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed03",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_017.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_017.fail",
+        "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "s5",
+          "seed": 3,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/s5-seed03",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gawf-seed04",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed04",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_018.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_018.fail",
+        "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gawf",
+          "seed": 4,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gawf-seed04",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "rnn-seed04",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed04",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_019.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_019.fail",
+        "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "rnn",
+          "seed": 4,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/rnn-seed04",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "lstm-seed04",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed04",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_020.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_020.fail",
+        "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "lstm",
+          "seed": 4,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/lstm-seed04",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gru-seed04",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed04",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_021.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_021.fail",
+        "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gru",
+          "seed": 4,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gru-seed04",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "mamba-seed04",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed04",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_022.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_022.fail",
+        "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "mamba",
+          "seed": 4,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/mamba-seed04",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "s5-seed04",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed04",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_023.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_023.fail",
+        "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "s5",
+          "seed": 4,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/s5-seed04",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gawf-seed05",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed05",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_024.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_024.fail",
+        "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gawf",
+          "seed": 5,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gawf-seed05",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "rnn-seed05",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed05",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_025.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_025.fail",
+        "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "rnn",
+          "seed": 5,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/rnn-seed05",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "lstm-seed05",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed05",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_026.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_026.fail",
+        "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "lstm",
+          "seed": 5,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/lstm-seed05",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gru-seed05",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed05",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_027.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_027.fail",
+        "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gru",
+          "seed": 5,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gru-seed05",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "mamba-seed05",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed05",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_028.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_028.fail",
+        "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "mamba",
+          "seed": 5,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/mamba-seed05",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "s5-seed05",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed05",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_029.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_029.fail",
+        "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "s5",
+          "seed": 5,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/s5-seed05",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gawf-seed06",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed06",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_030.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_030.fail",
+        "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gawf",
+          "seed": 6,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gawf-seed06",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "rnn-seed06",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed06",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_031.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_031.fail",
+        "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "rnn",
+          "seed": 6,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/rnn-seed06",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "lstm-seed06",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed06",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_032.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_032.fail",
+        "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "lstm",
+          "seed": 6,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/lstm-seed06",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gru-seed06",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed06",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_033.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_033.fail",
+        "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gru",
+          "seed": 6,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gru-seed06",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "mamba-seed06",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed06",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_034.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_034.fail",
+        "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "mamba",
+          "seed": 6,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/mamba-seed06",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "s5-seed06",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed06",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_035.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_035.fail",
+        "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "s5",
+          "seed": 6,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/s5-seed06",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gawf-seed07",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed07",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_036.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_036.fail",
+        "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gawf",
+          "seed": 7,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gawf-seed07",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "rnn-seed07",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed07",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_037.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_037.fail",
+        "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "rnn",
+          "seed": 7,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/rnn-seed07",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "lstm-seed07",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed07",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_038.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_038.fail",
+        "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "lstm",
+          "seed": 7,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/lstm-seed07",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gru-seed07",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed07",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_039.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_039.fail",
+        "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gru",
+          "seed": 7,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gru-seed07",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "mamba-seed07",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed07",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_040.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_040.fail",
+        "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "mamba",
+          "seed": 7,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/mamba-seed07",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "s5-seed07",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed07",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_041.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_041.fail",
+        "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "s5",
+          "seed": 7,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/s5-seed07",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gawf-seed08",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed08",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_042.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_042.fail",
+        "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gawf",
+          "seed": 8,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gawf-seed08",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "rnn-seed08",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed08",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_043.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_043.fail",
+        "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "rnn",
+          "seed": 8,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/rnn-seed08",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "lstm-seed08",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed08",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_044.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_044.fail",
+        "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "lstm",
+          "seed": 8,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/lstm-seed08",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gru-seed08",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed08",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_045.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_045.fail",
+        "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gru",
+          "seed": 8,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gru-seed08",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "mamba-seed08",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed08",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_046.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_046.fail",
+        "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "mamba",
+          "seed": 8,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/mamba-seed08",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "s5-seed08",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed08",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_047.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_047.fail",
+        "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "s5",
+          "seed": 8,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/s5-seed08",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gawf-seed09",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed09",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_048.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_048.fail",
+        "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gawf",
+          "seed": 9,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gawf-seed09",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "rnn-seed09",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed09",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_049.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_049.fail",
+        "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "rnn",
+          "seed": 9,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/rnn-seed09",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "lstm-seed09",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed09",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_050.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_050.fail",
+        "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "lstm",
+          "seed": 9,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/lstm-seed09",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gru-seed09",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed09",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_051.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_051.fail",
+        "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gru",
+          "seed": 9,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gru-seed09",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "mamba-seed09",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed09",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_052.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_052.fail",
+        "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "mamba",
+          "seed": 9,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/mamba-seed09",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "s5-seed09",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed09",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_053.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_053.fail",
+        "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "s5",
+          "seed": 9,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/s5-seed09",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gawf-seed10",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gawf-seed10",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_054.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_054.fail",
+        "checkpoint_glob": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gawf",
+          "seed": 10,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gawf-seed10",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "rnn-seed10",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/rnn-seed10",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_055.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_055.fail",
+        "checkpoint_glob": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "rnn",
+          "seed": 10,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/rnn-seed10",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "lstm-seed10",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/lstm-seed10",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_056.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_056.fail",
+        "checkpoint_glob": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "lstm",
+          "seed": 10,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/lstm-seed10",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "gru-seed10",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/gru-seed10",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_057.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_057.fail",
+        "checkpoint_glob": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "gru",
+          "seed": 10,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/gru-seed10",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "mamba-seed10",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/mamba-seed10",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_058.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_058.fail",
+        "checkpoint_glob": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "mamba",
+          "seed": 10,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/mamba-seed10",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      },
+      {
+        "id": "s5-seed10",
+        "result_dir": "results/train_data/clutter_best6_multiseed_40h_chan1_ep150/s5-seed10",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_059.done",
+        "fail_file": "experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150/status/task_059.fail",
+        "checkpoint_glob": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_model.pth",
+        "checkpoint_count": 1,
+        "expected": {
+          "model_type": "s5",
+          "seed": 10,
+          "num_epochs": 150,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "use_acceleration": true,
+          "use_mmap": true,
+          "chan_num": 1
+        },
+        "analysis_result_dir": "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1/s5-seed10",
+        "required_analysis_globs": [
+          "fg_switch_offset_acc_*.npz",
+          "fg_switch_offset_meta_*.json"
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "40h training stimulus is approximately 119 GB and is loaded with mmap.",
+    "DataLoader uses num_workers=0 and pin_memory=False to preserve mmap safety.",
+    "Saved checkpoints contain the best-validation state after all 150 epochs are run.",
+    "Input uses chan_num=1 consecutive stimulus frame(s).",
+    "Two persistent workers split the 60 units across sjc-remote GPUs 0 and 1.",
+    "A unit done marker is written only after strict balanced fg-switch analysis succeeds.",
+    "Balanced test suffix: 40h-float32-jointswitch-balanced."
+  ]
+}

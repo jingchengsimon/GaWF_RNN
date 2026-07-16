@@ -87,6 +87,9 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     tracking = manifest.get("tracking", {})
     if not isinstance(tracking, dict):
         raise RegistryError("tracking must be a JSON object.")
+    validation_mode = tracking.get("validation_mode", "artifacts")
+    if validation_mode not in {"artifacts", "strict"}:
+        raise RegistryError("tracking.validation_mode must be 'artifacts' or 'strict'.")
     expected = tracking.get("expected_units", 0)
     if not isinstance(expected, int) or expected < 0:
         raise RegistryError("tracking.expected_units must be a non-negative integer.")
@@ -102,20 +105,6 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
             raise RegistryError("tracking.auto_complete requires expected_units > 0.")
         if not units and not tracking.get("result_globs"):
             raise RegistryError("tracking.auto_complete requires units or result_globs.")
-        defaults = tracking.get("defaults", {})
-        default_evidence = bool(defaults.get("expected")) or defaults.get(
-            "checkpoint_count"
-        ) is not None
-        unit_evidence = bool(units) and all(
-            unit.get("expected")
-            or unit.get("checkpoint_count") is not None
-            or unit.get("done_file")
-            for unit in units
-        )
-        if not default_evidence and not unit_evidence:
-            raise RegistryError(
-                "tracking.auto_complete requires explicit metrics, checkpoint, or done evidence."
-            )
 
 
 def normalize_manifest(
@@ -312,10 +301,6 @@ def remove_job(selector: str, *, human_confirmed: bool, base_dir: Path | None = 
 
 
 def _new_manifest_from_args(args: argparse.Namespace) -> dict[str, Any]:
-    if args.auto_complete and args.expected_global_step is None and args.checkpoint_count is None:
-        raise RegistryError(
-            "--auto-complete requires --expected-global-step or --checkpoint-count."
-        )
     expected = {}
     if args.expected_global_step is not None:
         expected["global_step"] = args.expected_global_step

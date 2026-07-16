@@ -51,6 +51,7 @@ def test_manifest_tracks_every_unit_with_strict_epoch_and_seed_evidence() -> Non
     assert first["expected"]["seed"] == 1
     assert first["expected"]["actual_epochs"] == NUM_EPOCHS
     assert first["expected"]["stopped_by_patience"] is False
+    assert first["expected"]["chan_num"] == 2
 
 
 def test_validator_requires_matching_seed_and_full_epoch_completion(tmp_path) -> None:
@@ -75,6 +76,7 @@ def test_validator_requires_matching_seed_and_full_epoch_completion(tmp_path) ->
         "dataset_mode": "sector",
         "use_acceleration": True,
         "use_mmap": True,
+        "chan_num": 2,
         "hidden_size": 256,
         "lr": 0.005,
         "weight_decay": 0.001,
