@@ -1,250 +1,194 @@
-# ARCHITECTURE.md — Module Responsibilities & Dependency Map
+# Architecture
 
-## 1. High-Level Package Map
+This document owns module responsibilities, dependency direction, model composition, and data
+flow. Naming and file formats live in `CONVENTIONS.md`; implementation checklists live in
+`DEVELOPMENT_WORKFLOWS.md`.
 
-```
-aim3_RNN/
-│
-├── train_model.py     ← CLI entry-point: parse args, load data, loop over hparam combos
-│                               Owns MC_RNN_Dataset and network_train()
-├── experiments/generalization/ ← Generalization launchers + hparam aggregation
-├── experiments/amarel/ ← Amarel/Slurm probe, submit, status, and rerun helpers
-│
-├── utils/                   ← Training pipeline (imported by train_model only)
-│   ├── train_rnn_core.py    ← Model base classes and standard RNN variants
-│   ├── train_gawf_core.py   ← GaWF feedback model
-│   ├── train_ann_core.py    ← ANN/Dendritic model variants
-│   ├── train_mamba_core.py  ← Mamba sequence model adapter
-│   ├── train_ssm_core.py    ← Diagonal SSM sequence model
-│   ├── train_helpers.py     ← I/O, logging, arg parsing, seeding, path resolution
-│   ├── train_rnn_engine.py  ← Training step orchestration (setup, train, evaluate)
-│   ├── train_acceleration.py← AMP, grad scaler, DataLoader builder, TrainStepper
-│   ├── train_sector.py      ← Loss & metrics for single-char + sector/coordinate mode
-│   └── train_predict_all_chars.py ← Loss & metrics for all-chars mode
-│
-├── utils_anal/              ← Post-training analysis (no matplotlib)
-│   ├── export_gate_sample.py← CANONICAL: build_model_from_ckpt, build_test_dataset
-│   ├── export_gate_avg.py   ← Per-digit/sector averaged gate matrices
-│   ├── export_gate_avg_allsector.py ← All-component decomposition of trans_ih
-│   ├── export_V_basis.py    ← V parameter basis maps per sector/digit
-│   ├── export_whh.py        ← Hidden-hidden weight W_hh analysis
-│   ├── export_pop_act.py    ← Population activity export
-│   ├── cnn_channel_stats.py ← CNN channel activation statistics
-│   ├── hidden_unit_tuning.py← Hidden unit digit tuning + FDR analysis
-│   ├── model_param_counts.py← Parameter count utility
-│   └── pop_act_dpca.py      ← dPCA dimensionality reduction
-│
-├── utils_viz/               ← Visualisation (matplotlib, no model loading)
-│   ├── model_train_single_result.py ← Training curve plots + parse_hparams_from_filename
-│   ├── gate_avg.py          ← Gate/outer matrix heatmaps (single digit/sector)
-│   ├── gate_avg_allsector.py← Multi-panel all-component decomposition
-│   ├── gate_avg_sector_summary.py ← Summary across all sectors
-│   ├── gate_sample.py       ← Single-sample gate visualisation
-│   ├── cnn_channel.py       ← CNN channel activation matrix heatmap
-│   ├── hidden_activation.py ← Hidden unit tuning heatmaps
-│   ├── V_basis.py           ← V parameter basis map heatmaps
-│   ├── whh.py               ← W_hh connectivity matrix
-│   ├── dimred_reducer.py    ← Shared dimensionality reduction wrapper
-│   ├── pop_act_umap.py      ← UMAP/PCA and dPCA population activity plots
-│   ├── sample_fg+bg_frames_sample.py ← Stimulus frame examples
-│   ├── plot_generalization.py ← Phase-3 CSV → char/sector gap + train/val acc vs scale (PNG; optional PDF)
-│   └── paper_figs/          ← Publication figures (fig1.py, metrics_best_acc_bars.py)
-│
-└── source/                  ← Stimulus generation (independent, rarely modified)
-    ├── GenerateMovies.py
-    └── GenerateMovies_cplx.py
+## Task families
+
+| Task | Entry point | Model/data modules |
+|---|---|---|
+| Clutter vision | `train_model.py` | `utils/clutter_*`, `source/clutter/` |
+| IMDB | `train_imdb.py` | `utils/text_task_models.py`, `utils/text_imdb_data.py` |
+| SentiHood | `train_sentihood.py` | `utils/text_task_models.py`, `utils/text_sentihood_*` |
+| Atari A2C | `train_atari.py` | `utils/atari_task_models.py`, `utils/atari_envs.py` |
+| Atari DQN/DRQN | `train_atari_dqn.py` | `utils/atari_dqn_models.py`, `utils/atari_replay.py` |
+| MiniGrid DQN/DRQN | `train_minigrid_dqn.py` | `utils/minigrid_models.py`, `utils/minigrid_envs.py` |
+| MiniGrid PPO | `train_minigrid_ppo.py` | `utils/minigrid_ppo_models.py`, `utils/minigrid_envs.py` |
+
+All task families compose the same recurrent implementations from `utils/recurrent_cores/`.
+Task wrappers own encoders, heads, data shapes, and feedback selection; they do not reimplement
+recurrent equations.
+
+## Dependency direction
+
+```text
+stdlib / third-party
+        |
+        v
+utils/recurrent_cores/
+        |
+        v
+utils/<task>_task_models.py + task data/train helpers
+        |
+        v
+train_<task>.py
+        |
+        v
+utils_anal/  ->  results/anal_data/
+        |
+        v
+utils_viz/   ->  results/anal_figs/
 ```
 
----
+The arrows are one-way:
 
-## 2. Dependency Graph
+- `utils/` must not import from `utils_anal/` or `utils_viz/`.
+- `utils_anal/` must not import from `utils_viz/`.
+- `utils_viz/` reads saved results rather than becoming a model dependency.
+- `source/` contains data/environment preparation and must not become a training core.
 
-```
-stdlib / third-party (torch, numpy, matplotlib, scipy, tqdm)
-        │
-        ▼
-utils/train_helpers.py ◄────────────────────┐
-        │                                    │
-        ▼                                    │
-utils/train_acceleration.py                  │
-        │                                    │
-        ▼                                    │
-utils/train_rnn_core.py                      │
-        │                                    │
-        ▼                                    │
-utils/train_gawf_core.py    utils/train_ann_core.py
-        │                          │
-        └──────────┬───────────────┘
-                   ▼
-        utils/train_sector.py
-        utils/train_predict_all_chars.py
-                   │
-                   ▼
-        utils/train_rnn_engine.py
-                   │
-                   ▼
-        train_model.py (MC_RNN_Dataset lives here)
-                   │
-                   ▼
-        utils_anal/export_gate_sample.py  ◄── canonical shared helpers
-                   │
-                   ▼
-        utils_anal/*.py  (all other analysis scripts)
-                   │
-                   ▼
-        utils_viz/*.py   (reads files from results/anal_data/)
+## Shared recurrent cores
+
+`utils/recurrent_cores/` provides:
+
+- `RNNCore`, `GRUCore`, and `LSTMCore`, including unified `num_layers` handling.
+- `GaWFCore`, with single- and multi-layer paths behind one public model type.
+- `MambaCore` and `S5Core` sequence models.
+
+GaWF uses feedback-conditioned input/hidden transforms. For feedback vector `fb`:
+
+```text
+U: (hidden_size, fb_dim)
+V: (fb_dim, input_size + hidden_size)
+gate = sigmoid(U @ (fb * V) / 0.5)
 ```
 
-**Key rule:** dependency arrows are one-directional and downward only.
+For one layer, omitted Clutter `--dz` retains output-sized legacy feedback; explicit `--dz > 0`
+uses a projector. For multiple layers, direct feedback uses the detached adjacent upper hidden
+state at non-final layers and the detached previous task output at the final layer. Projected
+mode gives each layer its own U/V pair and projector dimension.
 
----
+`prev_feedback` is runtime state and must be detached before storage. Checkpoint loading filters
+that key and uses `strict=False`.
 
-## 3. Module Responsibilities
+## Clutter architecture
 
-### `utils/train_helpers.py`
-Single source for: path resolution and I/O (`PathHelper`: `get_base_path`, `prepare_data_paths`,
-`load_raw_data`, `save_results`, `save_metrics_summary`), dataset construction (`create_datasets`),
-model class registry (`get_model_classes`), logging (`LoggingHelper`),
-argument parser (`build_arg_parser`), seeding (`set_seed`), metrics helpers (`summarize_experiment_metrics`).
+### Encoder contract
 
-### `utils/train_rnn_engine.py`
-Owns the training loop internals: `setup_training_components` (builds all
-components dict), `begin_epoch`, `train_batch`, `summarize_online_train`,
-`eval_train_subset`, `eval_valid` (both wrap `evaluate_epoch` for fair full-loader eval),
-and core `evaluate_epoch`. The `network_train` skeleton in `train_model.py` only calls these.
-GaWF-family handling covers both `GaWFRNNConv` and `MultiLayerGaWFRNNConv` for feedback
-scheduling, feedback freezing, and no-weight-decay U/V optimizer grouping.
+`ClutterCNNEncoder` consumes two-channel movie frames. The fixed large configuration is:
 
-### `utils/train_acceleration.py`
-Owns: `AccelerationConfig` (all AMP/grad-accum flags), `setup_acceleration`
-(returns autocast_fn, scaler, batch_size, …), `build_loaders` (train/val/eval
-DataLoaders), `TrainStepper` (one-step forward+backward, no branches in
-training loop), `run_forward_with_feedback`.
-For complex-parameter models (e.g. S5), training keeps AMP autocast active but
-disables GradScaler to avoid `ComplexFloat` unscale limitations in CUDA AMP.
-Gradient clipping in `TrainStepper` is applied to real-valued gradients only;
-complex gradients are skipped for foreach clip ops.
-
-### `utils/train_sector.py`
-Owns all metric and loss logic for single-char + sector/coordinate mode:
-`loss_char_single`, `loss_pos_single`, `batch_metric_*`, `eval_accumulate_batch_*`,
-`finalize_metrics_single`, `build_loss_fn_single`, `SingleCharMetricsMode`,
-and fg-switch window helpers: `compute_fg_transition_masks`, `single_char_global_eval_*`.
-
-### `utils/train_predict_all_chars.py`
-Same pattern as `train_sector.py` but for all-chars mode (greedy matching).
-
-### `utils_anal/export_gate_sample.py`
-**Canonical model loader.** All analysis scripts must call:
-```python
-from utils_anal.export_gate_sample import build_model_from_ckpt, build_test_dataset
-```
-These two functions handle: hparam parsing from filename, GaWFRNNConv / multi-layer
-GaWF instantiation, state_dict filtering (`prev_feedback`), GaWF feedback dim parsing (`_dz*`),
-and test split dataset construction.
-
-### `utils_viz/model_train_single_result.py`
-Contains `parse_hparams_from_filename()` — used by analysis scripts to extract
-`hidden_size`, `feedback_dim` (from `_dz*` when present), `gawf_layers` (from `_L*`),
-`cnn_dropout`, `rnn_dropout` (and legacy `dropout` / `_do` for old stems), `lr`, `wd`
-from checkpoint filenames. Import when
-rebuilding a model from a checkpoint filename alone.
-
----
-
-## 4. Data Flow Diagram
-
-```
-source/GenerateMovies*.py
-        │
-        ▼
-stimuli/  (stimulus_reg-*.npy  +  labels_reg-*.csv)
-        │
-        ▼  train_helpers.PathHelper.load_raw_data()
-MC_RNN_Dataset  (train_model.py)
-        │
-        ▼  DataLoader
-train_rnn_engine  →  GaWFRNNConv / RNNConv / …
-        │
-        ▼  PathHelper.save_results()
-results/train_data/<suffix>/
-  ├── *_model.pth          ← state dict
-  ├── *.pkl                ← metrics curves
-  └── *_metrics.json       ← summary
-
-        │
-        ▼  utils_anal/export_*.py
-results/anal_data/<module>/
-  ├── *.npy / *.npz        ← arrays, including raw and display-only dPCA coordinates
-  └── *.json                ← metadata and dPCA variance summaries
-
-        │
-        ▼  utils_viz/*.py
-results/anal_figs/<module>/
-  ├── *.png                 ← static figures
-  ├── *.html                ← self-contained interactive 3D figures
-  └── *.pdf                 ← optional vector figures
+```text
+2x96x96
+  -> Conv 2->32, same padding -> MaxPool 2x2 -> LayerNorm [32,48,48]
+  -> Conv 32->64             -> MaxPool 4x4 -> LayerNorm [64,12,12]
+  -> Conv 64->32, 1x1        -> AdaptiveAvgPool 6x6
+  -> 32x6x6 = 1152 features
 ```
 
----
+Changing the output requires updating model input sizes and every analysis that assumes 32
+channels or 6x6 spatial structure.
 
-## 5. Key Shared Interfaces
+### Model and training composition
 
-### `MetricsMode` protocol (both implementations must satisfy)
-```python
-init_epoch_train()                     -> dict
-update_train_batch(acc, out_char, labels, batch_idx, len_dl, out_pos) -> dict
-finalize_train_epoch(acc, num_batches) -> (acc_char, metric_pos, ...)
-init_eval()                            -> dict
-update_eval_batch(acc, out_char, labels, out_pos) -> dict
-finalize_eval(acc, num_batches)        -> (acc_char, metric_pos, ...)
-format_train_str(epoch, num_epochs, acc_char, metric_pos, gpu_info) -> str
-format_val_str(acc_char, metric_pos)   -> str
-postfix_for_pbar(loss, out_char, out_pos, labels) -> dict
-add_pos_to_result_dict(base, ...) -> dict
+`ClutterSequenceModel` composes the CNN, a middle recurrent/sequence model, and
+`ClutterCharPosHead`. Public wrappers include `RNNConv`, `GRUConv`, `LSTMConv`, `GaWFRNNConv`,
+`MambaConv`, and `S5Conv`. Historical multi-layer class/checkpoint names remain readable, while
+new runs use `gawf --num_layers N`.
+
+`clutter_train_helpers.py` owns CLI construction, paths, dataset creation, logging, model
+registration, seeding, and saved summaries. `clutter_train_acceleration.py` owns loaders, AMP,
+gradient accumulation, and `TrainStepper`. `clutter_train_engine.py` owns the epoch/batch loop.
+Loss and metric implementations remain in `clutter_train_sector.py` and
+`clutter_train_predict_all_chars.py`.
+
+Official train and validation curves come from full evaluation passes, not online batch means.
+Sector single-character data may include `fg_switch`; when present, evaluation also records
+strict global and `pre5`/`post5` foreground-transition accuracies.
+
+## Text architecture
+
+`TextSequenceClassifier` combines embeddings, a shared recurrent core, and classification heads.
+Dataset-specific modules own tokenization/data preparation and metrics. IMDB and SentiHood must
+not introduce separate RNN/GaWF implementations.
+
+## Atari architecture
+
+### A2C
+
+`AtariActorCritic` uses `AtariNatureEncoder`, a recurrent core, and separate policy/value heads.
+The recurrent input contains encoded observation features plus previous action and reward.
+
+- Model types: `lstm`, `gawf`.
+- Feedback modes: `none`; GaWF may use `output`.
+- `output` feedback is detached previous policy logits concatenated with previous value.
+
+### DQN/DRQN
+
+`AtariQNetwork` follows the DRQN family. All variants share the Nature-DQN convolutional feature
+stack and a final linear Q head; only the readout slot changes.
+
+- `ann`: dense Nature-DQN readout.
+- `rnn`, `gru`, `lstm`, `gawf`: stepwise recurrent readout.
+- `s5`, `mamba`: full-window sequence readout with rolling online context.
+- GaWF `qvalues`: detached previous-step Q values gate recurrence.
+
+The replay buffer and training loop preserve episode-reset metadata. RNN/GRU/LSTM use a
+whole-sequence cuDNN fast path only when a sampled window has no internal reset, otherwise they
+fall back to the reset-aware stepwise path. GaWF remains stepwise because feedback evolves at
+each timestep.
+
+Task-blind multi-task collection selects a task only at episode boundaries. The default
+`transition_balanced` scheduler chooses the task with the fewest collected environment steps,
+with cyclic tie-breaking; shorter tasks may therefore run more episodes. Replay remains a
+separate concern: `task_balanced` sampling gives tasks equal update weight without exposing the
+task identifier to the model.
+
+CUDA autocast, TF32, gradient scaling, compilation configuration, cuDNN benchmarking, and fused
+Adam live in `utils/atari_train_acceleration.py`. The current Amarel PyTorch build compiles ANN
+only; recurrent-state dataclasses are not passed through Dynamo. Replay reset detection remains
+on CPU, and logging-only scalar synchronization occurs at log intervals. These optimizations
+must not alter sampled indices, losses, update cadence, environment steps, or network structure.
+
+Pong result labels always encode both frame skip and stack. Historical five-seed results use
+`pong_fs4_stack1`; strict one-decision/one-ALE-frame runs use `pong_fs1_stack1`.
+
+## MiniGrid architecture
+
+MiniGrid uses symbolic partial observations and a task-specific encoder while reusing the shared
+recurrent cores. Recurrent PPO collects a fixed `(num_steps, num_envs)` rollout and replays each
+complete per-environment sequence during every PPO epoch, preserving recurrent state and reset
+masks.
+
+MiniGrid acceleration is configured by `utils/minigrid_train_acceleration.py`. CUDA autocast,
+TF32, gradient scaling, cuDNN benchmarking, fused Adam, and optional callable compilation must
+not change environment samples, PPO losses, rollout length, update cadence, or model structure.
+The `async` vector backend parallelizes environment stepping across subprocesses but preserves
+the ordered vector-slot interface and per-environment seeds.
+
+## Data and result flow
+
+```text
+source/<task>/ or external datasets/environments
+        -> CPU arrays/datasets/replay
+        -> DataLoader or replay sampling
+        -> task wrapper + recurrent core
+        -> results/train_data/<suffix>/
+             *_model.pth
+             *.pkl
+             *_metrics.json
+        -> utils_anal/ -> results/anal_data/<module>/
+        -> utils_viz/  -> results/anal_figs/<module>/
 ```
 
-### `components` dict keys (returned by `setup_training_components`)
-`device`, `train_dl`, `train_eval_dl`, `val_dl`, `stepper`, `metrics_mode`,
-`train_acc_char`, `val_acc_char`, `train_metric_pos`, `val_metric_pos`,
-`train_loss_pos`, `val_loss_pos`, `train_loss_char`, `val_loss_char`,
-`glob_*`, `fg_switch_pre5_*`, `fg_switch_post5_*` (sector single-char only, when TSV has `fg_switch`),
-`stop_flag`, `use_tqdm`, `logger`, `run_label` (optional prefix for tqdm/log lines in multi-job runs).
+Clutter data resolution order is CLI `--data_dir`, `AIM3_STIMULI_PATH`,
+`FAW_RNN_DATA_PATH`, then `<repo>/stimuli`. Large arrays stay on CPU or mmap.
 
----
+## Shared interfaces
 
-## 6. Generalization experiment orchestration
-
-**Location:** `experiments/generalization/` (shell + **`collect_results.py`** +
-**`hparam_full_grid.py`**, stdlib only) and Amarel submission wrappers under
-`experiments/amarel/`.
-
-**Role:** Launch **`train_model.py`** for train-scale vs **fixed 40h validation**
-protocols; aggregate `*_metrics.json` into **`experiments/generalization/artifacts/`**
-(`phase1_best*.json`, `phase2_final_hparams*.json`, `hparam_best.*`,
-`phase3_summary_*.csv` with char and sector columns); plot via
-**`utils_viz/plot_generalization.py`** → **`results/anal_figs/generalization/`**
-(char/sector 1x2 panels; default PNG; **`--save-pdf`** for PDF).
-
-**Dependency rule:** No imports from `utils/` inside `collect_results.py` beyond what a normal script would use; training logic stays in `utils/` + `train_model.py`.
-
-**Pipelines:** **`run_all_scales_2gpu.sh [short|full]`** (default **short**):
-**short** = smaller Phase 1 (four scales, including 40h), no Phase 2, inlined
-`collect_results` + `emit_hparams_shared`, `phase2_final_hparams_short.json`,
-CSV tag **`_short_ep${NUM_EPOCHS}`**; **full** = larger Phase 1 → inlined
-**`collect_results.py phase1`** → **`phase2_lr_check.sh`** per scale →
-`phase2_final_hparams.json` → Phase 3. The single-stage full-grid search is
-defined by **`hparam_full_grid.py`** and run on Amarel with
-**`experiments/amarel/submit_hparam_full_grid_batches.sh`**. Per-phase training
-launchers: **`experiments/generalization/phase1_gawf_search.sh`**,
-**`phase2_lr_check.sh`**, **`phase3_train_scale.sh`**. Ad-hoc aggregate /
-local-Phase3-only tools live under **`experiments/archive/`** (not used by the
-default `run_all` flow). See **`AGENTS.md` section 8** and **`workflow.mdc`**.
-Amarel logs for full and smoke-test submissions are written under
-**`experiments/amarel/artifacts/`**; the 4h/5-epoch smoke test runs only the four
-model families at fixed `hidden_size=256`, `lr=5e-4`, `wd=1e-4`.
-Local two-GPU launchers live under **`experiments/local/`** and reuse the same
-`hparam_full_grid.py` task-id mapping while replacing Slurm arrays with local
-`CUDA_VISIBLE_DEVICES` process scheduling.
-
-**Doc maintenance:** Human-requested edits to `.cursor/rules` should update **`AGENTS.md`** and this file in the same change unless scoped otherwise (`workflow.mdc` **Doc alignment**).
+- New clutter model types register through `get_model_classes()`.
+- Clutter label modes implement the existing metrics-mode lifecycle used by the engine.
+- Analysis model/dataset construction uses `build_model_from_ckpt` and `build_test_dataset` from
+  `utils_anal.anal_helpers`.
+- Model and accelerator changes must preserve public training arguments, metrics fields, and
+  checkpoint compatibility unless a documented migration is part of the same change.
