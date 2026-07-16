@@ -1,7 +1,7 @@
 # Experiment Monitoring Registry
 
 该目录是项目内的轻量实验检测层，用来快速定位 Amarel 和 sjc-remote job。它不依赖
-Dashboard，不定义模型、实验协议或研究结论，也不属于项目的关键创新。所有文件使用
+外部任务服务，不定义模型、实验协议或研究结论，也不属于项目的关键创新。所有文件使用
 Python 标准库，可在 Mac 和 Mac mini 的同一项目版本中使用。
 
 ## 三个组件
@@ -43,7 +43,13 @@ python -m experiments.monitoring.job_registry register /tmp/my-run-manifest.json
 - 人类可读描述、logical host、remote root、`aim3_rnn` Conda 初始化路径；
 - 所有 Slurm job ID，或 sjc run ID、tmux session、process pattern；
 - 精确日志 glob、status 目录和 result path/prefix；
-- expected units，以及能够确认结果有效的 metrics/checkpoint 条件。
+- expected units，以及能够定位对应结果的 metrics/checkpoint 文件名或 glob。
+
+默认使用 `artifacts` 判定：可解析的最终 `metrics.json` 存在，并且 manifest 明确要求的
+checkpoint 文件数量满足，即视为 valid。`expected` 元数据差异与缺少 `.done` marker 仍会
+显示在诊断输出中，但不会否决结果；早期失败尝试遗留的 `.fail` marker 也不会覆盖已经完整
+生成的结果 artifacts。确实需要逐字段、marker 都完全一致的实验，可以在 `tracking` 或单个
+unit 中设置 `"validation_mode": "strict"`。
 
 ## 快速搜索进度
 
@@ -65,8 +71,8 @@ python -m experiments.monitoring.progress fscompare1m --json
 
 检查器不会递归搜索远端 home。它只访问 manifest 中记录的 remote root、日志和结果路径。
 同一 host/Conda 配置的多个 job 会合并到一个前台 SSH 会话。只有 manifest 明确设置
-`tracking.auto_complete=true` 且严格满足全部 expected units 时，检查器才会把非终态记录
-自动更新为 `completed`；其他状态不会被猜测。简单 CLI 登记默认关闭自动完成。
+`tracking.auto_complete=true` 且全部 expected units 都具有有效结果 artifacts 时，检查器
+才会把非终态记录自动更新为 `completed`；其他状态不会被猜测。简单 CLI 登记默认关闭自动完成。
 
 如果某台 Mac 使用不同 SSH alias，可临时覆盖：
 

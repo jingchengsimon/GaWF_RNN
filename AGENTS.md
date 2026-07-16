@@ -68,6 +68,19 @@ is missing, copy `.agents/local.example.md` and fill it in. Do not guess remote 
 - Do not delete experiment results, checkpoints, or pending-cleanup records without explicit
   human confirmation. Completion, failure, timeout, or staleness is not deletion permission.
 
+## Remote synchronization safety
+
+- Never run `rsync --delete` against a repository root, `results/`, `stimuli/`, or another broad
+  ancestor, and never combine `--delete` with multiple sources.
+- Never flatten a trailing-slash source directory into a repository root. Sync one source to its
+  exact homologous leaf destination.
+- A deletion-enabled sync is allowed only for an explicitly requested generated-output leaf and
+  requires the exact command to pass `--dry-run --itemize-changes` inspection first.
+- Before `rm -rf`, `find -delete`, or equivalent cleanup, require non-empty variables, resolve the
+  target, and assert it is the exact human-authorized leaf with a verified recovery copy.
+- After synchronization, verify the destination, expected file count, and protected siblings.
+  Missing or unexpected paths are a stop condition, not permission for follow-up cleanup.
+
 ## Python and script baseline
 
 - Target Python 3.10+, PyTorch 2.0+, and the `aim3_rnn` Conda environment.
@@ -87,9 +100,10 @@ is missing, copy `.agents/local.example.md` and fill it in. Do not guess remote 
 - Consolidate related Amarel queries into one foreground SSH session. Do not open background SSH
   sessions; use the documented single-heredoc fallback only when direct SSH cannot proceed.
 - Codex-submitted Amarel training requests use one Ada Lovelace GPU, 16 CPUs, 64G memory,
-  `AIM3_NUM_WORKERS=12`, and `AIM3_PIN_MEMORY=1`, unless a human explicitly specifies otherwise.
+  `AIM3_NUM_WORKERS=12`, `AIM3_PIN_MEMORY=1`, and an explicit `AIM3_RESULTS_PATH`, unless a human
+  explicitly specifies otherwise.
 - After submission, report the job/run ID, remote root, result location, requested resources, and
-  the status/check command. No external task-registry registration is required.
+  the status/check command, then register it in `experiments/monitoring/`.
 - Reusable launchers may be tracked. Generated Slurm scripts stay under
   `experiments/amarel/generated/`; clearly marked one-off scripts must be removed before branch
   synchronization.

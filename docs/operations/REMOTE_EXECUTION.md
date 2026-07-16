@@ -20,8 +20,14 @@ project roots, data roots, and Conda initialization paths live in the ignored
 - Do not use the default shell Python, `module`, or an unrelated virtual environment.
 - Amarel Slurm scripts source the configured Conda initialization script and then run
   `conda activate aim3_rnn`.
+- Amarel training submissions explicitly export `AIM3_RESULTS_PATH`; do not depend on `.bashrc`
+  or `--export=ALL` for the physical result root.
 - Local/sjc runs must not inherit Amarel-only DataLoader worker and pin-memory settings when that
   would exceed host memory.
+
+Result-root resolution is: explicit `--results_dir`, then `AIM3_RESULTS_PATH`, then
+`FAW_RNN_RESULTS_PATH`, then `<repo>/results`. Emitters, validators, status tools, rerun logic,
+and training must use the same resolved root.
 
 ## SSH diagnostics
 
@@ -67,7 +73,7 @@ After submission, verify and report:
 In the same turn, register the job in the project-local monitoring registry described in
 `experiments/monitoring/README.md`. Record every scheduler/run ID, the exact remote root, log and
 result paths, expected units, and validity evidence. This internal registry replaces ad-hoc
-cross-thread searching and does not require or use an external Dashboard.
+cross-thread searching.
 
 Scheduler state is not result validity. Completion checks must inspect expected metrics and any
 required checkpoint/pickle companions.
@@ -87,3 +93,35 @@ required checkpoint/pickle companions.
   removed before synchronizing branches or worktrees.
 - Store Slurm stdout/stderr under the task's `experiments/amarel/artifacts/` directory.
 - Use `visualize_batch.sh` for training metrics after activating `aim3_rnn`.
+
+## Synchronization and deletion safety
+
+On 2026-07-16, a multi-source `rsync --delete` flattened a small source into a repository root
+and recursively removed unrelated code, stimuli, and results. The following rules are mandatory:
+
+1. Never use `rsync --delete` on a repository root or broad ancestor, including `results/`,
+   `stimuli/`, `experiments/`, shared code roots, or scratch roots.
+2. Never combine `--delete` with multiple sources. A deletion-enabled sync has exactly one source
+   directory and one exact homologous leaf destination.
+3. Never send a trailing-slash source directory to a repository root. The destination must name
+   the corresponding leaf explicitly.
+4. Treat `.git/`, code, stimuli, checkpoints, `results/train_data/`, and `results/archive/` as
+   protected unless the human names the exact path and a recovery copy is verified.
+5. Before a deletion-enabled sync, run the exact command with `--dry-run --itemize-changes` and
+   inspect every `*deleting` entry. Any parent, sibling, or unexpected file is a stop condition.
+6. Before recursive cleanup, require non-empty variables, resolve the target, and assert it equals
+   the exact authorized leaf.
+7. Prefer non-deleting, one-path-at-a-time synchronization.
+8. After synchronization, verify the destination file count and protected sibling directories.
+
+Safe:
+
+```bash
+rsync -az local/results/anal_figs/run/ host:/exact/repo/results/anal_figs/run/
+```
+
+Forbidden:
+
+```bash
+rsync -az --delete file1 local/results/anal_figs/run/ file2 host:/exact/repo/
+```
