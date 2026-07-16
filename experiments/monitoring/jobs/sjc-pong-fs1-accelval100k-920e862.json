@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "id": "sjc-pong-fs1-accelval100k-920e862",
+  "description": "Pong strict fs1/stack1 100k acceleration validation, 7 models, seed42",
+  "host": "sjc-remote",
+  "status": "completed",
+  "created_at": "2026-07-14T00:00:00+00:00",
+  "updated_at": "2026-07-14T01:30:00+00:00",
+  "completed_at": "2026-07-14T01:30:00+00:00",
+  "remote_root": "/home/sjc/FAW_RNN-pong-fs1-accelval-9280c36",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/G/anaconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "tmux",
+    "job_ids": [],
+    "run_ids": ["sjc-pong-fs1-accelval-920e862-r3"],
+    "tmux_session": "aim3-pong-fs1-val-920e862-r3",
+    "process_patterns": ["train_atari_dqn.py"],
+    "collect_gpu": true
+  },
+  "paths": {
+    "log_globs": ["experiments/remote/artifacts/sjc-pong-fs1-accelval-920e862-r3/*.log"],
+    "status_dir": "experiments/amarel/artifacts",
+    "result_paths": ["results/train_data/atari_dqn_pong_fs1_stack1_accelval100k_*_seed42"]
+  },
+  "tracking": {
+    "expected_units": 7,
+    "auto_complete": true,
+    "result_globs": ["results/train_data/atari_dqn_pong_fs1_stack1_accelval100k_*_seed42"],
+    "defaults": {
+      "metrics_file": "metrics.json",
+      "history_file": "metrics_history.jsonl",
+      "checkpoint_glob": "*.pth",
+      "checkpoint_count": 1,
+      "expected": {"global_step": 100000, "frame_skip": 1, "frame_stack": 1, "num_layers": 1}
+    },
+    "units": []
+  },
+  "notes": [
+    "Code commit d1ea7db3cd8a7ff199debc0a633acee7054409bc.",
+    "Historical import from the completed validation; explicit done-file mapping was not backfilled."
+  ]
+}

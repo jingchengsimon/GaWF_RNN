@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "id": "sjc-pong-fscompare1m-c219996",
+  "description": "Pong seed42 1M：7 models × strict fs1/stack1 and fs4/stack4",
+  "host": "sjc-remote",
+  "status": "completed",
+  "created_at": "2026-07-14T01:30:54+00:00",
+  "updated_at": "2026-07-14T17:20:00+00:00",
+  "completed_at": "2026-07-14T14:53:11+00:00",
+  "remote_root": "/home/sjc/FAW_RNN-pong-fscompare1m-c219996",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/G/anaconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "tmux",
+    "job_ids": [],
+    "run_ids": ["sjc-pong-fscompare1m-c219996"],
+    "tmux_session": "aim3-pong-fscompare1m-c219996",
+    "process_patterns": ["run_atari_pong_fs_compare_2gpu", "train_atari_dqn.py"],
+    "collect_gpu": true
+  },
+  "paths": {
+    "log_globs": ["experiments/remote/artifacts/sjc-pong-fscompare1m-c219996/*.log"],
+    "status_dir": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status",
+    "result_paths": [
+      "results/train_data/atari_dqn_pong_fs1_stack1_1m_*_seed42",
+      "results/train_data/atari_dqn_pong_fs4_stack4_1m_*_seed42"
+    ]
+  },
+  "tracking": {
+    "expected_units": 14,
+    "auto_complete": true,
+    "defaults": {
+      "metrics_file": "metrics.json",
+      "history_file": "metrics_history.jsonl",
+      "checkpoint_glob": "*.pth",
+      "checkpoint_count": 1
+    },
+    "units": [
+      {
+        "id": "fs1-stack1-ann-seed42",
+        "result_dir": "results/train_data/atari_dqn_pong_fs1_stack1_1m_ann_seed42",
+        "done_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs1_stack1_1m_ann_seed42.done",
+        "fail_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs1_stack1_1m_ann_seed42.fail",
+        "expected": {"global_step": 1000000, "frame_skip": 1, "frame_stack": 1, "num_layers": 1, "model_type": "ann"}
+      },
+      {
+        "id": "fs1-stack1-rnn-seed42",
+        "result_dir": "results/train_data/atari_dqn_pong_fs1_stack1_1m_rnn_seed42",
+        "done_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs1_stack1_1m_rnn_seed42.done",
+        "fail_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs1_stack1_1m_rnn_seed42.fail",
+        "expected": {"global_step": 1000000, "frame_skip": 1, "frame_stack": 1, "num_layers": 1, "model_type": "rnn"}
+      },
+      {
+        "id": "fs1-stack1-gru-seed42",
+        "result_dir": "results/train_data/atari_dqn_pong_fs1_stack1_1m_gru_seed42",
+        "done_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs1_stack1_1m_gru_seed42.done",
+        "fail_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs1_stack1_1m_gru_seed42.fail",
+        "expected": {"global_step": 1000000, "frame_skip": 1, "frame_stack": 1, "num_layers": 1, "model_type": "gru"}
+      },
+      {
+        "id": "fs1-stack1-lstm-seed42",
+        "result_dir": "results/train_data/atari_dqn_pong_fs1_stack1_1m_lstm_seed42",
+        "done_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs1_stack1_1m_lstm_seed42.done",
+        "fail_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs1_stack1_1m_lstm_seed42.fail",
+        "expected": {"global_step": 1000000, "frame_skip": 1, "frame_stack": 1, "num_layers": 1, "model_type": "lstm"}
+      },
+      {
+        "id": "fs1-stack1-gawf-seed42",
+        "result_dir": "results/train_data/atari_dqn_pong_fs1_stack1_1m_gawf_seed42",
+        "done_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs1_stack1_1m_gawf_seed42.done",
+        "fail_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs1_stack1_1m_gawf_seed42.fail",
+        "expected": {"global_step": 1000000, "frame_skip": 1, "frame_stack": 1, "num_layers": 1, "model_type": "gawf"}
+      },
+      {
+        "id": "fs1-stack1-s5-seed42",
+        "result_dir": "results/train_data/atari_dqn_pong_fs1_stack1_1m_s5_seed42",
+        "done_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs1_stack1_1m_s5_seed42.done",
+        "fail_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs1_stack1_1m_s5_seed42.fail",
+        "expected": {"global_step": 1000000, "frame_skip": 1, "frame_stack": 1, "num_layers": 1, "model_type": "s5"}
+      },
+      {
+        "id": "fs1-stack1-mamba-seed42",
+        "result_dir": "results/train_data/atari_dqn_pong_fs1_stack1_1m_mamba_seed42",
+        "done_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs1_stack1_1m_mamba_seed42.done",
+        "fail_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs1_stack1_1m_mamba_seed42.fail",
+        "expected": {"global_step": 1000000, "frame_skip": 1, "frame_stack": 1, "num_layers": 1, "model_type": "mamba"}
+      },
+      {
+        "id": "fs4-stack4-ann-seed42",
+        "result_dir": "results/train_data/atari_dqn_pong_fs4_stack4_1m_ann_seed42",
+        "done_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs4_stack4_1m_ann_seed42.done",
+        "fail_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs4_stack4_1m_ann_seed42.fail",
+        "expected": {"global_step": 1000000, "frame_skip": 4, "frame_stack": 4, "num_layers": 1, "model_type": "ann"}
+      },
+      {
+        "id": "fs4-stack4-rnn-seed42",
+        "result_dir": "results/train_data/atari_dqn_pong_fs4_stack4_1m_rnn_seed42",
+        "done_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs4_stack4_1m_rnn_seed42.done",
+        "fail_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs4_stack4_1m_rnn_seed42.fail",
+        "expected": {"global_step": 1000000, "frame_skip": 4, "frame_stack": 4, "num_layers": 1, "model_type": "rnn"}
+      },
+      {
+        "id": "fs4-stack4-gru-seed42",
+        "result_dir": "results/train_data/atari_dqn_pong_fs4_stack4_1m_gru_seed42",
+        "done_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs4_stack4_1m_gru_seed42.done",
+        "fail_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs4_stack4_1m_gru_seed42.fail",
+        "expected": {"global_step": 1000000, "frame_skip": 4, "frame_stack": 4, "num_layers": 1, "model_type": "gru"}
+      },
+      {
+        "id": "fs4-stack4-lstm-seed42",
+        "result_dir": "results/train_data/atari_dqn_pong_fs4_stack4_1m_lstm_seed42",
+        "done_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs4_stack4_1m_lstm_seed42.done",
+        "fail_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs4_stack4_1m_lstm_seed42.fail",
+        "expected": {"global_step": 1000000, "frame_skip": 4, "frame_stack": 4, "num_layers": 1, "model_type": "lstm"}
+      },
+      {
+        "id": "fs4-stack4-gawf-seed42",
+        "result_dir": "results/train_data/atari_dqn_pong_fs4_stack4_1m_gawf_seed42",
+        "done_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs4_stack4_1m_gawf_seed42.done",
+        "fail_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs4_stack4_1m_gawf_seed42.fail",
+        "expected": {"global_step": 1000000, "frame_skip": 4, "frame_stack": 4, "num_layers": 1, "model_type": "gawf"}
+      },
+      {
+        "id": "fs4-stack4-s5-seed42",
+        "result_dir": "results/train_data/atari_dqn_pong_fs4_stack4_1m_s5_seed42",
+        "done_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs4_stack4_1m_s5_seed42.done",
+        "fail_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs4_stack4_1m_s5_seed42.fail",
+        "expected": {"global_step": 1000000, "frame_skip": 4, "frame_stack": 4, "num_layers": 1, "model_type": "s5"}
+      },
+      {
+        "id": "fs4-stack4-mamba-seed42",
+        "result_dir": "results/train_data/atari_dqn_pong_fs4_stack4_1m_mamba_seed42",
+        "done_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs4_stack4_1m_mamba_seed42.done",
+        "fail_file": "experiments/amarel/artifacts/atari_pong_fs1_stack1_vs_fs4_stack4_1m_sjc/status/atari_dqn_pong_fs4_stack4_1m_mamba_seed42.fail",
+        "expected": {"global_step": 1000000, "frame_skip": 4, "frame_stack": 4, "num_layers": 1, "model_type": "mamba"}
+      }
+    ]
+  },
+  "notes": [
+    "Code commit c219996ca8b5f1dc6566601b33872e29d6dbd175.",
+    "Both learning-curve PNGs and metrics-only results were fetched to the Mac workspace."
+  ]
+}

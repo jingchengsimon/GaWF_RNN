@@ -98,6 +98,14 @@ fi
 # 创建输出目录
 mkdir -p "$OUTPUT_DIR"
 
+# Atari DQN/DRQN histories are JSONL rather than clutter-training PKL files.
+if [ -f "$RESULTS_DIR/metrics_history.jsonl" ]; then
+    python -m utils_viz.atari_learning_curves \
+        --run_dir "$RESULTS_DIR" \
+        --output_dir "$OUTPUT_DIR"
+    exit $?
+fi
+
 echo "============================================================"
 echo "批量可视化训练结果"
 echo "============================================================"
@@ -201,4 +209,3 @@ echo ""
 total_size=$(du -sh "$OUTPUT_DIR" 2>/dev/null | cut -f1)
 echo "总大小: $total_size"
 echo ""
-

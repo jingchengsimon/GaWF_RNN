@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FAW_RNN remote experiment manifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "description",
+    "host",
+    "status",
+    "remote_root",
+    "environment"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "minLength": 1},
+    "description": {"type": "string", "minLength": 1},
+    "host": {"type": "string", "minLength": 1},
+    "status": {
+      "enum": ["queued", "running", "recovering", "unknown", "completed", "failed", "cancelled"]
+    },
+    "remote_root": {"type": "string", "minLength": 1},
+    "environment": {
+      "type": "object",
+      "required": ["name", "conda_init"],
+      "properties": {
+        "name": {"type": "string"},
+        "conda_init": {"type": "string"}
+      }
+    },
+    "scheduler": {
+      "type": "object",
+      "properties": {
+        "type": {"enum": ["slurm", "tmux", "process", "none"]},
+        "job_ids": {"type": "array", "items": {"type": ["string", "integer"]}},
+        "run_ids": {"type": "array", "items": {"type": "string"}},
+        "tmux_session": {"type": ["string", "null"]},
+        "process_patterns": {"type": "array", "items": {"type": "string"}},
+        "collect_gpu": {"type": "boolean"}
+      }
+    },
+    "paths": {
+      "type": "object",
+      "properties": {
+        "log_globs": {"type": "array", "items": {"type": "string"}},
+        "status_dir": {"type": ["string", "null"]},
+        "result_paths": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "tracking": {
+      "type": "object",
+      "properties": {
+        "expected_units": {"type": "integer", "minimum": 0},
+        "auto_complete": {"type": "boolean"},
+        "done_glob": {"type": "string"},
+        "fail_glob": {"type": "string"},
+        "result_globs": {"type": "array", "items": {"type": "string"}},
+        "defaults": {"type": "object"},
+        "units": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "result_dir"],
+            "properties": {
+              "id": {"type": "string"},
+              "result_dir": {"type": "string"},
+              "metrics_file": {"type": "string"},
+              "history_file": {"type": "string"},
+              "done_file": {"type": "string"},
+              "fail_file": {"type": "string"},
+              "checkpoint_glob": {"type": "string"},
+              "checkpoint_count": {"type": "integer", "minimum": 0},
+              "expected": {"type": "object"}
+            }
+          }
+        }
+      }
+    },
+    "notes": {"type": "array", "items": {"type": "string"}}
+  }
+}

@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import time
+from typing import Any
 
 import numpy as np
 import torch
@@ -33,9 +34,17 @@ from utils.atari_train_utils import (
     select_device,
     set_atari_seed,
 )
-from utils.minigrid_envs import MINIGRID_PILOT_ENVS, make_vector_minigrid_env
+from utils.minigrid_envs import (
+    MINIGRID_PILOT_ENVS,
+    MINIGRID_VECTOR_BACKENDS,
+    make_vector_minigrid_env,
+)
 from utils.minigrid_models import MiniGridEncoder
 from utils.minigrid_ppo_models import MiniGridActorCritic
+from utils.minigrid_train_acceleration import (
+    MiniGridAcceleration,
+    configure_minigrid_acceleration,
+)
 from train_atari_dqn import _extract_episode_returns
 
 
@@ -72,6 +81,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--num_envs", type=int, default=16)
     p.add_argument("--num_steps", type=int, default=40)
     p.add_argument("--update_epochs", type=int, default=4)
+    p.add_argument(
+        "--env_backend",
+        type=str,
+        default="sync",
+        choices=MINIGRID_VECTOR_BACKENDS,
+        help="Vector environment backend; async uses one subprocess per environment.",
+    )
     p.add_argument("--gamma", type=float, default=0.99)
     p.add_argument("--gae_lambda", type=float, default=0.99)
     p.add_argument("--clip_coef", type=float, default=0.2)
@@ -85,6 +101,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--result_suffix", type=str, default="minigrid_ppo")
     p.add_argument("--save_dir", type=str, default=None)
     p.add_argument("--log_interval_updates", type=int, default=10)
+    p.add_argument(
+        "--amp_dtype",
+        type=str,
+        default="none",
+        choices=["none", "bfloat16", "float16"],
+        help="CUDA autocast dtype; BF16 is preferred on Amarel Ada GPUs.",
+    )
+    p.add_argument("--allow_tf32", action="store_true")
+    p.add_argument("--cudnn_benchmark", action="store_true")
+    p.add_argument("--fused_optimizer", action="store_true")
+    p.add_argument("--compile_model", action="store_true")
+    p.add_argument(
+        "--compile_mode",
+        type=str,
+        default="reduce-overhead",
+        choices=["default", "reduce-overhead", "max-autotune"],
+    )
     return p
 
 
@@ -92,17 +125,43 @@ def _mg_obs(obs) -> np.ndarray:
     return np.ascontiguousarray(np.asarray(obs), dtype=np.uint8)
 
 
-def train(args: argparse.Namespace) -> dict:
+def _materialize_ppo_stats(
+    policy_loss: torch.Tensor | None,
+    value_loss: torch.Tensor | None,
+    entropy: torch.Tensor | None,
+) -> tuple[float, float, float]:
+    """Synchronize logging-only PPO scalars outside the update hot path."""
+
+    def value(tensor: torch.Tensor | None) -> float:
+        return float("nan") if tensor is None else float(tensor.float().cpu())
+
+    return value(policy_loss), value(value_loss), value(entropy)
+
+
+def train(args: argparse.Namespace) -> dict[str, Any]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
     logger = logging.getLogger("train_minigrid_ppo")
     set_atari_seed(args.seed)
     device = select_device(args.device)
+    acceleration = MiniGridAcceleration(
+        device=device,
+        amp_dtype_name=args.amp_dtype,
+        allow_tf32=args.allow_tf32,
+        cudnn_benchmark=args.cudnn_benchmark,
+        compile_model=args.compile_model,
+        compile_mode=args.compile_mode,
+    )
+    configure_minigrid_acceleration(acceleration, logger)
     save_dir = args.save_dir or os.path.join("results", "train_data", args.result_suffix)
     ensure_dir(save_dir)
     history_path = os.path.join(save_dir, "metrics_history.jsonl")
 
     envs = make_vector_minigrid_env(
-        args.env_id, seed=args.seed, num_envs=args.num_envs, agent_view_size=args.agent_view_size
+        args.env_id,
+        seed=args.seed,
+        num_envs=args.num_envs,
+        agent_view_size=args.agent_view_size,
+        vector_backend=args.env_backend,
     )
     try:
         num_actions = int(envs.single_action_space.n)
@@ -129,6 +188,8 @@ def train(args: argparse.Namespace) -> dict:
             ssm_context_len=args.num_steps,
             num_layers=args.num_layers,
         ).to(device)
+        use_fused_optimizer = args.fused_optimizer and device.type == "cuda"
+        adam_kwargs = {"fused": True} if use_fused_optimizer else {}
         if args.model_type == "gawf":
             gate_params = [
                 p
@@ -147,9 +208,19 @@ def train(args: argparse.Namespace) -> dict:
                 ],
                 lr=args.learning_rate,
                 eps=1e-5,
+                **adam_kwargs,
             )
         else:
-            optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, eps=1e-5)
+            optimizer = optim.Adam(
+                model.parameters(),
+                lr=args.learning_rate,
+                eps=1e-5,
+                **adam_kwargs,
+            )
+        scaler = acceleration.build_grad_scaler()
+        evaluate_actions_sequence = acceleration.compile_callable(
+            model.evaluate_actions_sequence
+        )
 
         N, T = args.num_envs, args.num_steps
         obs_buf = torch.zeros((T, N, *next_obs.shape[1:]), device=device, dtype=next_obs.dtype)
@@ -167,7 +238,10 @@ def train(args: argparse.Namespace) -> dict:
         recent_returns: list[float] = []
         batch_size = N * T
         num_updates = max(1, args.total_timesteps // batch_size)
-        final_metrics: dict = {}
+        final_metrics: dict[str, Any] = {}
+        last_pl_tensor: torch.Tensor | None = None
+        last_vl_tensor: torch.Tensor | None = None
+        last_ent_tensor: torch.Tensor | None = None
 
         for update in range(1, num_updates + 1):
             if args.anneal_lr:
@@ -180,7 +254,7 @@ def train(args: argparse.Namespace) -> dict:
                 global_step += N
                 obs_buf[step] = next_obs
                 prev_dones_buf[step] = next_done
-                with torch.no_grad():
+                with torch.no_grad(), acceleration.autocast():
                     action, logprob, _ent, value, state = model.act(
                         next_obs, next_done, state=state
                     )
@@ -198,10 +272,11 @@ def train(args: argparse.Namespace) -> dict:
             if len(recent_returns) > 200:
                 recent_returns = recent_returns[-200:]
 
-            with torch.no_grad():
+            with torch.no_grad(), acceleration.autocast():
                 _a, _lp, _e, next_value, _s = model.act(
                     next_obs, next_done, state=state, deterministic=True
                 )
+                next_value = next_value.float()
                 advantages, returns = compute_gae(
                     rewards_buf,
                     dones_buf,
@@ -220,25 +295,42 @@ def train(args: argparse.Namespace) -> dict:
             b_ret = returns.transpose(0, 1).contiguous()
             adv_norm = (b_adv - b_adv.mean()) / (b_adv.std() + 1e-8)
 
-            last_pl = last_vl = last_ent = 0.0
             for _epoch in range(args.update_epochs):
-                new_logp, entropy, new_v = model.evaluate_actions_sequence(
-                    b_obs, b_prev_dones, b_actions, state=rollout_start_state
-                )
-                ratio = (new_logp - b_old_logp).exp()
-                surr1 = ratio * adv_norm
-                surr2 = torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef) * adv_norm
-                policy_loss = -torch.min(surr1, surr2).mean()
-                value_loss = 0.5 * F.mse_loss(new_v, b_ret)
-                entropy_loss = entropy.mean()
-                loss = policy_loss - args.ent_coef * entropy_loss + args.vf_coef * value_loss
+                with acceleration.autocast():
+                    new_logp, entropy, new_v = evaluate_actions_sequence(
+                        b_obs, b_prev_dones, b_actions, state=rollout_start_state
+                    )
+                    new_logp = new_logp.float()
+                    entropy = entropy.float()
+                    new_v = new_v.float()
+                    ratio = (new_logp - b_old_logp).exp()
+                    surr1 = ratio * adv_norm
+                    surr2 = (
+                        torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
+                        * adv_norm
+                    )
+                    policy_loss = -torch.min(surr1, surr2).mean()
+                    value_loss = 0.5 * F.mse_loss(new_v, b_ret)
+                    entropy_loss = entropy.mean()
+                    loss = (
+                        policy_loss
+                        - args.ent_coef * entropy_loss
+                        + args.vf_coef * value_loss
+                    )
                 optimizer.zero_grad(set_to_none=True)
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
-                optimizer.step()
-                last_pl = float(policy_loss.detach())
-                last_vl = float(value_loss.detach())
-                last_ent = float(entropy_loss.detach())
+                if scaler.is_enabled():
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                    optimizer.step()
+                last_pl_tensor = policy_loss.detach()
+                last_vl_tensor = value_loss.detach()
+                last_ent_tensor = entropy_loss.detach()
 
             if recent_returns:
                 mean_ret = float(np.mean(recent_returns))
@@ -247,6 +339,11 @@ def train(args: argparse.Namespace) -> dict:
                 mean_ret = success = float("nan")
 
             if update % args.log_interval_updates == 0 or update == num_updates:
+                last_pl, last_vl, last_ent = _materialize_ppo_stats(
+                    last_pl_tensor,
+                    last_vl_tensor,
+                    last_ent_tensor,
+                )
                 fps = int(global_step / max(time.time() - start_time, 1e-6))
                 logger.info(
                     "upd=%d/%d step=%d success=%.3f return=%.3f pl=%.4f vl=%.4f ent=%.3f fps=%d",
@@ -294,9 +391,22 @@ def train(args: argparse.Namespace) -> dict:
                 args.gawf_feedback_lr_scale if args.model_type == "gawf" else None
             ),
             "encoder": args.encoder,
+            "num_envs": args.num_envs,
+            "num_steps": args.num_steps,
+            "update_epochs": args.update_epochs,
+            "env_backend": args.env_backend,
             "global_step": global_step,
             "success_rate": success,
             "episodic_return_100": mean_ret,
+            "fps": fps,
+            "amp_dtype": (
+                acceleration.amp_dtype_name if acceleration.amp_dtype is not None else "none"
+            ),
+            "allow_tf32": acceleration.allow_tf32 and device.type == "cuda",
+            "cudnn_benchmark": acceleration.cudnn_benchmark and device.type == "cuda",
+            "fused_optimizer": use_fused_optimizer,
+            "compile_model": acceleration.compile_model and device.type == "cuda",
+            "compile_mode": acceleration.compile_mode,
         }
         layer_suffix = f"_L{args.num_layers}" if args.num_layers > 1 else ""
         ckpt = os.path.join(
