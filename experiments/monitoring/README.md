@@ -1,7 +1,7 @@
 # Experiment Monitoring Registry
 
 该目录是项目内的轻量实验检测层，用来快速定位 Amarel 和 sjc-remote job。它不依赖
-Dashboard，不定义模型、实验协议或研究结论，也不属于项目的关键创新。所有文件使用
+外部任务服务，不定义模型、实验协议或研究结论，也不属于项目的关键创新。所有文件使用
 Python 标准库，可在 Mac 和 Mac mini 的同一项目版本中使用。
 
 ## 三个组件

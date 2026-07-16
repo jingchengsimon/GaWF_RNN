@@ -18,6 +18,7 @@ ignored by Git. Do not put passwords, tokens, or private keys here.
 ## Data roots
 
 - Amarel stimuli/data: `<absolute-path>`
+- Amarel training results: `<absolute-path>` (`AIM3_RESULTS_PATH`)
 - sjc stimuli/data: `<absolute-path>`
 
 ## Conda

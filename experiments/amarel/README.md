@@ -17,11 +17,14 @@ cpus-per-task=16
 mem=64G
 AIM3_NUM_WORKERS=12
 AIM3_PIN_MEMORY=1
+AIM3_RESULTS_PATH=<configured-scratch-results-root>
 ```
 
 Export the DataLoader values with `sbatch`; do not add them to local launchers or training
 defaults. Slurm scripts must source the configured Amarel Conda initialization script and run
 `conda activate aim3_rnn`. Do not use `module`, the default Python, or an unrelated environment.
+Training outputs belong under `$AIM3_RESULTS_PATH/train_data/<result_suffix>/`; status and rerun
+tools must resolve that same physical root rather than assuming `<repo>/results`.
 
 ## File roles
 
@@ -60,6 +63,12 @@ The directory also contains reusable launchers for:
 - MiniGrid recurrent PPO comparisons with explicit environment/CUDA acceleration settings;
 - optimizer and environment smoke checks.
 
+The fixed-best Clutter confirmation run uses `submit_clutter_best6_10seed.sh` for six models by
+ten seeds. It submits ten independent Slurm jobs, one six-task model array per seed;
+`check_clutter_best6_10seed.sh <job-id>` performs strict result validation. Because the 40h
+training array is larger than node memory, this launcher uses mmap with
+`AIM3_NUM_WORKERS=0` and `AIM3_PIN_MEMORY=0`, overriding the usual Amarel DataLoader defaults.
+
 Each family must define expected result files and use a status/check script that validates result
 contents rather than relying only on Slurm state.
 
@@ -74,7 +83,7 @@ After a successful submission, report in the same conversation:
 - the status/check command.
 
 In the same turn, add the job to `experiments/monitoring/jobs/` with
-`experiments.monitoring.job_registry`. No external registry or Dashboard step is required.
+`experiments.monitoring.job_registry`.
 
 ## Results and cleanup
 

@@ -40,7 +40,7 @@ Run a long command in remote tmux:
 After a detached launch succeeds, record its run ID, tmux session, remote root, exact logs,
 results, and validity conditions with the project-local registry in
 `experiments/monitoring/README.md`. This makes the same run discoverable from Mac and Mac mini
-without an external Dashboard.
+without relying on a separate task service.
 
 The wrapper prints a marker for detached runs. Fetch only files newer than that marker:
 
