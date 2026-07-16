@@ -1,158 +1,151 @@
-# CONVENTIONS.md — Naming Conventions & Abbreviation Table
+# Conventions
 
-## 1. Abbreviation Dictionary
+This document owns public argument names, identifiers, tensor layout, and saved-result naming.
+Architecture and workflow rules live in `ARCHITECTURE.md` and `DEVELOPMENT_WORKFLOWS.md`.
 
-| Abbreviation | Full term | Context |
-|---|---|---|
-| `gawf` | Gated-with-Feedback | Model family name |
-| `gawf` | Gated-with-Feedback | Unified single/multi-layer model selected by `--num_layers` |
-| `rnn` | Recurrent Neural Network | Model type key in CLI |
-| `gru` | Gated Recurrent Unit | Model type key |
-| `lstm` | Long Short-Term Memory | Model type key |
-| `ann` | Artificial Neural Network (feedforward) | Model type key |
-| `dann` | Dendritic ANN | `DendriticANNConv` |
-| `ffn` | Feedforward Network | `FeedForwardConv` |
-| `mamba` | Mamba SSM block | Model type key |
-| `ssm` | State Space Model | Model type key |
-| `cnn` | Convolutional Neural Network | Encoder stage |
-| `fb` | Feedback | Feedback vector / buffer |
-| `fb_dim` | Feedback dimension | `dz` for projected GaWF; direct feedback uses output or hidden dimensions |
-| `ih` | Input-to-Hidden | RNN weight matrix |
-| `hh` | Hidden-to-Hidden | RNN recurrent weight |
-| `hparam` | Hyperparameter | Used in log/result dir names |
-| `wd` | Weight decay | CLI `--weight_decays` (`train_model.py`) |
-| `cdo` | CNN dropout probability *p* | CLI `--cnn_dropout` (`train_model.py`); filename `_cdo{value}` |
-| `rdo` | RNN/middle-path dropout *p* | CLI `--rnn_dropout` (`train_model.py`); filename `_rdo{value}` |
-| `do` | (Legacy) unified dropout *p* | Old stems only: `_do{value}`; maps to both paths when parsing |
-| `lr` | Learning rate | CLI and filename |
-| `h` | Hidden size | Filename suffix, e.g. `h256` |
-| `dmodel` | Mamba/SSM sequence width | Filename suffix for `mamba` / `ssm`, e.g. `dmodel170` |
-| `state` | SSM latent state size | Filename suffix for `ssm`, e.g. `state189` |
-| `dz` | Projected GaWF feedback context dimension | Optional GaWF filename suffix, e.g. `dz8` |
-| `L` | Recurrent layer count | Multi-layer filename suffix, e.g. `L2` |
-| `fs` | ALE frame skip | Pong result suffix, e.g. `fs1` = one ALE frame per env step |
-| `stack` | Observation frame stack | Pong result suffix, e.g. `stack1` |
-| `acc` | Acceleration / accuracy | Context-dependent (filename: acceleration) |
-| `sector` | 3×3 spatial sector | Label mode name |
-| `coord` | Coordinate regression | Label mode name |
-| `allchars` | Predict all characters | Label mode name |
-| `glob` | Global (sum correct / sum frames) | Training metrics vs batch-mean curves |
-| `fg_switch` | Foreground switch flag / window | Label column; pre5/post5 eval windows |
-| `pre5` / `post5` | Five frames before / around fg switch | Transition-window accuracy (sector eval) |
-| `agg` | Aggregation | `space` or `feature` axis collapse |
-| `trans` | Transformation matrix | `trans_ih`, `trans_hh` |
-| `outer` | Outer product component | Rank-1 decomposition term |
-| `comp` | Component | Decomposition component index |
-| `npz` | NumPy compressed archive | File format `.npz` |
-| `pth` | PyTorch state dict | Checkpoint file `.pth` |
-| `pkl` | Pickle | Training results file |
-| `mmap` | Memory-mapped array | NumPy `mmap_mode='r'` |
-| `FDR` | False Discovery Rate | Statistical correction (Benjamini-Hochberg) |
-| `BH` | Benjamini-Hochberg | FDR correction method |
-| `cosine` | Cosine similarity | Channel/unit reorder criterion |
-| `dPCA` | Demixed PCA | Dimensionality reduction (utils_anal) |
-| `UMAP` | Uniform Manifold Approximation | Dimensionality reduction (utils_viz) |
-| `dpca` | dPCA | Module/script name |
-| `umap` | UMAP | Module/script name |
+## Vocabulary
 
-## 2. Directory Name Conventions
+| Name | Meaning |
+|---|---|
+| `gawf` | Gated-Weight-on-Feedback model; unified single/multi-layer public type |
+| `fb`, `dz` | feedback vector and optional projected feedback dimension |
+| `ih`, `hh` | input-to-hidden and hidden-to-hidden paths |
+| `cdo`, `rdo` | CNN and recurrent/middle-path dropout filename fields |
+| `h`, `dmodel`, `state` | recurrent hidden size, sequence-model width, S5 state size |
+| `L` | recurrent/readout layer count in filenames |
+| `fs`, `stack` | ALE frame skip and observation frame stack |
+| `glob` | global correct frames divided by global frame count |
+| `pre5`, `post5` | foreground-switch evaluation windows |
+| `agg` | analysis aggregation axis: `space` or `feature` |
+| `trans`, `outer` | feedback-conditioned transform and rank-one component |
 
-| Directory | Purpose | Naming Rule |
-|-----------|---------|-------------|
-| `results/train_data/<suffix>/` | Training outputs | suffix = CLI `--result_suffix` |
-| `results/anal_data/<module>/` | Analysis arrays | module = script basename |
-| `results/anal_figs/<module>/` | Figures | module = script basename |
-| `logs_hparam/` | Hparam sweep logs | always at project root |
-| `experiments/generalization/artifacts/gen_hparam_full_grid/` | Full-grid hparam summaries and status | `hparam_best.*`, `hparam_full_grid_status.*`, `failed_task_ids.txt` |
-| `experiments/amarel/artifacts/<run>/` | Amarel Slurm logs | one stdout/stderr pair per array task; e.g. `hparam_full_grid`, `hparam_4h_5epoch_test` |
+## Public identifiers
 
-## 2.1 Experiment Script Conventions
+- Python functions: verb-led `snake_case`.
+- Classes: `PascalCase`.
+- Constants: `UPPER_SNAKE_CASE`.
+- Private helpers: one leading underscore.
+- Common loop indices: `sidx` sample, `t` time, `b` batch, `d` digit/component, `c` channel.
+- Public model keys use lowercase: `ann`, `rnn`, `gru`, `lstm`, `gawf`, `mamba`, `s5`.
 
-| Location | Pattern | Example |
-|----------|---------|---------|
-| Full-grid hparam utility | `experiments/generalization/hparam_full_grid.py` | Subcommands: `emit-task`, `validate`, `status`, `summarize` |
-| Amarel launchers | `experiments/amarel/*hparam_full_grid*.sh` | `submit_hparam_full_grid_batches.sh`, `rerun_hparam_full_grid_failed.sh` |
-| Amarel smoke-test launchers | `experiments/amarel/*hparam_4h_5epoch_test*.sh` | 4h-only, 5-epoch, 4-model fixed-hparam submission/status check |
-| Amarel probe | `experiments/amarel/probe_amarel_slurm_limits.sh` | Slurm `sbatch --test-only` probe |
-| Local hparam launchers | `experiments/local/*hparam*.sh` | `run_hparam_full_grid_2gpu.sh --scale 10 20 40`, local 2-GPU smoke/full-grid runs |
+Do not introduce a second name for an existing public argument or model. Historical aliases may
+remain parsable for compatibility but must not appear in new result names.
 
-## 3. File Suffix Conventions
+## Common CLI arguments
 
-### Checkpoint filenames
-```
-{model_type}_{label_mode}{acc_suffix}_h{hidden}_lr{lr}_wd{wd}_cdo{cdo}_rdo{rdo}{dz_suffix}{fb_suffix}_model.pth
-```
-Example: `gawf_sector_acc_h256_lr0.0005_wd0.0001_cdo0_rdo0.5_dz32_fb50_model.pth`
+| Argument | Meaning |
+|---|---|
+| `--ckpt` | checkpoint path |
+| `--save_dir` | analysis output directory |
+| `--data_dir` | input dataset or analysis directory |
+| `--device` | `cuda`, `mps`, or `cpu` as supported by the script |
+| `--seed` | random seed |
+| `--batch_size` | DataLoader batch size |
+| `--use_mmap` | load large NumPy stimuli with mmap |
+| `--use_sector_mode` | 3x3 sector classification |
+| `--predict_all_chars` | predict foreground and background characters |
+| `--sector`, `--digit` | selected sector 0–8 or digit 0–9 |
+| `--agg` | `space` or `feature` aggregation |
 
-Single-layer GaWF `dz` suffix is optional:
-- with explicit feedback dim: `_dz{value}`
-- legacy behavior (no explicit feedback dim): omit `_dz`
+Clutter training uses:
 
-Multi-layer GaWF stems always add layer count. Projected runs also include `dz`:
-```
-gawf_{label_mode}{acc_suffix}_h{hidden}_L{layers}_lr{lr}_wd{wd}_cdo{cdo}_rdo{rdo}{_dz{dz}}{fb_suffix}_model.pth
-```
-`gawf` defaults to `L=1`; multi-layer direct feedback uses `--num_layers > 1`, and
-`--dz > 0` enables projected feedback.
+| Argument | Contract |
+|---|---|
+| `--cnn_dropout` | one or more CNN dropout values; default `[0]` |
+| `--rnn_dropout` | one middle-path dropout value; default `0.5` |
+| `--mamba_d_models` | one or more Mamba widths |
+| `--ssm_d_models` | one or more S5 sequence widths |
+| `--s5_state_sizes` | one or more S5 latent state sizes |
+| `--feedback_dim`, `--dz` | GaWF projected feedback dimension; positive enables projectors |
+| `--num_layers` | ANN/RNN/GRU/LSTM/GaWF depth; integer >= 1 |
+| `--gawf_feedback_lr_scale` | U/V/projector LR multiplier; default `1.0` |
+| `--data_suffix` | training and default validation data suffix |
+| `--eval_data_suffix` | optional validation-only suffix |
+| `--patience` | early stopping on fair val character accuracy; `0` disables |
 
-Mamba and SSM stems use model-native width/state names instead of `h`:
-```
-mamba_{label_mode}{acc_suffix}_dmodel{d_model}_lr{lr}_wd{wd}_cdo{cdo}_rdo{rdo}_model.pth
-ssm_{label_mode}{acc_suffix}_dmodel{d_model}_state{state_size}_lr{lr}_wd{wd}_cdo{cdo}_rdo{rdo}_model.pth
+Clutter metrics JSON records `seed`, `patience`, `use_acceleration`, and `use_mmap` in addition
+to the model/dataset hyperparameters and epoch summaries. Multi-seed result directories must
+encode the seed even though checkpoint stems retain the standard model naming contract.
+
+Atari DQN additionally uses `--frame_skip`, `--frame_stack`, `--task_schedule`,
+`--replay_sampling`, `--amp_dtype`, `--allow_tf32`, `--compile_model`, and `--feedback_mode`.
+
+MiniGrid PPO exposes the same CUDA acceleration names plus `--env_backend {sync,async}`,
+`--cudnn_benchmark`, and `--fused_optimizer`. Saved metrics must record the active backend and
+all acceleration settings. Amarel accelerated reruns append a distinct tag such as `_accel_v1`
+to the result suffix so historical baselines are not overwritten.
+
+Multi-task collection defaults to `transition_balanced`; historical `round_robin` remains
+selectable. New Pong result suffixes must contain both `fs` and `stack`. GaWF DQN feedback is
+named `qvalues`; A2C GaWF output feedback is named `output`.
+
+## Tensor and label layout
+
+```text
+(B, T, C, H, W)       movie/observation sequences
+(B, T, 2) int64       [digit_id, sector_id]
+(B, T, 3) float32     [digit_id, x, y]
+(B, T, max_chars)     ordered character IDs; -1 is padding
+(B, H, input_size)    per-sample input-hidden transform
+(n_comp, H, I)        rank-one transform components
 ```
 
-Legacy (pre-split): `..._do{value}_...` — still supported by `parse_hparams_from_filename` for old checkpoints.
+Use PyTorch batch-first layouts at task boundaries unless an underlying core explicitly documents
+another internal representation.
 
-### Analysis output tags
+## Result directories
+
+| Directory | Contents |
+|---|---|
+| `results/train_data/<suffix>/` | checkpoints, pickles, metrics JSON |
+| `results/anal_data/<module>/` | analysis arrays and metadata |
+| `results/anal_figs/<module>/` | figures |
+| `experiments/generalization/artifacts/` | aggregated experiment tables/configs |
+| `experiments/amarel/artifacts/<run>/` | ignored Slurm logs/status artifacts |
+
+The analysis/figure module directory matches the producing script basename.
+
+## Checkpoint names
+
+Standard recurrent Clutter form:
+
+```text
+{model}_{mode}{acc}_h{hidden}_lr{lr}_wd{wd}_cdo{cnn}_rdo{rnn}{suffixes}_model.pth
 ```
+
+- Multi-layer recurrent runs add `_L{layers}`.
+- Explicit/projected GaWF feedback adds `_dz{dimension}`.
+- Legacy single-layer GaWF may omit `_dz` and infer task-output feedback.
+- Historical `gawf_multi_` and unified `_do{dropout}` names remain readable but are not emitted.
+
+Mamba/S5 use model-native width fields:
+
+```text
+mamba_{mode}{acc}_dmodel{width}_lr{lr}_wd{wd}_cdo{cnn}_rdo{rnn}_model.pth
+s5_{mode}{acc}_dmodel{width}_state{size}_lr{lr}_wd{wd}_cdo{cnn}_rdo{rnn}_model.pth
+```
+
+Atari names must encode algorithm, model, feedback, optional layer count, environment, frame skip,
+and stack. `pong_fs1_stack1` and `pong_fs4_stack1` are valid protocol tags; `pong1f` is not.
+
+## Analysis output names
+
+```text
 tag = f"{mode}{selected_idx}_{agg}"
-# e.g. "sector3_space", "digit7_feature"
+<descriptor>_<tag>.npy
+<descriptor>_meta_<tag>.json
+<mode><idx>_<agg>_<descriptor>.png
 ```
 
-### Figure filenames
-```
-{mode}{idx}_{agg}_{descriptor}.png
-# e.g. "sector3_space_avg_gate_allcomp.png"
-```
+Save one array as `.npy`, related arrays as `.npz`, and metadata as JSON. Arrays written for
+downstream use must be explicitly `np.float32` or `np.int64`.
 
-## 4. Python Identifier Conventions
+## Compatibility and naming changes
 
-### Class names
-`PascalCase`. Model classes end in `Conv` when they include a CNN encoder:
-`RNNConv`, `GRUConv`, `LSTMConv`, `GaWFRNNConv`, `MultiLayerGaWFRNNConv`,
-`DendriticANNConv`, `FeedForwardConv`.
+When a public module, symbol, flag, metrics field, or filename changes:
 
-### Function names
-`snake_case` starting with a verb:
-- `compute_*` — pure calculation, returns array(s)
-- `build_*` — constructs an object (model, loader, dataset)
-- `export_*` — script-level: runs inference and writes to disk
-- `load_*` / `save_*` — I/O wrappers
-- `parse_*` — parsing logic
-- `plot_*` — generates and saves a figure
-- `finalize_*` — reduces accumulated stats to final metrics
-- `format_*` — returns a display string
-
-### Private helper names
-Single underscore prefix: `_agg_ih`, `_draw_boundaries`, `_save_digit_boundaries`.
-
-### Loop variables
-Consistent single-letter conventions:
-```python
-for sidx in range(n_total):      # sample index
-    for t in t_indices:           # time index
-        for b in range(batch_size): # batch index
-            for d in range(num_digits): # digit/component
-                for c in range(num_channels): # channel
-```
-
-## 5. Tensor Dimension Order
-
-All tensors follow PyTorch conventions:
-```
-(B, T, C, H, W)  — batch, time, channel, height, width  [input frames]
-(B, T, 2)        — batch, time, [digit_id, sector_id]   [labels, sector mode]
-(B, H, input)    — batch, hidden, input_size             [trans_ih]
-(n_comp, H, I)   — component, hidden, input              [outer_all_acc]
-(C, D)           — channels, digits                      [mean_activation in CNN stats]
-```
+1. Search all Python, shell, notebooks, analysis, and visualisation call sites.
+2. Update producers and consumers together.
+3. Preserve parsing/loading compatibility when historical results remain scientifically useful.
+4. Document migrations in the owning reference; add to `EXPERIMENT_LOG.md` only when the change
+   alters the research model, protocol, or interpretation.
