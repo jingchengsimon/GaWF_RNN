@@ -118,6 +118,7 @@ def make_atari_env(
     capture_video: bool = False,
     video_dir: str | None = None,
     full_action_space: bool = False,
+    render_mode: str | None = None,
 ) -> Callable[[], object]:
     """Return a thunk that creates one preprocessed Atari environment."""
 
@@ -139,6 +140,7 @@ def make_atari_env(
             frameskip=1,
             repeat_action_probability=0.0,
             full_action_space=full_action_space,
+            render_mode=render_mode or ("rgb_array" if capture_video else None),
         )
         env = gym.wrappers.RecordEpisodeStatistics(env)
         if capture_video and idx == 0:
@@ -173,6 +175,7 @@ def make_vector_atari_env(
     capture_video: bool = False,
     video_dir: str | None = None,
     full_action_space: bool = False,
+    render_mode: str | None = None,
 ) -> Any:
     """Create a synchronous vector Atari environment."""
     try:
@@ -195,6 +198,7 @@ def make_vector_atari_env(
             capture_video,
             video_dir,
             full_action_space,
+            render_mode,
         )
         for idx in range(num_envs)
     ]

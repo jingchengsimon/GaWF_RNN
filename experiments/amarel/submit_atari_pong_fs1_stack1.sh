@@ -1,53 +1,76 @@
 #!/usr/bin/env bash
-# Submit the Pong frame-skip-1/stack-1 sweep: 7 models x 2 settings x 5 seeds.
+# Submit the strict Pong fs1/stack1 sweep without running PyTorch on a login node.
 #
-# Steps:
-#   1. (once) param-match every recurrent core to the LSTM anchor, writing
-#      results/atari_param_match/atari_param_match.json.
-#   2. sbatch the 70-task array (SLURM_ARRAY_TASK_ID 0..69).
-#
-# Usage:
-#   bash experiments/amarel/submit_atari_pong_fs1_stack1.sh                 # all 70
-#   ARRAY_CONCURRENCY=20 bash experiments/amarel/submit_atari_pong_fs1_stack1.sh
-#   SKIP_PARAM_MATCH=1 bash experiments/amarel/submit_atari_pong_fs1_stack1.sh
-#
-# Subsets via --array, e.g. only the flickering half (settings map to tasks
-# 35-69 for the default 5 seeds):
-#   bash experiments/amarel/submit_atari_pong_fs1_stack1.sh --array 35-69
+# The parameter match is a separate Slurm compute job. The 70-task training
+# array starts only after that job succeeds.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ROOT="${AIM3_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 cd "$ROOT"
 
 RUN_SCRIPT="$SCRIPT_DIR/run_atari_pong_fs1_stack1_array.sh"
+MATCH_SCRIPT="$SCRIPT_DIR/run_atari_param_match.sh"
 ART_ROOT="$ROOT/experiments/amarel/artifacts/atari_pong_fs1_stack1"
-mkdir -p "$ART_ROOT"
-
+MATCH_ART="$ROOT/experiments/amarel/artifacts/atari_param_match_fs1_stack1"
 ARRAY_SPEC="0-69"
 ARRAY_CONCURRENCY="${ARRAY_CONCURRENCY:-20}"
-while [[ $# -gt 0 ]]; do
+DRY_RUN=0
+while (( $# )); do
   case "$1" in
     --array) ARRAY_SPEC="$2"; shift 2 ;;
-    *) echo "Unknown arg: $1" >&2; exit 2 ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 
-# ---- environment (for the param-match step) --------------------------------
-source /home/js3269/enter/etc/profile.d/conda.sh
-conda activate aim3_rnn
-export KMP_DUPLICATE_LIB_OK=TRUE
-
-# ---- 1. param match (all recurrent cores incl. mamba) ----------------------
-if [[ -z "${SKIP_PARAM_MATCH:-}" ]]; then
-  echo "[submit] param-matching cores to the LSTM anchor..."
-  python -m experiments.atari.atari_ssm_param_match \
-    --conv_out 3136 --hidden_size 512 --ssm_state_size 128 --num_actions 6 --num_layers 1
+if (( DRY_RUN )); then
+  echo "param_match=sbatch layers=1 models=rnn,gru,lstm,gawf,s5,mamba"
+  echo "training=sbatch array=${ARRAY_SPEC}%${ARRAY_CONCURRENCY} dependency=afterok:param_match"
+  exit 0
 fi
 
-# ---- 2. submit array -------------------------------------------------------
-echo "[submit] sbatch --array=${ARRAY_SPEC}%${ARRAY_CONCURRENCY} $RUN_SCRIPT"
-sbatch --array="${ARRAY_SPEC}%${ARRAY_CONCURRENCY}" \
-  --export=ALL,AIM3_ROOT="$ROOT",TOTAL_TIMESTEPS="${TOTAL_TIMESTEPS:-1000000}" \
-  "$RUN_SCRIPT"
+: "${AIM3_RESULTS_PATH:?Export AIM3_RESULTS_PATH, normally /scratch/js3269/results}"
+[[ "$AIM3_RESULTS_PATH" == /* ]] || {
+  echo "AIM3_RESULTS_PATH must be absolute: $AIM3_RESULTS_PATH" >&2
+  exit 2
+}
+mkdir -p "$ART_ROOT" "$MATCH_ART"
+
+MATCH_DIR="$AIM3_RESULTS_PATH/atari_param_match"
+MATCH_JSON="$MATCH_DIR/atari_param_match.json"
+DEPENDENCY_ARGS=()
+MATCH_JOB_ID=""
+if [[ -z "${SKIP_PARAM_MATCH:-}" ]]; then
+  MATCH_RAW="$(sbatch --parsable \
+    --chdir="$ROOT" \
+    --output="$MATCH_ART/%j.out" \
+    --error="$MATCH_ART/%j.err" \
+    --export="ALL,AIM3_ROOT=$ROOT,AIM3_RESULTS_PATH=$AIM3_RESULTS_PATH,PARAM_MATCH_NUM_LAYERS=1,PARAM_MATCH_MODELS=rnn:gru:lstm:gawf:s5:mamba,PARAM_MATCH_REQUIRED=ann:rnn:gru:lstm:gawf:s5:mamba,PARAM_MATCH_OUT_DIR=$MATCH_DIR,ARTIFACT_TAG=atari_param_match_fs1_stack1" \
+    "$MATCH_SCRIPT")"
+  MATCH_JOB_ID="${MATCH_RAW%%;*}"
+  DEPENDENCY_ARGS=(--dependency="afterok:$MATCH_JOB_ID")
+else
+  [[ -f "$MATCH_JSON" ]] || { echo "Missing $MATCH_JSON" >&2; exit 2; }
+  /usr/bin/python3 - "$MATCH_JSON" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = json.load(handle)
+required = {"ann", "rnn", "gru", "lstm", "gawf", "s5", "mamba"}
+assert required <= set(data["matched"])
+assert data.get("candidate_num_layers") == 1
+PY
+fi
+
+ARRAY_RAW="$(sbatch --parsable \
+  --array="${ARRAY_SPEC}%${ARRAY_CONCURRENCY}" \
+  --chdir="$ROOT" \
+  "${DEPENDENCY_ARGS[@]}" \
+  --export="ALL,AIM3_ROOT=$ROOT,AIM3_RESULTS_PATH=$AIM3_RESULTS_PATH,TOTAL_TIMESTEPS=${TOTAL_TIMESTEPS:-1000000}" \
+  "$RUN_SCRIPT")"
+ARRAY_JOB_ID="${ARRAY_RAW%%;*}"
+
+echo "PARAM_MATCH_JOB_ID=$MATCH_JOB_ID"
+echo "TRAINING_ARRAY_JOB_ID=$ARRAY_JOB_ID array=${ARRAY_SPEC}%${ARRAY_CONCURRENCY}"
