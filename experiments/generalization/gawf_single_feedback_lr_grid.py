@@ -19,8 +19,8 @@ from typing import Any, Dict, Iterable, List, Sequence
 
 MODEL = "gawf"
 SCALE = "40h"
-DATA_SUFFIX = "40h-float32"
-EVAL_DATA_SUFFIX = "40h-float32"
+DATA_SUFFIX = "40h-uint8"
+EVAL_DATA_SUFFIX = "40h-uint8"
 HIDDENS = [192, 256, 320, 384]
 LRS = [0.002, 0.003, 0.005, 0.007]
 WDS = [0.0003, 0.001, 0.003]

@@ -26,7 +26,7 @@ case "$SK" in
   4h) DS=4h-float32 ;;
   10h) DS=10h-float32 ;;
   20h) DS=20h-float32 ;;
-  40h) DS=40h-float32 ;;
+  40h) DS=40h-uint8 ;;
   *) echo "Invalid scale: $SK" >&2; exit 1 ;;
 esac
 
@@ -77,7 +77,7 @@ EP_SUFFIX="_ep${NUM_EPOCHS}"
 # One shared train_data (and train_figs, if any consumer uses result_suffix) dir per scale+epoch; model type is in file stems.
 RS_COMBINED="${RS_PREFIX}${EP_SUFFIX}"
 
-COMMON=(--data_suffix "$DS" --eval_data_suffix 40h-float32 --cnn_dropout 0.0 --rnn_dropout 0.5
+COMMON=(--data_suffix "$DS" --eval_data_suffix 40h-uint8 --cnn_dropout 0.0 --rnn_dropout 0.5
   --num_epochs "$NUM_EPOCHS" --patience "$PAT" --use_acceleration --use_sector_mode --data_dir "$DATA_DIR"
   --result_suffix "$RS_COMBINED")
 

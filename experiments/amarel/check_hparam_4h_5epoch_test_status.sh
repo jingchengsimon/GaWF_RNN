@@ -48,7 +48,7 @@ ok = (
     and math.isclose(float(m.get("lr", "nan")), float(lr), rel_tol=0, abs_tol=1e-12)
     and math.isclose(float(m.get("weight_decay", "nan")), float(wd), rel_tol=0, abs_tol=1e-12)
     and m.get("dataset_suffix") == "4h-float32"
-    and m.get("eval_dataset_suffix") == "40h-float32"
+    and m.get("eval_dataset_suffix") == "40h-uint8"
     and int(m.get("num_epochs", -1)) == 5
 )
 raise SystemExit(0 if ok else 1)

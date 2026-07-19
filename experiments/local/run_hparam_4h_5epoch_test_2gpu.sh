@@ -18,7 +18,7 @@ cd "$ROOT"
 LOG_DIR="$ROOT/experiments/local/artifacts/hparam_4h_5epoch_test"
 RESULT_SUFFIX="gen_local_hparam_4h_5epoch_test"
 DATA_SUFFIX="4h-float32"
-EVAL_DATA_SUFFIX="40h-float32"
+EVAL_DATA_SUFFIX="40h-uint8"
 HIDDEN_SIZE=256
 LR=0.0005
 WD=0.0001

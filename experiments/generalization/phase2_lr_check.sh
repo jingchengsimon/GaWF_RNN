@@ -20,7 +20,7 @@ case "$SK" in
   4h)  DS=4h-float32 ;;
   10h) DS=10h-float32 ;;
   20h) DS=20h-float32 ;;
-  40h) DS=40h-float32 ;;
+  40h) DS=40h-uint8 ;;
 esac
 
 SCRATCH_DATA="/scratch/${USER}/stimuli"
@@ -38,7 +38,7 @@ WD=$(python -c "import json; print(json.load(open('$HP'))['$SK']['weight_decay']
 SUFFIX="gen_phase2_${SK}"
 echo "[Phase2 LR check $SK] data_dir=$DATA_DIR WD=$WD result_suffix=$SUFFIX"
 
-BASE=(--data_suffix "$DS" --eval_data_suffix 40h-float32 --data_dir "$DATA_DIR"
+BASE=(--data_suffix "$DS" --eval_data_suffix 40h-uint8 --data_dir "$DATA_DIR"
   --lrs 1e-4 3e-4 5e-4 1e-3 --wds "$WD"
   --cnn_dropout 0.0 --rnn_dropout 0.5 --num_epochs 100 --patience 15
   --use_acceleration --use_sector_mode --result_suffix "$SUFFIX")
