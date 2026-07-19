@@ -288,6 +288,8 @@ def _legacy_readme(root: Path, *, apply: bool) -> None:
     if not apply:
         return
     readme = root / "README.md"
+    if readme.is_file():
+        return
     readme.parent.mkdir(parents=True, exist_ok=True)
     readme.write_text(
         "# Legacy analysis output path\n\n"

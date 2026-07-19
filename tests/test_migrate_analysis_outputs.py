@@ -77,3 +77,13 @@ def test_campaign_roots_remain_distinct(tmp_path: Path) -> None:
     destinations = {Path(row["to"]) for row in report["moves"]}
     assert len(destinations) == 2
     assert all(source.exists() for source in (first, second))
+
+
+def test_apply_preserves_existing_legacy_readme(tmp_path: Path) -> None:
+    data = tmp_path / "anal_data"
+    figs = tmp_path / "anal_figs"
+    index = tmp_path / "anal_index"
+    readme = _write(data / "README.md", "tracked guidance\n")
+    _write(data / "cnn_channel" / "stats.npz")
+    migrate(data, figs, index, apply=True)
+    assert readme.read_text(encoding="utf-8") == "tracked guidance\n"
