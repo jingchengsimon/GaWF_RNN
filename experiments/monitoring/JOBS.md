@@ -6,6 +6,7 @@
 
 | Job | Status | Host | Scheduler / run IDs | Units | Remote root | Description |
 |---|---|---|---|---:|---|---|
+| `sjc-unified-variance-20260719` | running | `sjc-remote` | run_20260719_142654, sjc_unified_variance_20260719 | 1 | `/G/MIMOlab/Codes/aim3_gawf_rnn` | GaWF unified balanced variance decomposition: 7 objects, 4 cells, and summary |
 | `amarel-gawf-symmetric-plots-58306176` | completed | `amarel` | 58306176 | 6 | `/cache/home/js3269/projects/aim3_gawf_rnn` | Plots-only recovery using strict directional gate crossings |
 | `amarel-gawf-symmetric-plots-58306167` | cancelled | `amarel` | 58306167 | 6 | `/cache/home/js3269/projects/aim3_gawf_rnn` | Plots-only recovery for completed GaWF relevance/timing statistics |
 | `amarel-gawf-symmetric-relevance-58306146` | failed | `amarel` | 58306146 | 9 | `/cache/home/js3269/projects/aim3_gawf_rnn` | GaWF symmetric 2x2 relevance, interaction sensitivity, and switch timing (vectorized null) |
