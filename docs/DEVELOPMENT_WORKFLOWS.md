@@ -135,7 +135,12 @@ under an explicit memory budget; a trial-by-synapse array is forbidden.
 `utils_anal/run_unified_variance_decomposition.py` reads saved mmap `.npy` representations,
 including the input and recurrent gate tensors. A saved GaWF trajectory may supply labels,
 feedback, and static weights only; the runner never reconstructs gates from `U/V`, reruns the
-model, or regenerates activations. Missing trial-level representations are a hard failure. Use
+model, or regenerates activations. Missing trial-level representations are a hard failure. When
+those saved representations do not yet exist, run
+`utils_anal/export_unified_variance_sources.py` once on a CUDA host with enough disk space. The
+exporter loads the canonical checkpoint/test dataset, writes frame-major float32 mmap sources
+without materializing a complete trial-by-synapse tensor, and emits the runner input manifest.
+Use
 `utils_anal/migrate_analysis_outputs.py` to plan or apply the one-time legacy output move;
 ambiguous mixed artifacts remain in place and appear in its migration report.
 
