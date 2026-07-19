@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "id": "amarel-clutter-best6-u8-lstm-retry-58282784",
+  "description": "Clutter LSTM seed6 and seed7 150-epoch retry with uint8 optimized DataLoader",
+  "host": "amarel",
+  "status": "queued",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "none",
+    "job_ids": [
+      "58282784"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/clutter_best6_10seed_ep150/58282784_*.out"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "/scratch/js3269/results/train_data/clutter_best6_multiseed_40h_ep150/lstm-seed06",
+      "/scratch/js3269/results/train_data/clutter_best6_multiseed_40h_ep150/lstm-seed07"
+    ]
+  },
+  "tracking": {
+    "expected_units": 2,
+    "auto_complete": false,
+    "result_globs": [
+      "/scratch/js3269/results/train_data/clutter_best6_multiseed_40h_ep150/lstm-seed06",
+      "/scratch/js3269/results/train_data/clutter_best6_multiseed_40h_ep150/lstm-seed07"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "Tasks 32 and 38; same uint8/device-cast/compact DataLoader configuration as GRU seed1 and RNN seed3 retry.",
+    "Original LSTM seed6 was preempted; original seed7 was canceled after prolonged runtime."
+  ],
+  "created_at": "2026-07-18T03:23:57+00:00",
+  "updated_at": "2026-07-18T03:23:57+00:00"
+}

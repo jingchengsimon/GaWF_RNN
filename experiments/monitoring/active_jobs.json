@@ -8,6 +8,174 @@
   ],
   "jobs": [
     {
+      "id": "amarel-minigrid-paper-risk-redblue-ckpt-58301382",
+      "description": "MiniGrid paper-aligned PPO RedBlueDoors checkpoint recovery: paper-LSTM and GaWF",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "58301382"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/FAW_RNN-minigrid-paper-20260715",
+      "updated_at": "2026-07-18T18:35:29+00:00"
+    },
+    {
+      "id": "amarel-minigrid-paper-risk-memory-ckpt-58301383",
+      "description": "MiniGrid paper-aligned PPO MemoryS7 checkpoint recovery: LSTM-core, GRU, and GaWF",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "58301383"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/FAW_RNN-minigrid-paper-20260715",
+      "updated_at": "2026-07-18T18:35:29+00:00"
+    },
+    {
+      "id": "amarel-minigrid-paper-redblue-gru-ckpt-58301216",
+      "description": "MiniGrid paper-aligned PPO RedBlueDoors GRU checkpoint-enabled recovery",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "58301216"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/FAW_RNN-minigrid-paper-20260715",
+      "updated_at": "2026-07-18T17:49:02+00:00"
+    },
+    {
+      "id": "amarel-clutter-best6-u8-gru-seed1-58301179",
+      "description": "Clutter GRU seed1 150-epoch retry with the standard uint8 optimized DataLoader configuration",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "58301179"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+      "updated_at": "2026-07-18T17:37:52+00:00"
+    },
+    {
+      "id": "amarel-pong-fs4-stack4-l1-plain-2m-58285784",
+      "description": "Strict 6-action plain Pong fs4/stack4 L1: 7 models x 5 seeds, 2M",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "58285784"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+      "updated_at": "2026-07-18T05:04:00+00:00"
+    },
+    {
+      "id": "amarel-minigrid-paper-redblue-lstm-core-58285280",
+      "description": "MiniGrid paper-aligned PPO RedBlueDoors LSTM-core fresh recovery",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "58285280"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/FAW_RNN-minigrid-paper-20260715",
+      "updated_at": "2026-07-18T04:45:40+00:00"
+    },
+    {
+      "id": "amarel-clutter-best6-u8-lstm-retry-58282784",
+      "description": "Clutter LSTM seed6 and seed7 150-epoch retry with uint8 optimized DataLoader",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "58282784"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+      "updated_at": "2026-07-18T03:23:57+00:00"
+    },
+    {
+      "id": "sjc-clutter-multiseed-test-20260717",
+      "description": "CPU-sharded evaluation of completed Clutter multi-seed checkpoints on standard 40h uint8 test split",
+      "host": "sjc-remote",
+      "status": "running",
+      "job_ids": [],
+      "run_ids": [
+        "sjc-clutter-multiseed-test-20260717"
+      ],
+      "remote_root": "/G/MIMOlab/Codes/aim3_gawf_rnn",
+      "updated_at": "2026-07-18T00:29:06+00:00"
+    },
+    {
+      "id": "amarel-clutter-multiseed-test-58272851",
+      "description": "Evaluate completed Clutter multi-seed checkpoints on standard 40h uint8 test split and plot mean±SD",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "58272851"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+      "updated_at": "2026-07-18T00:29:06+00:00"
+    },
+    {
+      "id": "amarel-clutter-best6-u8-retry-58272788",
+      "description": "Clutter GRU seed1 and RNN seed3 150-epoch retry with uint8 optimized DataLoader",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "58272788"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+      "updated_at": "2026-07-18T00:29:06+00:00"
+    },
+    {
+      "id": "amarel-clutter-dataloader-ampere-smoke-58267226",
+      "description": "Clutter uint8 optimized DataLoader CUDA AMP smoke on Amarel Ampere",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "58267226"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+      "updated_at": "2026-07-17T22:37:27+00:00"
+    },
+    {
+      "id": "amarel-clutter-dataloader-smoke-58267141",
+      "description": "Clutter uint8 optimized DataLoader compatibility smoke: loader plus AMP training",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "58267141"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+      "updated_at": "2026-07-17T22:31:06+00:00"
+    },
+    {
+      "id": "amarel-minigrid-paper-redblue-s5-ckpt-58237890",
+      "description": "MiniGrid paper-aligned PPO RedBlueDoors S5 checkpoint recovery",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "58237890"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/FAW_RNN-minigrid-paper-20260715",
+      "updated_at": "2026-07-17T01:23:20+00:00"
+    },
+    {
+      "id": "amarel-minigrid-paper-memory-ckpt-58237889",
+      "description": "MiniGrid paper-aligned PPO MemoryS7 checkpoint recovery: paper_lstm/S5/Mamba",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "58237889"
+      ],
+      "run_ids": [],
+      "remote_root": "/cache/home/js3269/projects/FAW_RNN-minigrid-paper-20260715",
+      "updated_at": "2026-07-17T01:23:16+00:00"
+    },
+    {
       "id": "sjc-clutter-best6-chan1-seed42-ep150-aim3-clutter-c1-s42-ep150",
       "description": "Clutter six frozen chan=2 best hyperparameters reused with chan=1, seed=42 only, 150 full epochs, no early stopping; checkpoints reserved for later fg-switch analysis; training/checkpoints only",
       "host": "sjc-remote",
@@ -63,7 +231,8 @@
         "58170421",
         "58170974",
         "58170978",
-        "58180330"
+        "58180330",
+        "58285574"
       ],
       "run_ids": [],
       "remote_root": "/cache/home/js3269/projects/FAW_RNN-multitask-gru-phase0-20260713",

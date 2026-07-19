@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "id": "amarel-gawf-symmetric-plots-58306167",
+  "description": "Plots-only recovery for completed GaWF relevance/timing statistics",
+  "host": "amarel",
+  "status": "cancelled",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58306167"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/gawf_symmetric_relevance_timing/slurm-58306167.out",
+      "experiments/amarel/artifacts/gawf_symmetric_relevance_timing/slurm-58306167.err"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "/scratch/js3269/results/anal_figs/gawf_symmetric_relevance_timing/part1_selectivity.png",
+      "/scratch/js3269/results/anal_figs/gawf_symmetric_relevance_timing/part1_architecture_axis.png",
+      "/scratch/js3269/results/anal_figs/gawf_symmetric_relevance_timing/part2_relevance_effects.png",
+      "/scratch/js3269/results/anal_figs/gawf_symmetric_relevance_timing/part2_continuous_alignment.png",
+      "/scratch/js3269/results/anal_figs/gawf_symmetric_relevance_timing/part3_switch_timing.png",
+      "/scratch/js3269/results/anal_figs/gawf_symmetric_relevance_timing/part3_per_event_lead.png"
+    ]
+  },
+  "tracking": {
+    "expected_units": 6,
+    "auto_complete": false,
+    "result_globs": [
+      "/scratch/js3269/results/anal_figs/gawf_symmetric_relevance_timing/part1_selectivity.png",
+      "/scratch/js3269/results/anal_figs/gawf_symmetric_relevance_timing/part1_architecture_axis.png",
+      "/scratch/js3269/results/anal_figs/gawf_symmetric_relevance_timing/part2_relevance_effects.png",
+      "/scratch/js3269/results/anal_figs/gawf_symmetric_relevance_timing/part2_continuous_alignment.png",
+      "/scratch/js3269/results/anal_figs/gawf_symmetric_relevance_timing/part3_switch_timing.png",
+      "/scratch/js3269/results/anal_figs/gawf_symmetric_relevance_timing/part3_per_event_lead.png"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "Plots-only recovery after 58306146 completed all Part 0-3 statistics but encountered unset SLURM_TMPDIR during final visualization."
+  ],
+  "created_at": "2026-07-19T02:59:43+00:00",
+  "updated_at": "2026-07-19T03:03:15+00:00"
+}

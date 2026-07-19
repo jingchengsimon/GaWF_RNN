@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "id": "amarel-pong-fs4-stack4-gawf-video-58302076",
+  "description": "Strict 6-action Pong fs4/stack4 GaWF best-seed videos for L1 and L2",
+  "host": "amarel",
+  "status": "completed",
+  "created_at": "2026-07-18T21:56:37+00:00",
+  "updated_at": "2026-07-18T22:04:14+00:00",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58302076",
+      "58302084"
+    ],
+    "run_ids": [],
+    "tmux_session": null,
+    "process_patterns": [],
+    "collect_gpu": true
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/atari_gawf_fs4_stack4_video/58302076_*.*"
+    ],
+    "status_dir": "experiments/amarel/artifacts/atari_gawf_fs4_stack4_video",
+    "result_paths": [
+      "/scratch/js3269/results/train_figs/rl/atari/pong_6action/videos/fs4_stack4_gawf_l1_seed1",
+      "/scratch/js3269/results/train_figs/rl/atari/pong_6action/videos/fs4_stack4_gawf_l2_seed1"
+    ]
+  },
+  "tracking": {
+    "expected_units": 2,
+    "auto_complete": true,
+    "validation_mode": "strict",
+    "defaults": {
+      "metrics_file": "metadata.json",
+      "history_file": "evaluation_history.jsonl",
+      "checkpoint_glob": "*.mp4",
+      "checkpoint_count": 1,
+      "expected": {
+        "env_id": "ALE/Pong-v5",
+        "model_type": "gawf",
+        "feedback_mode": "qvalues",
+        "frame_skip": 4,
+        "frame_stack": 4,
+        "action_space_mode": "minimal",
+        "num_actions": 6,
+        "training_seed": 1,
+        "num_episodes": 3
+      }
+    },
+    "units": [
+      {
+        "id": "gawf-l1-seed1-video",
+        "result_dir": "/scratch/js3269/results/train_figs/rl/atari/pong_6action/videos/fs4_stack4_gawf_l1_seed1",
+        "expected": {
+          "env_id": "ALE/Pong-v5",
+          "model_type": "gawf",
+          "feedback_mode": "qvalues",
+          "num_layers": 1,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "action_space_mode": "minimal",
+          "num_actions": 6,
+          "training_seed": 1,
+          "num_episodes": 3
+        }
+      },
+      {
+        "id": "gawf-l2-seed1-video",
+        "result_dir": "/scratch/js3269/results/train_figs/rl/atari/pong_6action/videos/fs4_stack4_gawf_l2_seed1",
+        "expected": {
+          "env_id": "ALE/Pong-v5",
+          "model_type": "gawf",
+          "feedback_mode": "qvalues",
+          "num_layers": 2,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "action_space_mode": "minimal",
+          "num_actions": 6,
+          "training_seed": 1,
+          "num_episodes": 3
+        }
+      }
+    ]
+  },
+  "notes": [
+    "Best training seed was selected by final checkpoint-aligned episodic_return_100: seed1 for both L1 (18.36) and L2 (18.62).",
+    "Each compute task evaluates three greedy episodes with eval seed 20260718 and retains the highest-return MP4; output filenames include seed1.",
+    "Initial array 58302076 loaded both checkpoints successfully but exited before rollout because Gym RecordVideo required absent MoviePy. Replacement 58302084 uses the environment's RGB render mode and the installed OpenCV encoder; no final artifact was overwritten."
+  ],
+  "completed_at": "2026-07-18T22:04:14+00:00"
+}

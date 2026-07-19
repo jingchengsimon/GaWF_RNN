@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "id": "amarel-clutter-dataloader-smoke-58267141",
+  "description": "Clutter uint8 optimized DataLoader compatibility smoke: loader plus AMP training",
+  "host": "amarel",
+  "status": "queued",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58267141"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/clutter_dataloader_smoke/58267141.*"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "/scratch/js3269/results/benchmarks/clutter_dataloader/amarel_58267141/loader.json",
+      "/scratch/js3269/results/benchmarks/clutter_dataloader/amarel_58267141/e2e_amp.json"
+    ]
+  },
+  "tracking": {
+    "expected_units": 2,
+    "auto_complete": false,
+    "result_globs": [
+      "/scratch/js3269/results/benchmarks/clutter_dataloader/amarel_58267141/loader.json",
+      "/scratch/js3269/results/benchmarks/clutter_dataloader/amarel_58267141/e2e_amp.json"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "Runs only on a Slurm GPU compute node; no workload executes on an Amarel login node.",
+    "Selected pipeline is uint8, device cast, compact layout, block size=batch, workers=2, pinned memory."
+  ],
+  "created_at": "2026-07-17T22:31:06+00:00",
+  "updated_at": "2026-07-17T22:31:06+00:00"
+}

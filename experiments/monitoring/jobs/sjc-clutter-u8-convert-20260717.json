@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "id": "sjc-clutter-u8-convert-20260717",
+  "description": "Lossless Clutter 40h float32 to uint8 conversion for train/validation/test",
+  "host": "sjc-remote",
+  "status": "completed",
+  "remote_root": "/G/MIMOlab/Codes/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/G/anaconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "tmux",
+    "job_ids": [],
+    "run_ids": [
+      "sjc-clutter-u8-convert-20260717"
+    ],
+    "tmux_session": "aim3-clutter-u8-convert-20260717"
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/local/artifacts/clutter_uint8_conversion/run.log"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "stimuli/stimulus_reg-train-40h-uint8.npy",
+      "stimuli/stimulus_reg-validation-40h-uint8.npy",
+      "stimuli/stimulus_reg-test-40h-uint8.npy"
+    ]
+  },
+  "tracking": {
+    "expected_units": 3,
+    "auto_complete": false,
+    "result_globs": [
+      "stimuli/stimulus_reg-train-40h-uint8.npy",
+      "stimuli/stimulus_reg-validation-40h-uint8.npy",
+      "stimuli/stimulus_reg-test-40h-uint8.npy"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "Runs with low CPU and best-effort I/O priority on sjc-remote.",
+    "Each chunk must round-trip exactly to the float32 source; TSV labels use SHA-256 equality."
+  ],
+  "created_at": "2026-07-17T21:25:03+00:00",
+  "updated_at": "2026-07-17T21:38:59+00:00",
+  "completed_at": "2026-07-17T21:38:59+00:00"
+}

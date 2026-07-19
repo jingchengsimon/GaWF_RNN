@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "id": "amarel-clutter-dataloader-volta-smoke-58267326",
+  "description": "Clutter uint8 optimized DataLoader CUDA AMP smoke on Amarel Volta",
+  "host": "amarel",
+  "status": "failed",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58267326"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/clutter_dataloader_smoke/58267326.*"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "/scratch/js3269/results/benchmarks/clutter_dataloader/amarel_58267326/loader.json",
+      "/scratch/js3269/results/benchmarks/clutter_dataloader/amarel_58267326/e2e_amp.json"
+    ]
+  },
+  "tracking": {
+    "expected_units": 2,
+    "auto_complete": false,
+    "result_globs": [
+      "/scratch/js3269/results/benchmarks/clutter_dataloader/amarel_58267326/loader.json",
+      "/scratch/js3269/results/benchmarks/clutter_dataloader/amarel_58267326/e2e_amp.json"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "Compatibility-only cgpu-redhat smoke; performance conclusions do not mix hardware.",
+    "Job reached compute node gpuc001 but Camden cgpu-redhat cannot see /scratch/js3269/stimuli; failure occurred before Python/Conda/data loading and is not a pipeline code failure."
+  ],
+  "created_at": "2026-07-17T22:37:27+00:00",
+  "updated_at": "2026-07-17T22:38:47+00:00"
+}

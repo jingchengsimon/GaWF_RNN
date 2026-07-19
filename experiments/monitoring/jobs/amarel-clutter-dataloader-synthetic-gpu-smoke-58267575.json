@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "id": "amarel-clutter-dataloader-synthetic-gpu-smoke-58267575",
+  "description": "Clutter uint8 optimized DataLoader production-default smoke on Amarel formal-format synthetic data",
+  "host": "amarel",
+  "status": "completed",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58267575"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/clutter_dataloader_gpu_synthetic_smoke/58267575.*"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/amarel/artifacts/clutter_dataloader_gpu_synthetic_smoke/results/benchmarks/clutter_dataloader/amarel_gpu_synthetic_58267575/e2e_amp.json",
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/amarel/artifacts/clutter_dataloader_gpu_synthetic_smoke/results/benchmarks/clutter_dataloader/amarel_gpu_synthetic_58267575/production_smoke_summary.json"
+    ]
+  },
+  "tracking": {
+    "expected_units": 2,
+    "auto_complete": false,
+    "result_globs": [
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/amarel/artifacts/clutter_dataloader_gpu_synthetic_smoke/results/benchmarks/clutter_dataloader/amarel_gpu_synthetic_58267575/e2e_amp.json",
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/amarel/artifacts/clutter_dataloader_gpu_synthetic_smoke/results/benchmarks/clutter_dataloader/amarel_gpu_synthetic_58267575/production_smoke_summary.json"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "Fixture matches formal TSV index convention; no data suffix or input-pipeline overrides are passed to train_model.",
+    "Production training, checkpoint, pickle, metrics, and post-hoc default-field validation all succeeded; Slurm exit 1 came only from the original smoke assertion using data_suffix instead of dataset_suffix."
+  ],
+  "created_at": "2026-07-17T22:47:42+00:00",
+  "updated_at": "2026-07-17T22:49:31+00:00",
+  "completed_at": "2026-07-17T22:49:31+00:00"
+}

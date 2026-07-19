@@ -13,7 +13,7 @@
   },
   "scheduler": {
     "type": "slurm",
-    "job_ids": ["58160888", "58170421", "58170974", "58170978", "58180330"],
+    "job_ids": ["58160888", "58170421", "58170974", "58170978", "58180330", "58285574"],
     "run_ids": [],
     "process_patterns": [],
     "collect_gpu": false
@@ -57,6 +57,8 @@
     "S5 uses non-fused Adam because its complex parameters are unsupported by fused Adam; supported non-S5 models retain fused Adam.",
     "Partial preempted metrics histories are renamed to metrics_history.pre_rerun_<job>_<task>.jsonl before fresh training and are not deleted.",
     "All prior attempts ended with 66/70 valid outputs; tasks 32, 34, 36, and 60 remained incomplete after preemption.",
-    "Recovery array 58180330 resubmits only tasks 32, 34, 36, and 60 with a 48-hour limit; partial histories and stale fail markers were retained with pre_rerun_58180330 task suffixes before release."
+    "Recovery array 58180330 resubmits only tasks 32, 34, 36, and 60 with a 48-hour limit; partial histories and stale fail markers were retained with pre_rerun_58180330 task suffixes before release.",
+    "Final gap array 58237715 selected tasks 32 and 34. Task 32 (plain GaWF seed4) completed after requeue as accounting ID 58248894; task 34 (plain Mamba seed4) failed before training in 7 seconds because the current-root results/atari_param_match/atari_param_match.json had no matched mamba sizing entry.",
+    "The verified Mamba entry d_model=824, state_size=128, params=7476152 was restored from the completed L1 match table and cross-checked against all nine existing FS1 Mamba metrics; task 34 was resubmitted as job 58285574."
   ]
 }

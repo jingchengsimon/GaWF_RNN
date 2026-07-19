@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "id": "sjc-clutter-multiseed-test-20260717",
+  "description": "CPU-sharded evaluation of completed Clutter multi-seed checkpoints on standard 40h uint8 test split",
+  "host": "sjc-remote",
+  "status": "running",
+  "remote_root": "/G/MIMOlab/Codes/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/G/anaconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "tmux",
+    "job_ids": [],
+    "run_ids": [
+      "sjc-clutter-multiseed-test-20260717"
+    ],
+    "tmux_session": "aim3-clutter-test-eval"
+  },
+  "paths": {
+    "log_globs": [
+      "results/anal_data/clutter_multiseed_test/sjc_cpu_20260717.log"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "results/anal_data/clutter_multiseed_test/per_seed_test_accuracy.csv",
+      "results/anal_data/clutter_multiseed_test/test_accuracy_mean_sd.csv",
+      "results/anal_figs/clutter_multiseed_test/test_accuracy_mean_sd.png"
+    ]
+  },
+  "tracking": {
+    "expected_units": 3,
+    "auto_complete": false,
+    "result_globs": [
+      "results/anal_data/clutter_multiseed_test/per_seed_test_accuracy.csv",
+      "results/anal_data/clutter_multiseed_test/test_accuracy_mean_sd.csv",
+      "results/anal_figs/clutter_multiseed_test/test_accuracy_mean_sd.png"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "Six CPU shards avoid both A6000 GPUs used by Pong training; Mamba uses the official pure-PyTorch selective_scan_ref path.",
+    "Additional Mamba recovery tmux session: aim3-clutter-test-mamba."
+  ],
+  "created_at": "2026-07-18T00:29:06+00:00",
+  "updated_at": "2026-07-18T00:29:06+00:00"
+}
