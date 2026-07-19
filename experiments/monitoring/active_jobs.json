@@ -8,18 +8,6 @@
   ],
   "jobs": [
     {
-      "id": "sjc-unified-variance-20260719",
-      "description": "GaWF unified balanced variance decomposition: 7 objects, 4 cells, and summary",
-      "host": "sjc-remote",
-      "status": "running",
-      "job_ids": [],
-      "run_ids": [
-        "run_20260719_142654"
-      ],
-      "remote_root": "/G/MIMOlab/Codes/aim3_gawf_rnn",
-      "updated_at": "2026-07-19T18:28:10+00:00"
-    },
-    {
       "id": "amarel-minigrid-paper-risk-redblue-ckpt-58301382",
       "description": "MiniGrid paper-aligned PPO RedBlueDoors checkpoint recovery: paper-LSTM and GaWF",
       "host": "amarel",
