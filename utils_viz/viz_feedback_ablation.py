@@ -56,6 +56,8 @@ def _pretty_condition(name: str) -> str:
 
 
 def _offset_label(offset: int) -> str:
+    if offset == 1:
+        return "switch"
     if offset < 0:
         return f"pre{abs(offset)}"
     return f"post{offset}"
@@ -63,8 +65,17 @@ def _offset_label(offset: int) -> str:
 
 def _style_axis(ax: plt.Axes) -> None:
     ax.spines["top"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.grid(axis="y", alpha=0.25)
+
+
+def _save_figure(fig: plt.Figure, out_path: str) -> None:
+    """Save matching PNG and PDF outputs for the ablation figure."""
+
+    fig.savefig(out_path, dpi=150, bbox_inches="tight", pad_inches=0.06)
+    pdf_path = os.path.splitext(out_path)[0] + ".pdf"
+    fig.savefig(pdf_path, bbox_inches="tight", pad_inches=0.06)
 
 
 def _plot_bar(metrics: Dict[str, Any], out_path: str) -> None:
@@ -104,14 +115,14 @@ def _plot_bar(metrics: Dict[str, Any], out_path: str) -> None:
             )
 
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150, bbox_inches="tight", pad_inches=0.06)
+    _save_figure(fig, out_path)
     plt.close(fig)
     print(f"Saved figure: {out_path}")
 
 
 def _plot_recovery(metrics: Dict[str, Any], out_path: str) -> None:
     conds = _conditions(metrics)
-    fig, axes = plt.subplots(1, 2, figsize=(12.2, 4.7), sharex=True, sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(9.2, 4.5), sharex=True, sharey=True)
     colors = {
         "baseline": "#4C78A8",
         "clear_digit": "#54A24B",
@@ -120,10 +131,24 @@ def _plot_recovery(metrics: Dict[str, Any], out_path: str) -> None:
         "shuffle_digit": "#72B7B2",
         "shuffle_sector": "#B279A2",
     }
+    first = metrics["conditions"][conds[0]]
+    first_offsets = np.asarray(
+        first.get("switch_offsets", first["switch_post_offsets"]),
+        dtype=np.int64,
+    )
+    wanted = {-10, -5, 1, 5, 10}
+    selected_indices = np.asarray(
+        [index for index, offset in enumerate(first_offsets) if int(offset) in wanted],
+        dtype=np.int64,
+    )
+    selected_labels = [_offset_label(int(first_offsets[index])) for index in selected_indices]
+    if selected_indices.size == 0:
+        raise RuntimeError("No key pre/switch/post offsets found in ablation metrics")
+    x = np.arange(first_offsets.size, dtype=np.int64)
 
-    for ax, key, title in [
-        (axes[0], "char", "Character readout"),
-        (axes[1], "sector", "Sector readout"),
+    for ax, key, title, chance_level, chance_label in [
+        (axes[0], "char", "Character readout", 10.0, "chance = 10%"),
+        (axes[1], "sector", "Sector readout", 100.0 / 9.0, "chance = 11.1%"),
     ]:
         for cond in conds:
             row = metrics["conditions"][cond]
@@ -134,35 +159,57 @@ def _plot_recovery(metrics: Dict[str, Any], out_path: str) -> None:
                 offsets = np.asarray(row["switch_post_offsets"], dtype=np.int64)
                 value_key = f"switch_post_{key}_acc"
             values = np.asarray(row[value_key], dtype=np.float32)
-            x = np.arange(offsets.size, dtype=np.int64)
+            if not np.array_equal(offsets, first_offsets):
+                raise RuntimeError(f"Switch offsets differ for ablation condition {cond!r}")
             ax.plot(
                 x,
                 values,
                 marker="o",
+                markevery=selected_indices.tolist(),
                 linewidth=1.8,
                 markersize=4.0,
                 label=cond,
                 color=colors.get(cond),
             )
-        ax.set_title(title)
-        ax.set_xlabel("Frames relative to fg_switch")
-        ax.set_ylim(0.0, 100.0)
-        first = metrics["conditions"][conds[0]]
-        first_offsets = np.asarray(
-            first.get("switch_offsets", first["switch_post_offsets"]),
-            dtype=np.int64,
+        ax.axhline(
+            chance_level,
+            color="0.3",
+            linewidth=1.1,
+            linestyle=(0, (4, 3)),
+            zorder=0,
         )
-        ax.set_xticks(np.arange(first_offsets.size, dtype=np.int64))
-        ax.set_xticklabels([_offset_label(int(v)) for v in first_offsets], rotation=35)
-        pre_count = int(np.count_nonzero(first_offsets < 0))
-        if 0 < pre_count < first_offsets.size:
-            ax.axvline(pre_count - 0.5, color="0.35", linewidth=1.0, linestyle="--")
+        ax.text(
+            0.99,
+            chance_level + 1.2,
+            chance_label,
+            transform=ax.get_yaxis_transform(),
+            ha="right",
+            va="bottom",
+            color="0.3",
+            fontsize=8,
+        )
+        ax.set_title(title)
+        ax.set_xlabel("Frame relative to switch")
+        ax.set_ylim(0.0, 100.0)
+        ax.set_xticks(selected_indices, selected_labels)
+        if "switch" in selected_labels:
+            switch_index = selected_indices[selected_labels.index("switch")]
+            ax.axvline(switch_index, color="0.35", linewidth=1.0, linestyle="--")
         _style_axis(ax)
     axes[0].set_ylabel("Accuracy (%)")
-    axes[1].legend(frameon=False, fontsize=8, loc="lower right")
-    fig.suptitle("Switch-window recovery under feedback ablation", fontsize=12)
-    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
-    fig.savefig(out_path, dpi=150, bbox_inches="tight", pad_inches=0.06)
+    handles, labels = axes[1].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.92),
+        frameon=False,
+        fontsize=8,
+        ncol=len(conds),
+    )
+    fig.suptitle("Switch-window recovery under feedback ablation", fontsize=12, y=0.99)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.84])
+    _save_figure(fig, out_path)
     plt.close(fig)
     print(f"Saved figure: {out_path}")
 

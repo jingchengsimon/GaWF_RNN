@@ -126,8 +126,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data_suffix",
         type=str,
-        default="40h-float32",
-        help="Stimulus/label filename tail after split base (e.g. 40h-float32 -> stimulus_reg-test-40h-float32.npy).",
+        default="40h-uint8",
+        help="Stimulus/label filename tail after split base (e.g. 40h-uint8 -> stimulus_reg-test-40h-uint8.npy).",
     )
     parser.add_argument(
         "--window_radius",

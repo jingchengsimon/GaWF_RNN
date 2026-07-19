@@ -14,6 +14,7 @@ Outputs (in --output_dir):
 - sequence_a_frames/ and sequence_b_frames/  — ten raw grayscale PNG frames per sequence.
 - sequence_a_10_frames.png / sequence_b_10_frames.png  — raw 5x2 frame decompositions.
 - sequence_a_10_frames_annotated.png / sequence_b_10_frames_annotated.png  — target reveal.
+- sequence_a_switch_5_frames_annotated.png  — two pre-switch frames plus A frames 1-3.
 - sequence_a_labels.tsv / sequence_b_labels.tsv  — per-frame target identity and sector.
 - context_demo_manifest.json  — settings, labels, output names, and final-frame identity check.
 """
@@ -40,7 +41,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from source.GenerateMovies import MovingCharacter, paste_character
+from source.clutter.generate_movies import MovingCharacter, paste_character
 
 
 CANVAS_SIZE = 96
@@ -633,6 +634,86 @@ def _make_contact_sheet(
     return sheet
 
 
+def _make_switch_contact_sheet(
+    previous_frames: list[np.ndarray],
+    previous_positions: np.ndarray,
+    current_frames: list[np.ndarray],
+    current_positions: np.ndarray,
+    previous_target: int,
+    current_target: int,
+    scale: int,
+) -> np.ndarray:
+    """Create a five-frame strip spanning an explicit target/context switch."""
+    if len(previous_frames) != 2 or len(current_frames) != 3:
+        raise ValueError("Switch sheet requires two previous and three current frames")
+
+    frames = [*previous_frames, *current_frames]
+    positions = np.concatenate([previous_positions, current_positions], axis=0)
+    colors = [TARGET_B_COLOR, TARGET_B_COLOR] + [TARGET_A_COLOR] * 3
+    time_labels = ["t-2", "t-1", "t0", "t+1", "t+2"]
+    tile_size = CANVAS_SIZE * scale
+    tile_header = 34
+    title_height = 54
+    gap = 10
+    switch_gap = 32
+    sheet_width = 5 * tile_size + 3 * gap + switch_gap
+    sheet_height = title_height + tile_header + tile_size
+    sheet = np.full((sheet_height, sheet_width, 3), 20, dtype=np.uint8)
+    _put_centered_text(
+        sheet,
+        f"Target switch: {previous_target} -> {current_target}",
+        36,
+        0.78,
+    )
+
+    x_offsets: list[int] = []
+    cursor = 0
+    for frame_index in range(5):
+        if frame_index > 0:
+            cursor += switch_gap if frame_index == 2 else gap
+        x_offsets.append(cursor)
+        cursor += tile_size
+
+    stimulus_y = title_height + tile_header
+    for frame_index, (frame, position, color) in enumerate(
+        zip(frames, positions, colors)
+    ):
+        x_start = x_offsets[frame_index]
+        tile = _upscale_frame(frame, scale)
+        sheet[
+            stimulus_y : stimulus_y + tile_size,
+            x_start : x_start + tile_size,
+        ] = tile
+        _draw_sector_grid(sheet, x_start, stimulus_y, tile_size, scale)
+        cv2.putText(
+            sheet,
+            time_labels[frame_index],
+            (x_start + 6, title_height + 24),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.58,
+            (225, 225, 225),
+            1,
+            cv2.LINE_AA,
+        )
+        center = (
+            x_start + int(round(float(position[0]) * scale)),
+            stimulus_y + int(round(float(position[1]) * scale)),
+        )
+        radius = int(round((IMAGE_SIZE / 2.0 + 2) * scale))
+        cv2.circle(sheet, center, radius, color, max(2, scale), cv2.LINE_AA)
+
+    switch_x = x_offsets[1] + tile_size + switch_gap // 2
+    cv2.line(
+        sheet,
+        (switch_x, title_height + 3),
+        (switch_x, sheet_height - 2),
+        (205, 205, 205),
+        2,
+        cv2.LINE_AA,
+    )
+    return sheet
+
+
 def _write_labels(
     path: Path, target_digit: int, positions: np.ndarray
 ) -> list[dict[str, int | float]]:
@@ -745,6 +826,19 @@ def main() -> None:
         )
         _save_image(output_dir / f"{name}_10_frames.png", raw_sheet)
         _save_image(output_dir / f"{name}_10_frames_annotated.png", annotated_sheet)
+
+    switch_sheet = _make_switch_contact_sheet(
+        previous_frames=frames_b[-2:],
+        previous_positions=paths_b[args.target_b][-2:],
+        current_frames=frames_a[:3],
+        current_positions=paths_a[args.target_a][:3],
+        previous_target=args.target_b,
+        current_target=args.target_a,
+        scale=max(1, args.scale // 2),
+    )
+    _save_image(
+        output_dir / "sequence_a_switch_5_frames_annotated.png", switch_sheet
+    )
 
     hold_count = max(1, int(round(args.final_hold_seconds * args.fps)))
     individual_a = [_single_panel(frame, "History A", args.scale) for frame in frames_a]

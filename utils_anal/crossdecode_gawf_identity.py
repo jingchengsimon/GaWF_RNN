@@ -69,7 +69,7 @@ def parse_args() -> argparse.Namespace:
         help="Directory for analysis arrays and results.json.",
     )
     parser.add_argument("--data_dir", type=str, default="")
-    parser.add_argument("--data_suffix", type=str, default="40h-float32")
+    parser.add_argument("--data_suffix", type=str, default="40h-uint8")
     parser.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda"])
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--batch_size", type=int, default=32)

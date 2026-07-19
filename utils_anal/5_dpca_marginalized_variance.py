@@ -400,6 +400,9 @@ def plot_grouped_bars(payloads: list[dict[str, Any]], output_dir: str, errorbar:
     width = 0.24
     colors = {"digit": "#4C78A8", "sector": "#F58518", "interaction": "#54A24B"}
     fig, ax = plt.subplots(figsize=(11.5, 5.2))
+    ax.spines["top"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
+    ax.spines["right"].set_visible(False)
     for idx, factor in enumerate(FACTORS):
         means = np.asarray([p["summary"][factor]["mean"] for p in payloads]) * 100.0
         if errorbar == "std":
