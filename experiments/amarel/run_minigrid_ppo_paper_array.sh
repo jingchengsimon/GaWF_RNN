@@ -52,13 +52,26 @@ case "$MODEL" in
 esac
 
 STATUS_FILE="$STATUS_DIR/${SUFFIX}.status"
+CHECKPOINT="$SAVE_DIR/checkpoint.pth"
+RESUME_ARGS=()
+if [[ -f "$CHECKPOINT" ]]; then
+  RESUME_ARGS=(--resume_from "$CHECKPOINT")
+elif [[ -e "$SAVE_DIR/metrics_history.jsonl" || -e "$SAVE_DIR/metrics.json" ]]; then
+  echo \
+    "status=blocked_no_checkpoint model=$MODEL seed=$SEED save_dir=$SAVE_DIR $(date -Is)" \
+    > "$STATUS_FILE"
+  echo "Refusing to append to partial results without a resumable checkpoint: $SAVE_DIR" >&2
+  exit 3
+fi
 echo "status=running model=$MODEL seed=$SEED env=$ENV_ID $(date -Is)" > "$STATUS_FILE"
 set +e
 DISABLE_TQDM=1 python train_minigrid_ppo_paper.py \
   --env_id "$ENV_ID" --model_type "$MODEL" --seed "$SEED" \
   --total_timesteps "$TOTAL_TIMESTEPS" --num_envs 8 --num_steps 128 \
   --num_minibatches 8 --update_epochs 4 --device cuda \
-  --result_suffix "$SUFFIX" --save_dir "$SAVE_DIR" "${SIZE_ARGS[@]}"
+  --checkpoint_interval_updates "${CHECKPOINT_INTERVAL_UPDATES:-100}" \
+  --result_suffix "$SUFFIX" --save_dir "$SAVE_DIR" \
+  "${RESUME_ARGS[@]}" "${SIZE_ARGS[@]}"
 rc=$?
 set -e
 if [[ "$rc" -ne 0 ]]; then
