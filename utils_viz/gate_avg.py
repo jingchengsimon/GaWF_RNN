@@ -27,6 +27,15 @@ Sector mode  (--sector S  --agg {space|feature}, --agg required):
 
 from __future__ import annotations
 
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
 import argparse
 import json
 import os
@@ -49,19 +58,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="./results/anal_data/gate_avg",
+        default=str(output_dir("B_gate_by_context", "export_gate_avg", "data")),
         help="Directory containing avg_gate_* files (from export_gate_avg.py).",
     )
     parser.add_argument(
         "--conn_dir",
         type=str,
-        default="./results/anal_data/whh",
+        default=str(output_dir("H_controls", "export_whh", "data")),
         help="Directory containing weight_hh.npy and sorted_npz_order.npy.",
     )
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_figs/gate_avg",
+        default=str(output_dir("B_gate_by_context", "gate_avg", "figs")),
         help=(
             "Output root. Digit: <save_dir>/digit/hh (no --agg) or .../digit/ih (--agg). "
             "Sector: <save_dir>/sector/."
@@ -130,7 +139,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--channel_order_path",
         type=str,
-        default="./results/anal_data/cnn_channel/channel_order_by_cosine_similarity.npy",
+        default=str(
+            output_dir(
+                "E_relevance_alignment",
+                "cnn_channel_stats",
+                "data",
+            ) / "channel_order_by_cosine_similarity.npy"
+        ),
         help="Used when --use_cnn_channel_order is set; if missing, encoder row order is kept.",
     )
     parser.add_argument(
@@ -145,7 +160,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--allcomp_data_dir",
         type=str,
-        default="./results/anal_data/gate_avg_allsector",
+        default=str(output_dir("B_gate_by_context", "export_gate_avg_allsector", "data")),
         help="Data dir used with --align_outer_cbar_with_allcomp.",
     )
     return parser.parse_args()

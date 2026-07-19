@@ -31,6 +31,8 @@ from sklearn.metrics import silhouette_score
 import torch
 from torchvision.datasets import MNIST
 
+from utils_anal.anal_paths import output_dir
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -69,8 +71,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./mnist_embedding.png",
-        help="Output image path (default: ./mnist_embedding.png).",
+        default=str(
+            output_dir("E_relevance_alignment", "mnist_embedding", "figs")
+            / "mnist_embedding.png"
+        ),
+        help="Output image path.",
     )
     parser.add_argument(
         "--seed",

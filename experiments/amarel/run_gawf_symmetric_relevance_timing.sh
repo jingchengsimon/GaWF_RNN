@@ -25,16 +25,25 @@ source "$CONDA_INIT"
 conda activate aim3_rnn
 cd "$PROJECT_ROOT"
 
-DATA_OUT="$AIM3_RESULTS_PATH/anal_data/gawf_symmetric_relevance_timing"
-FIG_OUT="$AIM3_RESULTS_PATH/anal_figs/gawf_symmetric_relevance_timing"
-mkdir -p "$DATA_OUT" "$FIG_OUT"
+DECOMPOSITION_DATA="$AIM3_RESULTS_PATH/anal_index/D_variance_decomposition/gawf_symmetric_relevance_timing/data"
+RELEVANCE_DATA="$AIM3_RESULTS_PATH/anal_index/E_relevance_alignment/gawf_symmetric_relevance_timing/data"
+TIMING_DATA="$AIM3_RESULTS_PATH/anal_index/F_timing/gawf_symmetric_relevance_timing/data"
+CONTROL_DATA="$AIM3_RESULTS_PATH/anal_index/H_controls/gawf_symmetric_relevance_timing/data"
+DECOMPOSITION_FIGS="$AIM3_RESULTS_PATH/anal_index/D_variance_decomposition/gawf_symmetric_relevance_timing/figs"
+RELEVANCE_FIGS="$AIM3_RESULTS_PATH/anal_index/E_relevance_alignment/gawf_symmetric_relevance_timing/figs"
+TIMING_FIGS="$AIM3_RESULTS_PATH/anal_index/F_timing/gawf_symmetric_relevance_timing/figs"
+mkdir -p "$DECOMPOSITION_DATA" "$RELEVANCE_DATA" "$TIMING_DATA" "$CONTROL_DATA"
+mkdir -p "$DECOMPOSITION_FIGS" "$RELEVANCE_FIGS" "$TIMING_FIGS"
 
 if [[ "${AIM3_PLOT_ONLY:-0}" != "1" ]]; then
   python utils_anal/gawf_symmetric_relevance_timing.py \
     --ckpt "$CHECKPOINT" \
     --data_dir "$STIMULI_ROOT" \
     --data_suffix 40h-uint8 \
-    --save_dir "$DATA_OUT" \
+    --decomposition_dir "$DECOMPOSITION_DATA" \
+    --relevance_dir "$RELEVANCE_DATA" \
+    --timing_dir "$TIMING_DATA" \
+    --control_dir "$CONTROL_DATA" \
     --device cuda \
     --batch_size 16 \
     --num_workers "$AIM3_NUM_WORKERS" \
@@ -50,5 +59,9 @@ MPL_CACHE_ROOT="${SLURM_TMPDIR:-/tmp}/gawf-symmetric-relevance-matplotlib-$SLURM
 mkdir -p "$MPL_CACHE_ROOT"
 MPLCONFIGDIR="$MPL_CACHE_ROOT" \
 python utils_viz/gawf_symmetric_relevance_timing.py \
-  --data_dir "$DATA_OUT" \
-  --save_dir "$FIG_OUT"
+  --decomposition_data_dir "$DECOMPOSITION_DATA" \
+  --decomposition_fig_dir "$DECOMPOSITION_FIGS" \
+  --relevance_data_dir "$RELEVANCE_DATA" \
+  --relevance_fig_dir "$RELEVANCE_FIGS" \
+  --timing_data_dir "$TIMING_DATA" \
+  --timing_fig_dir "$TIMING_FIGS"

@@ -6,6 +6,15 @@ Outputs are two PNG figures in ``--save_dir``; no analysis arrays are modified.
 
 from __future__ import annotations
 
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
 import argparse
 import os
 
@@ -22,10 +31,20 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--data",
-        default="./results/anal_data/gawf_gate_robustness/robustness_compact.npz",
+        default=str(
+            output_dir(
+                "H_controls",
+                "gawf_gate_robustness",
+                "data",
+            )
+            / "robustness_compact.npz"
+        ),
     )
     parser.add_argument(
-        "--save_dir", default="./results/anal_figs/gawf_gate_robustness"
+        "--save_dir", default=str(output_dir("H_controls", "gawf_gate_robustness", "figs"))
+    )
+    parser.add_argument(
+        "--delta_dir", default=str(output_dir("C_delta_gate", "gawf_gate_robustness", "figs"))
     )
     parser.add_argument("--dpi", type=int, default=150)
     return parser.parse_args()
@@ -110,8 +129,9 @@ def main() -> None:
 
     args = parse_args()
     os.makedirs(args.save_dir, exist_ok=True)
+    os.makedirs(args.delta_dir, exist_ok=True)
     with np.load(args.data) as data:
-        plot_survival(data, args.save_dir, args.dpi)
+        plot_survival(data, args.delta_dir, args.dpi)
         plot_ci_width(data, args.save_dir, args.dpi)
 
 

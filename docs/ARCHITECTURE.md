@@ -39,10 +39,10 @@ utils/<task>_task_models.py + task data/train helpers
 train_<task>.py
         |
         v
-utils_anal/  ->  results/anal_data/
+utils_anal/  ->  results/anal_index/<CATEGORY>/<script>/data/
         |
         v
-utils_viz/   ->  results/anal_figs/
+utils_viz/   ->  results/anal_index/<CATEGORY>/<script>/figs/
 ```
 
 The arrows are one-way:
@@ -190,8 +190,8 @@ source/<task>/ or external datasets/environments
              *.pkl
              *_metrics.json
         -> results/train_data/{rl,clutter}/...  (curated task hierarchy)
-        -> utils_anal/ -> results/anal_data/<module>/
-        -> utils_viz/  -> results/{train_figs,anal_figs}/...
+        -> utils_anal/ -> results/anal_index/<CATEGORY>/<module>/data/
+        -> utils_viz/  -> results/anal_index/<CATEGORY>/<module>/figs/
 ```
 
 Clutter data resolution order is CLI `--data_dir`, `AIM3_STIMULI_PATH`,

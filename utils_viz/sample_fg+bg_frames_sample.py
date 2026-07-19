@@ -21,6 +21,8 @@ from pathlib import Path
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
+from utils_anal.anal_paths import output_dir
+
 import os
 from typing import List
 
@@ -58,7 +60,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_figs/gate_sample/fg_bg_frames.png",
+        default=str(
+            output_dir(
+                "B_gate_by_context",
+                "sample_fg+bg_frames_sample",
+                "figs",
+            ) / "fg_bg_frames.png"
+        ),
         help="Output path for the visualization figure.",
     )
     # Dataset-related options（与训练/导出脚本保持一致）

@@ -25,6 +25,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 from utils_anal.anal_helpers import build_eval_dataset, build_model_from_ckpt
 from utils_anal.gawf_gate_context_parts123 import _balanced_masks
 from utils_anal.gawf_gate_distribution import iter_gate_chunks
@@ -51,20 +53,34 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--trajectory",
-        default="./results/anal_data/gawf_gate_audit/gawf_gate_trajectory.npz",
+        default=str(
+            output_dir(
+                "A_raw_gate",
+                "gawf_gate_distribution",
+                "data",
+            ) / "gawf_gate_trajectory.npz"
+        ),
     )
     parser.add_argument(
         "--selectivity",
-        default=(
-            "./results/anal_data/gawf_symmetric_relevance_timing/"
-            "part1_selectivity.npz"
+        default=str(
+            output_dir(
+                "D_variance_decomposition",
+                "gawf_symmetric_relevance_timing",
+                "data",
+            )
+            / "part1_selectivity.npz"
         ),
     )
     parser.add_argument(
         "--old_relevance",
-        default=(
-            "./results/anal_data/gawf_symmetric_relevance_timing/"
-            "part2_results.json"
+        default=str(
+            output_dir(
+                "E_relevance_alignment",
+                "gawf_symmetric_relevance_timing",
+                "data",
+            )
+            / "part2_results.json"
         ),
     )
     parser.add_argument(
@@ -77,7 +93,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data_dir", default="./stimuli")
     parser.add_argument("--data_suffix", default="40h-uint8")
     parser.add_argument(
-        "--save_dir", default="./results/anal_data/gawf_gate_robustness"
+        "--save_dir", default=str(output_dir("H_controls", "gawf_gate_robustness", "data"))
     )
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--num_workers", type=int, default=0)

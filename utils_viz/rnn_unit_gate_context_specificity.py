@@ -6,6 +6,15 @@ Output: one Figure-03-style PNG for LSTM and one for GRU.
 
 from __future__ import annotations
 
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
 import argparse
 import json
 import os
@@ -29,14 +38,24 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--report",
-        default=(
-            "./results/anal_data/rnn_unit_gate_context_specificity/"
-            "unit_gate_context_variance.json"
+        default=str(
+            output_dir(
+                "D_variance_decomposition",
+                "rnn_unit_gate_context_specificity",
+                "data",
+            )
+            / "unit_gate_context_variance.json"
         ),
     )
     parser.add_argument(
         "--fig_dir",
-        default="./results/anal_figs/rnn_unit_gate_context_specificity",
+        default=str(
+            output_dir(
+                "D_variance_decomposition",
+                "rnn_unit_gate_context_specificity",
+                "figs",
+            )
+        ),
     )
     parser.add_argument("--dpi", type=int, default=150)
     return parser.parse_args()

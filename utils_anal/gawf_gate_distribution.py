@@ -26,6 +26,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset
 
 
@@ -78,7 +80,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ckpt", required=True)
     parser.add_argument("--data_dir", default="")
     parser.add_argument("--data_suffix", required=True)
-    parser.add_argument("--save_dir", default="./results/anal_data/gawf_gate_audit")
+    parser.add_argument(
+        "--save_dir",
+        default=str(output_dir("A_raw_gate", "gawf_gate_distribution", "data")),
+    )
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--gate_chunk_size", type=int, default=32)

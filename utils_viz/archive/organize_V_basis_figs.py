@@ -4,6 +4,16 @@ digit_k_*.png into subdirs sector_k/ and digit_k/.
 Run from repo root: python -m utils_viz.organize_sector_basis_figs [--figs_dir DIR]
 """
 
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
+
 import argparse
 import os
 import re
@@ -14,7 +24,7 @@ def main() -> None:
     parser.add_argument(
         "--figs_dir",
         type=str,
-        default="./results/anal_figs/V_basis",
+        default=str(output_dir("B_gate_by_context", "organize_V_basis_figs", "figs")),
         help="Directory containing sector_* and digit_* PNG files.",
     )
     args = parser.parse_args()

@@ -25,6 +25,8 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 from utils_viz.dimred_reducer import PCAReducer, UMAPReducer
 
 
@@ -114,13 +116,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--pop_act_dir",
         type=str,
-        # default=(
-        #     "./results/anal_data/pop_act/"
-        #     "gawf_sector_acc_h256_lr0.0005_wd0.0001_do0_fb50_model"
-        # )
-        # default="./results/anal_data/pop_act/rnn_sector_acc_h275_lr0.0005_wd0.0001_do0_model"
-        # default="./results/anal_data/pop_act/lstm_sector_acc_h80_lr0.0005_wd0.0001_do0_model"
-        default="./results/anal_data/pop_act/gru_sector_acc_h105_lr0.0005_wd0.0001_do0_model",
+        default=str(
+            output_dir(
+                "D_variance_decomposition",
+                "export_pop_act",
+                "data",
+            ) / "gru_sector_acc_h105_lr0.0005_wd0.0001_do0_model"
+        ),
         help=(
             "Directory with pop_act.npy and labels.tsv "
             "(typically export_pop_act: <save_dir>/<run_tag>/)."
@@ -129,7 +131,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_figs/pop_act_umap",
+        default=str(output_dir("D_variance_decomposition", "pop_act_umap", "figs")),
         help=(
             "Parent directory for PNG/PDF/HTML figures; writes <save_dir>/<run_tag>/. "
             "dPCA arrays/JSON are written to the matching anal_data tree."
@@ -140,8 +142,8 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="",
         help=(
-            "Parent directory for dPCA arrays/JSON. Default: derive the matching anal_data "
-            "path by replacing the anal_figs component in --save_dir."
+            "Parent directory for dPCA arrays/JSON. Default: replace the canonical "
+            "figs component in --save_dir with its sibling data component."
         ),
     )
     p.add_argument(
@@ -181,13 +183,13 @@ def resolve_dpca_output_dirs(
         data_parent = os.path.normpath(anal_data_dir.strip())
     else:
         parts = fig_parent.split(os.sep)
-        matching = [idx for idx, part in enumerate(parts) if part == "anal_figs"]
+        matching = [idx for idx, part in enumerate(parts) if part == "figs"]
         if not matching:
             raise ValueError(
-                "Cannot derive --anal_data_dir because --save_dir has no 'anal_figs' "
+                "Cannot derive --anal_data_dir because --save_dir has no 'figs' "
                 "path component; pass --anal_data_dir explicitly."
             )
-        parts[matching[-1]] = "anal_data"
+        parts[matching[-1]] = "data"
         data_parent = os.sep.join(parts) or os.sep
     return os.path.join(fig_parent, run_tag), os.path.join(data_parent, run_tag)
 

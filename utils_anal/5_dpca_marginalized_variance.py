@@ -33,6 +33,8 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 
+from utils_anal.anal_paths import output_dir
+
 DEFAULT_MODELS = [
     "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model",
     "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_model",
@@ -61,19 +63,19 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--data_root",
         type=str,
-        default="results/anal_data/pop_act_multiseg",
+        default=str(output_dir("D_variance_decomposition", "export_pop_act", "data")),
         help="Root containing <model>/seed<seed>/pop_act_dpca.npy.",
     )
     p.add_argument(
         "--data_dir",
         type=str,
-        default="results/anal_data/5_pop_act_umap_multiseg",
+        default=str(output_dir("D_variance_decomposition", "5_dpca_marginalized_variance", "data")),
         help="Output directory for JSON and CSV analysis artifacts.",
     )
     p.add_argument(
         "--fig_dir",
         type=str,
-        default="results/anal_figs/5_pop_act_umap_multiseg",
+        default=str(output_dir("D_variance_decomposition", "5_dpca_marginalized_variance", "figs")),
         help="Output directory for PNG/PDF/HTML figure artifacts.",
     )
     p.add_argument(

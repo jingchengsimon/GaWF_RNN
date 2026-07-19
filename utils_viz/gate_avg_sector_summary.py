@@ -14,6 +14,15 @@ Unit-selection logic mirrors utils_viz/V_basis.py sector_summary:
 
 from __future__ import annotations
 
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
 import argparse
 import os
 
@@ -36,13 +45,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="./results/anal_data/gate_avg/sector",
+        default=str(output_dir("B_gate_by_context", "export_gate_avg", "data") / 'sector'),
         help="Directory containing avg_gate_ih_s{k}_space.npy / avg_outer_ih_s{k}_space.npy.",
     )
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_figs/gate_avg",
+        default=str(output_dir("B_gate_by_context", "gate_avg_sector_summary", "figs")),
         help="Root directory to save the output figure.",
     )
     parser.add_argument(

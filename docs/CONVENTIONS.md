@@ -119,12 +119,15 @@ another internal representation.
 | `results/train_figs/rl/{atari,minigrid}/` | curated RL learning curves |
 | `results/train_figs/clutter/` | Clutter training figures |
 | `results/archive/` | historical, superseded, validation-only, or protocol-mismatched results |
-| `results/anal_data/<module>/` | analysis arrays and metadata |
-| `results/anal_figs/<module>/` | figures |
+| `results/anal_index/<CATEGORY>/<module>/data/` | analysis arrays and metadata |
+| `results/anal_index/<CATEGORY>/<module>/figs/` | figures |
+| `results/anal_index/<CATEGORY>/<module>/manifest.json` | run provenance and key numbers |
 | `experiments/generalization/artifacts/` | aggregated experiment tables/configs |
 | `experiments/amarel/artifacts/<run>/` | ignored Slurm logs/status artifacts |
 
-The analysis/figure module directory matches the producing script basename.
+The analysis/figure module directory matches the producing script basename. Analysis scripts
+must obtain these directories from `utils_anal.anal_paths.output_dir`; legacy
+`results/anal_data/` and `results/anal_figs/` are migration-only paths and must not be recreated.
 
 Training jobs may first write a flat suffix directory as a staging artifact. Curated copies are
 then placed in the task hierarchy above. Inside curated Atari paths, omit the redundant
@@ -179,23 +182,24 @@ tag = f"{mode}{selected_idx}_{agg}"
 Save one array as `.npy`, related arrays as `.npz`, and metadata as JSON. Arrays written for
 downstream use must be explicitly `np.float32` or `np.int64`.
 
-The symmetric GaWF relevance/timing analysis writes Parts 0--3 to
-`results/anal_data/gawf_symmetric_relevance_timing/` and its six figures to the matching
-`results/anal_figs/` directory. Part 2 must preserve both `interaction_excluded` and
+The symmetric GaWF relevance/timing analysis writes its decomposition, relevance, timing, and
+control artifacts under categories D, E, F, and H respectively. Part 2 must preserve both
+`interaction_excluded` and
 `interaction_included` results; Part 3 defines gate reconfiguration as a strict
 `negative -> nonnegative` crossing after the switch.
 
-The GaWF gate robustness audit writes compact JSON/CSV/NPZ results to
-`results/anal_data/gawf_gate_robustness/` and survival/CI-convergence figures to the matching
-`results/anal_figs/` directory. Source/destination relevance, interaction policy, and top-percent
+The GaWF gate robustness audit writes compact JSON/CSV/NPZ results and figures below its
+category-indexed script directories. Source/destination relevance, interaction policy, and
+top-percent
 selection must remain explicit columns. Final variance-fraction CIs state whether they are full
 gate or sampled-synapse intervals; sampled intervals are recentered on the exact full-gate point.
 
 The LSTM/GRU unit-gate context analysis writes `unit_gate_context_variance.{json,csv,npz}` to
-`results/anal_data/rnn_unit_gate_context_specificity/` and Figure-03-style plots to the matching
-`results/anal_figs/` directory. LSTM reports sigmoid input/forget/output gates and GRU reports
-sigmoid reset/update gates; candidate activations are excluded. Every plot title and legend must
-state that these are `unit-level gates`, because they are not GaWF connection-level gate matrices.
+`results/anal_index/D_variance_decomposition/rnn_unit_gate_context_specificity/data/` and
+Figure-03-style plots to the matching `figs/` directory. LSTM reports sigmoid
+input/forget/output gates and GRU reports sigmoid reset/update gates; candidate activations are
+excluded. Every plot title and legend must state that these are `unit-level gates`, because they
+are not GaWF connection-level gate matrices.
 
 ## Compatibility and naming changes
 

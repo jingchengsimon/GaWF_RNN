@@ -28,6 +28,7 @@ import torch
 
 from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset, resolve_device
 from utils_anal.export_gate_sample import collect_gate_matrices_for_digits
+from utils_anal.anal_paths import output_dir
 from utils.clutter_train_helpers import set_seed
 
 try:
@@ -66,8 +67,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./gate_similarity_embedding.png",
-        help="Output image path (default: ./gate_similarity_embedding.png).",
+        default=str(
+            output_dir("B_gate_by_context", "gate_digit_embedding", "figs")
+            / "gate_similarity_embedding.png"
+        ),
+        help="Output image path.",
     )
     parser.add_argument(
         "--device",

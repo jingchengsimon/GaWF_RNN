@@ -17,6 +17,15 @@ use --tuning_fallback_argmax to restore legacy argmax-only sorting.
 
 from __future__ import annotations
 
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
 import argparse
 import json
 import os
@@ -35,7 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="./results/anal_data/hidden_activation",
+        default=str(output_dir("E_relevance_alignment", "hidden_unit_tuning", "data")),
         help=(
             "Path to gawf_hidden_activation_stats.npz, or a directory "
             "(auto-completes filename)."
@@ -44,13 +53,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_figs/hidden_activation",
+        default=str(output_dir("E_relevance_alignment", "hidden_activation", "figs")),
         help="Directory to save figures.",
     )
     parser.add_argument(
         "--unit_order_path",
         type=str,
-        default="./results/anal_data/hidden_activation/unit_order_by_cosine_similarity.npy",
+        default=str(
+            output_dir(
+                "E_relevance_alignment",
+                "hidden_unit_tuning",
+                "data",
+            ) / "unit_order_by_cosine_similarity.npy"
+        ),
         help="Optional .npy reordering of hidden units (column order after transpose).",
     )
     parser.add_argument(
@@ -480,7 +495,7 @@ def main() -> None:
 
     raw_in_path = args.data_dir
     if raw_in_path is None or raw_in_path == "":
-        raw_in_path = "./results/anal_data/hidden_activation"
+        raw_in_path = str(output_dir("E_relevance_alignment", "hidden_unit_tuning", "data"))
     if os.path.isdir(raw_in_path) or not os.path.splitext(raw_in_path)[1]:
         raw_in_path = os.path.join(raw_in_path, "gawf_hidden_activation_stats.npz")
 

@@ -175,11 +175,11 @@ and recursively removed unrelated code, stimuli, and results. The following rule
 Safe:
 
 ```bash
-rsync -az local/results/anal_figs/run/ host:/exact/repo/results/anal_figs/run/
+rsync -az local/results/anal_index/F_timing/run/figs/ host:/exact/repo/results/anal_index/F_timing/run/figs/
 ```
 
 Forbidden:
 
 ```bash
-rsync -az --delete file1 local/results/anal_figs/run/ file2 host:/exact/repo/
+rsync -az --delete file1 local/results/anal_index/F_timing/run/figs/ file2 host:/exact/repo/
 ```

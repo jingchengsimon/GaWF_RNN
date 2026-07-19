@@ -29,6 +29,7 @@ if PROJECT_ROOT not in sys.path:
 
 from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset
 from utils_anal.gawf_gate_context_parts123 import _balanced_masks, _marginal_variance
+from utils_anal.anal_paths import output_dir
 
 
 GATE_NAMES = {
@@ -66,11 +67,20 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--trajectory",
-        default="./results/anal_data/gawf_gate_audit/gawf_gate_trajectory.npz",
+        default=str(
+            output_dir("A_raw_gate", "gawf_gate_distribution", "data")
+            / "gawf_gate_trajectory.npz"
+        ),
     )
     parser.add_argument(
         "--save_dir",
-        default="./results/anal_data/rnn_unit_gate_context_specificity",
+        default=str(
+            output_dir(
+                "D_variance_decomposition",
+                "rnn_unit_gate_context_specificity",
+                "data",
+            )
+        ),
     )
     parser.add_argument("--data_dir", default="./stimuli")
     parser.add_argument(

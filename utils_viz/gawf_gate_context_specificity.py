@@ -7,6 +7,15 @@ checks.  The script never loads a model or reconstructs gates.
 
 from __future__ import annotations
 
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
 import argparse
 import json
 import os
@@ -24,11 +33,36 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--data_dir",
-        default="./results/anal_data/gawf_gate_context_specificity",
+        default=str(
+            output_dir(
+                "D_variance_decomposition",
+                "gawf_gate_context_specificity",
+                "data",
+            )
+        ),
+    )
+    parser.add_argument(
+        "--decomposition_dir",
+        default=str(
+            output_dir(
+                "D_variance_decomposition",
+                "gawf_gate_context_specificity",
+                "figs",
+            )
+        ),
+    )
+    parser.add_argument(
+        "--delta_dir",
+        default=str(output_dir("C_delta_gate", "gawf_gate_context_specificity", "figs")),
+    )
+    parser.add_argument(
+        "--control_dir",
+        default=str(output_dir("H_controls", "gawf_gate_context_specificity", "figs")),
     )
     parser.add_argument(
         "--fig_dir",
-        default="./results/anal_figs/gawf_gate_context_specificity",
+        default="",
+        help="Deprecated compatibility override; sends every figure to one directory.",
     )
     parser.add_argument("--dpi", type=int, default=150)
     return parser.parse_args()
@@ -100,7 +134,8 @@ def plot_spatial_maps(
         ax.tick_params(labelsize=6, length=2)
     suffix = "included" if point_key == "point_included" else "excluded"
     fig.suptitle(
-        r"Input-gate spatial $\Delta g$ (mean over 256 hidden units and 32 channels)" "\n"
+        r"Input-gate spatial $\Delta g$ (mean over 256 hidden units and 32 channels)"
+        "\n"
         f"0.5 point mass {suffix}"
     )
     colorbar_axis = fig.add_axes([0.915, 0.18, 0.018, 0.62])
@@ -118,12 +153,10 @@ def plot_variance(report: dict, fig_dir: str, dpi: int) -> None:
     width = 0.34
     fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.4))
     for gate_idx, gate in enumerate(gates):
-        condition = report["part2"][gate]["point_included"][
-            "equal_cell_condition_mean"
-        ]["fractions"]
-        trial = report["part2"][gate]["point_included"]["equal_cell_trial_total"][
-            "percent"
+        condition = report["part2"][gate]["point_included"]["equal_cell_condition_mean"][
+            "fractions"
         ]
+        trial = report["part2"][gate]["point_included"]["equal_cell_trial_total"]["percent"]
         axes[0].bar(
             x + (gate_idx - 0.5) * width,
             [100 * condition[factor] for factor in factors],
@@ -153,9 +186,7 @@ def plot_variance(report: dict, fig_dir: str, dpi: int) -> None:
 def plot_encoder_control(report: dict, fig_dir: str, dpi: int) -> None:
     """Plot the raw CNN encoder condition-mean decomposition."""
 
-    fractions = report["part3"]["encoder_control"]["equal_cell_condition_mean"][
-        "fractions"
-    ]
+    fractions = report["part3"]["encoder_control"]["equal_cell_condition_mean"]["fractions"]
     factors = ("sector", "digit", "interaction")
     values = [100 * fractions[factor] for factor in factors]
     fig, ax = plt.subplots(figsize=(5.8, 4.2))
@@ -235,7 +266,10 @@ def main() -> None:
     """Load compact outputs and write every requested figure."""
 
     args = parse_args()
-    os.makedirs(args.fig_dir, exist_ok=True)
+    if args.fig_dir:
+        args.delta_dir = args.decomposition_dir = args.control_dir = args.fig_dir
+    for directory in (args.delta_dir, args.decomposition_dir, args.control_dir):
+        os.makedirs(directory, exist_ok=True)
     with np.load(os.path.join(args.data_dir, "parts123_compact.npz")) as loaded:
         arrays = {key: loaded[key] for key in loaded.files}
     with open(
@@ -243,30 +277,30 @@ def main() -> None:
     ) as file_obj:
         report = json.load(file_obj)
     for point_key in ("point_included", "point_excluded"):
-        plot_delta_histograms(arrays, point_key, args.fig_dir, args.dpi)
-        plot_spatial_maps(arrays, point_key, args.fig_dir, args.dpi)
-    plot_variance(report, args.fig_dir, args.dpi)
-    plot_encoder_control(report, args.fig_dir, args.dpi)
+        plot_delta_histograms(arrays, point_key, args.delta_dir, args.dpi)
+        plot_spatial_maps(arrays, point_key, args.delta_dir, args.dpi)
+    plot_variance(report, args.decomposition_dir, args.dpi)
+    plot_encoder_control(report, args.decomposition_dir, args.dpi)
     _scatter_grid(
         arrays,
         "digit",
         "gini",
-        os.path.join(args.fig_dir, "05_digit_metric_gini_scatter.png"),
+        os.path.join(args.control_dir, "05_digit_metric_gini_scatter.png"),
         args.dpi,
     )
-    plot_digit_regression(arrays, args.fig_dir, args.dpi)
+    plot_digit_regression(arrays, args.control_dir, args.dpi)
     _scatter_grid(
         arrays,
         "sector",
         "gini",
-        os.path.join(args.fig_dir, "07_sector_symmetric_control.png"),
+        os.path.join(args.control_dir, "07_sector_symmetric_control.png"),
         args.dpi,
     )
     _scatter_grid(
         arrays,
         "digit",
         "variance_contribution",
-        os.path.join(args.fig_dir, "08_digit_variance_contribution_scatter.png"),
+        os.path.join(args.control_dir, "08_digit_variance_contribution_scatter.png"),
         args.dpi,
     )
 

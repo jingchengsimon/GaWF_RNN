@@ -29,6 +29,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 DEFAULT_PRE_FRAMES = 8
 DEFAULT_POST_FRAMES = 20
 
@@ -44,7 +46,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--save_dir",
-        default="results/anal_data/5_pop_act_switch_trajectory",
+        default=str(output_dir("F_timing", "pop_act_switch_trajectory", "data")),
         help="Analysis-data parent directory; writes one run-tag subdirectory.",
     )
     parser.add_argument(

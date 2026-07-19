@@ -6,6 +6,16 @@ Generates two heatmaps:
   2) signed mean map across channels (symmetric color range around 0)
 """
 
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
+
 import argparse
 import os
 import shutil
@@ -27,7 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="./results/anal_data/V_basis_exports",
+        default=str(output_dir("B_gate_by_context", "export_V_basis", "data")),
         help=(
             "Path to exported .pt file from export_gawf_sector_basis.py. "
             "If a directory is given, file name will be auto-completed as "
@@ -37,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_figs/V_basis",
+        default=str(output_dir("B_gate_by_context", "V_basis", "figs")),
         help="Directory to save figures.",
     )
     parser.add_argument(
@@ -66,7 +76,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--channel_order_path",
         type=str,
-        default="./results/anal_data/cnn_channel/channel_order_by_cosine_similarity.npy",
+        default=str(
+            output_dir(
+                "E_relevance_alignment",
+                "cnn_channel_stats",
+                "data",
+            ) / "channel_order_by_cosine_similarity.npy"
+        ),
         help=(
             "Path to a NumPy .npy file containing the CNN feature-channel order "
             "computed by analyze_cnn_channel_activation.py. Only used when "
@@ -76,7 +92,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cnn_stats_path",
         type=str,
-        default="./results/anal_data/cnn_channel",
+        default=str(output_dir("E_relevance_alignment", "cnn_channel_stats", "data")),
         help=(
             "Path to cnn_channel_activation_stats.npz (or its containing directory) "
             "used in viz_cnn_channel_activation.py. In digit mode, this is used to "
@@ -203,7 +219,7 @@ def _load_cnn_rowwise_column(
     # Resolve directory vs file, mirroring viz_cnn_channel_activation.py.
     raw_in_path = stats_path
     if raw_in_path is None or raw_in_path == "":
-        raw_in_path = "./results/anal_data/cnn_channel"
+        raw_in_path = str(output_dir("E_relevance_alignment", "cnn_channel_stats", "data"))
     if os.path.isdir(raw_in_path) or not os.path.splitext(raw_in_path)[1]:
         raw_in_path = os.path.join(raw_in_path, "cnn_channel_activation_stats.npz")
     stats_file = os.path.abspath(raw_in_path)
@@ -254,7 +270,7 @@ def main() -> None:
     if bool(args.sector_summary):
         raw_in_path = args.data_dir
         if raw_in_path is None or raw_in_path == "":
-            raw_in_path = "./results/anal_data/V_basis_exports"
+            raw_in_path = str(output_dir("B_gate_by_context", "export_V_basis", "data"))
         in_dir = os.path.abspath(raw_in_path)
         if os.path.isfile(in_dir):
             in_dir = os.path.dirname(in_dir)
@@ -399,7 +415,7 @@ def main() -> None:
     # If input_path points to a directory, auto-complete file name using sector or digit.
     raw_in_path = args.data_dir
     if raw_in_path is None or raw_in_path == "":
-        raw_in_path = "./results/anal_data/V_basis_exports"
+        raw_in_path = str(output_dir("B_gate_by_context", "export_V_basis", "data"))
     if os.path.isdir(raw_in_path) or not os.path.splitext(raw_in_path)[1]:
         raw_in_path = os.path.join(raw_in_path, f"{prefix}_{idx}_basis.pt")
 

@@ -42,14 +42,13 @@ if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
 from source.clutter.generate_movies import MovingCharacter, paste_character
+from utils_anal.anal_paths import output_dir
 
 
 CANVAS_SIZE = 96
 IMAGE_SIZE = 28
 GRID_SIZE = 3
-DEFAULT_OUTPUT_DIR = os.path.join(
-    PROJECT_ROOT, "results", "anal_figs", "presentation_context_demo"
-)
+DEFAULT_OUTPUT_DIR = str(output_dir("H_controls", "generate_clutter_context_demo", "figs"))
 DEFAULT_MNIST_ROOT = os.path.join(PROJECT_ROOT, "mnist_data_pytorch")
 TARGET_A_COLOR = (80, 210, 90)  # BGR
 TARGET_B_COLOR = (80, 170, 255)  # BGR

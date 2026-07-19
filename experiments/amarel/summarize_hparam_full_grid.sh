@@ -28,4 +28,4 @@ fi
 python utils_viz/plot_generalization.py "${plot_args[@]}"
 
 echo "Summary written under $OUT_DIR"
-echo "Figures written under results/anal_figs/generalization"
+echo "Figures written under results/anal_index/G_behaviour/plot_generalization/figs"

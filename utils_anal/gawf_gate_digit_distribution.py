@@ -19,6 +19,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 from utils_anal.gawf_gate_distribution import (
     _group_mean_delta,
     _hist,
@@ -33,11 +35,17 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--trajectory",
-        default="./results/anal_data/gawf_gate_audit/gawf_gate_trajectory.npz",
+        default=str(
+            output_dir(
+                "A_raw_gate",
+                "gawf_gate_distribution",
+                "data",
+            ) / "gawf_gate_trajectory.npz"
+        ),
     )
     parser.add_argument(
         "--save_dir",
-        default="./results/anal_data/gawf_gate_audit_digit",
+        default=str(output_dir("B_gate_by_context", "gawf_gate_digit_distribution", "data")),
     )
     parser.add_argument("--gate_chunk_size", type=int, default=128)
     parser.add_argument("--hist_bins", type=int, default=400)

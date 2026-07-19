@@ -31,6 +31,7 @@ import cv2
 from utils.atari_dqn_models import AtariQNetwork
 from utils.atari_envs import make_atari_env
 from utils.atari_train_utils import select_device, set_atari_seed, to_channel_first_obs
+from utils_anal.anal_paths import output_dir
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--metrics_path", required=True)
     parser.add_argument("--checkpoint", default=None)
-    parser.add_argument("--output_path", required=True)
+    parser.add_argument("--output_path", default=None)
     parser.add_argument("--metadata_path", default=None)
     parser.add_argument("--num_episodes", type=int, default=3)
     parser.add_argument("--eval_seed", type=int, default=20260718)
@@ -138,13 +139,22 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     metrics_path = Path(args.metrics_path).resolve()
     metrics = load_metrics(metrics_path)
     checkpoint = Path(args.checkpoint or metrics["checkpoint"]).resolve()
-    output_path = Path(args.output_path).resolve()
+    training_seed = int(metrics_path.parent.name.rsplit("seed", 1)[-1])
+    env_slug = "".join(
+        character.lower() if character.isalnum() else "_" for character in metrics["env_id"]
+    ).strip("_")
+    output_path = (
+        Path(args.output_path).resolve()
+        if args.output_path
+        else output_dir("G_behaviour", "evaluate_atari_dqn_video", "figs")
+        / f"{env_slug}_seed{training_seed}.mp4"
+    )
     metadata_path = (
         Path(args.metadata_path).resolve()
         if args.metadata_path
-        else output_path.with_suffix(".json")
+        else output_dir("G_behaviour", "evaluate_atari_dqn_video", "data")
+        / f"{env_slug}_seed{training_seed}.json"
     )
-    training_seed = int(metrics_path.parent.name.rsplit("seed", 1)[-1])
     if f"seed{training_seed}" not in output_path.name:
         raise ValueError("Output filename must include the selected training seed")
     if output_path.exists() or metadata_path.exists():

@@ -15,6 +15,15 @@ Axes convention:
 
 from __future__ import annotations
 
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
 import argparse
 import os
 
@@ -32,13 +41,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="./results/anal_data/whh",
+        default=str(output_dir("H_controls", "export_whh", "data")),
         help="Directory containing weight_hh.npy and sorted_npz_order.npy.",
     )
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_figs/whh",
+        default=str(output_dir("H_controls", "whh", "figs")),
         help="Directory to save figures.",
     )
     parser.add_argument(

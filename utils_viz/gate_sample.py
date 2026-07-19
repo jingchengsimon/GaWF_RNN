@@ -13,6 +13,16 @@ Example commands:
   python viz_gawf_gates.py --in ./gawf_gates.pt --outdir ./gawf_gate_figs
 """
 
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
+
 import argparse
 import os
 from typing import List, Optional
@@ -33,14 +43,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--in",
         dest="in_path",
-        default="./results/anal_data/gate_sample/gawf_gates.pt",
+        default=str(
+            output_dir(
+                "B_gate_by_context",
+                "export_gate_sample",
+                "data",
+            ) / "gawf_gates.pt"
+        ),
         type=str,
         help="Path to gate dictionary file (torch.save from export_gawf_gates.py).",
     )
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_figs/gate_sample",
+        default=str(output_dir("B_gate_by_context", "gate_sample", "figs")),
         help="Output directory for figures (default: ./gawf_gate_figs).",
     )
     parser.add_argument(

@@ -39,8 +39,12 @@ class PopActDpca3DTests(unittest.TestCase):
     def test_coordinate_export_uses_stable_dtypes_and_metadata(self) -> None:
         result = run_dpca_condensed(self.pop_act)
         with tempfile.TemporaryDirectory() as tmpdir:
-            fig_dir = os.path.join(tmpdir, "anal_figs", "5_pop_act_umap", "run")
-            data_dir = os.path.join(tmpdir, "anal_data", "5_pop_act_umap", "run")
+            fig_dir = os.path.join(
+                tmpdir, "D_variance_decomposition", "pop_act_umap", "figs", "run"
+            )
+            data_dir = os.path.join(
+                tmpdir, "D_variance_decomposition", "pop_act_umap", "data", "run"
+            )
             data_path, meta_path = save_dpca_3d_coordinates(
                 result["coords_digit"],
                 result["coords_sector"],
@@ -91,12 +95,18 @@ class PopActDpca3DTests(unittest.TestCase):
 
     def test_output_dirs_keep_figures_and_data_parallel(self) -> None:
         fig_dir, data_dir = resolve_dpca_output_dirs(
-            "results/anal_figs/5_pop_act_umap",
+            "results/anal_index/D_variance_decomposition/pop_act_umap/figs",
             "",
             "model_run",
         )
-        self.assertEqual(fig_dir, "results/anal_figs/5_pop_act_umap/model_run")
-        self.assertEqual(data_dir, "results/anal_data/5_pop_act_umap/model_run")
+        self.assertEqual(
+            fig_dir,
+            "results/anal_index/D_variance_decomposition/pop_act_umap/figs/model_run",
+        )
+        self.assertEqual(
+            data_dir,
+            "results/anal_index/D_variance_decomposition/pop_act_umap/data/model_run",
+        )
 
 
 if __name__ == "__main__":
