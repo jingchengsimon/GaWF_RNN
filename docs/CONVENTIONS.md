@@ -59,11 +59,18 @@ Clutter training uses:
 | `--feedback_dim`, `--dz` | GaWF projected feedback dimension; positive enables projectors |
 | `--num_layers` | ANN/RNN/GRU/LSTM/GaWF depth; integer >= 1 |
 | `--gawf_feedback_lr_scale` | U/V/projector LR multiplier; default `1.0` |
-| `--data_suffix` | training and default validation data suffix |
+| `--data_suffix` | training and default validation data suffix; default `40h-uint8` |
 | `--eval_data_suffix` | optional validation-only suffix |
+| `--input_cast_mode` | `sample`, `batch_cpu`, or `device`; default `device` |
+| `--frame_layout` | `stacked` or `compact`; default `compact` |
+| `--shuffle_block_size` | `-1` uses effective batch size (default), `0` is global random |
 | `--patience` | early stopping on fair val character accuracy; `0` disables |
+| `--checkpoint_interval_epochs` | atomically save resumable state every N completed epochs |
+| `--auto_resume` | load the deterministic per-experiment `*_train_state.pth` when present |
+| `--resume_from` | explicit training-state checkpoint for a single experiment |
 
-Clutter metrics JSON records `seed`, `patience`, `use_acceleration`, and `use_mmap` in addition
+Clutter metrics JSON records `seed`, `patience`, `use_acceleration`, `use_mmap`,
+`input_cast_mode`, `frame_layout`, and `shuffle_block_size` in addition
 to the model/dataset hyperparameters and epoch summaries. Multi-seed result directories must
 encode the seed even though checkpoint stems retain the standard model naming contract.
 
@@ -74,6 +81,14 @@ MiniGrid PPO exposes the same CUDA acceleration names plus `--env_backend {sync,
 `--cudnn_benchmark`, and `--fused_optimizer`. Saved metrics must record the active backend and
 all acceleration settings. Amarel accelerated reruns append a distinct tag such as `_accel_v1`
 to the result suffix so historical baselines are not overwritten.
+
+The paper-aligned MiniGrid PPO entry point additionally uses
+`--checkpoint_interval_updates` for atomic periodic checkpoints and `--resume_from` for
+continuation. Resume restores model, optimizer, counters, and process RNG state. Because the
+Gymnasium/MiniGrid environment is reset instead of serialized, saved metadata identifies the
+continuation as `fresh_reset`; it is a statistically valid continuation, not bitwise replay of
+the interrupted trajectory. A runner must never append to an existing history when no compatible
+checkpoint is present.
 
 Multi-task collection defaults to `transition_balanced`; historical `round_robin` remains
 selectable. New Pong result suffixes must contain both `fs` and `stack`. GaWF DQN feedback is
@@ -97,13 +112,34 @@ another internal representation.
 
 | Directory | Contents |
 |---|---|
-| `results/train_data/<suffix>/` | checkpoints, pickles, metrics JSON |
+| `results/train_data/rl/atari/pong_6action/` | curated six-action Pong run bundles |
+| `results/train_data/rl/atari/multitask_18action/` | curated full-18-action Atari controls and multi-task runs |
+| `results/train_data/rl/minigrid/` | curated MiniGrid run bundles |
+| `results/train_data/clutter/` | Clutter checkpoints and training metrics |
+| `results/train_figs/rl/{atari,minigrid}/` | curated RL learning curves |
+| `results/train_figs/clutter/` | Clutter training figures |
+| `results/archive/` | historical, superseded, validation-only, or protocol-mismatched results |
 | `results/anal_data/<module>/` | analysis arrays and metadata |
 | `results/anal_figs/<module>/` | figures |
 | `experiments/generalization/artifacts/` | aggregated experiment tables/configs |
 | `experiments/amarel/artifacts/<run>/` | ignored Slurm logs/status artifacts |
 
 The analysis/figure module directory matches the producing script basename.
+
+Training jobs may first write a flat suffix directory as a staging artifact. Curated copies are
+then placed in the task hierarchy above. Inside curated Atari paths, omit the redundant
+`atari` filename prefix. Ordinary single-seed figures are files directly below their task
+directory; a multi-seed campaign keeps one group directory with `seed<N>.png` files and writes
+`mean_std.png` only after every declared seed is complete. Seed and step count are carried by
+saved metadata and plot titles rather than repeated in the curated protocol filename. Raw
+training data remains directory-based because a checkpoint, final metrics, and history form one
+run bundle.
+
+Active `pong_6action` results must report `action_space_mode=minimal`, `num_actions=6`, and a
+strict matched frame protocol (`fs1_stack1` or `fs4_stack4`). Active
+`multitask_18action` results must report `action_space_mode=full18` and `num_actions=18`.
+Move mismatched or ambiguous historical results to `results/archive/` instead of relabelling
+them.
 
 ## Checkpoint names
 
@@ -125,6 +161,9 @@ mamba_{mode}{acc}_dmodel{width}_lr{lr}_wd{wd}_cdo{cnn}_rdo{rnn}_model.pth
 s5_{mode}{acc}_dmodel{width}_state{size}_lr{lr}_wd{wd}_cdo{cnn}_rdo{rnn}_model.pth
 ```
 
+Resumable Clutter training state uses the same stem with `_train_state.pth`. It is not an
+inference checkpoint and must not replace the final `_model.pth` best-validation artifact.
+
 Atari names must encode algorithm, model, feedback, optional layer count, environment, frame skip,
 and stack. `pong_fs1_stack1` and `pong_fs4_stack1` are valid protocol tags; `pong1f` is not.
 
@@ -139,6 +178,18 @@ tag = f"{mode}{selected_idx}_{agg}"
 
 Save one array as `.npy`, related arrays as `.npz`, and metadata as JSON. Arrays written for
 downstream use must be explicitly `np.float32` or `np.int64`.
+
+The symmetric GaWF relevance/timing analysis writes Parts 0--3 to
+`results/anal_data/gawf_symmetric_relevance_timing/` and its six figures to the matching
+`results/anal_figs/` directory. Part 2 must preserve both `interaction_excluded` and
+`interaction_included` results; Part 3 defines gate reconfiguration as a strict
+`negative -> nonnegative` crossing after the switch.
+
+The GaWF gate robustness audit writes compact JSON/CSV/NPZ results to
+`results/anal_data/gawf_gate_robustness/` and survival/CI-convergence figures to the matching
+`results/anal_figs/` directory. Source/destination relevance, interaction policy, and top-percent
+selection must remain explicit columns. Final variance-fraction CIs state whether they are full
+gate or sampled-synapse intervals; sampled intervals are recentered on the exact full-gate point.
 
 ## Compatibility and naming changes
 

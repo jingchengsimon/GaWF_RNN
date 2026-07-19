@@ -12,8 +12,8 @@
 - **原因（Reason）：** 将 feedback representation 与 10-class + 9-sector task head 解耦。
 - **证据（Evidence）：** Projected mode 保留 `U * fb * V` gating，仅改变 feedback 表示；
   未采用 CFL paper 的 LoRA design。
-- **现状（Current）：** `--dz > 0` 启用 projected feedback；`gawf_multi` 已由统一接口
-  `gawf --num_layers N` 替代。
+- **现状（Current）：** Projected-feedback 实现仅为历史 checkpoint 兼容保留；当前主设计
+  不使用 project layer。`gawf_multi` 已由统一接口 `gawf --num_layers N` 替代。
 
 ## 2026-06-18 — GaWF gated matmul 显存优化
 
@@ -146,3 +146,81 @@
   compatibility 失败；BF16/TF32、replay 和 recurrent scan acceleration 与此无关。
 - **现状（Current）：** 这是 S5-only compatibility exception；GaWF U/V group 与 feedback
   LR scale 规则保持不变。
+
+## 2026-07-16 — 暂停 GaWF projected feedback (`dz`)
+
+- **改动（Change）：** 当前 GaWF 主设计不再使用 `dz/project layer`，实验统一采用 direct
+  feedback；projected-feedback 结果移入 archive。
+- **原因（Reason）：** `dz` 增加 feedback representation 与 projector capacity，但没有形成
+  稳定的 held-out improvement，反而增加过拟合风险。
+- **证据（Evidence）：** `dz=8/16/32/64` 与 control 系列的 learning curves、train/validation
+  gap 显示更强拟合没有转化为可靠 validation/generalization 收益；该批实验结论为加入
+  `dz` 会过拟合。
+- **现状（Current）：** 暂不开展 project-layer sweep；实现仅为历史 checkpoint 兼容保留，
+  主实验和结论均以无 projector 的 direct-feedback GaWF 为准。
+
+## 2026-07-17 — Clutter 40h 数据默认改为 uint8 存储
+
+- **改动（Change）：** 标准 40h train/validation/test 从现有 float32 文件逐块精确转换为
+  `40h-uint8`；新生成数据和未来 Clutter 实验默认读取 uint8 存储。
+- **原因（Reason）：** uint8 将共享文件系统读取量降低 75%；模型输入仍在 Dataset 边界转换
+  为 float32，因此不改变网络数值类型或训练目标。
+- **证据（Evidence）：** 转换仅接受 `[0,255]` 内的有限整数，并逐块验证
+  `uint8_target.astype(float32) == float32_source`；TSV 进行 SHA-256 一致性校验。
+- **现状（Current）：** 历史 float32 文件、旧实验 worktree 和专用
+  `40h-float32-jointswitch-balanced` 测试集保留；DataLoader 批量转换优化另行基准测试。
+
+## 2026-07-17 — Clutter uint8 DataLoader 跨端优化
+
+- **改动（Change）：** 标准 40h pipeline 固定为 `uint8 mmap + device cast + compact window +
+  batch-sized block shuffle + 2 workers + pinned memory`；`sample/stacked/global` 保留为显式
+  historical reproduction path，node-local staging 仅作可选优化。
+- **原因（Reason）：** float32 共享盘读取量大；逐 sample 转换破坏 pinned uint8 transfer；
+  全局随机 mmap 访问产生大量 page faults，host 侧 stacked window 还会重复展开相邻帧。
+- **证据（Evidence）：** sjc cold-cache loader 中 float32/global 为 26.72 samples/s，
+  uint8/global 为 45.06 samples/s；block-local variants 达 374–552 samples/s。GPU 负载下
+  device+compact transfer 为 107.80 batches/s，batch-CPU cast 为 11.85 batches/s；RNNConv
+  AMP end-to-end 为 34.40 vs legacy 34.66 batches/s，说明 compute-bound 路径无回退。
+  30GB node-local staging 可达 1161 samples/s，但首次复制需 121 s，且两端空间条件不同。
+  Amarel 真实 shared-scratch CPU smoke 为 88.27→765.30 samples/s（8.67×）；Volta AMP
+  e2e 为 57.09→61.27 batches/s、peak CUDA memory 相同，并完成 production entry 一轮训练。
+- **现状（Current）：** 两端共用相同 CLI/defaults；默认不 staging。所有新 metrics 记录
+  `input_cast_mode`、`frame_layout` 和 `shuffle_block_size`，以区分 sampling protocol。
+
+## 2026-07-18 — GaWF symmetric relevance 与 switch timing
+
+- **改动（Change）：** 以 validation activation 定义 encoder/hidden unit 的 sector、digit 与
+  interaction selectivity，再在 held-out test 上检验 input/recurrent gate relevance；Part 2
+  同时报告排除和包含 interaction-dominant units 的版本，Part 3 使用严格
+  `negative -> nonnegative` switch crossing。
+- **原因（Reason）：** 固定空间 proxy 不能对 sector/digit 做对称检验，且把正值起点算作
+  crossing 会虚构 gate-leads-readout 的因果时序。
+- **证据（Evidence）：** Validation/test 的 sector×digit joint design 均不独立
+  (`Cramér's V=0.0816/0.0654`)；interaction-dominant 比例为 encoder `61.72%`、hidden
+  `2.34%`。Top-20 interaction contrast 在排除/包含版本均为正 (`0.888/0.907`)，但
+  recurrent-sector 与 recurrent-digit relevance 均为负，且严格 event-paired crossing
+  没有支持 gate 领先 readout；sequence split-half 结论一致。
+- **现状（Current）：** Input gate 的 sector relevance 得到支持；“recurrent gate 更偏
+  digit”及 gate 先于 readout 的完整 dissociation/causal claim 不成立。所有 marginal
+  解释必须保留 joint-design confounding 限定。
+
+## 2026-07-19 — GaWF gate axis、activation confound 与 robustness audit
+
+- **改动（Change）：** 对 corrected group-mean `Delta g` 做 provenance reconciliation；对
+  gate matrix 同时报告 SOURCE（按 destination 平均）和 DESTINATION（按 source 平均）
+  relevance；加入 activation linear/stratified controls、digit/sector leave-one-out，以及
+  128–8192 synapse CI convergence。
+- **原因（Reason）：** Variance fraction 显示 recurrent digit dominance，而 `|Delta g|>0.5`
+  tail 显示 sector dominance；旧 relevance 仅保留 source axis，负 `d` 也可能被 hidden
+  activation magnitude 混杂。
+- **证据（Evidence）：** 两个 headline 实现均满足 per-synapse、group-first、trial-weighted
+  定义，独立重算与旧值一致。Recurrent digit 在 moderate thresholds 更强，但 sector 在
+  `t≈0.443` 后具有更重 extreme tail。Top-20 interaction-excluded recurrent relevance 为
+  sector SOURCE/DESTINATION `-0.623/+0.267`（sign flip），digit `-0.440/-0.797`；SOURCE
+  negative `d` 经 linear 与 activation-quintile controls 后保留。任何单一 digit/sector
+  removal 均未使 headline fraction 移动超过 3 percentage points；四个 headline CI width
+  在 2048 synapses 后 plateau。
+- **现状（Current）：** “Selective hidden units 的 outgoing recurrent connections 被抑制”
+  仅适用于 SOURCE view；sector-selective units 在 DESTINATION view 反而 receive more gated
+  recurrent input。Variance/tail 差异是 distribution crossing，不是计算不一致；最终 CI
+  使用 8192-synapse、1000-draw trial bootstrap 并以 exact full-gate point recenter。

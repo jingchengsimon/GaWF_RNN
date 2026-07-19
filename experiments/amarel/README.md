@@ -20,15 +20,21 @@ AIM3_PIN_MEMORY=1
 AIM3_RESULTS_PATH=<configured-scratch-results-root>
 ```
 
-Export the DataLoader values with `sbatch`; do not add them to local launchers or training
-defaults. Slurm scripts must source the configured Amarel Conda initialization script and run
+General tasks export the DataLoader values above with `sbatch`. Standard Clutter 40h mmap runs
+instead use the cross-endpoint benchmarked default `AIM3_NUM_WORKERS=2`,
+`AIM3_PIN_MEMORY=1`, device-side cast, compact windows, and block size equal to the effective
+batch. Slurm scripts must source the configured Amarel Conda initialization script and run
 `conda activate aim3_rnn`. Do not use `module`, the default Python, or an unrelated environment.
 Training outputs belong under `$AIM3_RESULTS_PATH/train_data/<result_suffix>/`; status and rerun
 tools must resolve that same physical root rather than assuming `<repo>/results`.
+Long Clutter runners also use `--checkpoint_interval_epochs 5 --auto_resume`; resubmitting the
+same compatible unit continues from its latest complete five-epoch boundary.
 
 ## File roles
 
-- `submit_*.sh`: validate arguments/resources and call `sbatch`.
+- `submit_*.sh`: login-node control plane only; validate arguments/resources and call `sbatch`.
+  Never activate Conda or execute project Python/ML work here. Small reviewed metadata checks may
+  use `/usr/bin/python3` standard library only.
 - `run_*_array.sh` / `run_*.sh`: execute one array task or named run on a compute node.
 - `check_*`: inspect scheduler state, logs, and result validity.
 - `rerun_*`: explicitly resubmit failed or missing tasks; there is no automatic retry loop.
@@ -38,6 +44,14 @@ tools must resolve that same physical root rather than assuming `<repo>/results`
 
 Reusable launchers and grid utilities may be tracked. One-off recovery scripts must be clearly
 marked in their filename/header and deleted before branch or worktree synchronization.
+
+Any parameter matching, model construction, preprocessing, smoke testing, benchmarking, or
+visualization is compute work even if expected to finish quickly. Submit it as a `run_*.sh`
+preflight job and use `afterok` for dependent jobs. Before synchronizing or running a new or
+modified submitter, `bash -n` it and run
+`python -m pytest -q tests/test_amarel_submit_safety.py` locally (or in a Slurm compute job), never
+on an Amarel login node; do not add new safety-test allowlist entries. The detailed policy is in
+`docs/operations/REMOTE_EXECUTION.md`.
 
 ## Full-grid workflow
 
@@ -66,8 +80,9 @@ The directory also contains reusable launchers for:
 The fixed-best Clutter confirmation run uses `submit_clutter_best6_10seed.sh` for six models by
 ten seeds. It submits ten independent Slurm jobs, one six-task model array per seed;
 `check_clutter_best6_10seed.sh <job-id>` performs strict result validation. Because the 40h
-training array is larger than node memory, this launcher uses mmap with
-`AIM3_NUM_WORKERS=0` and `AIM3_PIN_MEMORY=0`, overriding the usual Amarel DataLoader defaults.
+training array is larger than node memory, this launcher uses mmap uint8 with device-side cast,
+compact windows, batch-sized block shuffle, `AIM3_NUM_WORKERS=2`, and
+`AIM3_PIN_MEMORY=1`. The full array remains mmap-backed; workers do not materialize it in RAM.
 
 Each family must define expected result files and use a status/check script that validates result
 contents rather than relying only on Slurm state.

@@ -22,8 +22,12 @@ project roots, data roots, and Conda initialization paths live in the ignored
   `conda activate aim3_rnn`.
 - Amarel training submissions explicitly export `AIM3_RESULTS_PATH`; do not depend on `.bashrc`
   or `--export=ALL` for the physical result root.
-- Local/sjc runs must not inherit Amarel-only DataLoader worker and pin-memory settings when that
-  would exceed host memory.
+- Standard Clutter 40h runs on both endpoints use the shared benchmarked pipeline:
+  `num_workers=2`, CUDA pinned memory, uint8 mmap, device cast, compact layout, and
+block size equal to the effective batch. Per-run overrides remain available for reproduction.
+Standard long Clutter runners save atomic training state every five completed epochs and enable
+automatic resume. Requeueing or explicit resubmission may lose at most the epochs completed after
+the last checkpoint; partial jobs must not write final result artifacts while stopping.
 
 Result-root resolution is: explicit `--results_dir`, then `AIM3_RESULTS_PATH`, then
 `FAW_RNN_RESULTS_PATH`, then `<repo>/results`. Emitters, validators, status tools, rerun logic,
@@ -57,10 +61,13 @@ Unless a human explicitly requests a different allocation, Codex-submitted train
 - partition `gpu-redhat`, account `general`;
 - one GPU with `constraint=adalovelace`;
 - `cpus-per-task=16`, `mem=64G`;
-- `AIM3_NUM_WORKERS=12`, `AIM3_PIN_MEMORY=1` exported at submission time.
+- `AIM3_PIN_MEMORY=1` exported at submission time;
+- general tasks use `AIM3_NUM_WORKERS=12`; standard Clutter 40h mmap tasks use the benchmarked
+  `AIM3_NUM_WORKERS=2`.
 
-Do not bake the Amarel DataLoader values into local training defaults. Use a specific node only
-when reproducing a documented node-level experiment.
+The Clutter input-pipeline defaults are shared across sjc-remote and Amarel. Other task families
+retain their task-specific DataLoader values. Use a specific node only when reproducing a
+documented node-level experiment.
 
 After submission, verify and report:
 
@@ -77,6 +84,57 @@ cross-thread searching.
 
 Scheduler state is not result validity. Completion checks must inspect expected metrics and any
 required checkpoint/pickle companions.
+
+Before a replacement or recovery submission, search active scheduler entries and process command
+lines for the exact target result suffix across every known historical job ID and worktree. Do not
+infer that a unit is idle merely because its final files are absent or its current manifest omits
+an older job. If an older writer targets the same path, cancel and confirm it has exited before
+starting the replacement.
+
+### Login-node safety boundary
+
+Amarel login nodes are control-plane hosts, not execution hosts. This boundary applies even to a
+short smoke test or one-time setup command, and an SSH timeout is not process containment: a child
+process may survive after the SSH client returns.
+
+Allowed in `experiments/amarel/submit_*.sh`:
+
+- bounded shell argument, path, and environment validation;
+- `sbatch`, `squeue`, `sacct`, and narrowly scoped job-status queries;
+- creation of small submission logs/task lists and exact-path metadata checks;
+- `/usr/bin/python3` with Python standard library only for small, bounded metadata validation.
+
+Forbidden on a login node or directly from a submitter:
+
+- `conda activate`, environment initialization for a workload, `torchrun`, or `accelerate`;
+- importing or executing PyTorch, NumPy, JAX, TensorFlow, CuPy, scikit-learn, Mamba, or S5;
+- training, inference, preprocessing, parameter counting/matching, smoke tests, benchmarks,
+  visualization, model construction/loading, dataset scans, or broad recursive filesystem scans;
+- using a local/background process, `nohup`, `tmux`, or an SSH timeout in place of Slurm.
+
+Every workload uses a two-part launcher:
+
+1. `submit_<run>.sh` stays lightweight and only validates/submits.
+2. `run_<run>.sh` contains `#SBATCH` resources, activates `aim3_rnn`, and executes on a compute
+   node. Computational preflight work is a separate Slurm job; submit the training array with
+   `--dependency=afterok:<preflight-job-id>`.
+
+Before a new or modified submitter is synchronized or run, execute the following on the local
+development host. If local execution is impossible, run the test in a Slurm compute job; never run
+`pytest` on an Amarel login node.
+
+```bash
+bash -n experiments/amarel/submit_<run>.sh experiments/amarel/run_<run>.sh
+python -m pytest -q tests/test_amarel_submit_safety.py
+bash experiments/amarel/submit_<run>.sh --dry-run  # when supported
+```
+
+On the Amarel login node, limit verification to `bash -n`, `--dry-run`, and scheduler queries. The
+safety test scans every tracked `submit_*.sh`. Its small allowlist covers only existing,
+reviewed standard-library metadata commands. Do not extend that allowlist for a new launcher;
+move the operation into a Slurm preflight runner instead. After submission, confirm with `squeue`
+that each running task has a compute-node assignment. If a workload is ever found on a login node,
+stop that process first, then repair the launcher before resubmitting.
 
 ## Long-running sjc jobs
 

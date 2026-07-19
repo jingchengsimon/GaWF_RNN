@@ -26,10 +26,29 @@ names and output formats are defined in `CONVENTIONS.md`; architecture boundarie
 - Put recurrent computation in `utils/recurrent_cores/`, not task wrappers.
 - Extend `AccelerationConfig` rather than adding acceleration branches to the training loop.
 - Official curves use the train-eval and validation passes, not online batch averages.
+- Standard long jobs pass `--checkpoint_interval_epochs 5 --auto_resume`. Checkpoints are atomic
+  and occur only after a complete epoch, so interruption loses at most four completed epochs.
+  Resume rejects model, optimizer, data-pipeline, seed, or hyperparameter mismatches. Dataset
+  samples are deterministic, so restoring the loader and sampler generators is sufficient even
+  though persistent worker process internals are recreated.
+- A signal-triggered stop must retain the last periodic training checkpoint and exit without
+  writing final `.pkl`, metrics JSON, or best-model artifacts from partial state.
 
 ### mmap and devices
 
-- mmap loaders use `num_workers=0` and `pin_memory=False`.
+- **Historical reproduction only:** the legacy `40h-float32` mmap pipeline used
+  `num_workers=0` and `pin_memory=False`. Keep this configuration available when reproducing
+  historical runs, but do not treat it as a general mmap requirement or the default for new
+  experiments.
+- **Current standard Clutter 40h configuration:** use `40h-uint8` with `--use_mmap`,
+  `--input_cast_mode device`, `--frame_layout compact`, and `--shuffle_block_size -1` together
+  with `AIM3_NUM_WORKERS=2` and `AIM3_PIN_MEMORY=1` on CUDA compute nodes. The loaders use
+  persistent workers and `prefetch_factor=2`; the batch-sized block sampler preserves epoch
+  coverage while reducing random shared-filesystem access.
+- mmap and pinned memory are not inherently incompatible: mmap backs the CPU dataset, while
+  pinning applies to the collated uint8 batches transferred asynchronously to CUDA. Do not raise
+  the standard two-worker value without an endpoint-specific benchmark; more workers can increase
+  page faults and shared-filesystem contention.
 - Convert float64 inputs to float32 before MPS/CUDA transfer.
 - Do not load the full dataset onto the accelerator.
 - Scope `torch.no_grad()` to evaluation/inference blocks.
