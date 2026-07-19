@@ -191,6 +191,12 @@ The GaWF gate robustness audit writes compact JSON/CSV/NPZ results to
 selection must remain explicit columns. Final variance-fraction CIs state whether they are full
 gate or sampled-synapse intervals; sampled intervals are recentered on the exact full-gate point.
 
+The LSTM/GRU unit-gate context analysis writes `unit_gate_context_variance.{json,csv,npz}` to
+`results/anal_data/rnn_unit_gate_context_specificity/` and Figure-03-style plots to the matching
+`results/anal_figs/` directory. LSTM reports sigmoid input/forget/output gates and GRU reports
+sigmoid reset/update gates; candidate activations are excluded. Every plot title and legend must
+state that these are `unit-level gates`, because they are not GaWF connection-level gate matrices.
+
 ## Compatibility and naming changes
 
 When a public module, symbol, flag, metrics field, or filename changes:

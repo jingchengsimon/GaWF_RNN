@@ -1,394 +1,383 @@
-"""Decompose LSTM and GRU unit-level gate variance into sector, digit, and interaction.
+"""Analyze context variance of LSTM and GRU unit-level gates on Clutter.
 
-GaWF modulates a gate per *synapse*, so its gate array is (hidden x input). LSTM and GRU
-instead carry one gate value per *unit*, which makes the two architectures directly
-comparable only after the unit-level gates are put through the same balanced
-sector-by-digit decomposition used for GaWF.
+The analysis uses the same balanced 9-sector by 10-digit design as the GaWF gate
+context-specificity Figure 03.  LSTM contributes input, forget, and output gates;
+GRU contributes reset and update gates.  Candidate activations are intentionally excluded.
 
-The gates are recomputed from the exact PyTorch recurrence rather than read from a hook,
-so ``lstm_unit_gates`` and ``gru_unit_gates`` return both the per-gate tensors and the
-hidden sequence they imply; the hidden sequence must reproduce ``rnn(encoded)`` to
-floating-point tolerance, which is what pins the gate definitions to PyTorch's own
-gate ordering and bias placement.
-
-Output: ``unit_gate_context_variance.json``, read by
-``utils_viz/rnn_unit_gate_context_specificity.py``.
+Inputs: trained LSTM/GRU checkpoints, the continuous Clutter test set, and reference labels.
+Outputs: compact JSON/NPZ/CSV summaries; no trial-by-unit gate tensor is saved.
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import sys
-import time
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from utils_anal.anal_helpers import (
-    build_eval_dataset,
-    build_model_from_ckpt,
-    resolve_device,
-)
+from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset
+from utils_anal.gawf_gate_context_parts123 import _balanced_masks, _marginal_variance
 
-N_SECTORS = 9
-N_DIGITS = 10
-LSTM_GATE_NAMES = ("input", "forget", "output")
-GRU_GATE_NAMES = ("reset", "update")
+
+GATE_NAMES = {
+    "lstm": ("input", "forget", "output"),
+    "gru": ("reset", "update"),
+}
 
 
 @dataclass
 class UnitGateAggregate:
-    """Balanced per-cell sums for one gate.
-
-    ``joint_sum`` is (n_cells, n_units), summed over the equal-n trials inside each
-    sector-by-digit cell. ``joint_sumsq`` is (n_units,), the total sum of squares over
-    every retained trial. Keeping only these two moments means the decomposition never
-    needs the per-trial gate array in memory.
-    """
+    """Balanced-cell sufficient statistics for one unit-level gate."""
 
     joint_sum: np.ndarray
     joint_sumsq: np.ndarray
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse unit-gate context-specificity arguments."""
+    """Parse command-line arguments."""
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--lstm_ckpt", required=True)
-    parser.add_argument("--gru_ckpt", required=True)
-    parser.add_argument("--data_dir", default="./stimuli")
-    parser.add_argument("--data_suffix", default="40h-uint8")
+    base = "./results/train_data/clutter/best_6model_param_matched_40h"
+    parser.add_argument(
+        "--lstm_ckpt",
+        default=(
+            f"{base}/lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_"
+            "rdo0.5_model.pth"
+        ),
+    )
+    parser.add_argument(
+        "--gru_ckpt",
+        default=(
+            f"{base}/gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_"
+            "rdo0.5_model.pth"
+        ),
+    )
+    parser.add_argument(
+        "--trajectory",
+        default="./results/anal_data/gawf_gate_audit/gawf_gate_trajectory.npz",
+    )
     parser.add_argument(
         "--save_dir",
         default="./results/anal_data/rnn_unit_gate_context_specificity",
     )
-    parser.add_argument("--device", choices=["cpu", "cuda", "mps"], default="cpu")
+    parser.add_argument("--data_dir", default="./stimuli")
+    parser.add_argument(
+        "--data_suffix",
+        default="40h-float32-nonjoint-10digit-unique-bg-causal-continuous",
+    )
+    parser.add_argument("--seed", type=int, default=260718)
     parser.add_argument("--batch_size", type=int, default=16)
-    parser.add_argument("--num_workers", type=int, default=0)
-    parser.add_argument("--max_sequences", type=int, default=2000)
     parser.add_argument("--chan_num", type=int, default=2)
-    parser.add_argument("--seed", type=int, default=260719)
+    parser.add_argument("--device", choices=("cpu", "cuda", "mps"), default="cpu")
     parser.add_argument("--use_mmap", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args()
-
-
-def _split_bias(rnn: torch.nn.RNNBase, encoded: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return input and hidden bias vectors, or zeros when the module is bias-free."""
-
-    if rnn.bias:
-        return rnn.bias_ih_l0, rnn.bias_hh_l0
-    zero = torch.zeros(
-        rnn.weight_ih_l0.shape[0], dtype=encoded.dtype, device=encoded.device
-    )
-    return zero, zero
 
 
 def lstm_unit_gates(
     encoded: torch.Tensor, rnn: torch.nn.LSTM
 ) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
-    """Recompute LSTM input/forget/output gates and the hidden sequence they produce.
-
-    PyTorch packs the LSTM gates as ``[i, f, g, o]`` in a single (4H, *) weight, and adds
-    ``bias_ih`` and ``bias_hh`` independently. ``g`` is the candidate cell, not a gate, so
-    it is used for the recurrence but not returned as a gate.
-    """
+    """Reproduce a one-layer PyTorch LSTM and return its three sigmoid gates."""
 
     if rnn.num_layers != 1 or rnn.bidirectional:
-        raise ValueError("lstm_unit_gates supports a single-layer unidirectional LSTM")
-    if not rnn.batch_first:
-        raise ValueError("lstm_unit_gates expects batch_first=True")
-    batch_size, frame_num, _input_size = encoded.shape
+        raise ValueError("Unit-gate extraction currently requires one unidirectional LSTM layer.")
+    batch_size, steps, _features = encoded.shape
     hidden_size = rnn.hidden_size
-    bias_ih, bias_hh = _split_bias(rnn, encoded)
-    hidden = torch.zeros(
-        batch_size, hidden_size, dtype=encoded.dtype, device=encoded.device
-    )
-    cell = torch.zeros_like(hidden)
-    collected: dict[str, list[torch.Tensor]] = {name: [] for name in LSTM_GATE_NAMES}
-    hidden_steps = []
-    for time_idx in range(frame_num):
-        pre = (
-            encoded[:, time_idx] @ rnn.weight_ih_l0.T
-            + bias_ih
-            + hidden @ rnn.weight_hh_l0.T
-            + bias_hh
-        )
-        input_gate = torch.sigmoid(pre[:, 0:hidden_size])
-        forget_gate = torch.sigmoid(pre[:, hidden_size : 2 * hidden_size])
-        candidate = torch.tanh(pre[:, 2 * hidden_size : 3 * hidden_size])
-        output_gate = torch.sigmoid(pre[:, 3 * hidden_size : 4 * hidden_size])
+    hidden = encoded.new_zeros((batch_size, hidden_size))
+    cell = encoded.new_zeros((batch_size, hidden_size))
+    outputs: list[torch.Tensor] = []
+    gates: dict[str, list[torch.Tensor]] = {name: [] for name in GATE_NAMES["lstm"]}
+    for step in range(steps):
+        affine = F.linear(encoded[:, step], rnn.weight_ih_l0, rnn.bias_ih_l0)
+        affine = affine + F.linear(hidden, rnn.weight_hh_l0, rnn.bias_hh_l0)
+        input_raw, forget_raw, candidate_raw, output_raw = affine.chunk(4, dim=-1)
+        input_gate = torch.sigmoid(input_raw)
+        forget_gate = torch.sigmoid(forget_raw)
+        candidate = torch.tanh(candidate_raw)
+        output_gate = torch.sigmoid(output_raw)
         cell = forget_gate * cell + input_gate * candidate
         hidden = output_gate * torch.tanh(cell)
-        collected["input"].append(input_gate)
-        collected["forget"].append(forget_gate)
-        collected["output"].append(output_gate)
-        hidden_steps.append(hidden)
-    gates = {name: torch.stack(values, dim=1) for name, values in collected.items()}
-    return gates, torch.stack(hidden_steps, dim=1)
+        gates["input"].append(input_gate)
+        gates["forget"].append(forget_gate)
+        gates["output"].append(output_gate)
+        outputs.append(hidden)
+    stacked = {name: torch.stack(values, dim=1) for name, values in gates.items()}
+    return stacked, torch.stack(outputs, dim=1)
 
 
 def gru_unit_gates(
     encoded: torch.Tensor, rnn: torch.nn.GRU
 ) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
-    """Recompute GRU reset/update gates and the hidden sequence they produce.
-
-    PyTorch packs the GRU gates as ``[r, z, n]``. The reset gate multiplies the *whole*
-    hidden contribution to the candidate, including ``bias_hn`` -- applying it before the
-    bias is the usual off-by-one-term error and would break the parity check.
-    """
+    """Reproduce a one-layer PyTorch GRU and return its reset and update gates."""
 
     if rnn.num_layers != 1 or rnn.bidirectional:
-        raise ValueError("gru_unit_gates supports a single-layer unidirectional GRU")
-    if not rnn.batch_first:
-        raise ValueError("gru_unit_gates expects batch_first=True")
-    batch_size, frame_num, _input_size = encoded.shape
+        raise ValueError("Unit-gate extraction currently requires one unidirectional GRU layer.")
+    batch_size, steps, _features = encoded.shape
     hidden_size = rnn.hidden_size
-    bias_ih, bias_hh = _split_bias(rnn, encoded)
-    hidden = torch.zeros(
-        batch_size, hidden_size, dtype=encoded.dtype, device=encoded.device
-    )
-    collected: dict[str, list[torch.Tensor]] = {name: [] for name in GRU_GATE_NAMES}
-    hidden_steps = []
-    for time_idx in range(frame_num):
-        gate_input = encoded[:, time_idx] @ rnn.weight_ih_l0.T + bias_ih
-        gate_hidden = hidden @ rnn.weight_hh_l0.T + bias_hh
-        reset_gate = torch.sigmoid(
-            gate_input[:, 0:hidden_size] + gate_hidden[:, 0:hidden_size]
+    hidden = encoded.new_zeros((batch_size, hidden_size))
+    outputs: list[torch.Tensor] = []
+    gates: dict[str, list[torch.Tensor]] = {name: [] for name in GATE_NAMES["gru"]}
+    for step in range(steps):
+        input_affine = F.linear(encoded[:, step], rnn.weight_ih_l0, rnn.bias_ih_l0)
+        hidden_affine = F.linear(hidden, rnn.weight_hh_l0, rnn.bias_hh_l0)
+        input_reset, input_update, input_candidate = input_affine.chunk(3, dim=-1)
+        hidden_reset, hidden_update, hidden_candidate = hidden_affine.chunk(3, dim=-1)
+        reset_gate = torch.sigmoid(input_reset + hidden_reset)
+        update_gate = torch.sigmoid(input_update + hidden_update)
+        candidate = torch.tanh(input_candidate + reset_gate * hidden_candidate)
+        hidden = candidate + update_gate * (hidden - candidate)
+        gates["reset"].append(reset_gate)
+        gates["update"].append(update_gate)
+        outputs.append(hidden)
+    stacked = {name: torch.stack(values, dim=1) for name, values in gates.items()}
+    return stacked, torch.stack(outputs, dim=1)
+
+
+def _new_aggregates(model_type: str, hidden_size: int) -> dict[str, UnitGateAggregate]:
+    """Allocate balanced 90-cell sufficient statistics."""
+
+    return {
+        name: UnitGateAggregate(
+            joint_sum=np.zeros((90, hidden_size), dtype=np.float64),
+            joint_sumsq=np.zeros(hidden_size, dtype=np.float64),
         )
-        update_gate = torch.sigmoid(
-            gate_input[:, hidden_size : 2 * hidden_size]
-            + gate_hidden[:, hidden_size : 2 * hidden_size]
-        )
-        candidate = torch.tanh(
-            gate_input[:, 2 * hidden_size : 3 * hidden_size]
-            + reset_gate * gate_hidden[:, 2 * hidden_size : 3 * hidden_size]
-        )
-        hidden = (1.0 - update_gate) * candidate + update_gate * hidden
-        collected["reset"].append(reset_gate)
-        collected["update"].append(update_gate)
-        hidden_steps.append(hidden)
-    gates = {name: torch.stack(values, dim=1) for name, values in collected.items()}
-    return gates, torch.stack(hidden_steps, dim=1)
+        for name in GATE_NAMES[model_type]
+    }
+
+
+def _add_by_code(target: np.ndarray, values: np.ndarray, codes: np.ndarray) -> None:
+    """Accumulate rows into joint-cell sums."""
+
+    for code in np.unique(codes):
+        target[int(code)] += values[codes == code].sum(axis=0, dtype=np.float64)
 
 
 def _summarize_gate(
     aggregate: UnitGateAggregate, equal_n: int
-) -> tuple[dict[str, object], np.ndarray]:
-    """Decompose one gate into sector, digit, and interaction variance.
+) -> tuple[dict[str, Any], np.ndarray]:
+    """Compute condition-mean and trial-total variance decompositions."""
 
-    Two views are reported because they answer different questions:
-
-    * ``equal_cell_condition_mean`` decomposes the variance *of the cell means*, which is
-      the quantity comparable to a hidden-state marginalization. Its fractions sum to 1.
-    * ``equal_cell_trial_total`` decomposes total trial-level variance and therefore also
-      carries a residual (within-cell) term. Its percentages sum to 100.
-
-    The design is balanced by construction (``equal_n`` trials in every one of the 90
-    cells), so the three effects are orthogonal and the sums of squares add exactly.
-    Sums of squares are pooled across units before forming ratios, so a unit with a
-    larger dynamic range contributes proportionally rather than being weighted equally.
-    """
-
-    if equal_n <= 0:
-        raise ValueError("equal_n must be positive")
-    n_cells = aggregate.joint_sum.shape[0]
-    if n_cells != N_SECTORS * N_DIGITS:
-        raise ValueError(
-            f"Expected {N_SECTORS * N_DIGITS} joint cells, got {n_cells}"
-        )
-    n_units = aggregate.joint_sum.shape[1]
-    cell_mean = (aggregate.joint_sum / equal_n).reshape(N_SECTORS, N_DIGITS, n_units)
-
-    grand = cell_mean.mean(axis=(0, 1))
-    sector_mean = cell_mean.mean(axis=1)
-    digit_mean = cell_mean.mean(axis=0)
-    sector_effect = sector_mean - grand
-    digit_effect = digit_mean - grand
-    interaction_effect = (
-        cell_mean - sector_mean[:, None, :] - digit_mean[None, :, :] + grand
+    cell_mean = aggregate.joint_sum.reshape(9, 10, -1) / equal_n
+    condition = _marginal_variance(cell_mean)
+    grand = aggregate.joint_sum.sum(axis=0) / (90 * equal_n)
+    total_trial_ss = float(
+        np.sum(aggregate.joint_sumsq - 90 * equal_n * np.square(grand))
     )
-
-    condition_ss = {
-        "sector": float(N_DIGITS * np.square(sector_effect).sum()),
-        "digit": float(N_SECTORS * np.square(digit_effect).sum()),
-        "interaction": float(np.square(interaction_effect).sum()),
+    factor_ss = {
+        name: float(value * equal_n) for name, value in condition["components"].items()
     }
-    condition_total = sum(condition_ss.values())
-    if condition_total <= 0.0:
-        raise RuntimeError("Condition-mean variance is zero; gate is constant")
-    fractions = {key: value / condition_total for key, value in condition_ss.items()}
-
-    n_trials = n_cells * equal_n
-    trial_total_ss = float(
-        aggregate.joint_sumsq.sum() - n_trials * float(np.square(grand).sum())
-    )
-    if trial_total_ss <= 0.0:
-        raise RuntimeError("Trial-total variance is non-positive; check the aggregate")
-    trial_ss = {key: equal_n * value for key, value in condition_ss.items()}
-    trial_ss["residual"] = trial_total_ss - sum(trial_ss.values())
-    percent = {key: 100.0 * value / trial_total_ss for key, value in trial_ss.items()}
-
+    residual = total_trial_ss - sum(factor_ss.values())
+    if residual < 0.0 and abs(residual) < 1e-8 * total_trial_ss:
+        residual = 0.0
     report = {
-        "n_units": int(n_units),
-        "equal_n_per_cell": int(equal_n),
-        "n_trials": int(n_trials),
+        "shape_per_trial": [int(cell_mean.shape[-1])],
         "equal_cell_condition_mean": {
-            "sum_of_squares": condition_ss,
-            "total_sum_of_squares": condition_total,
-            "fractions": fractions,
+            "fractions": condition["fractions"],
+            "components": condition["components"],
+            "total_condition_mean_variance": condition[
+                "total_condition_mean_variance"
+            ],
+            "sum_check": condition["sum_check"],
         },
         "equal_cell_trial_total": {
-            "sum_of_squares": trial_ss,
-            "total_sum_of_squares": trial_total_ss,
-            "percent": percent,
+            "percent": {
+                **{
+                    name: 100.0 * value / total_trial_ss
+                    for name, value in factor_ss.items()
+                },
+                "residual": 100.0 * residual / total_trial_ss,
+            },
+            "total_trial_sum_squares": total_trial_ss,
+            "residual_sum_squares": residual,
+            "sum_check_percent": 100.0 * (sum(factor_ss.values()) + residual)
+            / total_trial_ss,
         },
     }
-    return report, cell_mean
-
-
-def _balanced_cell_indices(
-    sectors: np.ndarray, digits: np.ndarray, rng: np.random.Generator
-) -> tuple[np.ndarray, int]:
-    """Draw the same number of frames from every sector-by-digit cell.
-
-    Returns the selected flat indices ordered cell-major, so a later reshape to
-    (n_cells, equal_n) lines up with ``UnitGateAggregate``.
-    """
-
-    per_cell: list[np.ndarray] = []
-    for sector in range(N_SECTORS):
-        for digit in range(N_DIGITS):
-            members = np.flatnonzero((sectors == sector) & (digits == digit))
-            if members.size == 0:
-                raise RuntimeError(
-                    f"Sector {sector} x digit {digit} cell is empty; cannot balance"
-                )
-            per_cell.append(members)
-    equal_n = min(int(members.size) for members in per_cell)
-    selected = np.stack(
-        [rng.choice(members, size=equal_n, replace=False) for members in per_cell]
-    )
-    return selected, equal_n
-
-
-def collect_unit_gates(
-    model: torch.nn.Module,
-    dataset,
-    device: torch.device,
-    model_type: str,
-    batch_size: int,
-    num_workers: int,
-    max_sequences: int,
-) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray]:
-    """Run the encoder and recurrence, returning per-frame gates and their labels."""
-
-    gate_fn = lstm_unit_gates if model_type == "lstm" else gru_unit_gates
-    loader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=device.type == "cuda",
-    )
-    collected: dict[str, list[np.ndarray]] = {}
-    label_chunks: list[np.ndarray] = []
-    seen = 0
-    started = time.perf_counter()
-    model.eval()
-    with torch.no_grad():
-        for batch in loader:
-            frames, labels = batch[0], batch[1]
-            frames = frames.to(device=device, dtype=torch.float32)
-            encoded_maps = model.encoder_module(frames.reshape(-1, *frames.shape[2:]))
-            encoded = encoded_maps.reshape(frames.shape[0], frames.shape[1], -1)
-            gates, _hidden = gate_fn(encoded, model.rnn)
-            for name, value in gates.items():
-                collected.setdefault(name, []).append(
-                    value.reshape(-1, value.shape[-1]).cpu().numpy().astype(np.float32)
-                )
-            label_chunks.append(
-                labels.reshape(-1, labels.shape[-1]).numpy().astype(np.int64)
-            )
-            seen += frames.shape[0]
-            print(
-                f"  {model_type}: {min(seen, max_sequences)}/{max_sequences} sequences | "
-                f"elapsed={time.perf_counter() - started:.1f}s",
-                flush=True,
-            )
-            if seen >= max_sequences:
-                break
-    gate_arrays = {
-        name: np.concatenate(chunks, axis=0) for name, chunks in collected.items()
-    }
-    labels_array = np.concatenate(label_chunks, axis=0)
-    return gate_arrays, labels_array[:, 1], labels_array[:, 0]
+    return report, cell_mean.astype(np.float32)
 
 
 def analyze_model(
-    model: torch.nn.Module,
-    dataset,
-    device: torch.device,
     model_type: str,
+    checkpoint: str,
+    dataset: torch.utils.data.Dataset,
+    num_pos: int,
+    reference_labels: np.ndarray,
+    equal_joint_mask: np.ndarray,
+    device: torch.device,
     args: argparse.Namespace,
-) -> dict[str, object]:
-    """Collect gates for one recurrent model and decompose each of its gates."""
+) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+    """Extract one model's unit gates and stream exact balanced statistics."""
 
-    gate_arrays, sectors, digits = collect_unit_gates(
-        model,
-        dataset,
-        device,
-        model_type,
-        args.batch_size,
-        args.num_workers,
-        args.max_sequences,
-    )
-    rng = np.random.default_rng(args.seed)
-    selected, equal_n = _balanced_cell_indices(sectors, digits, rng)
-    gates_report: dict[str, object] = {}
-    for name, values in gate_arrays.items():
-        cells = values[selected]
-        aggregate = UnitGateAggregate(
-            joint_sum=cells.sum(axis=1).astype(np.float64),
-            joint_sumsq=np.square(cells.astype(np.float64)).sum(axis=(0, 1)),
+    model = build_model_from_ckpt(checkpoint, num_pos, device, chan_num=args.chan_num)
+    if model.core.num_layers != 1:
+        raise ValueError(f"{model_type} checkpoint must have one recurrent layer.")
+    rnn = model.core.rnn
+    expected_class = torch.nn.LSTM if model_type == "lstm" else torch.nn.GRU
+    if not isinstance(rnn, expected_class):
+        raise TypeError(f"Expected {expected_class.__name__}, got {type(rnn).__name__}.")
+    aggregates = _new_aggregates(model_type, rnn.hidden_size)
+    joint = reference_labels[:, 1] * 10 + reference_labels[:, 0]
+    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
+    frame_offset = 0
+    parity_max = 0.0
+    extraction = lstm_unit_gates if model_type == "lstm" else gru_unit_gates
+    with torch.no_grad():
+        for batch_index, batch in enumerate(loader):
+            frames, labels = batch[:2]
+            frames = frames.to(device=device, dtype=torch.float32)
+            labels_flat = labels.numpy().reshape(-1, 2).astype(np.int64, copy=False)
+            end = frame_offset + labels_flat.shape[0]
+            if not np.array_equal(labels_flat, reference_labels[frame_offset:end]):
+                raise RuntimeError(
+                    f"{model_type} dataset labels diverge from reference at batch {batch_index}."
+                )
+            encoded = model.encode_frames(frames)
+            gates, manual_output = extraction(encoded, rnn)
+            native_output, _state = rnn(encoded)
+            parity_max = max(
+                parity_max,
+                float(torch.max(torch.abs(manual_output - native_output)).item()),
+            )
+            selected = equal_joint_mask[frame_offset:end]
+            selected_codes = joint[frame_offset:end][selected]
+            for gate_name, tensor in gates.items():
+                values = tensor.detach().cpu().numpy().reshape(-1, rnn.hidden_size)
+                selected_values = values[selected]
+                aggregate = aggregates[gate_name]
+                _add_by_code(aggregate.joint_sum, selected_values, selected_codes)
+                aggregate.joint_sumsq += np.square(
+                    selected_values, dtype=np.float64
+                ).sum(axis=0)
+            frame_offset = end
+            if (batch_index + 1) % 25 == 0 or frame_offset == reference_labels.shape[0]:
+                print(
+                    f"{model_type.upper()} batches {batch_index + 1}/{len(loader)} | "
+                    f"frames={frame_offset}/{reference_labels.shape[0]}",
+                    flush=True,
+                )
+    if frame_offset != reference_labels.shape[0]:
+        raise RuntimeError(
+            f"Processed {frame_offset} frames, expected {reference_labels.shape[0]}."
         )
-        gate_report, _cell_mean = _summarize_gate(aggregate, equal_n)
-        gates_report[name] = gate_report
-    return {
-        "n_frames_collected": int(sectors.size),
-        "equal_n_per_cell": int(equal_n),
-        "gates": gates_report,
+    if parity_max > 1e-4:
+        raise RuntimeError(f"{model_type} recurrence parity failed: max_abs={parity_max:.3e}")
+
+    equal_n = int(np.count_nonzero(equal_joint_mask)) // 90
+    report: dict[str, Any] = {
+        "checkpoint": os.path.abspath(checkpoint),
+        "hidden_size": int(rnn.hidden_size),
+        "gate_level": "unit",
+        "candidate_activation_excluded": True,
+        "native_recurrence_parity_max_abs": parity_max,
+        "gates": {},
     }
+    arrays: dict[str, np.ndarray] = {}
+    for gate_name, aggregate in aggregates.items():
+        gate_report, cell_mean = _summarize_gate(aggregate, equal_n)
+        report["gates"][gate_name] = gate_report
+        arrays[f"{model_type}_{gate_name}_equal_cell_mean"] = cell_mean
+    return report, arrays
+
+
+def _write_csv(report: dict[str, Any], path: str) -> None:
+    """Write plot-ready percentages to a compact CSV."""
+
+    with open(path, "w", encoding="utf-8", newline="") as file_obj:
+        writer = csv.writer(file_obj)
+        writer.writerow(
+            ["model", "gate", "factor", "condition_mean_percent", "trial_total_percent"]
+        )
+        for model_type, model_report in report["models"].items():
+            for gate_name, gate_report in model_report["gates"].items():
+                condition = gate_report["equal_cell_condition_mean"]["fractions"]
+                trial = gate_report["equal_cell_trial_total"]["percent"]
+                for factor in ("sector", "digit", "interaction", "residual"):
+                    writer.writerow(
+                        [
+                            model_type,
+                            gate_name,
+                            factor,
+                            "" if factor == "residual" else 100.0 * condition[factor],
+                            trial[factor],
+                        ]
+                    )
 
 
 def main() -> None:
-    """Decompose LSTM and GRU unit gates and save one compact JSON report."""
+    """Run both model analyses and save compact outputs."""
 
     args = parse_args()
-    device = resolve_device(args.device)
-    dataset, num_pos = build_eval_dataset(args, "test")
-    report: dict[str, object] = {"models": {}}
-    for model_type, ckpt in (("lstm", args.lstm_ckpt), ("gru", args.gru_ckpt)):
-        print(f"Analyzing {model_type} from {ckpt}", flush=True)
-        model = build_model_from_ckpt(
-            ckpt, num_pos, device, chan_num=int(args.chan_num)
-        )
-        report["models"][model_type] = analyze_model(
-            model, dataset, device, model_type, args
-        )
-        report["models"][model_type]["checkpoint"] = os.path.abspath(ckpt)
     os.makedirs(args.save_dir, exist_ok=True)
-    output_path = os.path.join(args.save_dir, "unit_gate_context_variance.json")
-    with open(output_path, "w", encoding="utf-8") as file_obj:
+    device = torch.device(args.device)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA requested but unavailable.")
+    if device.type == "mps" and not torch.backends.mps.is_available():
+        raise RuntimeError("MPS requested but unavailable.")
+    dataset, num_pos = build_test_dataset(args)
+    with np.load(args.trajectory) as loaded:
+        label_tensor = loaded["labels"].astype(np.int64, copy=False)
+    if label_tensor.shape[:1] != (len(dataset),) or label_tensor.shape[-1] != 2:
+        raise RuntimeError(
+            f"Reference labels have shape {label_tensor.shape}; expected "
+            f"({len(dataset)}, sequence_length, 2)."
+        )
+    reference_labels = label_tensor.reshape(-1, 2)
+    digits, sectors = reference_labels[:, 0], reference_labels[:, 1]
+    _marginal_masks, equal_joint_mask = _balanced_masks(digits, sectors, args.seed)
+    equal_n = int(np.count_nonzero(equal_joint_mask)) // 90
+
+    models: dict[str, Any] = {}
+    arrays: dict[str, np.ndarray] = {}
+    for model_type, checkpoint in (("lstm", args.lstm_ckpt), ("gru", args.gru_ckpt)):
+        model_report, model_arrays = analyze_model(
+            model_type,
+            checkpoint,
+            dataset,
+            num_pos,
+            reference_labels,
+            equal_joint_mask,
+            device,
+            args,
+        )
+        models[model_type] = model_report
+        arrays.update(model_arrays)
+
+    report = {
+        "analysis": "LSTM/GRU context variance decomposition of unit-level gates",
+        "dataset": args.data_suffix,
+        "n_sequences": int(len(dataset)),
+        "sequence_length": int(reference_labels.shape[0] // len(dataset)),
+        "n_frames": int(reference_labels.shape[0]),
+        "balance_seed": int(args.seed),
+        "equal_joint_cell_n": equal_n,
+        "labels": {"digit_levels": 10, "sector_levels": 9},
+        "gate_convention": {
+            "lstm": "PyTorch i/f/g/o order; sigmoid i/f/o reported, candidate g excluded",
+            "gru": "PyTorch r/z/n order; sigmoid reset/update reported, candidate n excluded",
+        },
+        "models": models,
+    }
+    json_path = os.path.join(args.save_dir, "unit_gate_context_variance.json")
+    npz_path = os.path.join(args.save_dir, "unit_gate_context_variance.npz")
+    csv_path = os.path.join(args.save_dir, "unit_gate_context_variance.csv")
+    with open(json_path, "w", encoding="utf-8") as file_obj:
         json.dump(report, file_obj, indent=2)
-    print(f"Saved unit-gate decomposition: {output_path}")
+    np.savez_compressed(npz_path, **arrays)
+    _write_csv(report, csv_path)
+    print(f"Saved {json_path}")
+    print(f"Saved {npz_path}")
+    print(f"Saved {csv_path}")
 
 
 if __name__ == "__main__":
