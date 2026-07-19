@@ -7,9 +7,11 @@ import weakref
 
 import numpy as np
 
+import utils_anal.run_unified_variance_decomposition as unified_runner
 from utils_anal.run_unified_variance_decomposition import (
     ArraySource,
     WeightedSource,
+    _plot_compact_aggregate,
     _per_unit_draw_mean,
     _summary_only,
     _write_index,
@@ -75,6 +77,45 @@ def test_per_unit_draw_mean_returns_unit_distribution_and_drops_all_nan_units() 
 def test_per_unit_draw_mean_rejects_non_matrix_input() -> None:
     with np.testing.assert_raises_regex(ValueError, "draws x units"):
         _per_unit_draw_mean(np.ones(3, dtype=np.float32))
+
+
+def test_compact_aggregate_has_adjacent_bars_and_open_top_right_spines(
+    tmp_path, monkeypatch
+) -> None:
+    def result() -> RepeatedDecomposition:
+        aggregate = {
+            "sector": np.asarray([0.4, 0.5]),
+            "digit": np.asarray([0.3, 0.2]),
+            "interaction": np.asarray([0.3, 0.3]),
+        }
+        trial = {**aggregate, "residual": np.asarray([0.1, 0.1])}
+        return RepeatedDecomposition(aggregate, trial, {}, {}, {}, {}, {})
+
+    results = {
+        name: result()
+        for name in ("input_gate", "recurrent_gate", "encoder_activation", "hidden_state")
+    }
+    original_close = unified_runner.plt.close
+    monkeypatch.setattr(unified_runner.plt, "close", lambda figure: None)
+    destination = _plot_compact_aggregate(tmp_path, results)
+    figure = unified_runner.plt.gcf()
+    assert destination.is_file()
+    assert len(figure.axes) == 4
+    for axis in figure.axes:
+        assert len(axis.patches) == 6
+        assert not axis.spines["top"].get_visible()
+        assert not axis.spines["right"].get_visible()
+        assert len(axis.texts) == 0
+        for category_index in range(2):
+            bars = sorted(
+                (axis.patches[factor_index * 2 + category_index] for factor_index in range(3)),
+                key=lambda bar: bar.get_x(),
+            )
+            np.testing.assert_allclose(
+                [bars[0].get_x() + bars[0].get_width(), bars[1].get_x() + bars[1].get_width()],
+                [bars[1].get_x(), bars[2].get_x()],
+            )
+    original_close(figure)
 
 
 def test_write_index_preserves_existing_content(tmp_path) -> None:

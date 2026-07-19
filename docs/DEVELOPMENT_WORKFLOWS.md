@@ -133,6 +133,8 @@ unit axes index synapses, not neurons. Trial-level gate analysis must stream sec
 under an explicit memory budget; a trial-by-synapse array is forbidden. Object figures label each
 aggregate bar with its 20-draw mean and show per-unit fractions as violins after averaging each
 unit across the 20 draws; the black line marks the mean of those draw-averaged unit values.
+The additional compact 2-by-2 aggregate figure compares condition-mean and trial-level results
+for input gate, recurrent gate, encoder activation, and hidden activation with adjacent factor bars.
 
 `utils_anal/run_unified_variance_decomposition.py` reads saved mmap `.npy` representations,
 including the input and recurrent gate tensors. A saved GaWF trajectory may supply labels,

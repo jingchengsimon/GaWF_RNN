@@ -3,7 +3,8 @@
 The input JSON points to saved mmap-friendly arrays and, optionally, a GaWF trajectory NPZ.
 No model, dataset, checkpoint, or plotting-time inference is loaded.  Outputs are one tidy CSV,
 one per-object NPZ containing every repeated per-unit fraction, one four-cell figure per object,
-one seven-object summary figure, a consistency report, and a provenance manifest.
+one seven-object summary figure, one compact four-object aggregate figure, a consistency report,
+and a provenance manifest.
 
 Minimal input manifest::
 
@@ -477,6 +478,60 @@ def _plot_summary(
     return destination
 
 
+def _plot_compact_aggregate(
+    figure_dir: Path,
+    results: dict[str, RepeatedDecomposition],
+) -> Path:
+    """Plot condition-mean and trial-level aggregates for four core representations."""
+
+    objects = (
+        ("input_gate", "Input gate"),
+        ("recurrent_gate", "Recurrent gate"),
+        ("encoder_activation", "Encoder activation"),
+        ("hidden_state", "Hidden activation"),
+    )
+    factors = CM_FACTORS
+    colors = {"sector": "#4477AA", "digit": "#EE6677", "interaction": "#228833"}
+    category_centers = np.arange(2, dtype=np.float64)
+    bar_width = 0.24
+    fig, axes = plt.subplots(2, 2, figsize=(9, 7), sharey=True)
+    for axis, (object_name, title) in zip(axes.flat, objects):
+        result = results[object_name]
+        for factor_index, factor in enumerate(factors):
+            values_by_category = (
+                result.aggregate_cm[factor],
+                result.aggregate_trial[factor],
+            )
+            statistics = [_mean_ci(values) for values in values_by_category]
+            means = np.asarray([item[0] for item in statistics])
+            lows = np.asarray([item[1] for item in statistics])
+            highs = np.asarray([item[2] for item in statistics])
+            positions = category_centers + (factor_index - 1) * bar_width
+            axis.bar(
+                positions,
+                means,
+                width=bar_width,
+                color=colors[factor],
+                yerr=np.asarray([means - lows, highs - means]),
+                capsize=2.5,
+                label=factor,
+            )
+        axis.set_xticks(category_centers, ("Condition mean", "Trial level"))
+        axis.set_ylim(0.0, 1.0)
+        axis.set_title(title)
+        axis.spines["top"].set_visible(False)
+        axis.spines["right"].set_visible(False)
+    for axis in axes[:, 0]:
+        axis.set_ylabel(r"aggregate variance fraction ($\eta^2$)")
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=3, frameon=False)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    destination = figure_dir / "core_objects_aggregate_2x2.png"
+    fig.savefig(destination, dpi=150, bbox_inches="tight", pad_inches=0.06)
+    plt.close(fig)
+    return destination
+
+
 def _hidden_unbalanced_bridge(
     source: BlockSource,
     labels: np.ndarray,
@@ -689,6 +744,7 @@ def main() -> None:
         results[object_name] = _summary_only(result)
         del result
     _plot_summary(figure_dir, results, repeats=balance.repeats)
+    _plot_compact_aggregate(figure_dir, results)
 
     csv_path = data_dir / "unified_variance_decomposition.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
