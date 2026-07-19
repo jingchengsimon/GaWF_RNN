@@ -38,7 +38,7 @@ for seed in $(seq 1 10); do
       --array="0-5" \
       --output="$ARTIFACT_DIR/%A_%a.out" \
       --error="$ARTIFACT_DIR/%A_%a.err" \
-      --export=ALL,AIM3_ROOT="$ROOT",AIM3_CONDA_INIT="$AIM3_CONDA_INIT",AIM3_CONDA_ENV=aim3_rnn,AIM3_DATA_DIR="$AIM3_DATA_DIR",AIM3_NUM_WORKERS=0,AIM3_PIN_MEMORY=0,AIM3_GRID_UTIL="$GRID_UTIL",TASK_OFFSET="$task_offset" \
+      --export=ALL,AIM3_ROOT="$ROOT",AIM3_CONDA_INIT="$AIM3_CONDA_INIT",AIM3_CONDA_ENV=aim3_rnn,AIM3_DATA_DIR="$AIM3_DATA_DIR",AIM3_NUM_WORKERS=2,AIM3_PIN_MEMORY=1,AIM3_GRID_UTIL="$GRID_UTIL",TASK_OFFSET="$task_offset" \
       "$RUN_SCRIPT"
   } | tr -d '[:space:]')"
   job_id="${job_id%%;*}"
@@ -56,10 +56,10 @@ job_ids_csv="$(IFS=,; echo "${job_ids[*]}")"
   echo "seeds=1-10"
   echo "epochs=150"
   echo "patience=0"
-  echo "data_suffix=40h-float32"
-  echo "eval_data_suffix=40h-float32"
+  echo "data_suffix=40h-uint8"
+  echo "eval_data_suffix=40h-uint8"
   echo "resources=partition:gpu-redhat,account:general,gpu:1,constraint:adalovelace,cpus:16,mem:64G"
-  echo "dataloader=num_workers:0,pin_memory:false,mmap:true"
+  echo "dataloader=uint8,device_cast,compact,block_size:batch,num_workers:2,pin_memory:true,mmap:true"
   echo "grid_util=$GRID_UTIL"
   echo "result_root=results/train_data/$RESULT_ROOT"
   echo "status_command=squeue -j $job_ids_csv"

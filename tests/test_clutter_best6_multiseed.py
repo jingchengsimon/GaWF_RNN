@@ -8,6 +8,7 @@ from experiments.generalization.clutter_best6_multiseed import (
     NUM_EPOCHS,
     all_task_configs,
     build_manifest,
+    shell_assignments,
     task_config,
     validate_task_output,
 )
@@ -71,8 +72,8 @@ def test_validator_requires_matching_seed_and_full_epoch_completion(tmp_path) ->
         "actual_epochs": 150,
         "patience": 0,
         "stopped_by_patience": False,
-        "dataset_suffix": "40h-float32",
-        "eval_dataset_suffix": "40h-float32",
+        "dataset_suffix": "40h-uint8",
+        "eval_dataset_suffix": "40h-uint8",
         "dataset_mode": "sector",
         "use_acceleration": True,
         "use_mmap": True,
@@ -88,8 +89,29 @@ def test_validator_requires_matching_seed_and_full_epoch_completion(tmp_path) ->
     metrics_path.write_text(json.dumps(metrics), encoding="utf-8")
     assert validate_task_output(config, str(tmp_path))["valid"] is True
 
+    metrics["dataset_suffix"] = "40h-float32"
+    metrics["eval_dataset_suffix"] = "40h-float32"
+    metrics_path.write_text(json.dumps(metrics), encoding="utf-8")
+    legacy_report = validate_task_output(config, str(tmp_path))
+    assert legacy_report["valid"] is True
+    assert legacy_report["dataset_suffix"] == "40h-float32"
+
     metrics["actual_epochs"] = 149
     metrics_path.write_text(json.dumps(metrics), encoding="utf-8")
     report = validate_task_output(config, str(tmp_path))
     assert report["valid"] is False
     assert "actual_epochs" in report["failed_checks"]
+
+
+def test_scratch_results_root_is_used_for_emit_and_validation(tmp_path) -> None:
+    """Training outputs may live on scratch while status markers stay in the code root."""
+
+    config = task_config(3)
+    code_root = tmp_path / "code"
+    results_root = tmp_path / "scratch-results"
+    assignments = shell_assignments(config, str(code_root), str(results_root))
+    assert f"RESULTS_ROOT={results_root}" in assignments
+    assert str(results_root / "train_data" / config.result_suffix) in assignments
+    report = validate_task_output(config, str(code_root), str(results_root))
+    assert report["valid"] is False
+    assert report["paths"]["metrics"].startswith(str(results_root))

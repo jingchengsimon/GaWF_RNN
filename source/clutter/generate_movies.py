@@ -55,6 +55,7 @@ class StimulusConfig:
     mnist_sample_end: int = 60000  # default: all samples
 
     suffix: str = ""
+    storage_dtype: Literal["uint8", "float32"] = "uint8"
 
 
 class MovingCharacter:
@@ -182,11 +183,15 @@ def paste_character(frame: np.ndarray, char: MovingCharacter):
     char.center_y = (y_start + y_end) / 2
 
     frame_roi = frame[y_start:y_end, x_start:x_end]
-    # combined = frame_roi.astype(np.uint16) + char_roi.astype(np.uint16)
-    # frame[y_start:y_end, x_start:x_end] = np.clip(combined, 0, 255).astype(np.uint8)
-
-    combined = frame_roi.astype(np.float32) + char_roi.astype(np.float32)
-    frame[y_start:y_end, x_start:x_end] = np.clip(combined, 0.0, 255.0).astype(np.float32)
+    if frame.dtype == np.uint8:
+        # Widen before addition so overlapping bright pixels saturate instead of wrapping.
+        combined = frame_roi.astype(np.uint16) + char_roi.astype(np.uint16)
+        frame[y_start:y_end, x_start:x_end] = np.clip(combined, 0, 255).astype(np.uint8)
+    else:
+        combined = frame_roi.astype(np.float32) + char_roi.astype(np.float32)
+        frame[y_start:y_end, x_start:x_end] = np.clip(combined, 0.0, 255.0).astype(
+            np.float32
+        )
 
 
 # --- MODIFIED FUNCTION ---
@@ -224,11 +229,11 @@ def generate_stimulus_video(config: StimulusConfig, mnist_data: dict):
     mean_switch_interval_frames = config.mean_switch_interval_seconds * config.fps
     frame_dims = (config.height, config.width)
 
-    # Memmap .npy as float32 for faster loading in training (no dtype conversion).
+    storage_dtype = np.dtype(config.storage_dtype)
     npy_data = npfmt.open_memmap(
         npy_path,
         mode="w+",
-        dtype=np.float32,
+        dtype=storage_dtype,
         shape=(total_frames, config.height, config.width),
     )
 
@@ -313,8 +318,7 @@ def generate_stimulus_video(config: StimulusConfig, mnist_data: dict):
             char.update_random_walk(frame_dims, bg_mean_speed)
 
         # --- Render Frame ---
-        # frame = np.zeros(frame_dims, dtype=np.uint8)
-        frame = np.zeros(frame_dims, dtype=np.float32)
+        frame = np.zeros(frame_dims, dtype=storage_dtype)
         for char in background_chars:
             paste_character(frame, char)
         paste_character(frame, fg_char)
@@ -363,7 +367,13 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=10,
         metavar="H",
-        help="Hours of train stimulus (suffix becomes Hh-float32; train duration = 14400*H seconds).",
+        help="Hours of train stimulus (suffix becomes Hh-<dtype>; train duration = 3600*H seconds).",
+    )
+    p.add_argument(
+        "--storage-dtype",
+        choices=("uint8", "float32"),
+        default="uint8",
+        help="On-disk stimulus dtype. Default uint8 minimizes shared-filesystem I/O.",
     )
     p.add_argument(
         "--split",
@@ -382,7 +392,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         help=(
-            "Extra text appended to the Hh-float32 suffix. "
+            "Extra text appended to the Hh-<dtype> suffix. "
             "Default is '-jointswitch' for --switch-mode joint and empty otherwise."
         ),
     )
@@ -397,7 +407,7 @@ def main():
     suffix_extra = args.suffix_extra
     if suffix_extra is None:
         suffix_extra = "-jointswitch" if args.switch_mode == "joint" else ""
-    data_suffix = f"{data_hour_length}h-float32{suffix_extra}"
+    data_suffix = f"{data_hour_length}h-{args.storage_dtype}{suffix_extra}"
     config = StimulusConfig(
         width=96,
         height=96,
@@ -413,6 +423,7 @@ def main():
         mnist_sample_end=40000,
         suffix="reg-train-" + data_suffix,
         output_mode=args.output_mode,
+        storage_dtype=args.storage_dtype,
     )
     os.makedirs(config.output_dir, exist_ok=True)
 

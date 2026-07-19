@@ -33,6 +33,7 @@ from .clutter_train_acceleration import (
     GawfDiagnosticsRecorder,
 )
 from .clutter_train_helpers import LoggingHelper
+from .clutter_data_pipeline import prepare_clutter_inputs, resolve_base_dataset
 from .clutter_train_predict_all_chars import build_loss_fn_all_chars, AllCharsMetricsMode
 from .recurrent_cores import configure_gawf_feedback_acceleration
 from .clutter_train_sector import (
@@ -407,6 +408,7 @@ def setup_training_components(
         scaler,
         autocast_fn,
         pin_memory,
+        train_data,
         gawf_diagnostics=gawf_diagnostics,
     )
 
@@ -566,6 +568,12 @@ def evaluate_epoch(
         disable=not use_tqdm,
     )
 
+    pipeline_ds = resolve_base_dataset(data_loader.dataset)
+    input_cast_mode = getattr(pipeline_ds, "input_cast_mode", "sample")
+    frame_layout = getattr(pipeline_ds, "frame_layout", "stacked")
+    chan_num = int(getattr(pipeline_ds, "chan_num", 2))
+    pin_memory = bool(getattr(data_loader, "pin_memory", False))
+
     mdl.eval()
     with torch.no_grad():
         for _, batch in valid_pbar:
@@ -574,9 +582,14 @@ def evaluate_epoch(
             else:
                 inputs, labels = batch, None
 
-            if inputs.dtype == torch.float64:
-                inputs = inputs.float()
-            inputs = inputs.to(device)
+            inputs = prepare_clutter_inputs(
+                inputs,
+                device=device,
+                cast_mode=input_cast_mode,
+                frame_layout=frame_layout,
+                chan_num=chan_num,
+                non_blocking=pin_memory,
+            )
             if labels is not None:
                 if labels.dtype == torch.float64:
                     labels = labels.float()
@@ -836,9 +849,6 @@ def register_stop_handlers(num_workers: int, stop_flag: Dict[str, bool], logger=
     Register SIGTERM/SIGINT handlers that set a stop flag.
     DataLoader workers are not touched inside the handler.
     """
-    if num_workers <= 0:
-        return
-
     def _request_stop(signum, frame):
         stop_flag["requested"] = True
         if logger is not None:

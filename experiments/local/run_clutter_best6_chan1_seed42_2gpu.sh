@@ -26,7 +26,7 @@ conda activate "$CONDA_ENV"
 set -u
 cd "$ROOT"
 
-for suffix in train-40h-float32 validation-40h-float32; do
+for suffix in train-40h-uint8 validation-40h-uint8; do
   if [[ ! -f "$DATA_DIR/stimulus_reg-${suffix}.npy" ]]; then
     echo "Missing stimulus: $DATA_DIR/stimulus_reg-${suffix}.npy" >&2
     exit 2
@@ -51,7 +51,7 @@ run_one() {
     fi
     CUDA_VISIBLE_DEVICES="$gpu" DISABLE_TQDM=1 \
       PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
-      AIM3_NUM_WORKERS=0 AIM3_PIN_MEMORY=0 python train_model.py \
+      AIM3_NUM_WORKERS=2 AIM3_PIN_MEMORY=1 python train_model.py \
       --model_types "$MODEL_TYPE" \
       "${MODEL_WIDTH_ARGS[@]}" \
       --num_layers 1 \
@@ -70,6 +70,9 @@ run_one() {
       --use_acceleration \
       --use_sector_mode \
       --use_mmap \
+      --input_cast_mode device \
+      --frame_layout compact \
+      --shuffle_block_size -1 \
       --result_suffix "$RESULT_SUFFIX"
     rc=$?
     if [[ $rc -ne 0 ]]; then
