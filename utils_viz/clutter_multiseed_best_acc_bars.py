@@ -12,16 +12,17 @@ Validation diagnostic (available immediately after training)::
 
     python -m utils_viz.clutter_multiseed_best_acc_bars \
       --source validation --input_root /path/to/clutter-completed-metrics \
-      --save_png results/train_figs/clutter/clutter_best6_multiseed_40h_ep150/best_acc_validation_mean_std.png \
-      --save_summary_csv results/anal_data/clutter_best6_multiseed_40h_ep150/best_acc_validation_mean_std.csv
+      --save_png /path/to/G_behaviour/figs/best_acc_validation_mean_std.png \
+      --save_summary_csv /path/to/G_behaviour/data/best_acc_validation_mean_std.csv
 
 Final test result after the multi-seed test evaluator finishes::
 
     python -m utils_viz.clutter_multiseed_best_acc_bars \
-      --source test --test_csv results/anal_data/clutter_multiseed_test/per_seed_test_accuracy.csv \
-      --save_png results/anal_figs/clutter_multiseed_test/best_acc_test_mean_std.png \
-      --save_summary_csv results/anal_data/clutter_multiseed_test/best_acc_test_mean_std.csv
+      --source test --test_csv /path/to/G_behaviour/data/per_seed_test_accuracy.csv \
+      --save_png /path/to/G_behaviour/figs/best_acc_test_mean_std.png \
+      --save_summary_csv /path/to/G_behaviour/data/best_acc_test_mean_std.csv
 """
+
 from __future__ import annotations
 
 import argparse
@@ -36,16 +37,22 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
+from utils_anal.anal_paths import output_dir
+
 from utils_viz.fg_switch_offset_acc import MODEL_COLORS, MODEL_LABELS, MODEL_ORDER
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", choices=("validation", "test"), required=True)
-    parser.add_argument("--input_root", help="Directory containing model-seed training pickle directories")
+    parser.add_argument(
+        "--input_root", help="Directory containing model-seed training pickle directories"
+    )
     parser.add_argument("--test_csv", help="Per-seed test CSV from the checkpoint evaluator")
-    parser.add_argument("--save_png", required=True)
-    parser.add_argument("--save_summary_csv", required=True)
+    figure_dir = output_dir("G_behaviour", "clutter_multiseed_best_acc_bars", "figs")
+    data_dir = output_dir("G_behaviour", "clutter_multiseed_best_acc_bars", "data")
+    parser.add_argument("--save_png", default=str(figure_dir / "best_acc_mean_std.png"))
+    parser.add_argument("--save_summary_csv", default=str(data_dir / "best_acc_mean_std.csv"))
     parser.add_argument("--title", default=None)
     return parser.parse_args()
 
@@ -112,7 +119,12 @@ def _mean_sd(values: list[tuple[int, float]]) -> tuple[float, float]:
     return float(np.mean(array)), float(np.std(array, ddof=1)) if array.size > 1 else 0.0
 
 
-def write_summary(path: str, source: str, models: list[str], grouped: dict[str, dict[str, list[tuple[int, float]]]]) -> None:
+def write_summary(
+    path: str,
+    source: str,
+    models: list[str],
+    grouped: dict[str, dict[str, list[tuple[int, float]]]],
+) -> None:
     output = Path(path).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", newline="", encoding="utf-8") as handle:
@@ -134,16 +146,19 @@ def _style_axis(axis: plt.Axes) -> None:
     axis.set_axisbelow(True)
 
 
-def plot(source: str, grouped: dict[str, dict[str, list[tuple[int, float]]]], save_png: str, title: str | None) -> None:
+def plot(
+    source: str,
+    grouped: dict[str, dict[str, list[tuple[int, float]]]],
+    save_png: str,
+    title: str | None,
+) -> None:
     models = [model for model in MODEL_ORDER if model in grouped]
     if title is None:
         title = "Clutter best-6 multi-seed accuracy"
     if source == "test":
         group_centers = np.arange(2, dtype=np.float64)
         width = 0.11
-        model_offsets = (
-            np.arange(len(models), dtype=np.float64) - (len(models) - 1) / 2.0
-        ) * width
+        model_offsets = (np.arange(len(models), dtype=np.float64) - (len(models) - 1) / 2.0) * width
         fig, axis = plt.subplots(figsize=(10.2, 5.0))
         rng = np.random.default_rng(0)
         for group_index, metric in enumerate(("char", "sector")):
@@ -182,8 +197,7 @@ def plot(source: str, grouped: dict[str, dict[str, list[tuple[int, float]]]], sa
         axis.set_ylabel("Accuracy (%)")
         axis.set_ylim(70.0, 100.0)
         legend_handles = [
-            plt.Rectangle((0, 0), 1, 1, color=MODEL_COLORS[model], ec="none")
-            for model in models
+            plt.Rectangle((0, 0), 1, 1, color=MODEL_COLORS[model], ec="none") for model in models
         ]
         axis.legend(
             legend_handles,
@@ -199,16 +213,43 @@ def plot(source: str, grouped: dict[str, dict[str, list[tuple[int, float]]]], sa
         x = np.arange(len(models), dtype=np.float64)
         fig, axes = plt.subplots(1, 2, figsize=(12.8, 5.2), sharey=True)
         rng = np.random.default_rng(0)
-        for axis, (metric, label) in zip(axes, (("char", "Character accuracy"), ("sector", "Sector accuracy"))):
+        for axis, (metric, label) in zip(
+            axes, (("char", "Character accuracy"), ("sector", "Sector accuracy"))
+        ):
             means = np.asarray([_mean_sd(grouped[model][metric])[0] for model in models])
             errors = np.asarray([_mean_sd(grouped[model][metric])[1] for model in models])
-            bars = axis.bar(x, means, yerr=errors, color=[MODEL_COLORS[model] for model in models], edgecolor="none", capsize=4, error_kw={"elinewidth": 1.2, "capthick": 1.2, "ecolor": "#333333"})
+            bars = axis.bar(
+                x,
+                means,
+                yerr=errors,
+                color=[MODEL_COLORS[model] for model in models],
+                edgecolor="none",
+                capsize=4,
+                error_kw={"elinewidth": 1.2, "capthick": 1.2, "ecolor": "#333333"},
+            )
             for index, (model, bar) in enumerate(zip(models, bars)):
-                values = np.asarray([value for _, value in grouped[model][metric]], dtype=np.float64)
+                values = np.asarray(
+                    [value for _, value in grouped[model][metric]], dtype=np.float64
+                )
                 jitter = rng.uniform(-0.16, 0.16, size=values.size)
-                axis.scatter(np.full(values.size, x[index]) + jitter, values, s=16, color="#333333", alpha=0.55, linewidths=0, zorder=3)
+                axis.scatter(
+                    np.full(values.size, x[index]) + jitter,
+                    values,
+                    s=16,
+                    color="#333333",
+                    alpha=0.55,
+                    linewidths=0,
+                    zorder=3,
+                )
                 mean, sd = _mean_sd(grouped[model][metric])
-                axis.text(bar.get_x() + bar.get_width() / 2, min(mean + sd + 1.8, 102.0), f"{mean:.1f} ± {sd:.1f}\nn={len(values)}", ha="center", va="bottom", fontsize=8)
+                axis.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    min(mean + sd + 1.8, 102.0),
+                    f"{mean:.1f} ± {sd:.1f}\nn={len(values)}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                )
             axis.set_title(label)
             axis.set_xticks(x, [MODEL_LABELS[model] for model in models])
             axis.set_xlabel("Model")

@@ -4,6 +4,7 @@ Reads the per-checkpoint CSV from ``evaluate_clutter_multiseed_test.py`` and wri
 accuracy PNG/summary plus optional matching loss outputs. Bar colors exactly match
 ``fg_switch_offset_acc.py``.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -18,6 +19,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 from utils_viz.fg_switch_offset_acc import MODEL_COLORS, MODEL_LABELS, MODEL_ORDER
+from utils_anal.anal_paths import output_dir
 
 
 def parse_args() -> argparse.Namespace:
@@ -25,8 +27,10 @@ def parse_args() -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data_csv", required=True)
-    parser.add_argument("--save_png", required=True)
-    parser.add_argument("--save_summary_csv", required=True)
+    figure_dir = output_dir("G_behaviour", "clutter_multiseed_test_bars", "figs")
+    data_dir = output_dir("G_behaviour", "clutter_multiseed_test_bars", "data")
+    parser.add_argument("--save_png", default=str(figure_dir / "test_accuracy_mean_sd.png"))
+    parser.add_argument("--save_summary_csv", default=str(data_dir / "test_accuracy_mean_sd.csv"))
     parser.add_argument("--save_loss_png", default=None)
     parser.add_argument("--save_loss_summary_csv", default=None)
     parser.add_argument("--title", default="Clutter 40h multi-seed · test performance")
@@ -136,9 +140,7 @@ def plot_loss(
 
     group_centers = np.arange(2, dtype=np.float64)
     width = 0.11
-    model_offsets = (
-        np.arange(len(models), dtype=np.float64) - (len(models) - 1) / 2.0
-    ) * width
+    model_offsets = (np.arange(len(models), dtype=np.float64) - (len(models) - 1) / 2.0) * width
     fig, axis = plt.subplots(figsize=(10.2, 5.0))
     rng = np.random.default_rng(0)
     for group_index, metric in enumerate(("char_loss", "sector_loss")):
@@ -175,8 +177,7 @@ def plot_loss(
     axis.set_ylabel("Cross-entropy loss")
     axis.set_ylim(bottom=0.0)
     legend_handles = [
-        plt.Rectangle((0, 0), 1, 1, color=MODEL_COLORS[model], ec="none")
-        for model in models
+        plt.Rectangle((0, 0), 1, 1, color=MODEL_COLORS[model], ec="none") for model in models
     ]
     axis.legend(
         legend_handles,
@@ -207,9 +208,7 @@ def main() -> None:
     models = [model for model in MODEL_ORDER if model in grouped]
     group_centers = np.arange(2, dtype=np.float64)
     width = 0.11
-    model_offsets = (
-        np.arange(len(models), dtype=np.float64) - (len(models) - 1) / 2.0
-    ) * width
+    model_offsets = (np.arange(len(models), dtype=np.float64) - (len(models) - 1) / 2.0) * width
     fig, axis = plt.subplots(figsize=(10.2, 5.0))
     rng = np.random.default_rng(0)
     for group_index, metric in enumerate(("char", "sector")):
@@ -246,8 +245,7 @@ def main() -> None:
     axis.set_ylabel("Accuracy (%)")
     axis.set_ylim(70.0, 100.0)
     legend_handles = [
-        plt.Rectangle((0, 0), 1, 1, color=MODEL_COLORS[model], ec="none")
-        for model in models
+        plt.Rectangle((0, 0), 1, 1, color=MODEL_COLORS[model], ec="none") for model in models
     ]
     axis.legend(
         legend_handles,
@@ -276,6 +274,7 @@ def main() -> None:
         plot_loss(args.save_loss_png, args.title, models, grouped)
         write_loss_summary(args.save_loss_summary_csv, models, grouped)
         print(f"Saved loss figure: {Path(args.save_loss_png).resolve()}")
+
 
 if __name__ == "__main__":
     main()

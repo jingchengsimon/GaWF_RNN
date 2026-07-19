@@ -36,6 +36,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 from utils.clutter_train_acceleration import (
     AccelerationConfig,
     run_forward_with_feedback,
@@ -87,7 +89,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_data/fg_switch_offset_acc",
+        default=str(output_dir("G_behaviour", "export_fg_switch_offset_acc", "data")),
         help="Directory to save exported npz/json files.",
     )
     parser.add_argument("--device", type=str, default="cuda", choices=["cpu", "cuda"])

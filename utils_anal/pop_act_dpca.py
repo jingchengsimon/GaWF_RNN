@@ -21,6 +21,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 
 def sector_from_xy(
     x: np.ndarray,
@@ -110,6 +112,7 @@ def aggregate_from_dir(
     out_mean_name: str = "pop_act_dpca.npy",
     out_counts_name: str = "pop_act_digitxsector_counts.npy",
     out_meta_name: str = "pop_act_digitxsector_meta.json",
+    save_dir: str | None = None,
 ) -> tuple[str, str, str]:
     pop_path = os.path.join(pop_act_dir, "pop_act.npy")
     lbl_path = os.path.join(pop_act_dir, "labels.tsv")
@@ -126,9 +129,11 @@ def aggregate_from_dir(
         pop, digits, sectors, n_digit=10, n_sector=num_sectors
     )
 
-    out_mean = os.path.join(pop_act_dir, out_mean_name)
-    out_counts = os.path.join(pop_act_dir, out_counts_name)
-    out_meta = os.path.join(pop_act_dir, out_meta_name)
+    destination = save_dir or pop_act_dir
+    os.makedirs(destination, exist_ok=True)
+    out_mean = os.path.join(destination, out_mean_name)
+    out_counts = os.path.join(destination, out_counts_name)
+    out_meta = os.path.join(destination, out_meta_name)
     np.save(out_mean, mean_n_ds)
     np.save(out_counts, counts)
 
@@ -165,6 +170,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--frame_height", type=int, default=96)
     p.add_argument("--frame_width", type=int, default=96)
     p.add_argument("--num_sectors", type=int, default=9)
+    p.add_argument(
+        "--save_dir",
+        default=str(output_dir("D_variance_decomposition", "pop_act_dpca", "data")),
+    )
     return p.parse_args()
 
 
@@ -175,6 +184,7 @@ def main() -> None:
         args.frame_height,
         args.frame_width,
         args.num_sectors,
+        save_dir=args.save_dir,
     )
 
 

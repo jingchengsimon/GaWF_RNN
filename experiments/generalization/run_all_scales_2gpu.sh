@@ -65,7 +65,7 @@ if [[ "$PIPELINE" == full ]]; then
 
   echo "=== Plot (overfit_gap, train_acc, val_acc vs scale) ==="
   python "$ROOT/utils_viz/plot_generalization.py" --csv_tag "_ep${NUM_EPOCHS}"
-  echo "Done. Figures: results/anal_figs/generalization/overfit_gap_vs_scale_ep${NUM_EPOCHS}*.png, ... (add --save-pdf for PDF too); csv_tag=_ep${NUM_EPOCHS}"
+  echo "Done. Figures: results/anal_index/G_behaviour/plot_generalization/figs/overfit_gap_vs_scale_ep${NUM_EPOCHS}*.png, ... (add --save-pdf for PDF too); csv_tag=_ep${NUM_EPOCHS}"
 else
   export NUM_EPOCHS="${NUM_EPOCHS:-100}"
   export CSV_TAG="${CSV_TAG:-_short}"
@@ -92,5 +92,5 @@ else
   echo "=== Plot (gap + train/val acc) ==="
   TAG="${CSV_TAG}_ep${NUM_EPOCHS}"
   python "$ROOT/utils_viz/plot_generalization.py" --csv_tag "$TAG"
-  echo "Done. Figures: results/anal_figs/generalization/*${TAG#_}.* (gap, train_acc, val_acc)."
+  echo "Done. Figures: results/anal_index/G_behaviour/plot_generalization/figs/*${TAG#_}.* (gap, train_acc, val_acc)."
 fi

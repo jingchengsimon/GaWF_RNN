@@ -2,6 +2,15 @@
 
 from __future__ import annotations
 
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
 import argparse
 import json
 import os
@@ -19,15 +28,15 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--data_dir",
-        default="./results/anal_data/gawf_gate_audit_digit",
+        default=str(output_dir("B_gate_by_context", "gawf_gate_digit_distribution", "data")),
     )
     parser.add_argument(
         "--save_dir",
-        default="./results/anal_figs/gawf_gate_audit_digit",
+        default=str(output_dir("B_gate_by_context", "gawf_gate_digit_distribution", "figs")),
     )
     parser.add_argument(
         "--centered_save_dir",
-        default="./results/anal_figs/gawf_gate_audit",
+        default=str(output_dir("C_delta_gate", "gawf_gate_digit_distribution", "figs")),
     )
     parser.add_argument("--format", choices=["png", "pdf"], default="png")
     return parser.parse_args()

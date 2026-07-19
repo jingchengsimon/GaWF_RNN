@@ -5,6 +5,7 @@ one CSV row per checkpoint with exact frame-weighted character/sector accuracies
 cross-entropy losses plus JSON metadata. Models are loaded through the canonical analysis helper,
 and the test DataLoader uses the production uint8/device-cast/compact pipeline.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,6 +28,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 from utils.clutter_data_pipeline import prepare_clutter_inputs
 from utils.clutter_train_acceleration import run_forward_with_feedback
 from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset, resolve_device
@@ -42,8 +45,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint_root", required=True)
     parser.add_argument("--data_dir", required=True)
     parser.add_argument("--data_suffix", default="40h-uint8")
-    parser.add_argument("--save_csv", required=True)
-    parser.add_argument("--save_meta", required=True)
+    default_output = output_dir("G_behaviour", "evaluate_clutter_multiseed_test", "data")
+    parser.add_argument("--save_csv", default=str(default_output / "per_seed_test_accuracy.csv"))
+    parser.add_argument("--save_meta", default=str(default_output / "per_seed_test_meta.json"))
     parser.add_argument(
         "--seed_filter_csv",
         default=None,
@@ -121,9 +125,7 @@ def configure_mamba_cpu_reference(model: torch.nn.Module) -> bool:
         return False
     configured = False
     for module in model.modules():
-        if module.__class__.__module__.startswith("mamba_ssm") and hasattr(
-            module, "use_fast_path"
-        ):
+        if module.__class__.__module__.startswith("mamba_ssm") and hasattr(module, "use_fast_path"):
             module.use_fast_path = False
             configured = True
     if configured:

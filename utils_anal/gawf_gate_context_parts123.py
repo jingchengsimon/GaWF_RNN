@@ -28,6 +28,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset
 from utils_anal.gawf_gate_distribution import _gini, iter_gate_chunks
 
@@ -57,15 +59,24 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--trajectory",
-        default="./results/anal_data/gawf_gate_audit/gawf_gate_trajectory.npz",
+        default=str(
+            output_dir(
+                "A_raw_gate",
+                "gawf_gate_distribution",
+                "data",
+            ) / "gawf_gate_trajectory.npz"
+        ),
     )
     parser.add_argument(
         "--part0",
-        default="./results/anal_data/gawf_gate_context_specificity/part0_prerequisites.json",
+        default=str(
+            output_dir("H_controls", "gawf_gate_context_specificity", "data")
+            / "part0_prerequisites.json"
+        ),
     )
     parser.add_argument(
         "--save_dir",
-        default="./results/anal_data/gawf_gate_context_specificity",
+        default=str(output_dir("D_variance_decomposition", "gawf_gate_context_parts123", "data")),
     )
     parser.add_argument(
         "--ckpt",

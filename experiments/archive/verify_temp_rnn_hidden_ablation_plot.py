@@ -23,6 +23,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
 SCALES: List[Tuple[str, str]] = [
     ("4h", "4h-float32"),
     ("10h", "10h-float32"),
@@ -39,7 +45,7 @@ _MARKER_RNN256 = "D"
 
 
 def _repo_root() -> str:
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    return PROJECT_ROOT
 
 
 def _row_from_metrics(m: Dict[str, Any], scale: str) -> Dict[str, Any]:
@@ -204,7 +210,7 @@ def main() -> None:
     ap.add_argument(
         "--out_dir",
         default="",
-        help="Figure output (default: results/anal_figs/generalization)",
+        help="Figure output (default: category-indexed behaviour figures)",
     )
     ap.add_argument(
         "--write_csv",
@@ -230,7 +236,9 @@ def main() -> None:
     args = ap.parse_args()
     root = _repo_root()
     os.chdir(root)
-    out_dir = args.out_dir or os.path.join(root, "results", "anal_figs", "generalization")
+    out_dir = args.out_dir or str(
+        output_dir("G_behaviour", "verify_temp_rnn_hidden_ablation_plot", "figs")
+    )
     out_dir = os.path.abspath(out_dir)
     art = args.artifact_dir or os.path.join(
         root, "experiments", "generalization", "artifacts"

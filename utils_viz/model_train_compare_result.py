@@ -13,6 +13,7 @@ Special model token handling:
 - "gawf" selects gawf pkl without fb suffix.
 - "gawf_fb50" selects gawf pkl with "_fb50" suffix.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -39,6 +40,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
+from utils_anal.anal_paths import output_dir
+
 
 DEFAULT_RESULT_SUFFIX = "sector_40h_adamw_0409"
 DEFAULT_MODELS = ["gawf", "rnn"]
@@ -63,7 +66,7 @@ def parse_args() -> argparse.Namespace:
         "--result_suffix",
         type=str,
         default=DEFAULT_RESULT_SUFFIX,
-        help="Subdirectory under results/train_data and results/train_figs.",
+        help="Subdirectory under results/train_data.",
     )
     parser.add_argument(
         "--models",
@@ -102,8 +105,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output_dir",
         type=str,
-        default=None,
-        help="Output directory. Default is results/train_figs/<result_suffix>/",
+        default=str(output_dir("G_behaviour", "model_train_compare_result", "figs")),
+        help="Output directory.",
     )
     return parser.parse_args()
 
@@ -116,9 +119,7 @@ def _collect_pkl_files(result_dir: Path) -> List[str]:
     )
 
 
-def _resolve_model_token(
-    model_token: str, pkl_files: Sequence[str]
-) -> Tuple[str, List[str]]:
+def _resolve_model_token(model_token: str, pkl_files: Sequence[str]) -> Tuple[str, List[str]]:
     token = model_token.strip().lower()
     if not token:
         raise RuntimeError("Empty model token in --models.")
@@ -286,8 +287,12 @@ def main() -> None:
     _setup_axis(ax_sector_acc, "Sector accuracy", "Accuracy (%)", ylim=(40.0, 105.0))
     _setup_axis(ax_char_loss, "Character loss", "Loss")
     _setup_axis(ax_sector_loss, "Sector position loss", "Loss (CE)")
-    _setup_axis(ax_glob_char, "Character accuracy (global frame)", "Accuracy (%)", ylim=(-5.0, 105.0))
-    _setup_axis(ax_glob_sector, "Sector accuracy (global frame)", "Accuracy (%)", ylim=(40.0, 105.0))
+    _setup_axis(
+        ax_glob_char, "Character accuracy (global frame)", "Accuracy (%)", ylim=(-5.0, 105.0)
+    )
+    _setup_axis(
+        ax_glob_sector, "Sector accuracy (global frame)", "Accuracy (%)", ylim=(40.0, 105.0)
+    )
 
     has_any = {
         "char_loss": False,

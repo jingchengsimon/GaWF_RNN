@@ -24,6 +24,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from utils_anal.anal_paths import output_dir
+
 BAR_KEYS = [
     "best_train_acc_pos",
     "best_val_acc_pos",
@@ -273,7 +275,7 @@ def main() -> None:
         / "sector_40h_adamw"
         / "rnn_sector_acc_h275_lr0.0005_wd0.0001_do0_metrics.json",
     ]
-    default_out = repo_root / "results" / "visualization" / "sector_40h_adamw" / "fig1.png"
+    default_out = output_dir("G_behaviour", "fig1", "figs") / "fig1.png"
 
     p = argparse.ArgumentParser(
         description="Compose Fig1 (1x3) by plotting from .pkl and *_metrics.json."
@@ -328,4 +330,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

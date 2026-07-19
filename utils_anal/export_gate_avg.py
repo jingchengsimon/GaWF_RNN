@@ -36,6 +36,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset
 
 
@@ -83,7 +85,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_data/gate_avg",
+        default=str(output_dir("B_gate_by_context", "export_gate_avg", "data")),
         help="Directory to save outputs.",
     )
     parser.add_argument(
@@ -101,7 +103,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--hidden_data_dir",
         type=str,
-        default="./results/anal_data/hidden_activation",
+        default=str(output_dir("E_relevance_alignment", "hidden_unit_tuning", "data")),
         help=(
             "Directory containing gawf_hidden_tuning_stats.npz, "
             "unit_order_by_cosine_similarity.npy, and tuned_display_order.npy. "

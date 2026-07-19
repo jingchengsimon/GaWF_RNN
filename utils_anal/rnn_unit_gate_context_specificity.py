@@ -32,6 +32,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 from utils_anal.anal_helpers import (
     build_eval_dataset,
     build_model_from_ckpt,
@@ -68,7 +70,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data_suffix", default="40h-uint8")
     parser.add_argument(
         "--save_dir",
-        default="./results/anal_data/rnn_unit_gate_context_specificity",
+        default=str(
+            output_dir(
+                "D_variance_decomposition",
+                "rnn_unit_gate_context_specificity",
+                "data",
+            )
+        ),
     )
     parser.add_argument("--device", choices=["cpu", "cuda", "mps"], default="cpu")
     parser.add_argument("--batch_size", type=int, default=16)

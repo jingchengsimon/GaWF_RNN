@@ -10,6 +10,15 @@ Outputs (in --save_dir):
 """
 from __future__ import annotations
 
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
 import argparse
 import json
 import os
@@ -29,13 +38,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="./results/anal_data/feedback_ablation",
+        default=str(output_dir("G_behaviour", "feedback_ablation", "data")),
         help="Directory containing ablation_metrics.json.",
     )
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_figs/feedback_ablation",
+        default=str(output_dir("G_behaviour", "viz_feedback_ablation", "figs")),
         help="Directory for PNG outputs.",
     )
     return parser.parse_args()

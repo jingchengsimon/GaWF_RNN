@@ -9,6 +9,7 @@ Outputs (in ``--save_dir``):
 - ``fg_switch_offset_acc_<ckpt_tag>.npz``  — char/sector accuracy for preN..postN.
 - ``fg_switch_offset_meta_<ckpt_tag>.json`` — checkpoint, counts, and reset protocol.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -25,6 +26,8 @@ from torch.utils.data import DataLoader
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
 
 from utils.train_acceleration import run_forward_with_feedback
 from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset, resolve_device
@@ -43,7 +46,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ckpt_dir", default="./results/train_data")
     parser.add_argument("--ckpts", nargs="*", default=None)
-    parser.add_argument("--save_dir", required=True)
+    parser.add_argument(
+        "--save_dir",
+        default=str(output_dir("G_behaviour", "export_fg_switch_offset_acc_reset", "data")),
+    )
     parser.add_argument("--data_dir", default="")
     parser.add_argument(
         "--data_suffix",
@@ -67,9 +73,7 @@ def _segment_groups(
     for sample_idx in range(batch_size):
         starts = [0]
         starts.extend(
-            int(idx)
-            for idx in np.flatnonzero(reset_mask[sample_idx]).tolist()
-            if int(idx) > 0
+            int(idx) for idx in np.flatnonzero(reset_mask[sample_idx]).tolist() if int(idx) > 0
         )
         starts = sorted(set(starts))
         ends = starts[1:] + [seq_len]
@@ -96,8 +100,7 @@ def evaluate_with_switch_resets(
     offset_order = build_offset_order(window_radius)
     offset_targets = _build_offset_targets_from_switch(switch_arr, window_radius)
     stats = {
-        offset: {"char_correct": 0, "sector_correct": 0, "total": 0}
-        for offset in offset_order
+        offset: {"char_correct": 0, "sector_correct": 0, "total": 0} for offset in offset_order
     }
     loader = DataLoader(
         test_ds,
@@ -148,9 +151,7 @@ def evaluate_with_switch_resets(
                         pred_char[sample, start:end] = char_np[local_idx]
                         pred_sector[sample, start:end] = sector_np[local_idx]
 
-            batch_offsets = offset_targets[global_start:global_end].reshape(
-                current_batch, seq_len
-            )
+            batch_offsets = offset_targets[global_start:global_end].reshape(current_batch, seq_len)
             for offset in offset_order:
                 mask = batch_offsets == offset
                 count = int(mask.sum())

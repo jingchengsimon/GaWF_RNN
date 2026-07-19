@@ -4,6 +4,7 @@ Reads per-seed training ``.pkl`` histories from model/seed directories and write
 character/sector accuracy figure, optional matching training/validation-loss figures, and a CSV
 containing the final validation accuracy summary.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -18,6 +19,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 from utils_viz.fg_switch_offset_acc import MODEL_COLORS, MODEL_LABELS, MODEL_ORDER
+from utils_anal.anal_paths import output_dir
 
 
 def parse_args() -> argparse.Namespace:
@@ -25,7 +27,9 @@ def parse_args() -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input_root", required=True)
-    parser.add_argument("--save_png", required=True)
+    figure_dir = output_dir("G_behaviour", "clutter_multiseed_train_curves", "figs")
+    data_dir = output_dir("G_behaviour", "clutter_multiseed_train_curves", "data")
+    parser.add_argument("--save_png", default=str(figure_dir / "train_curves.png"))
     parser.add_argument(
         "--save_loss_png",
         default=None,
@@ -41,7 +45,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional model/seed CSV defining the exact comparison cohort.",
     )
-    parser.add_argument("--save_summary_csv", required=True)
+    parser.add_argument("--save_summary_csv", default=str(data_dir / "train_summary.csv"))
     return parser.parse_args()
 
 
@@ -120,11 +124,7 @@ def plot_mean_std_panels(
             values = stack_histories(grouped[model], key)
             x = np.arange(1, values.shape[1] + 1)
             mean = np.nanmean(values, axis=0)
-            sd = (
-                np.nanstd(values, axis=0, ddof=1)
-                if values.shape[0] > 1
-                else np.zeros_like(mean)
-            )
+            sd = np.nanstd(values, axis=0, ddof=1) if values.shape[0] > 1 else np.zeros_like(mean)
             color = MODEL_COLORS[model]
             axis.plot(x, mean, color=color, linewidth=2.0, label=MODEL_LABELS[model])
             axis.fill_between(x, mean - sd, mean + sd, color=color, alpha=0.14, linewidth=0)
@@ -232,5 +232,7 @@ def main() -> None:
                     float(np.nanstd(sector_final, ddof=1)) if len(grouped[model]) > 1 else 0.0,
                 ]
             )
+
+
 if __name__ == "__main__":
     main()

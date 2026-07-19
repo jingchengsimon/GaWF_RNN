@@ -21,6 +21,8 @@ import numpy as np
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
+from utils_anal.anal_paths import output_dir
+
 
 DEFAULT_MODELS = ("ann", "rnn", "gru", "lstm", "gawf", "s5", "mamba")
 DEFAULT_SEEDS = (42, 1, 2, 3, 4)
@@ -46,7 +48,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output_root",
-        default="results/train_figs/rl/atari/pong_6action",
+        default=str(output_dir("G_behaviour", "atari_seed_curves", "figs")),
         help="Curated Pong figure root.",
     )
     parser.add_argument("--frame_skip", type=int, default=1)
@@ -443,8 +445,7 @@ def save_mean_std_figure(
         plt.close(fig)
         return 0, 0
     fig.suptitle(
-        f"Strict 6-action Pong · L{args.num_layers} · "
-        f"{len(args.seeds)}-seed mean ± std",
+        f"Strict 6-action Pong · L{args.num_layers} · " f"{len(args.seeds)}-seed mean ± std",
         fontsize=13,
     )
     add_shared_legend(fig, legend_axes)
@@ -461,8 +462,7 @@ def main() -> None:
     curves = collect_curves(args)
     plain_compare_curves = collect_plain_compare_curves(args)
     output_dir = Path(args.output_root) / (
-        f"fs{args.frame_skip}_stack{args.frame_stack}_l{args.num_layers}_"
-        f"{len(args.seeds)}seed"
+        f"fs{args.frame_skip}_stack{args.frame_stack}_l{args.num_layers}_" f"{len(args.seeds)}seed"
     )
     for seed in args.seeds:
         save_seed_figure(
@@ -482,8 +482,7 @@ def main() -> None:
         1
         for setting in ("plain", "flicker")
         for model in args.models
-        if curves[setting][model]
-        and set(curves[setting][model]) != set(args.seeds)
+        if curves[setting][model] and set(curves[setting][model]) != set(args.seeds)
     )
     print(
         f"wrote combined figures under {output_dir}: "

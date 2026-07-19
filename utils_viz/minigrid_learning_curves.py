@@ -7,6 +7,7 @@ environment steps, including faint raw traces and causal rolling means.
 Outputs (in --output_dir):
 - minigrid_redblue_learning_curves.png  (2-panel figure), PNG — learning curves
 """
+
 from __future__ import annotations
 
 import argparse
@@ -26,6 +27,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 
 MODEL_STYLES = {
     "lstm": {"label": "LSTM", "color": "#9467bd"},
@@ -41,7 +44,11 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Directory containing lstm/ and gawf/ metrics_history.jsonl files.",
     )
-    parser.add_argument("--output_dir", required=True, help="Directory for the output PNG.")
+    parser.add_argument(
+        "--output_dir",
+        default=str(output_dir("G_behaviour", "minigrid_learning_curves", "figs")),
+        help="Directory for the output PNG.",
+    )
     parser.add_argument(
         "--smooth_window",
         type=int,
@@ -72,8 +79,7 @@ def load_history(path: Path) -> dict[str, np.ndarray]:
         raise KeyError(f"Missing required metrics in {path}: {', '.join(missing)}")
 
     return {
-        key: np.asarray([record[key] for record in records], dtype=np.float64)
-        for key in required
+        key: np.asarray([record[key] for record in records], dtype=np.float64) for key in required
     }
 
 
@@ -113,9 +119,7 @@ def plot_learning_curves(
                 linewidth=2.2,
                 label=style["label"],
             )
-            ax.scatter(
-                x_millions[-1], smooth[-1], s=30, color=style["color"], zorder=4
-            )
+            ax.scatter(x_millions[-1], smooth[-1], s=30, color=style["color"], zorder=4)
 
         ax.set_xlabel("Environment steps (millions)")
         ax.set_ylabel(ylabel)

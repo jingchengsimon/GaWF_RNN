@@ -43,6 +43,7 @@ from utils_anal.anal_helpers import (
     build_test_dataset,
     resolve_device,
 )
+from utils_anal.anal_paths import output_dir
 
 
 def parse_args() -> argparse.Namespace:
@@ -78,8 +79,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./gawf_gates.pt",
-        help="Output path for gate dictionary (default: ./gawf_gates.pt).",
+        default=str(
+            output_dir("B_gate_by_context", "export_gate_sample", "data") / "gawf_gates.pt"
+        ),
+        help="Output path for gate dictionary.",
     )
     parser.add_argument(
         "--device",
@@ -193,9 +196,7 @@ def select_nonconsecutive_frames_with_same_digit(
     # 优先选择在当前样本中出现次数较多的 digit
     # 对每个 digit 试图贪心选出满足时间间隔约束的若干帧
     candidate = None
-    for d, idx_list in sorted(
-        digit_to_indices.items(), key=lambda kv: len(kv[1]), reverse=True
-    ):
+    for d, idx_list in sorted(digit_to_indices.items(), key=lambda kv: len(kv[1]), reverse=True):
         if len(idx_list) < num_frames:
             continue
         chosen: List[int] = []
@@ -273,21 +274,33 @@ def compute_gates_for_single_frame(
 
         if verbose:
             U, V = model.U, model.V
-            print("[U] shape=%s min=%.4f max=%.4f mean=%.4f std=%.4f" % (
-                tuple(U.shape), U.min().item(), U.max().item(), U.mean().item(), U.std().item()))
-            print("[V] shape=%s min=%.4f max=%.4f mean=%.4f std=%.4f" % (
-                tuple(V.shape), V.min().item(), V.max().item(), V.mean().item(), V.std().item()))
+            print(
+                "[U] shape=%s min=%.4f max=%.4f mean=%.4f std=%.4f"
+                % (tuple(U.shape), U.min().item(), U.max().item(), U.mean().item(), U.std().item())
+            )
+            print(
+                "[V] shape=%s min=%.4f max=%.4f mean=%.4f std=%.4f"
+                % (tuple(V.shape), V.min().item(), V.max().item(), V.mean().item(), V.std().item())
+            )
             ft1 = fb_t1.squeeze()
-            print("[fb_t1] shape=%s min=%.4f max=%.4f std=%.4f" % (
-                tuple(fb_t1.shape), ft1.min().item(), ft1.max().item(), ft1.std().item()))
+            print(
+                "[fb_t1] shape=%s min=%.4f max=%.4f std=%.4f"
+                % (tuple(fb_t1.shape), ft1.min().item(), ft1.max().item(), ft1.std().item())
+            )
             fb_V_ih = fb_t1 * V_ih
-            print("[fb_t1 * V_ih] mean=%.4f max=%.4f" % (fb_V_ih.mean().item(), fb_V_ih.abs().max().item()))
+            print(
+                "[fb_t1 * V_ih] mean=%.4f max=%.4f"
+                % (fb_V_ih.mean().item(), fb_V_ih.abs().max().item())
+            )
 
         trans_ih = torch.matmul(model.U, fb_t1 * V_ih)
         trans_hh = torch.matmul(model.U, fb_t1 * V_hh)
 
         if verbose:
-            print("[trans_ih] mean=%.4f max=%.4f" % (trans_ih.mean().item(), trans_ih.abs().max().item()))
+            print(
+                "[trans_ih] mean=%.4f max=%.4f"
+                % (trans_ih.mean().item(), trans_ih.abs().max().item())
+            )
 
         gate_ih = torch.sigmoid(trans_ih / tau)
         gate_hh = torch.sigmoid(trans_hh / tau)
@@ -417,9 +430,7 @@ def main() -> None:
                 break
 
     if not sample_indices:
-        raise RuntimeError(
-            f"No samples in test set contain fg_digit={target_fg_digit}."
-        )
+        raise RuntimeError(f"No samples in test set contain fg_digit={target_fg_digit}.")
     if len(sample_indices) < max_samples:
         print(
             f"[warn] Only found {len(sample_indices)} samples containing fg_digit={target_fg_digit}, "
@@ -456,7 +467,9 @@ def main() -> None:
             t = 0
         else:
             t = int(t_candidates[0])
-            print(f"[info] sample {sidx} has frame with fg_digit={target_fg_digit} at t={t_candidates}")
+            print(
+                f"[info] sample {sidx} has frame with fg_digit={target_fg_digit} at t={t_candidates}"
+            )
 
         selected_frame_indices.append(int(t))
 
@@ -476,8 +489,8 @@ def main() -> None:
                 local_indices.append(gi)
                 frame_img = data_all[gi]  # (H, W) 或 (C, H, W)
                 local_frames.append(torch.as_tensor(frame_img, dtype=torch.float32))
-            neighbor_global_indices.append(local_indices)          # (3,)
-            neighbor_frames.append(torch.stack(local_frames, 0))   # (3, H, W) or (3, C, H, W)
+            neighbor_global_indices.append(local_indices)  # (3,)
+            neighbor_frames.append(torch.stack(local_frames, 0))  # (3, H, W) or (3, C, H, W)
 
     print(
         f"Selected per-sample frame indices (t)={selected_frame_indices}, "
@@ -485,7 +498,7 @@ def main() -> None:
     )
 
     if data_all is not None and neighbor_frames:
-        neighbor_frames_tensor = torch.stack(neighbor_frames, 0)              # (N, 3, ...)
+        neighbor_frames_tensor = torch.stack(neighbor_frames, 0)  # (N, 3, ...)
         neighbor_global_indices_tensor = torch.as_tensor(
             neighbor_global_indices, dtype=torch.long
         )  # (N, 3)
@@ -555,12 +568,8 @@ def main() -> None:
         "ckpt_path": os.path.abspath(args.ckpt),
         # 被选中的样本 / 时间点及其信息
         "selected_fg_digit": int(target_fg_digit),
-        "selected_frame_indices": torch.as_tensor(
-            selected_frame_indices, dtype=torch.long
-        ),
-        "selected_global_indices": torch.as_tensor(
-            selected_global_indices, dtype=torch.long
-        ),
+        "selected_frame_indices": torch.as_tensor(selected_frame_indices, dtype=torch.long),
+        "selected_global_indices": torch.as_tensor(selected_global_indices, dtype=torch.long),
     }
 
     # 如果有邻近帧信息，则一并保存，供可视化脚本使用。
@@ -573,8 +582,8 @@ def main() -> None:
         # 与旧版脚本行为一致（单帧 gate）。
         weight_ih_full = model.rnn.weight_ih_l0.detach().cpu()
         weight_hh_full = model.rnn.weight_hh_l0.detach().cpu()
-        save_dict["gated_weight_ih"] = (gate_ih_first * weight_ih_full)
-        save_dict["gated_weight_hh"] = (gate_hh_first * weight_hh_full)
+        save_dict["gated_weight_ih"] = gate_ih_first * weight_ih_full
+        save_dict["gated_weight_hh"] = gate_hh_first * weight_hh_full
 
     out_dir = os.path.dirname(args.save_dir)
     if out_dir and not os.path.exists(out_dir):

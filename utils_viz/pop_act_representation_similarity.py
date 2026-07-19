@@ -1,12 +1,21 @@
 """Plot condition-level RDMs and cross-model representation similarities.
 
 Reads analysis files produced by ``utils_anal/pop_act_representation_similarity.py``.
-Each model receives a digit-blocked 90x90 RDM heatmap below its existing
-``results/anal_figs/5_pop_act_umap/<model>`` directory. A paired RSA/Linear CKA
+Each model receives a digit-blocked 90x90 RDM heatmap below this script's
+``D_variance_decomposition`` figure directory. A paired RSA/Linear CKA
 heatmap is saved at the figure-root level. No arrays or metadata are written here.
 """
 
 from __future__ import annotations
+
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
 
 import argparse
 import json
@@ -24,13 +33,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="results/anal_data/5_pop_act_umap",
+        default=str(
+            output_dir(
+                "D_variance_decomposition",
+                "pop_act_representation_similarity",
+                "data",
+            )
+        ),
         help="Directory containing representation similarity analysis outputs.",
     )
     parser.add_argument(
         "--fig_dir",
         type=str,
-        default="results/anal_figs/5_pop_act_umap",
+        default=str(
+            output_dir(
+                "D_variance_decomposition",
+                "pop_act_representation_similarity",
+                "figs",
+            )
+        ),
         help="Figure root; only PNG output is written.",
     )
     return parser.parse_args()

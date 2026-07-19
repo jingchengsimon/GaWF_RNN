@@ -4,6 +4,15 @@ Visualize all-component decomposition for sector/digit conditioned trans_ih.
 
 from __future__ import annotations
 
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
 import argparse
 import json
 import os
@@ -20,19 +29,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="./results/anal_data/gate_avg_allsector",
+        default=str(output_dir("B_gate_by_context", "export_gate_avg_allsector", "data")),
         help="Directory containing exported avg_outer/trans files.",
     )
     parser.add_argument(
         "--conn_dir",
         type=str,
-        default="./results/anal_data/whh",
+        default=str(output_dir("H_controls", "export_whh", "data")),
         help="Directory containing sorted_npz_order.npy.",
     )
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_figs/gate_avg_allsector",
+        default=str(output_dir("B_gate_by_context", "gate_avg_allsector", "figs")),
         help="Output directory for figures.",
     )
     parser.add_argument("--sector", type=int, default=None, choices=list(range(9)), help="Sector mode: target sector index (0-8).")
@@ -74,7 +83,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--channel_order_path",
         type=str,
-        default="./results/anal_data/cnn_channel/channel_order_by_cosine_similarity.npy",
+        default=str(
+            output_dir(
+                "E_relevance_alignment",
+                "cnn_channel_stats",
+                "data",
+            ) / "channel_order_by_cosine_similarity.npy"
+        ),
         help="Path to channel_order_by_cosine_similarity.npy.",
     )
     return parser.parse_args()

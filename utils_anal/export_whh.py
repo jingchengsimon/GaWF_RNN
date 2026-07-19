@@ -28,6 +28,8 @@ if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
 
+from utils_anal.anal_paths import output_dir
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Extract W_hh connection matrix from a trained GaWFRNNConv model."
@@ -41,7 +43,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="./results/anal_data/hidden_activation",
+        default=str(output_dir("E_relevance_alignment", "hidden_unit_tuning", "data")),
         help=(
             "Directory containing unit_order_by_cosine_similarity.npy "
             "and tuned_display_order.npy."
@@ -50,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_data/whh",
+        default=str(output_dir("H_controls", "export_whh", "data")),
         help="Directory to save extracted matrices.",
     )
     parser.add_argument(

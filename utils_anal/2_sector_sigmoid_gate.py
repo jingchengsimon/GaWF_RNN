@@ -31,6 +31,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset, resolve_device
 
 
@@ -51,13 +53,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_data/2_sector_sigmoid_gate",
+        default=str(output_dir("B_gate_by_context", "2_sector_sigmoid_gate", "data")),
         help="Directory for .npy and metadata outputs.",
     )
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="./results/anal_figs/2_sector_sigmoid_gate",
+        default=str(output_dir("B_gate_by_context", "2_sector_sigmoid_gate", "figs")),
         help="Directory for figure outputs.",
     )
     parser.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda"])

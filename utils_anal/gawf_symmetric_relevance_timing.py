@@ -25,6 +25,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 from utils_anal.anal_helpers import build_eval_dataset, build_model_from_ckpt, resolve_device
 from utils_anal.gawf_symmetric_stats import (
     NUM_DIGITS,
@@ -61,7 +63,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data_dir", default="./stimuli")
     parser.add_argument("--data_suffix", default="40h-uint8")
     parser.add_argument(
-        "--save_dir", default="./results/anal_data/gawf_symmetric_relevance_timing"
+        "--decomposition_dir",
+        default=str(
+            output_dir("D_variance_decomposition", "gawf_symmetric_relevance_timing", "data")
+        ),
+    )
+    parser.add_argument(
+        "--relevance_dir",
+        default=str(output_dir("E_relevance_alignment", "gawf_symmetric_relevance_timing", "data")),
+    )
+    parser.add_argument(
+        "--timing_dir",
+        default=str(output_dir("F_timing", "gawf_symmetric_relevance_timing", "data")),
+    )
+    parser.add_argument(
+        "--control_dir",
+        default=str(output_dir("H_controls", "gawf_symmetric_relevance_timing", "data")),
+    )
+    parser.add_argument(
+        "--save_dir",
+        default="",
+        help="Deprecated compatibility override; sends every artifact to one directory.",
     )
     parser.add_argument("--device", choices=["cpu", "cuda", "mps"], default="cpu")
     parser.add_argument("--batch_size", type=int, default=16)
@@ -190,9 +212,7 @@ def collect_split(
             frames, labels = batch[0], batch[1]
             frames = frames.to(device=device, dtype=torch.float32)
             labels = labels.to(dtype=torch.int64)
-            encoded_maps = model.encoder_module(
-                frames.reshape(-1, *frames.shape[2:])
-            )
+            encoded_maps = model.encoder_module(frames.reshape(-1, *frames.shape[2:]))
             encoder = encoded_maps.reshape(frames.shape[0], frames.shape[1], -1)
             trajectory = _trajectory_with_measurements(encoder, model, record_gates)
             collected["encoder"].append(encoder.cpu().numpy().astype(np.float32))
@@ -211,9 +231,7 @@ def collect_split(
         for key, values in collected.items()
     }
     frame_num = int(dataset.frame_num)
-    output["sequence_id"] = np.repeat(
-        np.arange(len(dataset), dtype=np.int64), frame_num
-    )
+    output["sequence_id"] = np.repeat(np.arange(len(dataset), dtype=np.int64), frame_num)
     output["raw_frame"] = np.arange(
         int(dataset.chan_num), int(dataset.chan_num) + len(dataset) * frame_num, dtype=np.int64
     )
@@ -249,9 +267,7 @@ def analyze_selectivity(
 
     results: dict[str, SelectivityResult] = {}
     inference: dict[str, dict[str, np.ndarray]] = {}
-    for pop_idx, (population, values) in enumerate(
-        (("encoder", encoder), ("hidden", hidden))
-    ):
+    for pop_idx, (population, values) in enumerate((("encoder", encoder), ("hidden", hidden))):
         print(f"Part 1: {population} two-way decomposition ({values.shape})", flush=True)
         result = two_way_decomposition(values, labels)
         inferred = permutation_selectivity(
@@ -350,9 +366,7 @@ def run_part2(
                             + percent_idx
                         ),
                     )
-                    p_value = float(
-                        (1 + np.count_nonzero(null >= point)) / (args.resamples + 1)
-                    )
+                    p_value = float((1 + np.count_nonzero(null >= point)) / (args.resamples + 1))
                     percent_key = str(percent)
                     cell_report["top_percent"][percent_key] = {
                         "cohens_d": float(point),
@@ -376,15 +390,11 @@ def run_part2(
                     seed=args.seed + seed_offset + 500000 + gate_idx * 1000 + factor_idx,
                 )
                 cell_report["continuous_alignment"] = {
-                    "diagonal_minus_off_diagonal": alignment[
-                        "diagonal_minus_off_diagonal"
-                    ],
+                    "diagonal_minus_off_diagonal": alignment["diagonal_minus_off_diagonal"],
                     "permutation_p_value": alignment["permutation_p_value"],
                 }
                 arrays[f"{tag}_{policy}_{cell}_alignment_matrix"] = alignment["matrix"]
-                arrays[f"{tag}_{policy}_{cell}_alignment_null"] = alignment[
-                    "permutation_null"
-                ]
+                arrays[f"{tag}_{policy}_{cell}_alignment_null"] = alignment["permutation_null"]
                 policy_report["cells"][cell] = cell_report
 
         policy_report["direct_differences"] = _part2_direct_differences(
@@ -409,6 +419,7 @@ def _part2_direct_differences(
 
     output: dict[str, Any] = {}
     for percent in percentages:
+
         def boot(cell: str) -> np.ndarray:
             return arrays[f"{tag}_{policy}_{cell}_top{percent}_bootstrap_d"].astype(np.float64)
 
@@ -543,9 +554,7 @@ def run_part3(
             "argmax_accuracy_onset": _compact_onset(correct_onset),
             "graded_probability_onset": _compact_onset(graded_onset),
             "first_correct_rate_within_window": float(np.isfinite(first_correct).mean()),
-            "first_graded_rise_rate_within_window": float(
-                np.isfinite(first_graded_rise).mean()
-            ),
+            "first_graded_rise_rate_within_window": float(np.isfinite(first_graded_rise).mean()),
         }
         arrays[f"{tag}_{factor}_readout_correct"] = correct.astype(np.float32)
         arrays[f"{tag}_{factor}_readout_graded"] = graded.astype(np.float32)
@@ -617,14 +626,11 @@ def _mean_curve_direction(alignment: np.ndarray) -> dict[str, Any]:
     }
 
 
-def _timing_interpretation(
-    paired_argmax: dict[str, Any], paired_graded: dict[str, Any]
-) -> str:
+def _timing_interpretation(paired_argmax: dict[str, Any], paired_graded: dict[str, Any]) -> str:
     if paired_argmax["n_paired_events"] == 0:
         return "no directional gate crossing/readout pairs; causal timing is unsupported"
     argmax_lead = (
-        paired_argmax["mean_difference"] > 0
-        and paired_argmax["wilcoxon_greater_p_value"] < 0.05
+        paired_argmax["mean_difference"] > 0 and paired_argmax["wilcoxon_greater_p_value"] < 0.05
     )
     graded_lead = (
         paired_graded["n_paired_events"] > 0
@@ -680,9 +686,7 @@ def postprocess_part3_directional_crossings(save_dir: str) -> None:
             arrays[f"{tag}_{cell}_gate_zero_crossing"] = gate_crossing.astype(np.float32)
             arrays[f"{tag}_{cell}_argmax_minus_gate"] = paired_argmax["differences"]
             arrays[f"{tag}_{cell}_graded_rise_minus_gate"] = paired_graded["differences"]
-    report["split_half_average"] = _average_nested_numeric(
-        report.get("test_split_half_folds", [])
-    )
+    report["split_half_average"] = _average_nested_numeric(report.get("test_split_half_folds", []))
     temporary_npz = f"{event_path}.tmp.npz"
     np.savez_compressed(temporary_npz, **arrays)
     os.replace(temporary_npz, event_path)
@@ -789,9 +793,19 @@ def main() -> None:
         raise ValueError("resamples must be positive and post_frames must be at least 2")
     if any(percent <= 0 or percent >= 100 for percent in args.top_percent):
         raise ValueError("top_percent values must lie strictly between 0 and 100")
-    os.makedirs(args.save_dir, exist_ok=True)
+    if args.save_dir:
+        args.decomposition_dir = args.relevance_dir = args.timing_dir = args.control_dir = (
+            args.save_dir
+        )
+    for directory in (
+        args.decomposition_dir,
+        args.relevance_dir,
+        args.timing_dir,
+        args.control_dir,
+    ):
+        os.makedirs(directory, exist_ok=True)
     if args.postprocess_part3_only:
-        postprocess_part3_directional_crossings(args.save_dir)
+        postprocess_part3_directional_crossings(args.timing_dir)
         return
     device = resolve_device(args.device, require_cuda_if_requested=True)
     args.use_sector_mode = True
@@ -846,7 +860,7 @@ def main() -> None:
         "split_half_unit": "model sequence (32 outputs), preventing temporal leakage",
     }
     _print_part0(part0)
-    _save_json(os.path.join(args.save_dir, "part0_splits.json"), part0)
+    _save_json(os.path.join(args.control_dir, "part0_splits.json"), part0)
 
     primary_selectivity, primary_inference = analyze_selectivity(
         validation["encoder"],
@@ -963,14 +977,16 @@ def main() -> None:
     }
     _print_primary_part2(primary_part2, args.top_percent)
     _print_primary_part3(primary_part3)
-    np.savez_compressed(os.path.join(args.save_dir, "part1_selectivity.npz"), **part1_arrays)
     np.savez_compressed(
-        os.path.join(args.save_dir, "part2_inference.npz"),
+        os.path.join(args.decomposition_dir, "part1_selectivity.npz"), **part1_arrays
+    )
+    np.savez_compressed(
+        os.path.join(args.relevance_dir, "part2_inference.npz"),
         **primary_part2_arrays,
         **{key: value for key, value in split_arrays.items() if "top" in key or "alignment" in key},
     )
     np.savez_compressed(
-        os.path.join(args.save_dir, "part3_events.npz"),
+        os.path.join(args.timing_dir, "part3_events.npz"),
         **primary_part3_arrays,
         **{
             key: value
@@ -978,14 +994,19 @@ def main() -> None:
             if "top" not in key and "alignment_matrix" not in key and "alignment_null" not in key
         },
     )
-    _save_json(os.path.join(args.save_dir, "part1_summary.json"), part1_summary)
-    _save_json(os.path.join(args.save_dir, "part2_results.json"), part2_report)
-    _save_json(os.path.join(args.save_dir, "part3_results.json"), part3_report)
+    _save_json(os.path.join(args.decomposition_dir, "part1_summary.json"), part1_summary)
+    _save_json(os.path.join(args.relevance_dir, "part2_results.json"), part2_report)
+    _save_json(os.path.join(args.timing_dir, "part3_results.json"), part3_report)
     metadata = {
         "checkpoint": os.path.abspath(args.ckpt),
         "data_dir": os.path.abspath(args.data_dir),
         "data_suffix": args.data_suffix,
-        "save_dir": os.path.abspath(args.save_dir),
+        "output_dirs": {
+            "decomposition": os.path.abspath(args.decomposition_dir),
+            "relevance": os.path.abspath(args.relevance_dir),
+            "timing": os.path.abspath(args.timing_dir),
+            "controls": os.path.abspath(args.control_dir),
+        },
         "architecture": architecture,
         "validation_frames": int(validation_labels.shape[0]),
         "test_frames": int(test_labels.shape[0]),
@@ -998,8 +1019,11 @@ def main() -> None:
         "top_percent": args.top_percent,
         "split_half_enabled": not args.skip_split_half,
     }
-    _save_json(os.path.join(args.save_dir, "run_metadata.json"), metadata)
-    print(f"Saved complete analysis to: {os.path.abspath(args.save_dir)}")
+    _save_json(os.path.join(args.control_dir, "run_metadata.json"), metadata)
+    print(f"Saved decomposition outputs to: {os.path.abspath(args.decomposition_dir)}")
+    print(f"Saved relevance outputs to: {os.path.abspath(args.relevance_dir)}")
+    print(f"Saved timing outputs to: {os.path.abspath(args.timing_dir)}")
+    print(f"Saved control outputs to: {os.path.abspath(args.control_dir)}")
 
 
 def _average_nested_numeric(records: list[dict[str, Any]]) -> Any:

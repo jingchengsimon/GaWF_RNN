@@ -1,7 +1,16 @@
 __pycache__/
 *.pyc
 
-/results
+/results/*
+!/results/anal_index/
+!/results/anal_data/
+!/results/anal_figs/
+/results/anal_index/*
+!/results/anal_index/INDEX.md
+/results/anal_data/*
+!/results/anal_data/README.md
+/results/anal_figs/*
+!/results/anal_figs/README.md
 /stimuli
 remote/config.sh
 .agents/local.md

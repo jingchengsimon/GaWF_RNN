@@ -21,7 +21,8 @@ if PROJECT_ROOT not in sys.path:
 from experiments.generalization import clutter_best6_multiseed as protocol
 
 ANALYSIS_RESULT_ROOT = (
-    "results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1"
+    "results/anal_index/G_behaviour/export_fg_switch_offset_acc/data/"
+    "clutter_best6_jointswitch_balanced_chan1"
 )
 
 

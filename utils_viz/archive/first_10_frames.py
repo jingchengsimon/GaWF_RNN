@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
+from utils_anal.anal_paths import output_dir
+
 # Resolve paths relative to project root (utils_viz is under project root)
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -63,10 +65,9 @@ for i, frame in enumerate(frames):
 plt.tight_layout()
 
 # Save the figure
-output_file = _PROJECT_ROOT / "first_10_frames.pdf"
+output_file = output_dir("H_controls", "first_10_frames", "figs") / "first_10_frames.pdf"
 plt.savefig(str(output_file), dpi=150, bbox_inches='tight')
 print(f"\nSaved visualization to: {output_file}")
 
 plt.close()
 print("Done!")
-

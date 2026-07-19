@@ -20,6 +20,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from utils_anal.anal_paths import output_dir
+
 
 # Keys and display labels: train pos, val pos, train char, val char (same order for all models)
 BAR_KEYS = [
@@ -145,7 +147,7 @@ def main() -> None:
         "--out",
         type=str,
         default=None,
-        help="Output figure path (default: <metrics_dir>/best_acc_bars.png or cwd).",
+        help="Output figure path.",
     )
     parser.add_argument(
         "--xmin",
@@ -179,13 +181,7 @@ def main() -> None:
     if args.out is not None:
         out = Path(args.out)
     else:
-        if args.metrics_dir is not None:
-            out = Path(args.metrics_dir).resolve()
-            if not out.is_absolute():
-                out = repo_root / out
-        else:
-            out = repo_root / "results" / "models" / "sector_40h_adamw"
-        out = out / "best_acc_bars.png"
+        out = output_dir("G_behaviour", "metrics_best_acc_bars", "figs") / "best_acc_bars.png"
     out = Path(out).resolve()
     if not out.is_absolute():
         out = repo_root / out

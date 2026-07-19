@@ -6,7 +6,7 @@ for the seven model variants (ann/rnn/gru/lstm/gawf/s5/mamba), one coloured line
 per model. When several seeds are present the seeds are aggregated into a mean
 line with a shaded +/- std band. Style mirrors
 ``utils_viz/model_train_compare_result.py`` (matplotlib Agg, fixed per-model
-colours, legend, output under ``results/train_figs``).
+colours, legend, and category-indexed analysis output).
 
 The result prefix must state both environment advance and observation history,
 for example ``atari_dqn_pong_fs1_stack1`` or ``atari_dqn_pong_fs4_stack1``.
@@ -36,13 +36,15 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
+from utils_anal.anal_paths import output_dir
+
 DEFAULT_PREFIX = "atari_dqn_pong_fs4_stack1"
 DEFAULT_MODELS = ("ann", "rnn", "gru", "lstm", "gawf", "s5", "mamba")
 
 # Fixed per-model colours so a model reads the same across every figure.
 MODEL_COLORS = {
-    "ann": "#7f7f7f",   # grey: the memoryless control
-    "cnn": "#7f7f7f",   # historical result alias
+    "ann": "#7f7f7f",  # grey: the memoryless control
+    "cnn": "#7f7f7f",  # historical result alias
     "rnn": "#1f77b4",
     "gru": "#2ca02c",
     "lstm": "#9467bd",
@@ -102,8 +104,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data_root", default="results/train_data")
     parser.add_argument(
         "--output_dir",
-        default=None,
-        help="Output directory; defaults to results/train_figs/<protocol prefix>.",
+        default=str(output_dir("G_behaviour", "atari_learning_curves", "figs")),
+        help="Output directory.",
     )
     parser.add_argument(
         "--seed",
@@ -159,9 +161,11 @@ def _discover_run_dirs(data_root: str, base: str, seed: Optional[int] = None) ->
         return [one] if one.is_dir() else []
     seed_dirs = sorted(
         (Path(p) for p in glob.glob(str(root / f"{base}_seed*")) if os.path.isdir(p)),
-        key=lambda p: int(re.search(r"_seed(\d+)$", p.name).group(1))
-        if re.search(r"_seed(\d+)$", p.name)
-        else 0,
+        key=lambda p: (
+            int(re.search(r"_seed(\d+)$", p.name).group(1))
+            if re.search(r"_seed(\d+)$", p.name)
+            else 0
+        ),
     )
     if seed_dirs:
         return seed_dirs
@@ -252,9 +256,9 @@ def _aggregate_seeds(
         sm = _smooth(values, smooth)
         return steps, sm, np.zeros_like(sm), 1
     grid = np.linspace(lo, hi, N_GRID)
-    stacked = np.vstack([
-        np.interp(grid, steps, _smooth(values, smooth)) for steps, values in curves
-    ])
+    stacked = np.vstack(
+        [np.interp(grid, steps, _smooth(values, smooth)) for steps, values in curves]
+    )
     return grid, stacked.mean(0), stacked.std(0), len(curves)
 
 

@@ -6,9 +6,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
-POP_ROOT="${POP_ROOT:-results/anal_data/pop_act}"
-DATA_ROOT="${DATA_ROOT:-results/anal_data/5_pop_act_switch_trajectory}"
-FIG_ROOT="${FIG_ROOT:-results/anal_figs/5_pop_act_switch_trajectory}"
+POP_ROOT="${POP_ROOT:-results/anal_index/D_variance_decomposition/export_pop_act/data}"
+DATA_ROOT="${DATA_ROOT:-results/anal_index/F_timing/pop_act_switch_trajectory/data}"
+FIG_ROOT="${FIG_ROOT:-results/anal_index/F_timing/pop_act_switch_trajectory/figs}"
 
 RUN_TAGS=(
   gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_model

@@ -7,8 +7,8 @@ ROOT="${AIM3_ROOT:?AIM3_ROOT is required}"
 PART_DIR="${AIM3_PART_DIR:?AIM3_PART_DIR is required}"
 RESULTS_ROOT="${AIM3_RESULTS_PATH:-$ROOT/results}"
 CONDA_INIT="${AIM3_CONDA_INIT:?AIM3_CONDA_INIT is required}"
-ANALYSIS_DIR="$RESULTS_ROOT/anal_data/clutter_multiseed_test"
-FIGURE_DIR="$RESULTS_ROOT/anal_figs/clutter_multiseed_test"
+ANALYSIS_DIR="$RESULTS_ROOT/anal_index/G_behaviour/evaluate_clutter_multiseed_test/data"
+FIGURE_DIR="$RESULTS_ROOT/anal_index/G_behaviour/evaluate_clutter_multiseed_test/figs"
 models=(gawf rnn lstm gru mamba s5)
 
 for _ in $(seq 1 360); do
