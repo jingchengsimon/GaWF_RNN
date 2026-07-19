@@ -248,6 +248,46 @@ def _mean_ci(values: np.ndarray) -> tuple[float, float, float]:
     return float(values.mean()), float(low), float(high)
 
 
+def _per_unit_draw_mean(values: np.ndarray) -> np.ndarray:
+    """Return one finite eta-squared value per unit after averaging repeated draws."""
+
+    values = np.asarray(values)
+    if values.ndim != 2:
+        raise ValueError(f"per-unit values must be draws x units, observed shape {values.shape}")
+    finite = np.isfinite(values)
+    counts = finite.sum(axis=0)
+    sums = np.nansum(values, axis=0, dtype=np.float64)
+    means = np.divide(
+        sums,
+        counts,
+        out=np.full(values.shape[1], np.nan, dtype=np.float64),
+        where=counts > 0,
+    )
+    distribution = means[np.isfinite(means)]
+    if distribution.size == 0:
+        raise ValueError("per-unit values contain no finite draw-averaged units")
+    return distribution
+
+
+def _annotate_aggregate_means(
+    axis: plt.Axes,
+    bars: Any,
+    means: np.ndarray,
+    highs: np.ndarray,
+) -> None:
+    """Label aggregate bars with their repeated-draw mean percentages."""
+
+    for bar, mean, high in zip(bars, means, highs):
+        axis.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            min(float(high) + 0.025, 1.055),
+            f"{100.0 * float(mean):.2f}%",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
+
+
 def _save_object_npz(
     data_dir: Path,
     object_name: str,
@@ -319,12 +359,6 @@ def _plot_object(
     object_name: str,
     result: RepeatedDecomposition,
 ) -> Path:
-    cells = (
-        ("Condition-mean aggregate", result.aggregate_cm, CM_FACTORS),
-        ("Trial-level aggregate", result.aggregate_trial, TRIAL_FACTORS),
-        ("Condition-mean per-unit mean", result.unweighted_per_unit_mean_cm, CM_FACTORS),
-        ("Trial-level per-unit mean", result.unweighted_per_unit_mean_trial, TRIAL_FACTORS),
-    )
     colors = {
         "sector": "#4477AA",
         "digit": "#EE6677",
@@ -332,13 +366,52 @@ def _plot_object(
         "residual": "#BBBBBB",
     }
     fig, axes = plt.subplots(2, 2, figsize=(10, 7), sharey=True)
-    for axis, (title, values_by_factor, factors) in zip(axes.flat, cells):
+    aggregate_cells = (
+        (axes[0, 0], "Condition-mean aggregate", result.aggregate_cm, CM_FACTORS),
+        (axes[0, 1], "Trial-level aggregate", result.aggregate_trial, TRIAL_FACTORS),
+    )
+    for axis, title, values_by_factor, factors in aggregate_cells:
         means, lows, highs = zip(*(_mean_ci(values_by_factor[factor]) for factor in factors))
+        means_array = np.asarray(means)
+        highs_array = np.asarray(highs)
         x = np.arange(len(factors))
-        errors = np.asarray([np.asarray(means) - lows, np.asarray(highs) - means])
-        axis.bar(x, means, color=[colors[factor] for factor in factors], yerr=errors, capsize=3)
+        errors = np.asarray([means_array - lows, highs_array - means_array])
+        bars = axis.bar(
+            x,
+            means_array,
+            color=[colors[factor] for factor in factors],
+            yerr=errors,
+            capsize=3,
+        )
+        _annotate_aggregate_means(axis, bars, means_array, highs_array)
         axis.set_xticks(x, factors, rotation=20)
-        axis.set_ylim(0.0, 1.0)
+        axis.set_ylim(0.0, 1.08)
+        axis.set_title(title)
+        axis.set_ylabel(r"variance fraction ($\eta^2$)")
+
+    per_unit_cells = (
+        (axes[1, 0], "Condition-mean per-unit distribution", result.per_unit_cm, CM_FACTORS),
+        (axes[1, 1], "Trial-level per-unit distribution", result.per_unit_trial, TRIAL_FACTORS),
+    )
+    for axis, title, values_by_factor, factors in per_unit_cells:
+        distributions = [_per_unit_draw_mean(values_by_factor[factor]) for factor in factors]
+        x = np.arange(len(factors))
+        violins = axis.violinplot(
+            distributions,
+            positions=x,
+            widths=0.75,
+            showmeans=True,
+            showmedians=False,
+            showextrema=False,
+        )
+        for body, factor in zip(violins["bodies"], factors):
+            body.set_facecolor(colors[factor])
+            body.set_edgecolor("black")
+            body.set_alpha(0.8)
+        violins["cmeans"].set_color("black")
+        violins["cmeans"].set_linewidth(1.2)
+        axis.set_xticks(x, factors, rotation=20)
+        axis.set_ylim(0.0, 1.08)
         axis.set_title(title)
         axis.set_ylabel(r"variance fraction ($\eta^2$)")
     unit_note = (
@@ -348,7 +421,15 @@ def _plot_object(
         else f"Unit axis indexes {OBJECT_UNITS[object_name]} representation units."
     )
     fig.suptitle(f"{object_name}\n{unit_note}", fontsize=11)
-    fig.tight_layout(rect=(0, 0, 1, 0.91))
+    fig.text(
+        0.5,
+        0.01,
+        "Violins show the distribution across units after averaging each unit across "
+        "the fixed-seed balanced draws; black lines mark distribution means.",
+        ha="center",
+        fontsize=8,
+    )
+    fig.tight_layout(rect=(0, 0.05, 1, 0.91))
     destination = figure_dir / f"{object_name}_four_cells.png"
     fig.savefig(destination, dpi=150, bbox_inches="tight", pad_inches=0.06)
     plt.close(fig)
@@ -364,7 +445,17 @@ def _plot_summary(
     colors = {"sector": "#4477AA", "digit": "#EE6677", "interaction": "#228833"}
     for factor in CM_FACTORS:
         values = np.asarray([results[name].aggregate_cm[factor].mean() for name in OBJECT_ORDER])
-        axis.bar(x, values, bottom=bottom, label=factor, color=colors[factor])
+        bars = axis.bar(x, values, bottom=bottom, label=factor, color=colors[factor])
+        for bar, value, base in zip(bars, values, bottom):
+            axis.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                base + value / 2.0,
+                f"{100.0 * value:.1f}%",
+                ha="center",
+                va="center",
+                color="white",
+                fontsize=7,
+            )
         bottom += values
     axis.set_xticks(x, [name.replace("_", "\n") for name in OBJECT_ORDER], fontsize=8)
     axis.set_ylabel(r"condition-mean aggregate variance fraction ($\eta^2$)")

@@ -130,7 +130,9 @@ effective input/recurrent weights, hidden state, and feedback/readout vectors. E
 all 90 sector-digit cells to a common `n`, repeats the subsample for 20 fixed-seed draws, and
 reports aggregate plus per-unit condition-mean and trial-level fractions. Gate/effective-weight
 unit axes index synapses, not neurons. Trial-level gate analysis must stream second-order moments
-under an explicit memory budget; a trial-by-synapse array is forbidden.
+under an explicit memory budget; a trial-by-synapse array is forbidden. Object figures label each
+aggregate bar with its 20-draw mean and show per-unit fractions as violins after averaging each
+unit across the 20 draws; the black line marks the mean of those draw-averaged unit values.
 
 `utils_anal/run_unified_variance_decomposition.py` reads saved mmap `.npy` representations,
 including the input and recurrent gate tensors. A saved GaWF trajectory may supply labels,

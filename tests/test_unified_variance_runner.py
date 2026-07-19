@@ -10,6 +10,7 @@ import numpy as np
 from utils_anal.run_unified_variance_decomposition import (
     ArraySource,
     WeightedSource,
+    _per_unit_draw_mean,
     _summary_only,
     _write_index,
 )
@@ -57,6 +58,23 @@ def test_summary_copy_does_not_retain_large_per_unit_arrays() -> None:
     assert reference() is None
     assert summary.per_unit_cm == {}
     assert summary.per_unit_trial == {}
+
+
+def test_per_unit_draw_mean_returns_unit_distribution_and_drops_all_nan_units() -> None:
+    values = np.asarray(
+        [
+            [0.1, 0.2, np.nan, np.nan],
+            [0.3, 0.4, 0.5, np.nan],
+        ],
+        dtype=np.float32,
+    )
+    actual = _per_unit_draw_mean(values)
+    np.testing.assert_allclose(actual, [0.2, 0.3, 0.5])
+
+
+def test_per_unit_draw_mean_rejects_non_matrix_input() -> None:
+    with np.testing.assert_raises_regex(ValueError, "draws x units"):
+        _per_unit_draw_mean(np.ones(3, dtype=np.float32))
 
 
 def test_write_index_preserves_existing_content(tmp_path) -> None:
