@@ -7,7 +7,12 @@ import weakref
 
 import numpy as np
 
-from utils_anal.run_unified_variance_decomposition import ArraySource, WeightedSource, _summary_only
+from utils_anal.run_unified_variance_decomposition import (
+    ArraySource,
+    WeightedSource,
+    _summary_only,
+    _write_index,
+)
 from utils_anal.variance_decomposition import RepeatedDecomposition
 
 
@@ -52,3 +57,15 @@ def test_summary_copy_does_not_retain_large_per_unit_arrays() -> None:
     assert reference() is None
     assert summary.per_unit_cm == {}
     assert summary.per_unit_trial == {}
+
+
+def test_write_index_preserves_existing_content(tmp_path) -> None:
+    index_path = tmp_path / "INDEX.md"
+    index_path.write_text("curated index\n", encoding="utf-8")
+    _write_index(tmp_path)
+    assert index_path.read_text(encoding="utf-8") == "curated index\n"
+
+
+def test_write_index_creates_missing_file(tmp_path) -> None:
+    _write_index(tmp_path)
+    assert "Unified decomposition" in (tmp_path / "INDEX.md").read_text(encoding="utf-8")

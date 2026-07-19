@@ -525,6 +525,9 @@ def _git_commit() -> str:
 
 
 def _write_index(index_root: Path) -> None:
+    index_path = index_root / "INDEX.md"
+    if index_path.is_file():
+        return
     lines = [
         "# Analysis output index",
         "",
@@ -550,7 +553,7 @@ def _write_index(index_root: Path) -> None:
         "",
     ]
     index_root.mkdir(parents=True, exist_ok=True)
-    (index_root / "INDEX.md").write_text("\n".join(lines), encoding="utf-8")
+    index_path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def main() -> None:
