@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "id": "amarel-atari-breakout-fs4-stack4-l1-58907590",
+  "description": "Strict 4-action Breakout fs4/stack4 L1 seed search: 7 models x Breakout/Flickering x 5 seeds, 1M, recoverable",
+  "host": "amarel",
+  "status": "queued",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58907590"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/atari_breakout_fs4_stack4_l1/58907590_*"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "/scratch/js3269/results/train_data"
+    ]
+  },
+  "tracking": {
+    "expected_units": 70,
+    "auto_complete": false,
+    "result_globs": [
+      "/scratch/js3269/results/train_data"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "Dependency chain: 58907588 (4-action parameter match) -> 58907589 (GaWF smoke, 25k steps) -> 58907590 (formal 70-task array). Each stage is afterok-gated.",
+    "First recoverable Atari array: --replay_backing mmap, --checkpoint_interval_steps 50000, --requeue, --signal=B:USR1@120. A preempted unit checkpoints, self-requeues via scontrol, and resumes with its replay buffer intact.",
+    "Concurrency capped at 12 (--array=0-69%12) because each running unit holds up to ~28 GB of mmap replay against a 1 TiB /scratch soft quota; peak ~336 GB over the ~372 GB already stored. A per-task quota guard refuses to start below 3x headroom.",
+    "Breakout minimal action space is 4 actions, not Pong 6, so it uses its own parameter-match table at results/atari_param_match_breakout_fs4_stack4_l1.",
+    "L2 (5 models x 50 tasks) deliberately not submitted: the quota headroom is reserved for L1 replay buffers.",
+    "Recovery path validated beforehand on GPU by job 58890853."
+  ],
+  "created_at": "2026-07-22T19:27:10+00:00",
+  "updated_at": "2026-07-22T19:27:10+00:00"
+}
