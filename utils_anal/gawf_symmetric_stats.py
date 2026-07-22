@@ -458,7 +458,7 @@ def cosine_alignment(
     resamples: int,
     seed: int,
 ) -> dict[str, Any]:
-    """Compute context cross-alignment, diagonal contrast, and permutation p-value."""
+    """Compute context cross-alignment, diagonal contrast, and two-sided permutation p-value."""
 
     sums, _sums_sq, counts = gate_context_moments(gate_columns, labels, factor)
     gate_tuning = sums / counts[:, None]
@@ -473,13 +473,23 @@ def cosine_alignment(
     null = np.empty(resamples, dtype=np.float64)
     for idx in range(resamples):
         null[idx] = diagonal_contrast(matrix[:, rng.permutation(matrix.shape[1])])
-    p_value = float((1 + np.count_nonzero(null >= point)) / (resamples + 1))
+    p_value = two_sided_permutation_p_value(point, null)
     return {
         "matrix": matrix.astype(np.float32),
         "diagonal_minus_off_diagonal": point,
         "permutation_null": null.astype(np.float32),
         "permutation_p_value": p_value,
+        "permutation_alternative": "two-sided",
     }
+
+
+def two_sided_permutation_p_value(point: float, null: np.ndarray) -> float:
+    """Return a finite-sample-corrected two-sided permutation p-value."""
+
+    null = np.asarray(null, dtype=np.float64).reshape(-1)
+    if null.size == 0:
+        raise ValueError("permutation null must contain at least one value")
+    return float((1 + np.count_nonzero(np.abs(null) >= abs(point))) / (null.size + 1))
 
 
 def _zscore_rows(values: np.ndarray) -> np.ndarray:

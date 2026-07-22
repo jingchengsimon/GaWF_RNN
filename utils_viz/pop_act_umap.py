@@ -1,7 +1,7 @@
 """
 Load export_pop_act output: pop_act.npy + labels.tsv (UMAP/PCA), or pop_act_dpca.npy (dPCA).
 
-Reduce (T, D) -> (T, 3) via UMAP or PCA; save Plotly HTML under ``<save_dir>/<run_tag>/``.
+Reduce (T, D) -> (T, 3) via UMAP or PCA; save figures directly under ``<save_dir>``.
 
 PCA mode also saves explained-variance bar chart. ``--reducer dpca`` keeps PNG/HTML under the
 figure tree and saves JSON/NPZ under the matching analysis-data tree. Interactive dPCA views use
@@ -133,7 +133,8 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=str(output_dir("D_variance_decomposition", "pop_act_umap", "figs")),
         help=(
-            "Parent directory for PNG/PDF/HTML figures; writes <save_dir>/<run_tag>/. "
+            "Category-level directory for PNG/PDF/HTML figures; writes directly under "
+            "<save_dir>. "
             "dPCA arrays/JSON are written to the matching anal_data tree."
         ),
     )
@@ -150,7 +151,7 @@ def parse_args() -> argparse.Namespace:
         "--run_tag",
         type=str,
         default="",
-        help="Subfolder under --save_dir (default: basename of --pop_act_dir).",
+        help="Run tag used to identify the matching data directory and output names.",
     )
     p.add_argument(
         "--seed",
@@ -165,7 +166,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="",
         help=(
-            "Output HTML filename inside <save_dir>/<run_tag>/. "
+            "Output HTML filename inside <save_dir>. "
             "Default: trajectory_<color_by>.html (umap) or trajectory_pca_<color_by>.html (pca)."
         ),
     )
@@ -183,11 +184,24 @@ def resolve_dpca_output_dirs(
         data_parent = os.path.normpath(anal_data_dir.strip())
     else:
         parts = fig_parent.split(os.sep)
+        matching = [idx for idx, part in enumerate(parts) if part == "anal_figs"]
+        if matching:
+            index = matching[-1]
+            if len(parts) <= index + 1:
+                raise ValueError("Canonical anal_figs path is missing its category component")
+            category = parts[index + 1]
+            script_name = parts[index + 2] if len(parts) > index + 2 else "pop_act_umap"
+            fig_parent = os.sep.join(parts[: index + 2]) or os.sep
+            data_parent = os.sep.join(
+                [*parts[:index], "anal_data", category, script_name]
+            ) or os.sep
+            data_path = os.path.join(data_parent, run_tag) if run_tag else data_parent
+            return fig_parent, data_path
         matching = [idx for idx, part in enumerate(parts) if part == "figs"]
         if not matching:
             raise ValueError(
-                "Cannot derive --anal_data_dir because --save_dir has no 'figs' "
-                "path component; pass --anal_data_dir explicitly."
+                "Cannot derive --anal_data_dir because --save_dir has neither an "
+                "'anal_figs' nor a legacy 'figs' path component; pass --anal_data_dir explicitly."
             )
         parts[matching[-1]] = "data"
         data_parent = os.sep.join(parts) or os.sep
@@ -1361,7 +1375,7 @@ def discrete_equal_bins_colorscale(colors: list[str]) -> list[list]:
 def main() -> None:
     args = parse_args()
     run_tag = args.run_tag.strip() or os.path.basename(os.path.normpath(args.pop_act_dir))
-    fig_dir = os.path.join(args.save_dir, run_tag)
+    fig_dir = args.save_dir
     os.makedirs(fig_dir, exist_ok=True)
 
     if args.reducer == "dpca":

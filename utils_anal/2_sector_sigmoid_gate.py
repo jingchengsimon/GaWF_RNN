@@ -5,12 +5,11 @@ frame, routes each frame to its foreground sector, and averages the resulting
 gate maps per sector.
 
 Outputs (in --save_dir / --output_dir):
-- sector_gate_mean.npy  ((9, 6, 6)), float32 - mean over hidden units
-- sector_gate_max.npy   ((9, 6, 6)), float32 - max over hidden units
+- sector_gate_mean.npy  ((9, 6, 6)), float32 - mean over hidden units and channels
 - meta.json - gate temperature, checkpoint, and per-sector frame counts
-- fig2_sector_gate_mean.png - 3x3 viridis heatmap grid in [0, 1]
-- fig2_sector_gate_max.png - 3x3 viridis heatmap grid in [0, 1]
+- fig2_sector_gate_mean.{png,pdf} - legacy one-step/reset 3x3 heatmap grid in [0, 1]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -107,8 +106,8 @@ def compute_sector_gate_maps(
     test_ds,
     model: torch.nn.Module,
     device: torch.device,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Accumulate full sigmoid gate_ih by foreground sector and return mean/max maps."""
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Accumulate the legacy one-step/reset sigmoid input gate and return mean maps."""
     _validate_single_layer_gawf(model)
     model.eval()
 
@@ -176,8 +175,7 @@ def compute_sector_gate_maps(
     avg_gate = acc / counts[:, None, None]
     avg_gate = avg_gate.reshape(9, hidden_size, channels, height, width).mean(axis=2)
     mean_maps = avg_gate.mean(axis=1).astype(np.float32, copy=False)
-    max_maps = avg_gate.max(axis=1).astype(np.float32, copy=False)
-    return mean_maps, max_maps, counts
+    return mean_maps, counts
 
 
 def plot_sector_grid(
@@ -225,6 +223,8 @@ def plot_sector_grid(
     assert image is not None
     fig.colorbar(image, ax=axes.ravel().tolist(), shrink=0.82, label=title_value)
     fig.savefig(output_path, dpi=150, bbox_inches="tight", pad_inches=0.06)
+    pdf_path = os.path.splitext(output_path)[0] + ".pdf"
+    fig.savefig(pdf_path, dpi=150, bbox_inches="tight", pad_inches=0.06)
     plt.close(fig)
 
 
@@ -243,16 +243,13 @@ def main() -> None:
     print(f"Building model from: {ckpt_path}")
     model = build_model_from_ckpt(ckpt_path, num_pos=num_pos, device=device)
 
-    mean_maps, max_maps, counts = compute_sector_gate_maps(test_ds, model, device)
+    mean_maps, counts = compute_sector_gate_maps(test_ds, model, device)
 
     mean_path = os.path.join(args.save_dir, "sector_gate_mean.npy")
-    max_path = os.path.join(args.save_dir, "sector_gate_max.npy")
     meta_path = os.path.join(args.save_dir, "meta.json")
     mean_fig = os.path.join(args.output_dir, "fig2_sector_gate_mean.png")
-    max_fig = os.path.join(args.output_dir, "fig2_sector_gate_max.png")
 
     np.save(mean_path, mean_maps.astype(np.float32, copy=False))
-    np.save(max_path, max_maps.astype(np.float32, copy=False))
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(
             {
@@ -275,31 +272,15 @@ def main() -> None:
         vmax=1.0,
         center_value=0.5,
     )
-    plot_sector_grid(
-        max_maps,
-        max_fig,
-        cmap="RdBu_r",
-        title_value="max gate",
-        vmin=0.0,
-        vmax=1.0,
-        center_value=0.5,
-    )
-
     print(f"Saved mean maps to: {mean_path}")
-    print(f"Saved max maps to: {max_path}")
     print(f"Saved metadata to: {meta_path}")
     print(f"Saved mean figure to: {mean_fig}")
-    print(f"Saved max figure to: {max_fig}")
 
     if args.contrast:
         mean_contrast = (mean_maps - mean_maps.mean(axis=0, keepdims=True)).astype(np.float32)
-        max_contrast = (max_maps - max_maps.mean(axis=0, keepdims=True)).astype(np.float32)
         mean_contrast_path = os.path.join(args.save_dir, "sector_gate_mean_contrast.npy")
-        max_contrast_path = os.path.join(args.save_dir, "sector_gate_max_contrast.npy")
         mean_contrast_fig = os.path.join(args.output_dir, "fig2_sector_gate_mean_contrast.png")
-        max_contrast_fig = os.path.join(args.output_dir, "fig2_sector_gate_max_contrast.png")
         np.save(mean_contrast_path, mean_contrast)
-        np.save(max_contrast_path, max_contrast)
         plot_sector_grid(
             mean_contrast,
             mean_contrast_fig,
@@ -307,15 +288,8 @@ def main() -> None:
             title_value="mean gate contrast",
             center_zero=True,
         )
-        plot_sector_grid(
-            max_contrast,
-            max_contrast_fig,
-            cmap="RdBu_r",
-            title_value="max gate contrast",
-            center_zero=True,
-        )
-        print(f"Saved contrast maps to: {mean_contrast_path}, {max_contrast_path}")
-        print(f"Saved contrast figures to: {mean_contrast_fig}, {max_contrast_fig}")
+        print(f"Saved contrast map to: {mean_contrast_path}")
+        print(f"Saved contrast figure to: {mean_contrast_fig}")
 
 
 if __name__ == "__main__":

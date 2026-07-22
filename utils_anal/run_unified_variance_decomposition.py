@@ -59,6 +59,7 @@ from utils_anal.variance_decomposition import (
     decompose_repeated_blocks,
     unbalanced_condition_mean_bridge,
 )
+from utils.publication_paths import publication_figures_dir
 
 
 CATEGORY = "D_variance_decomposition"
@@ -161,6 +162,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--unit_block_size", type=int, default=4096)
     parser.add_argument("--trial_batch_size", type=int, default=32)
     parser.add_argument("--memory_budget_gib", type=float, default=2.0)
+    parser.add_argument(
+        "--publication_fig_dir",
+        type=Path,
+        default=None,
+        help=(
+            "Official PDF destination. Defaults to AIM3_PUBLICATION_FIGURES_DIR or the local "
+            "6-Writing/Aim3/Figures sibling tree when available."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -481,54 +491,101 @@ def _plot_summary(
 def _plot_compact_aggregate(
     figure_dir: Path,
     results: dict[str, RepeatedDecomposition],
+    publication_fig_dir: Path | None = None,
 ) -> Path:
-    """Plot condition-mean and trial-level aggregates for four core representations."""
+    """Plot the poster-style condition-mean aggregate summary for four core objects."""
 
-    objects = (
-        ("input_gate", "Input gate"),
-        ("recurrent_gate", "Recurrent gate"),
-        ("encoder_activation", "Encoder activation"),
-        ("hidden_state", "Hidden activation"),
+    object_rows = (
+        (("input_gate", "Input gate"), ("recurrent_gate", "Recurrent gate")),
+        (
+            ("encoder_activation", "Encoder\nactivation"),
+            ("hidden_state", "Hidden\nactivation"),
+        ),
     )
     factors = CM_FACTORS
-    colors = {"sector": "#4477AA", "digit": "#EE6677", "interaction": "#228833"}
-    category_centers = np.arange(2, dtype=np.float64)
-    bar_width = 0.24
-    fig, axes = plt.subplots(2, 2, figsize=(9, 7), sharey=True)
-    for axis, (object_name, title) in zip(axes.flat, objects):
-        result = results[object_name]
-        for factor_index, factor in enumerate(factors):
-            values_by_category = (
-                result.aggregate_cm[factor],
-                result.aggregate_trial[factor],
+    # This high-contrast navy/coral/mustard palette is distinct from the model and gate palettes
+    # used by the adjacent 2-by-3 and 1-by-3 publication panels.
+    colors = {"sector": "#264653", "digit": "#E76F51", "interaction": "#E9C46A"}
+    # The row-wide axis contains two logical quadrants.  This data width gives each bar the same
+    # physical width-to-height ratio as a bar in the GRU afferent-gate panel of the 1-by-3 figure.
+    bar_width = 0.095
+    # Three bars occupy each group; leave exactly 1.5 bar widths between adjacent group edges.
+    category_centers = np.arange(2, dtype=np.float64) * (3.0 + 1.5) * bar_width
+    with plt.rc_context(
+        {
+            "font.size": 13,
+            "axes.labelsize": 16,
+            "xtick.labelsize": 13,
+            "ytick.labelsize": 13,
+            "legend.fontsize": 13,
+        }
+    ):
+        fig, axes = plt.subplots(2, 1, figsize=(5.05, 8.2), sharey=True)
+        for axis, objects in zip(axes, object_rows):
+            for factor_index, factor in enumerate(factors):
+                statistics = [
+                    _mean_ci(results[object_name].aggregate_cm[factor])
+                    for object_name, _ in objects
+                ]
+                means = 100.0 * np.asarray([item[0] for item in statistics])
+                lows = 100.0 * np.asarray([item[1] for item in statistics])
+                highs = 100.0 * np.asarray([item[2] for item in statistics])
+                positions = category_centers + (factor_index - 1) * bar_width
+                axis.bar(
+                    positions,
+                    means,
+                    width=bar_width,
+                    color=colors[factor],
+                    yerr=np.asarray([means - lows, highs - means]),
+                    capsize=2.5,
+                    label=factor.title(),
+                    error_kw={"elinewidth": 1.0, "capthick": 1.0, "ecolor": "#333333"},
+                )
+            axis.set_xticks(category_centers, [label for _, label in objects])
+            axis.set_ylim(0.0, 105.0)
+            axis.set_yticks(np.arange(0.0, 100.1, 20.0))
+            axis.set_axisbelow(True)
+            axis.grid(axis="y", linewidth=0.7, alpha=0.25)
+            axis.spines["top"].set_visible(False)
+            axis.spines["right"].set_visible(False)
+
+        fig.subplots_adjust(left=0.24, right=0.865, bottom=0.08, top=0.90, hspace=0.22)
+        row_center = np.mean(
+            [axis.get_position().y0 + axis.get_position().height / 2 for axis in axes]
+        )
+        fig.text(
+            0.108,
+            row_center,
+            "Explained variance (%)",
+            rotation=90,
+            ha="center",
+            va="center",
+            fontsize=16,
+        )
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(
+            handles,
+            labels,
+            loc="upper left",
+            # Offset the legend's first patch so its center sits on the shared y-axis.
+            bbox_to_anchor=(0.205, 0.937),
+            ncol=3,
+            frameon=False,
+            handlelength=1.15,
+            handleheight=0.85,
+            handletextpad=0.22,
+            columnspacing=0.75,
+            borderaxespad=0.0,
+        )
+        destination = figure_dir / "core_objects_aggregate_2x2.png"
+        fig.savefig(destination, dpi=180, bbox_inches="tight", pad_inches=0.04)
+        if publication_fig_dir is not None:
+            fig.savefig(
+                publication_fig_dir / "core_objects_aggregate_2x2.pdf",
+                bbox_inches="tight",
+                pad_inches=0.04,
             )
-            statistics = [_mean_ci(values) for values in values_by_category]
-            means = np.asarray([item[0] for item in statistics])
-            lows = np.asarray([item[1] for item in statistics])
-            highs = np.asarray([item[2] for item in statistics])
-            positions = category_centers + (factor_index - 1) * bar_width
-            axis.bar(
-                positions,
-                means,
-                width=bar_width,
-                color=colors[factor],
-                yerr=np.asarray([means - lows, highs - means]),
-                capsize=2.5,
-                label=factor,
-            )
-        axis.set_xticks(category_centers, ("Condition mean", "Trial level"))
-        axis.set_ylim(0.0, 1.0)
-        axis.set_title(title)
-        axis.spines["top"].set_visible(False)
-        axis.spines["right"].set_visible(False)
-    for axis in axes[:, 0]:
-        axis.set_ylabel(r"aggregate variance fraction ($\eta^2$)")
-    handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=3, frameon=False)
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
-    destination = figure_dir / "core_objects_aggregate_2x2.png"
-    fig.savefig(destination, dpi=150, bbox_inches="tight", pad_inches=0.06)
-    plt.close(fig)
+        plt.close(fig)
     return destination
 
 
@@ -677,8 +734,10 @@ def _write_index(index_root: Path) -> None:
     lines = [
         "# Analysis output index",
         "",
-        "This is the only analysis output tree. Each run stores `figs/`, `data/`, and a "
-        "provenance `manifest.json` below its category and script name.",
+        "Analysis figures and data are split into parallel `results/anal_figs/` and "
+        "`results/anal_data/` trees. Figures are flat within each category; data and its "
+        "provenance `manifest.json` remain grouped by script in the latter, "
+        "while figures are kept at category level.",
         "",
         "## Categories",
         "",
@@ -693,9 +752,10 @@ def _write_index(index_root: Path) -> None:
         "",
         "## Unified decomposition",
         "",
-        "`D_variance_decomposition/unified/` contains all seven representations, four "
-        "decomposition cells, repeated-draw intervals, per-unit distributions, and consistency "
-        "checks. Gate unit axes index synapses, not neurons.",
+        "`results/anal_figs/D_variance_decomposition/` and the parallel unified data directory "
+        "contain all seven representations, four decomposition cells, repeated-draw intervals, "
+        "per-unit distributions, and consistency checks. Gate unit axes index synapses, not "
+        "neurons.",
         "",
     ]
     index_root.mkdir(parents=True, exist_ok=True)
@@ -709,6 +769,7 @@ def main() -> None:
     if not math.isfinite(args.memory_budget_gib) or args.memory_budget_gib <= 0:
         raise ValueError("memory_budget_gib must be a finite positive value")
     memory_budget_bytes = int(args.memory_budget_gib * 1024**3)
+    publication_dir = publication_figures_dir(args.publication_fig_dir, create=True)
     labels, sources, input_payload = _load_inputs(args.input_manifest.resolve())
     draws, balance = balanced_subsample_indices(
         labels,
@@ -744,7 +805,7 @@ def main() -> None:
         results[object_name] = _summary_only(result)
         del result
     _plot_summary(figure_dir, results, repeats=balance.repeats)
-    _plot_compact_aggregate(figure_dir, results)
+    _plot_compact_aggregate(figure_dir, results, publication_dir)
 
     csv_path = data_dir / "unified_variance_decomposition.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
@@ -775,29 +836,43 @@ def main() -> None:
         )
         for factor, values in values_by_factor.items()
     }
-    run_root = data_dir.parent
-    files = sorted(
-        item.relative_to(run_root).as_posix()
-        for kind in ("data", "figs")
-        for item in (run_root / kind).rglob("*")
+    data_files = sorted(
+        item.relative_to(data_dir).as_posix()
+        for item in data_dir.rglob("*")
         if item.is_file()
     )
+    expected_figure_names = {
+        *(f"{object_name}_four_cells.png" for object_name in OBJECT_ORDER),
+        "all_objects_condition_mean_aggregate.png",
+        "core_objects_aggregate_2x2.png",
+    }
+    figure_files = sorted(
+        item.name
+        for item in figure_dir.iterdir()
+        if item.is_file() and item.name in expected_figure_names
+    )
+    files = [f"data/{path}" for path in data_files]
+    files.extend(f"figs/{path}" for path in figure_files)
     manifest = {
         "script_path": Path(__file__).relative_to(PROJECT_ROOT).as_posix(),
         "git_commit": _git_commit(),
         "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
         "category": CATEGORY,
+        "data_root": str(data_dir.relative_to(PROJECT_ROOT)),
+        "figure_root": str(figure_dir.relative_to(PROJECT_ROOT)),
+        "data_files": data_files,
+        "figure_files": figure_files,
         "files_written": files,
         "key_numerical_results": key_results,
         "balance": balance.__dict__,
         "input_manifest": str(args.input_manifest.resolve()),
         "input": input_payload,
     }
-    (run_root / "manifest.json").write_text(
+    (data_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     _write_index(PROJECT_ROOT / "results" / "anal_index")
-    print(f"Saved unified outputs to {run_root}")
+    print(f"Saved unified data to {data_dir}; figures to {figure_dir}")
     if unexplained:
         raise RuntimeError(
             f"{unexplained} published regression values fall outside their repeated-draw "

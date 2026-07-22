@@ -253,18 +253,21 @@ def iter_gate_chunks(
     input_size: int,
     tau: float,
     chunk_size: int,
+    *,
+    device: str | torch.device = "cpu",
 ) -> Iterator[tuple[int, int, np.ndarray, np.ndarray]]:
     """Yield exact float32 input and recurrent gates for flattened frame chunks."""
 
     flat_feedback = feedback.reshape(-1, feedback.shape[-1])
-    u_t = torch.from_numpy(u)
-    v_t = torch.from_numpy(v)
+    target_device = torch.device(device)
+    u_t = torch.from_numpy(u).to(target_device)
+    v_t = torch.from_numpy(v).to(target_device)
     for start in range(0, flat_feedback.shape[0], chunk_size):
         end = min(start + chunk_size, flat_feedback.shape[0])
-        feedback_t = torch.from_numpy(flat_feedback[start:end])
+        feedback_t = torch.from_numpy(flat_feedback[start:end]).to(target_device)
         with torch.no_grad():
             gate_ih, gate_hh = _gate_tensors(feedback_t, u_t, v_t, input_size, tau)
-        yield start, end, gate_ih.numpy(), gate_hh.numpy()
+        yield start, end, gate_ih.cpu().numpy(), gate_hh.cpu().numpy()
 
 
 def _hist(values: np.ndarray, edges: np.ndarray) -> np.ndarray:

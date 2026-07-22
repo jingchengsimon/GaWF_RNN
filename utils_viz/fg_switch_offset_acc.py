@@ -58,6 +58,12 @@ MODEL_MARKERS = {
     "mamba": "P",
     "s5": "X",
 }
+KEY_RECOVERY_TICKS = {
+    -10: "pre10",
+    1: "switch",
+    4: "post4",
+    10: "post10",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -196,6 +202,22 @@ def _load_curves(
     return reference_offsets, reference_labels, curves
 
 
+def select_key_recovery_ticks(offsets: np.ndarray) -> tuple[np.ndarray, list[str]]:
+    """Return the fixed presentation ticks for foreground/background switch curves."""
+
+    selected = [
+        (index, KEY_RECOVERY_TICKS[int(offset)])
+        for index, offset in enumerate(offsets)
+        if int(offset) in KEY_RECOVERY_TICKS
+    ]
+    if not selected:
+        raise RuntimeError("No presentation key offsets were found in the switch curve")
+    return (
+        np.asarray([index for index, _ in selected], dtype=np.int64),
+        [label for _, label in selected],
+    )
+
+
 def _plot_kind(
     kind: str,
     npz_paths: List[str],
@@ -204,15 +226,10 @@ def _plot_kind(
     condition_tag: str,
     clean_legacy_individuals: bool,
 ) -> str:
-    """Render full recovery curves with markers only at key switch offsets."""
+    """Render full recovery curves while labeling the four requested target-switch checkpoints."""
 
     offsets, labels, curves = _load_curves(npz_paths)
-    wanted = {-10: "pre10", -5: "pre5", 1: "switch", 5: "post5", 10: "post10"}
-    selected = [(index, wanted[int(offset)]) for index, offset in enumerate(offsets) if int(offset) in wanted]
-    if not selected:
-        raise RuntimeError(f"No key offsets found in {npz_paths[0]}")
-    selected_indices = np.asarray([index for index, _ in selected], dtype=np.int64)
-    selected_labels = [label for _, label in selected]
+    selected_indices, selected_labels = select_key_recovery_ticks(offsets)
     x = np.arange(offsets.size, dtype=np.int64)
     fig, axes = plt.subplots(1, 2, figsize=(9.2, 4.5), sharex=True, sharey=True)
 
@@ -236,6 +253,9 @@ def _plot_kind(
         ax.set_xlabel("Frame relative to switch")
         ax.set_ylim(0.0, 100.0)
         ax.set_xticks(selected_indices, selected_labels)
+        tick_labels = ax.get_xticklabels()
+        tick_labels[1].set_ha("right")
+        tick_labels[2].set_ha("left")
         ax.axhline(chance_level, color="0.3", linewidth=1.0, linestyle=(0, (4, 3)), zorder=0)
         ax.text(0.99, chance_level + 1.2, chance_label, transform=ax.get_yaxis_transform(), ha="right", va="bottom", color="0.3", fontsize=8)
         if "switch" in selected_labels:
@@ -249,10 +269,9 @@ def _plot_kind(
     figure_title = title or f"{kind.upper()}-switch recovery across models"
     fig.suptitle(figure_title, fontsize=13)
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.86])
-    kind_dir = os.path.join(save_dir, kind)
-    os.makedirs(kind_dir, exist_ok=True)
+    os.makedirs(save_dir, exist_ok=True)
     filename_prefix = f"{condition_tag}_" if condition_tag else ""
-    out_path = os.path.join(kind_dir, f"{filename_prefix}{kind}_switch_offset_acc_models.png")
+    out_path = os.path.join(save_dir, f"{filename_prefix}{kind}_switch_offset_acc_models.png")
     fig.savefig(out_path, dpi=150, bbox_inches="tight", pad_inches=0.06)
     pdf_path = os.path.splitext(out_path)[0] + ".pdf"
     if os.path.isfile(pdf_path):
@@ -261,7 +280,7 @@ def _plot_kind(
     print(f"Saved figure: {out_path}")
 
     if clean_legacy_individuals:
-        legacy_pattern = os.path.join(kind_dir, f"{kind}_*_switch_offset_acc.png")
+        legacy_pattern = os.path.join(save_dir, f"{kind}_*_switch_offset_acc.png")
         for legacy_path in glob.glob(legacy_pattern):
             os.remove(legacy_path)
             print(f"Removed legacy per-model figure: {legacy_path}")

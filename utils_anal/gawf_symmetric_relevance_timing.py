@@ -121,6 +121,8 @@ def _trajectory_with_measurements(
     encoded: torch.Tensor,
     model: torch.nn.Module,
     record_gates: bool,
+    *,
+    record_input_gate: bool = True,
 ) -> dict[str, torch.Tensor]:
     """Run a reset trajectory and retain activation/readout/gate summaries."""
 
@@ -140,8 +142,9 @@ def _trajectory_with_measurements(
     for time_idx in range(frame_num):
         feedback_steps.append(feedback.detach().clone())
         gate_input, gate_recurrent = _gate_tensors(feedback, model, input_size)
-        if record_gates:
+        if record_gates and record_input_gate:
             input_gate_steps.append(gate_input.mean(dim=1))
+        if record_gates:
             recurrent_gate_steps.append(gate_recurrent.mean(dim=1))
         input_term = torch.einsum(
             "bi,bhi,hi->bh",
@@ -170,7 +173,8 @@ def _trajectory_with_measurements(
         "sector_logits": torch.stack(sector_steps, dim=1),
     }
     if record_gates:
-        output["input_gate"] = torch.stack(input_gate_steps, dim=1)
+        if record_input_gate:
+            output["input_gate"] = torch.stack(input_gate_steps, dim=1)
         output["recurrent_gate"] = torch.stack(recurrent_gate_steps, dim=1)
     return output
 
@@ -392,6 +396,7 @@ def run_part2(
                 cell_report["continuous_alignment"] = {
                     "diagonal_minus_off_diagonal": alignment["diagonal_minus_off_diagonal"],
                     "permutation_p_value": alignment["permutation_p_value"],
+                    "permutation_alternative": alignment["permutation_alternative"],
                 }
                 arrays[f"{tag}_{policy}_{cell}_alignment_matrix"] = alignment["matrix"]
                 arrays[f"{tag}_{policy}_{cell}_alignment_null"] = alignment["permutation_null"]

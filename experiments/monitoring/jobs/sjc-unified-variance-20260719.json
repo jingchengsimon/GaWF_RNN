@@ -28,8 +28,8 @@
     ],
     "status_dir": null,
     "result_paths": [
-      "results/anal_index/D_variance_decomposition/export_unified_variance_sources",
-      "results/anal_index/D_variance_decomposition/unified"
+      "results/anal_data/D_variance_decomposition/unified",
+      "results/anal_figs/D_variance_decomposition"
     ]
   },
   "tracking": {
@@ -40,10 +40,10 @@
     "units": [
       {
         "id": "unified-seven-object-analysis",
-        "result_dir": "results/anal_index/D_variance_decomposition/unified",
-        "metrics_file": "manifest.json",
-        "done_file": "results/anal_index/D_variance_decomposition/unified/data/consistency_checks.txt",
-        "checkpoint_glob": "figs/*.png",
+        "result_dir": "results/anal_figs/D_variance_decomposition",
+        "metrics_file": "../../../anal_data/D_variance_decomposition/unified/manifest.json",
+        "done_file": "results/anal_data/D_variance_decomposition/unified/consistency_checks.txt",
+        "checkpoint_glob": "*.png",
         "checkpoint_count": 8,
         "validation_mode": "strict",
         "expected": {}

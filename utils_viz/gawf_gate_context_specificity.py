@@ -1,8 +1,9 @@
 """Plot compact GaWF gate context-specificity results from Parts 1--3.
 
-Inputs are ``parts123_compact.npz`` and ``parts123_results.json``.  Outputs are separate PNG
-figures for delta histograms, input spatial maps, variance decomposition, and proxy-confound
-checks.  The script never loads a model or reconstructs gates.
+Inputs are ``parts123_compact.npz`` and ``parts123_results.json``. Outputs are separate figures
+for delta histograms, input spatial maps, variance decomposition, and proxy-confound checks. The
+excluded input spatial map is additionally saved as PDF. The script never loads a model or
+reconstructs gates.
 """
 
 from __future__ import annotations
@@ -110,9 +111,49 @@ def plot_delta_histograms(
 def plot_spatial_maps(
     arrays: dict[str, np.ndarray], point_key: str, fig_dir: str, dpi: int
 ) -> None:
-    """Plot 9 sector and 10 digit input-gate maps with one symmetric color scale."""
+    """Plot input-gate maps, using a sector-only 3x3 grid for point exclusion."""
 
     sector = arrays[f"spatial_sector_{point_key}"]
+    suffix = "included" if point_key == "point_included" else "excluded"
+    if point_key == "point_excluded":
+        limit = float(np.max(np.abs(sector)))
+        fig, axes = plt.subplots(3, 3, figsize=(7.2, 6.8), constrained_layout=True)
+        image = None
+        for index, ax in enumerate(axes.flat):
+            image = ax.pcolormesh(
+                sector[index],
+                cmap="RdBu_r",
+                vmin=-limit,
+                vmax=limit,
+                shading="flat",
+                edgecolors="face",
+                linewidth=0.01,
+                antialiased=False,
+                rasterized=False,
+                snap=True,
+            )
+            ax.set_xlim(0, 6)
+            ax.set_ylim(6, 0)
+            ax.set_aspect("equal")
+            ax.set_title(f"Sector {index}", fontsize=10)
+            ax.set_xticks([])
+            ax.set_yticks([])
+        assert image is not None
+        fig.suptitle(
+            r"Input-gate spatial $\Delta g$ (mean over 256 hidden units and 32 channels)"
+            "\n0.5 point mass excluded"
+        )
+        fig.colorbar(
+            image,
+            ax=axes.ravel().tolist(),
+            shrink=0.82,
+        )
+        pdf_path = os.path.join(fig_dir, "02_input_spatial_maps_point_excluded.pdf")
+        fig.savefig(pdf_path, dpi=dpi, bbox_inches="tight", pad_inches=0.06)
+        print(f"Saved {pdf_path}")
+        _save(fig, os.path.join(fig_dir, "02_input_spatial_maps_point_excluded.png"), dpi)
+        return
+
     digit = arrays[f"spatial_digit_{point_key}"]
     limit = float(max(np.max(np.abs(sector)), np.max(np.abs(digit))))
     fig, axes = plt.subplots(4, 5, figsize=(11.2, 8.5))
@@ -132,7 +173,6 @@ def plot_spatial_maps(
         ax.set_xticks(range(6))
         ax.set_yticks(range(6))
         ax.tick_params(labelsize=6, length=2)
-    suffix = "included" if point_key == "point_included" else "excluded"
     fig.suptitle(
         r"Input-gate spatial $\Delta g$ (mean over 256 hidden units and 32 channels)"
         "\n"

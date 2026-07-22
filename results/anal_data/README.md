@@ -1,5 +1,5 @@
-# Legacy analysis data path
+# Analysis data
 
-Unambiguously classified analysis data now lives under
-`results/anal_index/<CATEGORY>/<script_name>/data/`. During migration, only files explicitly
-listed as ambiguous in `results/anal_index/MIGRATION_REPORT.json` may remain here.
+Categorized analysis data and run manifests live under the parallel tree
+`results/anal_data/<CATEGORY>/<script_name>/`. Existing unclassified legacy data remains directly
+below this root until it receives an explicit category.

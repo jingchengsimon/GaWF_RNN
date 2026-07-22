@@ -1,11 +1,12 @@
 # Analysis output index
 
-This is the only analysis output tree. Every run uses:
+This directory is the human-maintained analysis index and migration-notes location. Categorized
+outputs use parallel figure and data trees:
 
 ```text
-results/anal_index/<CATEGORY>/<script_name>/figs/
-results/anal_index/<CATEGORY>/<script_name>/data/
-results/anal_index/<CATEGORY>/<script_name>/manifest.json
+results/anal_figs/<CATEGORY>/
+results/anal_data/<CATEGORY>/<script_name>/
+results/anal_data/<CATEGORY>/<script_name>/manifest.json
 ```
 
 Categories:
@@ -19,9 +20,8 @@ Categories:
 - `G_behaviour`: task performance without gate internals
 - `H_controls`: confound, convergence, and invariance controls
 
-The unified seven-object decomposition is written below
-`D_variance_decomposition/unified/`. Gate and effective-weight unit axes index synapses, not
-neurons.
-
-Use `python utils_anal/migrate_analysis_outputs.py` for a dry-run migration report and add
-`--apply` only after reviewing every ambiguous file.
+The unified seven-object decomposition is written directly below
+`results/anal_figs/D_variance_decomposition/` and
+`results/anal_data/D_variance_decomposition/unified/` directories. Gate and effective-weight unit
+axes index synapses, not neurons. Existing legacy entries directly below `anal_figs/` and
+`anal_data/` remain unclassified until a later review.

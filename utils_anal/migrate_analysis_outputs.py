@@ -1,9 +1,10 @@
-"""Move legacy analysis outputs into the sole category-indexed result tree.
+"""Classify unstructured legacy analysis outputs for a reviewed migration.
 
 The command is a dry run unless ``--apply`` is passed.  It moves files rather than copying,
 never overwrites a destination, removes only symlinks from a previous index view, and reports
-ambiguous files without assigning them.  Empty legacy roots receive a README that points to
-``results/anal_index``.
+ambiguous files without assigning them.  This historical helper writes its reviewed migration
+report to ``results/anal_index``; normal analysis runs use the parallel ``anal_figs`` and
+``anal_data`` roots through :func:`utils_anal.anal_paths.output_dir`.
 """
 
 from __future__ import annotations
@@ -293,9 +294,10 @@ def _legacy_readme(root: Path, *, apply: bool) -> None:
     readme.parent.mkdir(parents=True, exist_ok=True)
     readme.write_text(
         "# Legacy analysis output path\n\n"
-        "Unambiguously classified outputs moved to "
-        "`results/anal_index/<CATEGORY>/<script_name>/`. Only files listed as ambiguous in "
-        "`results/anal_index/MIGRATION_REPORT.json` may remain here.\n",
+        "Unambiguously classified legacy outputs were moved by the reviewed migration helper. "
+        "Current analysis runs use parallel `results/anal_figs/` and `results/anal_data/` roots. "
+        "Only files listed as ambiguous in `results/anal_index/MIGRATION_REPORT.json` may remain "
+        "in this legacy root.\n",
         encoding="utf-8",
     )
 

@@ -35,7 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         default=str(output_dir("F_timing", "pop_act_switch_trajectory", "figs")),
-        help="Figure parent directory; writes one run-tag subdirectory.",
+        help="Category-level figure directory; writes the HTML directly here.",
     )
     parser.add_argument("--run_tag", default="")
     parser.add_argument("--out_html", default="switch_transient_3d.html")
@@ -189,9 +189,12 @@ def main() -> None:
         meta = json.loads(Path(meta_path).read_text(encoding="utf-8"))
         fig = build_trajectory_figure(pca_payload, meta, run_tag)
 
-    out_dir = os.path.join(args.save_dir, run_tag)
+    out_dir = args.save_dir
     os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, args.out_html)
+    out_name = args.out_html
+    if not out_name.startswith(f"{run_tag}__"):
+        out_name = f"{run_tag}__{out_name}"
+    out_path = os.path.join(out_dir, out_name)
     fig.write_html(out_path, include_plotlyjs=True, full_html=True)
     print(f"Saved {out_path}")
 

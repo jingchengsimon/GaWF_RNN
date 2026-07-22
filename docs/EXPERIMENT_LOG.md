@@ -204,6 +204,18 @@
   digit”及 gate 先于 readout 的完整 dissociation/causal claim 不成立。所有 marginal
   解释必须保留 joint-design confounding 限定。
 
+## 2026-07-19 — Continuous alignment 改用双侧 permutation test
+
+- **改动（Change）：** Part 2 continuous alignment 的 `diag-offdiag` significance 从只检验
+  正向 alignment 的 upper-tail permutation test 改为基于 `|null| >= |observed|` 的双侧
+  permutation test，并保留 `(1 + exceedances) / (B + 1)` finite-sample correction。
+- **原因（Reason）：** recurrent gate 的 `diag-offdiag` 为负；单侧正向检验只能给出
+  `p=1`，不能判断 negative alignment/anti-alignment 是否显著。
+- **证据（Evidence）：** 在 `B=1000` 下，input-sector、input-digit、recurrent-sector 与
+  recurrent-digit 的双侧 permutation p-value 均为 `1/1001=0.000999`。
+- **现状（Current）：** 四个 alignment contrast 均显著偏离 permutation null；input gate
+  为显著正向 diagonal alignment，recurrent gate 为显著负向 diagonal alignment。
+
 ## 2026-07-19 — GaWF gate axis、activation confound 与 robustness audit
 
 - **改动（Change）：** 对 corrected group-mean `Delta g` 做 provenance reconciliation；对
@@ -224,3 +236,41 @@
   仅适用于 SOURCE view；sector-selective units 在 DESTINATION view 反而 receive more gated
   recurrent input。Variance/tail 差异是 distribution crossing，不是计算不一致；最终 CI
   使用 8192-synapse、1000-draw trial bootstrap 并以 exact full-gate point recenter。
+
+## 2026-07-19 — GaWF/LSTM/GRU unit-level gate context decomposition
+
+- **改动（Change）：** 将 GaWF Figure 03 的 balanced sector×digit variance decomposition
+  迁移到 seed42 parameter-matched LSTM/GRU；LSTM 分析 input/forget/output gates，GRU
+  分析 reset/update gates，candidate activations 不计入 gate。另将 GaWF raw sigmoid
+  input/recurrent connection gates 沿 incoming-source axis 取 arithmetic mean，形成每个
+  destination hidden unit 一个标量的 derived projection，并用完全相同的 pooled-SS-first
+  decomposition 分析。
+- **原因（Reason）：** LSTM/GRU gate 是每个 hidden unit 一个标量，不能沿用 GaWF
+  `(destination, source)` connection-level gate 的解释；图题和 legend 因此明确标为
+  `unit-level gates`。
+- **证据（Evidence）：** 在同一 continuous test 的 57,568 frames 上使用 90 个
+  sector×digit cells、每格 `n=521`。手工 gate recurrence 与 PyTorch native outputs 的
+  max absolute difference 为 LSTM `2.74e-6`、GRU `2.75e-5`。Condition-mean sector fraction
+  为 LSTM input/forget/output `40.45/62.42/67.96%`，GRU reset/update
+  `63.27/56.84%`；对应 digit fraction 为 `45.87/24.74/19.00%` 与 `15.45/27.16%`。GaWF
+  destination-unit input-mean gate 的 sector/digit/interaction fraction 为
+  `92.66/4.21/3.13%`，recurrent-mean gate 为 `19.05/75.64/5.31%`。
+- **现状（Current）：** LSTM input gate 的 condition-mean digit component 略高于 sector；
+  其余四个 unit-level gates 均以 sector component 为主。Trial-total decomposition 仍由
+  residual 主导：LSTM/GRU 为 `69.22–84.19%`，GaWF destination-unit input/recurrent
+  projections 为 `81.04/60.57%`。因此 condition-mean fractions 不应解释为单 trial
+  variance 的占比；derived GaWF projection 也不替代 canonical synapse-level 结果。
+
+## 2026-07-19 — Sector input-gate mean 改用 sequential equal-n protocol
+
+- **改动（Change）：** 新增基于真实 pre-step feedback trajectory 的 input-gate sector mean，
+  对 9 个 sector 各抽取相同数量的 frames，并分别报告保留/排除 `0.5 point mass` 的
+  `3×3` spatial maps；历史 `fig2_sector_gate_mean` 保留为 one-step/reset 对照，max-gate
+  view 不再生成。
+- **原因（Reason）：** one-step/reset gate 由当前 frame 的 zero-state output 构造，并非模型
+  正常 recurrent inference 在该 timestep 实际应用的 gate；原始 sector frame counts 也不等量。
+- **证据（Evidence）：** sequential trajectory 在每个 32-frame sequence 内传递 hidden state
+  与 feedback，只有初始化 frame 的 applied gate 固定为 `0.5`；equal-n protocol 消除不同
+  sector frame 数对 raw mean 的直接加权差异。
+- **现状（Current）：** sequential equal-n included/excluded maps 作为更新后的主要 sigmoid
+  mean view；legacy one-step/reset mean 仅用于 protocol comparison。

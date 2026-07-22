@@ -19,7 +19,7 @@
 | `amarel-minigrid-paper-risk-memory-ckpt-58301376` | cancelled | `amarel` | 58301376 | 3 | `/cache/home/js3269/projects/FAW_RNN-minigrid-paper-20260715` | MiniGrid paper-aligned PPO MemoryS7 checkpoint recovery: LSTM-core, GRU, and GaWF |
 | `amarel-minigrid-paper-redblue-gru-ckpt-58301216` | queued | `amarel` | 58301216 | 1 | `/cache/home/js3269/projects/FAW_RNN-minigrid-paper-20260715` | MiniGrid paper-aligned PPO RedBlueDoors GRU checkpoint-enabled recovery |
 | `amarel-clutter-best6-u8-gru-seed1-58301179` | queued | `amarel` | 58301179 | 1 | `/cache/home/js3269/projects/aim3_gawf_rnn` | Clutter GRU seed1 150-epoch retry with the standard uint8 optimized DataLoader configuration |
-| `amarel-pong-fs4-stack4-l1-plain-2m-58285784` | queued | `amarel` | 58285784 | 35 | `/cache/home/js3269/projects/aim3_gawf_rnn` | Strict 6-action plain Pong fs4/stack4 L1: 7 models x 5 seeds, 2M |
+| `amarel-pong-fs4-stack4-l1-plain-2m-58285784` | completed | `amarel` | 58285784 | 35 | `/cache/home/js3269/projects/aim3_gawf_rnn` | Strict 6-action plain Pong fs4/stack4 L1: 7 models x 5 seeds, 2M |
 | `amarel-pong-fs1-stack1-mamba-seed4-58285574` | completed | `amarel` | 58285574 | 1 | `/cache/home/js3269/projects/aim3_gawf_rnn` | Strict 6-action Pong fs1/stack1 L1 Mamba seed4 recovery, 1M |
 | `amarel-pong-fs4-stack4-l2-1m-58285279` | completed | `amarel` | 58285279 | 50 | `/cache/home/js3269/projects/aim3_gawf_rnn` | Strict 6-action Pong fs4/stack4 L2: 5 models x Pong/Flickering x 5 seeds, 1M |
 | `amarel-minigrid-paper-redblue-lstm-core-58285280` | queued | `amarel` | 58285280 | 1 | `/cache/home/js3269/projects/FAW_RNN-minigrid-paper-20260715` | MiniGrid paper-aligned PPO RedBlueDoors LSTM-core fresh recovery |

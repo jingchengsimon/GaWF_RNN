@@ -113,7 +113,7 @@ def plot_mean_std_panels(
     accuracy_limits: bool = False,
     legend_loc: str = "best",
     xticks: tuple[int, ...] | None = None,
-    y_minima: tuple[float, float] | None = None,
+    y_limits: tuple[tuple[float, float], tuple[float, float]] | None = None,
     figsize: tuple[float, float] = (12.6, 4.9),
 ) -> None:
     """Plot two validation metrics using the mean and sample SD across completed seeds."""
@@ -133,8 +133,8 @@ def plot_mean_std_panels(
         axis.set_ylabel(ylabel)
         if accuracy_limits:
             axis.set_ylim(0.0, 105.0)
-        elif y_minima is not None:
-            axis.set_ylim(bottom=y_minima[panel_index])
+        elif y_limits is not None:
+            axis.set_ylim(*y_limits[panel_index])
         else:
             axis.set_ylim(bottom=0.0)
         if xticks is not None:
@@ -186,7 +186,7 @@ def main() -> None:
             suptitle="Clutter best-6 multi-seed validation loss (mean ± SD)",
             output_path=args.save_loss_png,
             xticks=(0, 50, 100, 150),
-            y_minima=(0.25, 0.15),
+            y_limits=((0.25, 1.25), (0.1, 0.5)),
             figsize=(12.6, 4.2),
         )
     if args.save_train_loss_png:

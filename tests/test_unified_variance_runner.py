@@ -79,7 +79,7 @@ def test_per_unit_draw_mean_rejects_non_matrix_input() -> None:
         _per_unit_draw_mean(np.ones(3, dtype=np.float32))
 
 
-def test_compact_aggregate_has_adjacent_bars_and_open_top_right_spines(
+def test_compact_aggregate_uses_two_object_rows_and_condition_mean_only(
     tmp_path, monkeypatch
 ) -> None:
     def result() -> RepeatedDecomposition:
@@ -100,12 +100,24 @@ def test_compact_aggregate_has_adjacent_bars_and_open_top_right_spines(
     destination = _plot_compact_aggregate(tmp_path, results)
     figure = unified_runner.plt.gcf()
     assert destination.is_file()
-    assert len(figure.axes) == 4
+    assert len(figure.axes) == 2
+    assert [tick.get_text() for tick in figure.axes[0].get_xticklabels()] == [
+        "Input gate",
+        "Recurrent gate",
+    ]
+    assert [tick.get_text() for tick in figure.axes[1].get_xticklabels()] == [
+        "Encoder\nactivation",
+        "Hidden\nactivation",
+    ]
     for axis in figure.axes:
         assert len(axis.patches) == 6
+        assert not axis.get_title()
         assert not axis.spines["top"].get_visible()
         assert not axis.spines["right"].get_visible()
-        assert len(axis.texts) == 0
+        assert not axis.texts
+        assert not axis.get_ylabel()
+        assert all(line.get_visible() for line in axis.get_ygridlines())
+        assert all(line.get_linestyle() == "-" for line in axis.get_ygridlines())
         for category_index in range(2):
             bars = sorted(
                 (axis.patches[factor_index * 2 + category_index] for factor_index in range(3)),
@@ -115,6 +127,30 @@ def test_compact_aggregate_has_adjacent_bars_and_open_top_right_spines(
                 [bars[0].get_x() + bars[0].get_width(), bars[1].get_x() + bars[1].get_width()],
                 [bars[1].get_x(), bars[2].get_x()],
             )
+        first_group_right = max(
+            axis.patches[factor_index * 2].get_x()
+            + axis.patches[factor_index * 2].get_width()
+            for factor_index in range(3)
+        )
+        second_group_left = min(
+            axis.patches[factor_index * 2 + 1].get_x() for factor_index in range(3)
+        )
+        np.testing.assert_allclose(
+            second_group_left - first_group_right,
+            1.5 * axis.patches[0].get_width(),
+        )
+    figure.canvas.draw()
+    legend = figure.legends[0]
+    legend_width = legend.get_window_extent().width
+    axis_bbox = figure.axes[0].get_window_extent()
+    assert legend_width <= axis_bbox.width
+    first_handle = legend.legend_handles[0].get_window_extent()
+    np.testing.assert_allclose(
+        first_handle.x0 + first_handle.width / 2.0,
+        axis_bbox.x0,
+        atol=1.0,
+    )
+    assert [text.get_text() for text in figure.texts] == ["Explained variance (%)"]
     original_close(figure)
 
 

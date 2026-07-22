@@ -1,10 +1,13 @@
-"""Analyze context variance of LSTM and GRU unit-level gates on Clutter.
+"""Analyze context variance of GaWF, LSTM, and GRU unit-level gates on Clutter.
 
 The analysis uses the same balanced 9-sector by 10-digit design as the GaWF gate
-context-specificity Figure 03.  LSTM contributes input, forget, and output gates;
-GRU contributes reset and update gates.  Candidate activations are intentionally excluded.
+context-specificity Figure 03. GaWF connection gates are projected to destination units by
+averaging incoming input or recurrent synapses before decomposition. LSTM contributes input,
+forget, and output gates; GRU contributes reset and update gates. Candidate activations are
+intentionally excluded.
 
-Inputs: trained LSTM/GRU checkpoints, the continuous Clutter test set, and reference labels.
+Inputs: a compact GaWF trajectory (and optional saved gate mmap arrays), trained LSTM/GRU
+checkpoints, the continuous Clutter test set, and reference labels.
 Outputs: compact JSON/NPZ/CSV summaries; no trial-by-unit gate tensor is saved.
 """
 
@@ -14,6 +17,7 @@ import argparse
 import csv
 import json
 import os
+from pathlib import Path
 import sys
 from dataclasses import dataclass
 from typing import Any
@@ -33,6 +37,7 @@ from utils_anal.anal_paths import output_dir
 
 
 GATE_NAMES = {
+    "gawf": ("input_mean", "recurrent_mean"),
     "lstm": ("input", "forget", "output"),
     "gru": ("reset", "update"),
 }
@@ -73,6 +78,28 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--gawf_input_manifest",
+        type=Path,
+        default=output_dir(
+            "D_variance_decomposition", "export_unified_variance_sources", "data"
+        )
+        / "input_manifest.json",
+        help="Manifest containing saved trial-level GaWF gate arrays.",
+    )
+    parser.add_argument(
+        "--include_gawf",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Include destination-unit means of GaWF incoming synapse gates.",
+    )
+    parser.add_argument("--gawf_gate_tau", type=float, default=0.5)
+    parser.add_argument(
+        "--reuse_existing_rnn",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Reuse aligned LSTM/GRU results already present in save_dir.",
+    )
+    parser.add_argument(
         "--save_dir",
         default=str(
             output_dir(
@@ -89,6 +116,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--seed", type=int, default=260718)
     parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--gawf_frame_batch_size", type=int, default=64)
     parser.add_argument("--chan_num", type=int, default=2)
     parser.add_argument("--device", choices=("cpu", "cuda", "mps"), default="cpu")
     parser.add_argument("--use_mmap", action=argparse.BooleanOptionalAction, default=True)
@@ -171,6 +199,266 @@ def _add_by_code(target: np.ndarray, values: np.ndarray, codes: np.ndarray) -> N
 
     for code in np.unique(codes):
         target[int(code)] += values[codes == code].sum(axis=0, dtype=np.float64)
+
+
+def _resolve_manifest_path(manifest_path: Path, value: str) -> Path:
+    """Resolve one path stored relative to a GaWF source manifest."""
+
+    path = Path(value).expanduser()
+    return path.resolve() if path.is_absolute() else (manifest_path.parent / path).resolve()
+
+
+def _accumulate_destination_unit_gate(
+    gate_path: Path,
+    *,
+    hidden_size: int,
+    source_size: int,
+    reference_labels: np.ndarray,
+    equal_joint_mask: np.ndarray,
+    batch_size: int,
+) -> UnitGateAggregate:
+    """Average incoming GaWF synapses per destination unit and stream balanced moments."""
+
+    if hidden_size <= 0 or source_size <= 0 or batch_size <= 0:
+        raise ValueError("hidden_size, source_size, and batch_size must be positive")
+    raw = np.load(gate_path, mmap_mode="r", allow_pickle=False)
+    n_frames = reference_labels.shape[0]
+    expected_size = n_frames * hidden_size * source_size
+    if raw.size != expected_size:
+        raise ValueError(
+            f"{gate_path} contains {raw.size} values; expected {expected_size} "
+            f"for ({n_frames}, {hidden_size}, {source_size})"
+        )
+    gates = raw.reshape(n_frames, hidden_size, source_size)
+    joint = reference_labels[:, 1] * 10 + reference_labels[:, 0]
+    aggregate = UnitGateAggregate(
+        joint_sum=np.zeros((90, hidden_size), dtype=np.float64),
+        joint_sumsq=np.zeros(hidden_size, dtype=np.float64),
+    )
+    qualified = 0
+    next_report = 200
+    for start in range(0, n_frames, batch_size):
+        end = min(start + batch_size, n_frames)
+        selected = equal_joint_mask[start:end]
+        if not np.any(selected):
+            continue
+        destination_means = np.mean(
+            np.asarray(gates[start:end][selected]), axis=2, dtype=np.float64
+        )
+        selected_codes = joint[start:end][selected]
+        _add_by_code(aggregate.joint_sum, destination_means, selected_codes)
+        aggregate.joint_sumsq += np.square(destination_means).sum(axis=0, dtype=np.float64)
+        qualified += int(destination_means.shape[0])
+        if qualified >= next_report:
+            print(
+                f"GaWF destination-unit gates: qualified frames={qualified}",
+                flush=True,
+            )
+            next_report = ((qualified // 200) + 1) * 200
+    expected_qualified = int(np.count_nonzero(equal_joint_mask))
+    if qualified != expected_qualified:
+        raise RuntimeError(
+            f"Accumulated {qualified} balanced GaWF frames; expected {expected_qualified}"
+        )
+    return aggregate
+
+
+def _accumulate_reconstructed_gawf_unit_gates(
+    trajectory_path: Path,
+    *,
+    reference_labels: np.ndarray,
+    equal_joint_mask: np.ndarray,
+    batch_size: int,
+    gate_tau: float,
+    device: torch.device,
+) -> tuple[dict[str, UnitGateAggregate], tuple[int, int], tuple[int, int]]:
+    """Reconstruct exact float32 GaWF gates and immediately reduce incoming synapses."""
+
+    if batch_size <= 0 or gate_tau <= 0.0:
+        raise ValueError("batch_size and gate_tau must be positive")
+    with np.load(trajectory_path, allow_pickle=False) as trajectory:
+        required = {"feedback", "labels", "U", "V", "weight_ih", "weight_hh"}
+        missing = sorted(required - set(trajectory.files))
+        if missing:
+            raise ValueError(f"GaWF trajectory is missing arrays: {missing}")
+        raw_feedback = np.asarray(trajectory["feedback"], dtype=np.float32)
+        if raw_feedback.ndim < 2:
+            raise ValueError("GaWF feedback must have a trailing feature dimension")
+        feedback = raw_feedback.reshape(-1, raw_feedback.shape[-1])
+        gawf_labels = np.asarray(trajectory["labels"], dtype=np.int64).reshape(-1, 2)
+        u = np.asarray(trajectory["U"], dtype=np.float32)
+        v = np.asarray(trajectory["V"], dtype=np.float32)
+        weight_ih_shape = tuple(int(value) for value in trajectory["weight_ih"].shape)
+        weight_hh_shape = tuple(int(value) for value in trajectory["weight_hh"].shape)
+    if not np.array_equal(gawf_labels, reference_labels):
+        raise RuntimeError("GaWF trajectory labels do not align with the LSTM/GRU labels")
+    hidden_size, input_size = weight_ih_shape
+    if u.shape != (hidden_size, feedback.shape[1]):
+        raise ValueError(f"Unexpected GaWF U shape {u.shape}")
+    if v.shape != (feedback.shape[1], input_size + hidden_size):
+        raise ValueError(f"Unexpected GaWF V shape {v.shape}")
+    if weight_hh_shape != (hidden_size, hidden_size):
+        raise ValueError(f"Unexpected GaWF recurrent weight shape {weight_hh_shape}")
+    aggregates = {
+        name: UnitGateAggregate(
+            joint_sum=np.zeros((90, hidden_size), dtype=np.float64),
+            joint_sumsq=np.zeros(hidden_size, dtype=np.float64),
+        )
+        for name in GATE_NAMES["gawf"]
+    }
+    u_tensor = torch.from_numpy(u).to(device=device)
+    v_tensor = torch.from_numpy(v).to(device=device)
+    joint = reference_labels[:, 1] * 10 + reference_labels[:, 0]
+    qualified = 0
+    next_report = 200
+    with torch.no_grad():
+        for start in range(0, feedback.shape[0], batch_size):
+            end = min(start + batch_size, feedback.shape[0])
+            selected = equal_joint_mask[start:end]
+            if not np.any(selected):
+                continue
+            feedback_tensor = torch.from_numpy(feedback[start:end][selected]).to(device=device)
+            scaled_u = u_tensor.unsqueeze(0) * feedback_tensor.clamp(-10, 10).unsqueeze(1)
+            gates = torch.sigmoid(torch.matmul(scaled_u, v_tensor) / gate_tau)
+            gate_values = gates.cpu().numpy()
+            destination_means = {
+                "input_mean": np.mean(
+                    gate_values[..., :input_size], axis=2, dtype=np.float64
+                ),
+                "recurrent_mean": np.mean(
+                    gate_values[..., input_size:], axis=2, dtype=np.float64
+                ),
+            }
+            selected_codes = joint[start:end][selected]
+            for gate_name, values in destination_means.items():
+                aggregate = aggregates[gate_name]
+                _add_by_code(aggregate.joint_sum, values, selected_codes)
+                aggregate.joint_sumsq += np.square(values).sum(
+                    axis=0, dtype=np.float64
+                )
+            qualified += int(selected_codes.size)
+            if qualified >= next_report:
+                print(
+                    f"GaWF destination-unit gates: qualified frames={qualified}",
+                    flush=True,
+                )
+                next_report = ((qualified // 200) + 1) * 200
+    expected_qualified = int(np.count_nonzero(equal_joint_mask))
+    if qualified != expected_qualified:
+        raise RuntimeError(
+            f"Accumulated {qualified} balanced GaWF frames; expected {expected_qualified}"
+        )
+    return aggregates, weight_ih_shape, weight_hh_shape
+
+
+def analyze_gawf(
+    manifest_path: Path,
+    trajectory_path: Path,
+    reference_labels: np.ndarray,
+    equal_joint_mask: np.ndarray,
+    batch_size: int,
+    gate_tau: float,
+    device: torch.device,
+) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+    """Analyze destination-unit means from saved GaWF input/recurrent gate matrices."""
+
+    manifest_path = manifest_path.expanduser().resolve()
+    trajectory_path = trajectory_path.expanduser().resolve()
+    with np.load(trajectory_path, allow_pickle=False) as trajectory:
+        gawf_labels = np.asarray(trajectory["labels"], dtype=np.int64).reshape(-1, 2)
+        weight_ih_shape = tuple(int(value) for value in trajectory["weight_ih"].shape)
+        weight_hh_shape = tuple(int(value) for value in trajectory["weight_hh"].shape)
+    if not np.array_equal(gawf_labels, reference_labels):
+        raise RuntimeError("Saved GaWF labels do not align with the LSTM/GRU reference labels")
+    if len(weight_ih_shape) != 2 or len(weight_hh_shape) != 2:
+        raise ValueError("Saved GaWF weights must both be matrices")
+    hidden_size, input_size = weight_ih_shape
+    if weight_hh_shape != (hidden_size, hidden_size):
+        raise ValueError(
+            f"Incompatible GaWF weight shapes: input={weight_ih_shape}, "
+            f"recurrent={weight_hh_shape}"
+        )
+    equal_n = int(np.count_nonzero(equal_joint_mask)) // 90
+    report: dict[str, Any] = {
+        "hidden_size": hidden_size,
+        "gate_level": "destination_unit_mean_of_incoming_synapses",
+        "source_axis_reduction": "arithmetic_mean_of_raw_sigmoid_gates",
+        "gate_tau": gate_tau,
+        "gates": {},
+    }
+    arrays: dict[str, np.ndarray] = {}
+    gate_specs = (
+        ("input_mean", "input_gate", input_size),
+        ("recurrent_mean", "recurrent_gate", hidden_size),
+    )
+    if manifest_path.is_file():
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_trajectory_value = payload.get("trajectory_npz")
+        if not isinstance(manifest_trajectory_value, str):
+            raise ValueError("GaWF input manifest must contain trajectory_npz")
+        manifest_trajectory_path = _resolve_manifest_path(
+            manifest_path, manifest_trajectory_value
+        )
+        with np.load(manifest_trajectory_path, allow_pickle=False) as manifest_trajectory:
+            manifest_labels = np.asarray(
+                manifest_trajectory["labels"], dtype=np.int64
+            ).reshape(-1, 2)
+            manifest_ih_shape = tuple(
+                int(value) for value in manifest_trajectory["weight_ih"].shape
+            )
+            manifest_hh_shape = tuple(
+                int(value) for value in manifest_trajectory["weight_hh"].shape
+            )
+        if not np.array_equal(manifest_labels, reference_labels):
+            raise RuntimeError("Saved GaWF mmap labels do not align with reference labels")
+        if manifest_ih_shape != weight_ih_shape or manifest_hh_shape != weight_hh_shape:
+            raise RuntimeError("Saved GaWF mmap weight shapes do not match compact trajectory")
+        objects = payload.get("objects")
+        if not isinstance(objects, dict):
+            raise ValueError("GaWF input manifest must contain an objects dictionary")
+        report["source_manifest"] = str(manifest_path)
+        report["gate_source"] = "saved_float32_mmap"
+        aggregates = {}
+        for gate_name, object_name, source_size in gate_specs:
+            object_spec = objects.get(object_name)
+            if not isinstance(object_spec, dict) or not isinstance(
+                object_spec.get("path"), str
+            ):
+                raise ValueError(f"GaWF input manifest is missing objects.{object_name}.path")
+            gate_path = _resolve_manifest_path(manifest_path, object_spec["path"])
+            aggregates[gate_name] = _accumulate_destination_unit_gate(
+                gate_path,
+                hidden_size=hidden_size,
+                source_size=source_size,
+                reference_labels=reference_labels,
+                equal_joint_mask=equal_joint_mask,
+                batch_size=batch_size,
+            )
+    else:
+        print(
+            f"GaWF source manifest not found at {manifest_path}; reconstructing gates "
+            "from compact trajectory",
+            flush=True,
+        )
+        report["source_trajectory"] = str(trajectory_path)
+        report["gate_source"] = "reconstructed_float32_from_feedback_U_V"
+        aggregates, reconstructed_ih_shape, reconstructed_hh_shape = (
+            _accumulate_reconstructed_gawf_unit_gates(
+                trajectory_path,
+                reference_labels=reference_labels,
+                equal_joint_mask=equal_joint_mask,
+                batch_size=batch_size,
+                gate_tau=gate_tau,
+                device=device,
+            )
+        )
+        if reconstructed_ih_shape != weight_ih_shape or reconstructed_hh_shape != weight_hh_shape:
+            raise RuntimeError("Reconstructed GaWF gate shapes changed during analysis")
+    for gate_name, _object_name, _source_size in gate_specs:
+        gate_report, cell_mean = _summarize_gate(aggregates[gate_name], equal_n)
+        report["gates"][gate_name] = gate_report
+        arrays[f"gawf_{gate_name}_equal_cell_mean"] = cell_mean
+    return report, arrays
 
 
 def _summarize_gate(
@@ -324,8 +612,54 @@ def _write_csv(report: dict[str, Any], path: str) -> None:
                     )
 
 
+def _load_existing_rnn_results(
+    report_path: Path,
+    arrays_path: Path,
+    *,
+    args: argparse.Namespace,
+    n_frames: int,
+    equal_n: int,
+) -> tuple[dict[str, Any], dict[str, np.ndarray]] | None:
+    """Reuse aligned LSTM/GRU results, rejecting any provenance mismatch."""
+
+    if not args.reuse_existing_rnn or not report_path.is_file() or not arrays_path.is_file():
+        return None
+    existing = json.loads(report_path.read_text(encoding="utf-8"))
+    expected_metadata = {
+        "dataset": args.data_suffix,
+        "n_frames": n_frames,
+        "balance_seed": int(args.seed),
+        "equal_joint_cell_n": equal_n,
+    }
+    mismatches = {
+        key: (existing.get(key), expected)
+        for key, expected in expected_metadata.items()
+        if existing.get(key) != expected
+    }
+    for model_type, checkpoint in (("lstm", args.lstm_ckpt), ("gru", args.gru_ckpt)):
+        observed = existing.get("models", {}).get(model_type, {}).get("checkpoint")
+        expected = os.path.abspath(checkpoint)
+        if observed != expected:
+            mismatches[f"{model_type}_checkpoint"] = (observed, expected)
+    if mismatches:
+        formatted = ", ".join(
+            f"{key}: observed={observed!r}, expected={expected!r}"
+            for key, (observed, expected) in mismatches.items()
+        )
+        raise RuntimeError(f"Existing LSTM/GRU report is not reusable: {formatted}")
+    models = {name: existing["models"][name] for name in ("lstm", "gru")}
+    with np.load(arrays_path, allow_pickle=False) as archive:
+        arrays = {
+            key: np.asarray(archive[key])
+            for key in archive.files
+            if key.startswith(("lstm_", "gru_"))
+        }
+    print(f"Reusing aligned LSTM/GRU results from {report_path}", flush=True)
+    return models, arrays
+
+
 def main() -> None:
-    """Run both model analyses and save compact outputs."""
+    """Run GaWF/LSTM/GRU analyses and save compact outputs."""
 
     args = parse_args()
     os.makedirs(args.save_dir, exist_ok=True)
@@ -347,24 +681,50 @@ def main() -> None:
     _marginal_masks, equal_joint_mask = _balanced_masks(digits, sectors, args.seed)
     equal_n = int(np.count_nonzero(equal_joint_mask)) // 90
 
-    models: dict[str, Any] = {}
-    arrays: dict[str, np.ndarray] = {}
-    for model_type, checkpoint in (("lstm", args.lstm_ckpt), ("gru", args.gru_ckpt)):
-        model_report, model_arrays = analyze_model(
-            model_type,
-            checkpoint,
-            dataset,
-            num_pos,
+    json_path = Path(args.save_dir) / "unit_gate_context_variance.json"
+    npz_path = Path(args.save_dir) / "unit_gate_context_variance.npz"
+    csv_path = Path(args.save_dir) / "unit_gate_context_variance.csv"
+    reused = _load_existing_rnn_results(
+        json_path,
+        npz_path,
+        args=args,
+        n_frames=reference_labels.shape[0],
+        equal_n=equal_n,
+    )
+    if reused is None:
+        models: dict[str, Any] = {}
+        arrays: dict[str, np.ndarray] = {}
+    else:
+        models, arrays = reused
+    if args.include_gawf:
+        gawf_report, gawf_arrays = analyze_gawf(
+            args.gawf_input_manifest,
+            Path(args.trajectory),
             reference_labels,
             equal_joint_mask,
+            args.gawf_frame_batch_size,
+            args.gawf_gate_tau,
             device,
-            args,
         )
-        models[model_type] = model_report
-        arrays.update(model_arrays)
+        models["gawf"] = gawf_report
+        arrays.update(gawf_arrays)
+    if reused is None:
+        for model_type, checkpoint in (("lstm", args.lstm_ckpt), ("gru", args.gru_ckpt)):
+            model_report, model_arrays = analyze_model(
+                model_type,
+                checkpoint,
+                dataset,
+                num_pos,
+                reference_labels,
+                equal_joint_mask,
+                device,
+                args,
+            )
+            models[model_type] = model_report
+            arrays.update(model_arrays)
 
     report = {
-        "analysis": "LSTM/GRU context variance decomposition of unit-level gates",
+        "analysis": "GaWF/LSTM/GRU context variance decomposition of unit-level gates",
         "dataset": args.data_suffix,
         "n_sequences": int(len(dataset)),
         "sequence_length": int(reference_labels.shape[0] // len(dataset)),
@@ -373,18 +733,25 @@ def main() -> None:
         "equal_joint_cell_n": equal_n,
         "labels": {"digit_levels": 10, "sector_levels": 9},
         "gate_convention": {
+            "gawf": (
+                "destination-unit arithmetic mean across raw sigmoid input or recurrent "
+                "synapse gates"
+            ),
             "lstm": "PyTorch i/f/g/o order; sigmoid i/f/o reported, candidate g excluded",
             "gru": "PyTorch r/z/n order; sigmoid reset/update reported, candidate n excluded",
         },
         "models": models,
     }
-    json_path = os.path.join(args.save_dir, "unit_gate_context_variance.json")
-    npz_path = os.path.join(args.save_dir, "unit_gate_context_variance.npz")
-    csv_path = os.path.join(args.save_dir, "unit_gate_context_variance.csv")
-    with open(json_path, "w", encoding="utf-8") as file_obj:
+    json_partial = json_path.with_name(f"{json_path.stem}.partial{json_path.suffix}")
+    npz_partial = npz_path.with_name(f"{npz_path.stem}.partial{npz_path.suffix}")
+    csv_partial = csv_path.with_name(f"{csv_path.stem}.partial{csv_path.suffix}")
+    with json_partial.open("w", encoding="utf-8") as file_obj:
         json.dump(report, file_obj, indent=2)
-    np.savez_compressed(npz_path, **arrays)
-    _write_csv(report, csv_path)
+    np.savez_compressed(npz_partial, **arrays)
+    _write_csv(report, str(csv_partial))
+    json_partial.replace(json_path)
+    npz_partial.replace(npz_path)
+    csv_partial.replace(csv_path)
     print(f"Saved {json_path}")
     print(f"Saved {npz_path}")
     print(f"Saved {csv_path}")

@@ -195,7 +195,7 @@ def _open_partial_arrays(
             *final_paths.values(),
             *compact_paths,
             *compact_partial_paths,
-            data_dir.parent / "manifest.json",
+            data_dir / "manifest.json",
         )
         if path.exists()
     ]

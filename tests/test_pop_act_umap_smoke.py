@@ -95,17 +95,17 @@ class PopActDpca3DTests(unittest.TestCase):
 
     def test_output_dirs_keep_figures_and_data_parallel(self) -> None:
         fig_dir, data_dir = resolve_dpca_output_dirs(
-            "results/anal_index/D_variance_decomposition/pop_act_umap/figs",
+            "results/anal_figs/D_variance_decomposition/pop_act_umap",
             "",
             "model_run",
         )
         self.assertEqual(
             fig_dir,
-            "results/anal_index/D_variance_decomposition/pop_act_umap/figs/model_run",
+            "results/anal_figs/D_variance_decomposition",
         )
         self.assertEqual(
             data_dir,
-            "results/anal_index/D_variance_decomposition/pop_act_umap/data/model_run",
+            "results/anal_data/D_variance_decomposition/pop_act_umap/model_run",
         )
 
 

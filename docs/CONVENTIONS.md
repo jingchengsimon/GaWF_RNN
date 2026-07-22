@@ -119,15 +119,25 @@ another internal representation.
 | `results/train_figs/rl/{atari,minigrid}/` | curated RL learning curves |
 | `results/train_figs/clutter/` | Clutter training figures |
 | `results/archive/` | historical, superseded, validation-only, or protocol-mismatched results |
-| `results/anal_index/<CATEGORY>/<module>/data/` | analysis arrays and metadata |
-| `results/anal_index/<CATEGORY>/<module>/figs/` | figures |
-| `results/anal_index/<CATEGORY>/<module>/manifest.json` | run provenance and key numbers |
+| `results/anal_data/<CATEGORY>/<module>/` | analysis arrays, metadata, and run manifest |
+| `results/anal_figs/<CATEGORY>/` | figures (flat within each category) |
+| `results/anal_index/` | human-maintained index and migration notes |
+| `../../6-Writing/Aim3/Figures/` | official publication PDFs |
 | `experiments/generalization/artifacts/` | aggregated experiment tables/configs |
 | `experiments/amarel/artifacts/<run>/` | ignored Slurm logs/status artifacts |
 
-The analysis/figure module directory matches the producing script basename. Analysis scripts
-must obtain these directories from `utils_anal.anal_paths.output_dir`; legacy
-`results/anal_data/` and `results/anal_figs/` are migration-only paths and must not be recreated.
+Analysis data remains grouped by producing script basename, while figures are flat within each
+category. Analysis scripts must obtain these directories from `utils_anal.anal_paths.output_dir`.
+Existing unclassified legacy entries may remain directly below `results/anal_data/` or
+`results/anal_figs/` until they receive an explicit category.
+
+Development PNGs remain in their canonical result directories. Official publication PDFs are
+written to `../../6-Writing/Aim3/Figures/`; set `AIM3_PUBLICATION_FIGURES_DIR` to override this
+sibling-tree location on another host. A missing sibling writing tree does not authorize creating
+one remotely: configure the environment variable explicitly or skip the publication PDF.
+`core_objects_aggregate_2x2.png` and `best6_multiseed_summary_2x3.png` remain in their canonical
+analysis/training result directories; their same-basename PDFs are official publication outputs
+and therefore live only in the publication figure directory.
 
 Training jobs may first write a flat suffix directory as a staging artifact. Curated copies are
 then placed in the task hierarchy above. Inside curated Atari paths, omit the redundant
@@ -186,7 +196,13 @@ The symmetric GaWF relevance/timing analysis writes its decomposition, relevance
 control artifacts under categories D, E, F, and H respectively. Part 2 must preserve both
 `interaction_excluded` and
 `interaction_included` results; Part 3 defines gate reconfiguration as a strict
-`negative -> nonnegative` crossing after the switch.
+`negative -> nonnegative` crossing after the switch. Continuous-alignment significance uses a
+two-sided permutation test of the absolute `diagonal mean - off-diagonal mean` contrast.
+The relevance-distribution extensions use the same primary interaction-excluded top-10% masks as
+Part 2 and write one normalized raw-gate density figure per context. Recurrent/sector outputs stay
+below `E_relevance_alignment/gawf_recurrent_sector_relevance_distributions/`; input/sector,
+input/digit, and recurrent/digit outputs are written below
+`E_relevance_alignment/gawf_remaining_relevance_distributions/`.
 
 The GaWF gate robustness audit writes compact JSON/CSV/NPZ results and figures below its
 category-indexed script directories. Source/destination relevance, interaction policy, and
@@ -194,12 +210,46 @@ top-percent
 selection must remain explicit columns. Final variance-fraction CIs state whether they are full
 gate or sampled-synapse intervals; sampled intervals are recentered on the exact full-gate point.
 
-The LSTM/GRU unit-gate context analysis writes `unit_gate_context_variance.{json,csv,npz}` to
-`results/anal_index/D_variance_decomposition/rnn_unit_gate_context_specificity/data/` and
-Figure-03-style plots to the matching `figs/` directory. LSTM reports sigmoid
+The sequential sector input-gate mean analysis writes
+`sector_gate_mean_sequential_equal_n.npz`,
+`sector_gate_mean_sequential_equal_n_meta.json`, and paired
+`fig2_sector_gate_mean_sequential_equal_n_point_{included,excluded}.{png,pdf}` artifacts below
+`B_gate_by_context/sector_sigmoid_gate_sequential/`. It reconstructs the gates actually applied at
+each timestep from aligned pre-step feedback and uses an equal-n frame sample across sectors. The
+historical `fig2_sector_gate_mean.{png,pdf}` remains the explicitly labelled one-step/reset view;
+the obsolete max-gate figure is not regenerated.
+
+The GaWF/LSTM/GRU unit-gate context analysis writes `unit_gate_context_variance.{json,csv,npz}` to
+`results/anal_data/D_variance_decomposition/rnn_unit_gate_context_specificity/` and
+three Figure-03-style per-model PNGs directly to
+`results/anal_figs/D_variance_decomposition/`. The poster summary writes
+`03_unit_gate_marginalization_1x3.png` beside them and writes the official
+`03_unit_gate_marginalization_1x3.pdf` to the publication figure directory. It contains only the
+condition-mean marginalization panels; individual per-model PDFs are not generated. For GaWF,
+`input_mean` and
+`recurrent_mean` are destination-unit projections formed by arithmetically averaging raw sigmoid
+gates across the corresponding incoming synapse axis on each frame. They are derived unit-level
+views and do not replace the canonical connection-level GaWF results. LSTM reports sigmoid
 input/forget/output gates and GRU reports sigmoid reset/update gates; candidate activations are
-excluded. Every plot title and legend must state that these are `unit-level gates`, because they
-are not GaWF connection-level gate matrices.
+excluded. Plot titles and legends must distinguish native LSTM/GRU `unit-level gates` from the
+derived GaWF `destination-unit projection` and from GaWF connection-level gate matrices in the
+individual diagnostic figures. The compact poster summary uses the shorter panel titles
+`GaWF afferent gates`, `LSTM gates`, and `GRU gates`; its caption or surrounding text carries the
+unit-projection distinction.
+
+The GaWF gate-distribution summary writes `gawf_gate_histogram_summary_2x4.png` and
+`01_pooled_all_gate_histogram.png` directly below `results/anal_figs/A_raw_gate/`; only the
+all-gate panel also has a local PDF by default. The all-gate figure combines input and recurrent
+pooled histograms. The retained `2x4` filename is historical: the rendered layout is four rows
+(pooled, weight-sign, sector, digit) by two columns (input, recurrent) so each panel is large
+enough for its detail inset. Curves show per-bin probability percentages (`Probability (%)`), so
+each curve's bin values sum to 100%. Mean/median reference lines appear in every 4-by-2 subplot; the
+standalone all-gate panel shows only the pooled probability curve. All panels use a small x-axis
+margin beyond 0 and 1 while retaining ticks over the observed gate range. To show the narrow
+central peak without distorting the full distribution, the standalone all-gate figure and both
+pooled/weight-sign columns of the 4-by-2 summary include 0.48--0.52 zoom insets (one pooled inset;
+separate positive- and negative-weight insets for each weight-sign panel). Publication copies are
+opt-in via `--publication_fig_dir` and are not created by the default command.
 
 ## Compatibility and naming changes
 

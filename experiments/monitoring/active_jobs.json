@@ -56,18 +56,6 @@
       "updated_at": "2026-07-18T17:37:52+00:00"
     },
     {
-      "id": "amarel-pong-fs4-stack4-l1-plain-2m-58285784",
-      "description": "Strict 6-action plain Pong fs4/stack4 L1: 7 models x 5 seeds, 2M",
-      "host": "amarel",
-      "status": "queued",
-      "job_ids": [
-        "58285784"
-      ],
-      "run_ids": [],
-      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
-      "updated_at": "2026-07-18T05:04:00+00:00"
-    },
-    {
       "id": "amarel-minigrid-paper-redblue-lstm-core-58285280",
       "description": "MiniGrid paper-aligned PPO RedBlueDoors LSTM-core fresh recovery",
       "host": "amarel",

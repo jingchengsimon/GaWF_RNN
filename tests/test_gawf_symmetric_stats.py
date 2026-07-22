@@ -14,9 +14,17 @@ from utils_anal.gawf_symmetric_stats import (
     joint_design,
     paired_lead_test,
     relevance_masks,
+    two_sided_permutation_p_value,
     trial_relevance_moments,
     two_way_decomposition,
 )
+
+
+def test_two_sided_permutation_p_value_is_symmetric_in_effect_direction() -> None:
+    null = np.asarray([-0.4, -0.1, 0.1, 0.4])
+    positive = two_sided_permutation_p_value(0.5, null)
+    negative = two_sided_permutation_p_value(-0.5, null)
+    assert positive == negative == 0.2
 
 
 def _balanced_design(repeats: int = 5) -> tuple[np.ndarray, np.ndarray]:

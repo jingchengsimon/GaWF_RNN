@@ -1,8 +1,8 @@
 """Plot saved symmetric GaWF relevance and switch-timing outputs.
 
 Inputs are the compact NPZ/JSON artifacts produced by
-``utils_anal/gawf_symmetric_relevance_timing.py``. Outputs are six independent PNG figures in
-``--save_dir``; this module never loads a model or raw stimulus.
+``utils_anal/gawf_symmetric_relevance_timing.py``. Outputs are seven independent PNG figures plus
+a PDF copy of the continuous-alignment figure; this module never loads a model or raw stimulus.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ import numpy as np
 
 
 COLORS = {"sector": "#3b82f6", "digit": "#f97316"}
+ALIGNMENT_COLOR_LIMIT = 0.6
 
 
 def parse_args() -> argparse.Namespace:
@@ -176,25 +177,90 @@ def plot_part2_effects(report: dict, save_dir: str, dpi: int) -> None:
     _save(fig, os.path.join(save_dir, "part2_relevance_effects.png"), dpi)
 
 
-def plot_part2_alignment(data: np.lib.npyio.NpzFile, save_dir: str, dpi: int) -> None:
-    """Plot the four primary continuous alignment matrices."""
+def plot_part2_top10_excluded_effects(report: dict, save_dir: str, dpi: int) -> None:
+    """Plot top-10% interaction-excluded effects with gate type on the category axis."""
 
+    cells = report["primary_validation_estimate_test_effect"]["interaction_excluded"]["cells"]
+    positions = np.arange(2)
+    width = 0.34
+    fig, axis = plt.subplots(figsize=(6.4, 4.6))
+    for factor_index, factor in enumerate(("sector", "digit")):
+        points, lower, upper = [], [], []
+        for gate in ("input", "recurrent"):
+            cell = cells[f"{gate}_{factor}"]["top_percent"]["10"]
+            points.append(cell["cohens_d"])
+            lower.append(cell["cohens_d"] - cell["bootstrap_ci95"][0])
+            upper.append(cell["bootstrap_ci95"][1] - cell["cohens_d"])
+        offset = (factor_index - 0.5) * width
+        bars = axis.bar(
+            positions + offset,
+            points,
+            width,
+            color=COLORS[factor],
+            alpha=0.82,
+            label=factor.capitalize(),
+        )
+        axis.errorbar(
+            positions + offset,
+            points,
+            yerr=np.asarray([lower, upper]),
+            fmt="none",
+            ecolor="black",
+            capsize=2,
+            linewidth=0.8,
+        )
+        axis.bar_label(bars, fmt="%.2f", padding=3, fontsize=9)
+    axis.axhline(0, color="black", linewidth=0.8)
+    axis.set_xticks(positions, ["Input gate", "Recurrent gate"])
+    axis.set_ylabel("Cohen's d: relevant minus other selective units")
+    axis.set_title("Top 10% relevance effects (interaction excluded)")
+    axis.grid(axis="y", alpha=0.2)
+    axis.spines["top"].set_visible(False)
+    axis.spines["right"].set_visible(False)
+    axis.legend(frameon=False)
+    axis.margins(y=0.16)
+    fig.tight_layout()
+    _save(fig, os.path.join(save_dir, "part2_relevance_effects_top10_excluded.png"), dpi)
+
+
+def plot_part2_alignment(data: np.lib.npyio.NpzFile, save_dir: str, dpi: int) -> None:
+    """Plot the four primary continuous alignment matrices and diagonal contrasts."""
+
+    cells = tuple(
+        zip(
+            ("input", "input", "recurrent", "recurrent"),
+            ("sector", "digit", "sector", "digit"),
+        )
+    )
+    matrices = [
+        data[f"primary_interaction_excluded_{gate}_{factor}_alignment_matrix"]
+        for gate, factor in cells
+    ]
     fig, axes = plt.subplots(2, 2, figsize=(8.8, 7.7))
-    for axis, gate, factor in zip(
-        axes.flat,
-        ("input", "input", "recurrent", "recurrent"),
-        ("sector", "digit", "sector", "digit"),
-    ):
-        key = f"primary_interaction_excluded_{gate}_{factor}_alignment_matrix"
-        matrix = data[key]
-        limit = max(1e-8, float(np.abs(matrix).max()))
-        image = axis.imshow(matrix, cmap="RdBu_r", vmin=-limit, vmax=limit)
+    for axis, (gate, factor), matrix in zip(axes.flat, cells, matrices):
+        if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+            raise ValueError(f"Alignment matrix must be square, got {matrix.shape}")
+        diagonal_mask = np.eye(matrix.shape[0], dtype=bool)
+        diagonal_minus_off_diagonal = float(
+            matrix[diagonal_mask].mean() - matrix[~diagonal_mask].mean()
+        )
+        image = axis.imshow(
+            matrix,
+            cmap="RdBu_r",
+            vmin=-ALIGNMENT_COLOR_LIMIT,
+            vmax=ALIGNMENT_COLOR_LIMIT,
+        )
         fig.colorbar(image, ax=axis, fraction=0.046, pad=0.04)
-        axis.set_title(f"{gate} gate / {factor}")
+        axis.set_title(
+            f"{gate} gate / {factor}\n" f"diag-offdiag = {diagonal_minus_off_diagonal:.3f}"
+        )
         axis.set_xlabel("gate context")
         axis.set_ylabel("activation context")
     fig.suptitle("Part 2 — activation/gate tuning cosine alignment")
     fig.tight_layout()
+    pdf_path = os.path.join(save_dir, "part2_continuous_alignment.pdf")
+    fig.savefig(pdf_path, dpi=dpi, bbox_inches="tight", pad_inches=0.06)
+    print(f"Saved: {pdf_path}")
     _save(fig, os.path.join(save_dir, "part2_continuous_alignment.png"), dpi)
 
 
@@ -273,7 +339,9 @@ def main() -> None:
     with np.load(part1_path) as part1:
         plot_part1_selectivity(part1, args.decomposition_fig_dir, args.dpi)
         plot_architecture_axis(part1, args.decomposition_fig_dir, args.dpi)
-    plot_part2_effects(_load_json(part2_json_path), args.relevance_fig_dir, args.dpi)
+    part2_report = _load_json(part2_json_path)
+    plot_part2_effects(part2_report, args.relevance_fig_dir, args.dpi)
+    plot_part2_top10_excluded_effects(part2_report, args.relevance_fig_dir, args.dpi)
     with np.load(part2_npz_path) as part2:
         plot_part2_alignment(part2, args.relevance_fig_dir, args.dpi)
     with np.load(part3_path) as part3:

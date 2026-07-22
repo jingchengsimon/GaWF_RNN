@@ -110,11 +110,13 @@ from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset
 Analysis requirements:
 
 - Resolve every analysis data/figure destination with
-  `utils_anal.anal_paths.output_dir(category, script_name, kind)`. The only output tree is
-  `results/anal_index/<CATEGORY>/<script_name>/{data,figs}/`; do not recreate the legacy split
-  roots or a symlink index view.
-- Each run writes a sibling `manifest.json` containing script path, commit, timestamp, category,
-  files written, and a flat dictionary of key numerical results.
+  `utils_anal.anal_paths.output_dir(category, script_name, kind)`. Figures go directly to
+  `results/anal_figs/<CATEGORY>/`; data and the run manifest go to the parallel
+  `results/anal_data/<CATEGORY>/<script_name>/`. Keep `results/anal_index/` for index and
+  migration notes; do not recreate nested `data/` or `figs/` directories there.
+- Each run writes `manifest.json` in its `anal_data` directory containing script path, commit,
+  timestamp, category, both parallel roots, files written, and a flat dictionary of key numerical
+  results.
 - Accumulate averages/statistics in float64 and cast to float32 before saving.
 - Use `.npy` for one array and `.npz` for related arrays.
 - Save companion metadata with mode, selected index, frame/sample counts, model/input sizes,
@@ -133,8 +135,24 @@ unit axes index synapses, not neurons. Trial-level gate analysis must stream sec
 under an explicit memory budget; a trial-by-synapse array is forbidden. Object figures label each
 aggregate bar with its 20-draw mean and show per-unit fractions as violins after averaging each
 unit across the 20 draws; the black line marks the mean of those draw-averaged unit values.
-The additional compact 2-by-2 aggregate figure compares condition-mean and trial-level results
-for input gate, recurrent gate, encoder activation, and hidden activation with adjacent factor bars.
+The additional compact core-object aggregate figure reports condition-mean aggregate means only.
+It uses two single-axis rows: input/recurrent gates in the first row and encoder/hidden activation
+in the second, with the representation names on the x-axis and adjacent factor bars. It follows
+the poster style below: one shared `Explained variance (%)` label, no numeric bar labels, one
+shared legend, aligned `0`-to-`100` numeric ticks without repeated percent signs, adjacent bars
+matching the physical width-to-height ratio of the GRU afferent-gate panel, a taller two-row canvas,
+exactly `1.5` bar widths of clear space between the two object groups in each row, a compact legend
+contained within the y-axis span, a high-contrast factor palette distinct from model/gate panels,
+and no top or right spines.
+
+For the cross-architecture Figure-03 comparison, GaWF connection gates are additionally projected
+to destination units by taking the arithmetic mean of raw sigmoid gates over incoming input or
+recurrent synapses on each frame. The balanced decomposition is then applied to those length-H
+unit vectors exactly as for LSTM/GRU unit gates. This derived destination-unit view supplements,
+and never replaces, the canonical synapse-level GaWF decomposition. Prefer the unified exporter's
+saved float32 gate mmap arrays when available; otherwise reconstruct the same float32 gates in
+batches from the compact trajectory's aligned `feedback`, `U`, and `V`, immediately reduce the
+incoming-source axis, and never retain a trial-by-synapse array.
 
 `utils_anal/run_unified_variance_decomposition.py` reads saved mmap `.npy` representations,
 including the input and recurrent gate tensors. A saved GaWF trajectory may supply labels,
@@ -167,6 +185,51 @@ New plotting belongs in `utils_viz/` and reads saved result files rather than lo
   task-specific plotting modules. For a multi-task Atari run, the default figure contains one
   `episodic_return_100` curve per environment; use `--include_combined` only for diagnostic plots
   that intentionally pool episodes with different score scales.
+
+### Poster and multi-panel figure style
+
+Figures intended for posters must remain readable at viewing distance. Use approximately 13 pt
+for tick labels, legends, and body text, 15 pt for column titles and shared row labels, and 16 pt
+for axis labels. Treat these values as a coordinated baseline: scale the full hierarchy together
+when the physical figure size changes, and never shrink one crowded panel independently.
+
+- Hide the top and right spines by default. Keep the left and bottom spines, use a light y-axis
+  grid where it aids comparison, and avoid complete boxes, nested axes, or duplicated frames.
+- Set axis limits and tick intervals explicitly when they carry scientific meaning. Equivalent
+  panels must use aligned plot rectangles and consistent axis widths.
+- Keep multi-row and multi-column layouts compact. Reduce unused outer margins, `hspace`, and
+  `wspace` without allowing labels, titles, or legends to collide.
+- Omit a composite main title unless it adds information not already present in the column titles
+  and legend.
+- Use one shared row label for each semantic row rather than repeating a y-axis label on every
+  subplot. Compute its vertical position from the actual subplot bounding boxes in that row.
+- Use one title for each semantic column and compute its horizontal position from the actual
+  subplot bounding boxes in that column. Do not align row labels or column titles with fixed,
+  visually estimated offsets.
+- In a multi-row figure, show x-axis text and the semantic x-axis label only on the bottom row.
+  Keep the upper-row tick marks, but suppress the upper-row tick labels and x-axis label.
+- Use one shared legend above the panels when the same series appear throughout the figure. Keep
+  model order, names, and colors consistent across panels. Summary legends use line-only handles
+  unless markers themselves encode a scientific variable.
+- Sparse tick labels or highlighted markers must not subsample the plotted data. Draw the complete
+  time series and use labels or markers only at interpretable checkpoints. Target-switch recovery
+  figures, for example, draw every frame from `pre10` through `post10` while highlighting
+  `pre10`, `switch`, `post4`, and `post10`.
+- For multi-seed bar plots, show the mean bar, sample-SD error bar, and individual seed points when
+  space permits. Keep bars within a grouped category adjacent; reserve visible spacing for
+  category boundaries. Add numerical mean labels only when direct aggregate lookup is part of the
+  figure's purpose.
+- Prefer plotting from numeric CSV, NPZ, NPY, or PKL outputs. A validated raster figure is a
+  temporary fallback only when the underlying numeric results are unavailable. When reusing a
+  raster, remove its old axes, titles, legend, and frame; map its data extent exactly; extend grids
+  through any newly exposed axis range; and verify that all panel widths remain aligned. Document
+  the fallback in code so that it can be replaced when the numeric source becomes available.
+- Save poster and publication candidates as both a high-resolution PNG and a vector PDF with the
+  same basename. Keep development PNGs in their canonical result directory; designated official
+  PDFs go to the publication figure directory documented in `docs/CONVENTIONS.md`. Visually
+  inspect both outputs for typography, row/column alignment, legend placement, axis ranges and
+  ticks, spine/grid continuity, complete curves, and consistent rendering before accepting the
+  figure.
 
 ## Shell launchers
 
