@@ -15,6 +15,8 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+from utils_anal.anal_paths import output_dir
+
 
 def parse_hparams_from_filename(filename):
     """从文件名解析超参数"""
@@ -475,8 +477,12 @@ def plot_training_curves_overlay(results_dir, df, output_dir):
 def main():
     parser = argparse.ArgumentParser(description='分析超参数搜索结果')
     parser.add_argument('results_dir', type=str, help='结果目录路径（包含pkl文件）')
-    parser.add_argument('--save_dir', type=str, default='results/anal_figs',
-                       help='输出目录（默认：results/anal_figs）')
+    parser.add_argument(
+        '--save_dir',
+        type=str,
+        default=str(output_dir('H_controls', 'hparam_results', 'figs')),
+        help='输出目录（默认：category-indexed controls output）',
+    )
     
     args = parser.parse_args()
     
@@ -538,4 +544,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

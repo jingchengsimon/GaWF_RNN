@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Phase 1: GAWF LR×WD grid for one train scale. Val is always 40h except when train is 40h
-# (then train and val both use 40h-float32).
+# (then train and val both use 40h-uint8).
 # Modes: "full" (larger grid, longer run) or "short" (smaller grid, fewer epochs).
 #
 # Usage (repo root; script cd's there):
@@ -25,11 +25,11 @@ if [[ ! "$MODE" =~ ^(full|short)$ ]]; then
 fi
 
 if [[ "$SCAL" == 40h ]]; then
-  DS="40h-float32"
-  EVAL="40h-float32"
+  DS="40h-uint8"
+  EVAL="40h-uint8"
 else
   DS="${SCAL}-float32"
-  EVAL="40h-float32"
+  EVAL="40h-uint8"
 fi
 
 SCRATCH_DATA="/scratch/${USER}/stimuli"

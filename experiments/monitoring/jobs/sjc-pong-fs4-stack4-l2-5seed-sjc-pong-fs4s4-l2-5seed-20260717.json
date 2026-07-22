@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "id": "sjc-pong-fs4-stack4-l2-5seed-sjc-pong-fs4s4-l2-5seed-20260717",
+  "description": "Strict 6-action Pong fs4/stack4 L2: 5 models x Pong/Flickering x 5 seeds, two-GPU dynamic queue",
+  "host": "sjc-remote",
+  "status": "cancelled",
+  "created_at": "2026-07-17T04:39:12+00:00",
+  "updated_at": "2026-07-18T04:45:48+00:00",
+  "remote_root": "/G/MIMOlab/Codes/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/G/anaconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "tmux",
+    "job_ids": [],
+    "run_ids": ["sjc-pong-fs4s4-l2-5seed-20260717"],
+    "tmux_session": "aim3-pong-fs4s4-l2-5seed",
+    "process_patterns": [
+      "run_atari_pong_fs4_stack4_l2_2gpu.sh",
+      "train_atari_dqn.py"
+    ],
+    "collect_gpu": true
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/remote/artifacts/sjc-pong-fs4s4-l2-5seed-20260717/*.out",
+      "experiments/remote/artifacts/sjc-pong-fs4s4-l2-5seed-20260717/*.err",
+      "experiments/remote/artifacts/sjc-pong-fs4s4-l2-5seed-20260717/orchestrator.log"
+    ],
+    "status_dir": "experiments/amarel/artifacts/atari_pong_fs4_stack4_l2_sjc5seed/status",
+    "result_paths": [
+      "results/train_data/atari_dqn_pong_fs4_stack4_l2match_sjc5seed_*_seed*"
+    ]
+  },
+  "tracking": {
+    "expected_units": 50,
+    "auto_complete": true,
+    "result_globs": [
+      "results/train_data/atari_dqn_pong_fs4_stack4_l2match_sjc5seed_ann_seed*",
+      "results/train_data/atari_dqn_pong_fs4_stack4_l2match_sjc5seed_rnn_seed*",
+      "results/train_data/atari_dqn_pong_fs4_stack4_l2match_sjc5seed_gru_seed*",
+      "results/train_data/atari_dqn_pong_fs4_stack4_l2match_sjc5seed_lstm_seed*",
+      "results/train_data/atari_dqn_pong_fs4_stack4_l2match_sjc5seed_gawf_seed*",
+      "results/train_data/atari_dqn_pong_fs4_stack4_l2match_sjc5seed_flicker_ann_seed*",
+      "results/train_data/atari_dqn_pong_fs4_stack4_l2match_sjc5seed_flicker_rnn_seed*",
+      "results/train_data/atari_dqn_pong_fs4_stack4_l2match_sjc5seed_flicker_gru_seed*",
+      "results/train_data/atari_dqn_pong_fs4_stack4_l2match_sjc5seed_flicker_lstm_seed*",
+      "results/train_data/atari_dqn_pong_fs4_stack4_l2match_sjc5seed_flicker_gawf_seed*"
+    ],
+    "done_glob": "experiments/amarel/artifacts/atari_pong_fs4_stack4_l2_sjc5seed/status/*.done",
+    "fail_glob": "experiments/amarel/artifacts/atari_pong_fs4_stack4_l2_sjc5seed/status/*.fail",
+    "defaults": {
+      "checkpoint_glob": "*.pth",
+      "checkpoint_count": 1,
+      "expected": {
+        "global_step": 1000000,
+        "frame_skip": 4,
+        "frame_stack": 4,
+        "num_layers": 2,
+        "action_space_mode": "minimal",
+        "num_actions": 6
+      }
+    },
+    "units": []
+  },
+  "notes": [
+    "Migrated from cancelled Amarel formal L2 array 58238754; L1 array 58238753 remains queued on Amarel.",
+    "A 25k GaWF task-4 smoke runs first on GPU 0 and gates the formal sweep.",
+    "After smoke, two persistent workers on RTX A6000 GPUs 0 and 1 atomically claim a shared longest-first task order.",
+    "Formal seeds are 42,1,2,3,4; settings are plain Pong and flicker_prob=0.5.",
+    "Cancelled by human request on 2026-07-18 after 4/50 valid units; tmux and matching training processes were stopped.",
+    "A files-only deletion dry run listed 61 path entries (including duplicate symlink views), 306436819 reported bytes; no files or directories were deleted."
+  ]
+}

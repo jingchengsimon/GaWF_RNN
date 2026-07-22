@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "id": "amarel-minigrid-paper-redblue-lstm-core-58285280",
+  "description": "MiniGrid paper-aligned PPO RedBlueDoors LSTM-core fresh recovery",
+  "host": "amarel",
+  "status": "queued",
+  "created_at": "2026-07-18T04:45:40+00:00",
+  "updated_at": "2026-07-18T04:45:40+00:00",
+  "remote_root": "/cache/home/js3269/projects/FAW_RNN-minigrid-paper-20260715",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": ["58285280"],
+    "run_ids": [],
+    "tmux_session": null,
+    "process_patterns": [],
+    "collect_gpu": false
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/minigrid_ppo_paper/58285280_*.*"
+    ],
+    "status_dir": "experiments/amarel/artifacts/minigrid_ppo_paper/status",
+    "result_paths": [
+      "results/train_data/mg_ppo_paper_RedBlueDoors-8x8_fov3_lstm_core_seed42_100m"
+    ]
+  },
+  "tracking": {
+    "expected_units": 1,
+    "auto_complete": false,
+    "result_globs": [
+      "results/train_data/mg_ppo_paper_RedBlueDoors-8x8_fov3_lstm_core_seed42_100m"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {"global_step": 100000000},
+      "checkpoint_glob": "checkpoint.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "Original task-1 run was preempted at 45,568,000 steps and had no checkpoint, so it could not resume.",
+    "The old partial was preserved at results/archive/minigrid_ppo_paper_redblue_lstm_core_pre_checkpoint_20260718T004540/.",
+    "This recovery starts from step 0 and uses periodic checkpoint saving from the current runner."
+  ]
+}

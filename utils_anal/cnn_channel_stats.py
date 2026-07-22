@@ -31,6 +31,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 from utils.clutter_task_models import GaWFRNNConv
 from utils.clutter_train_helpers import set_seed
 from utils_anal.anal_helpers import (
@@ -54,7 +56,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_data/cnn_channel",
+        default=str(output_dir("E_relevance_alignment", "cnn_channel_stats", "data")),
         help="Directory to save activation arrays and statistics.",
     )
     parser.add_argument(

@@ -10,6 +10,15 @@ Outputs (in ``--save_dir/fg`` or ``--save_dir/bg``):
 """
 from __future__ import annotations
 
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
 import argparse
 import glob
 import os
@@ -60,13 +69,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="./results/anal_data/fg_switch_offset_acc",
+        default=str(output_dir("G_behaviour", "export_fg_switch_offset_acc", "data")),
         help="Directory containing fg/bg_switch_offset_acc_*.npz files.",
     )
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_figs/fg_switch_offset_acc",
+        default=str(output_dir("G_behaviour", "fg_switch_offset_acc", "figs")),
         help="Output directory for combined model figures.",
     )
     parser.add_argument(
@@ -142,9 +151,10 @@ def _collect_by_kind(data_dir: str, requested_kind: str) -> Dict[str, List[str]]
 
 
 def _style_axis(ax: Axes) -> None:
-    """Apply the shared recovery-curve axis style."""
+    """Apply the shared compact, borderless recovery-curve style."""
 
     ax.spines["top"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.grid(axis="y", alpha=0.25)
 
@@ -194,77 +204,59 @@ def _plot_kind(
     condition_tag: str,
     clean_legacy_individuals: bool,
 ) -> str:
-    """Render one combined two-panel model comparison for a switch kind."""
+    """Render full recovery curves with markers only at key switch offsets."""
 
     offsets, labels, curves = _load_curves(npz_paths)
+    wanted = {-10: "pre10", -5: "pre5", 1: "switch", 5: "post5", 10: "post10"}
+    selected = [(index, wanted[int(offset)]) for index, offset in enumerate(offsets) if int(offset) in wanted]
+    if not selected:
+        raise RuntimeError(f"No key offsets found in {npz_paths[0]}")
+    selected_indices = np.asarray([index for index, _ in selected], dtype=np.int64)
+    selected_labels = [label for _, label in selected]
     x = np.arange(offsets.size, dtype=np.int64)
-    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.0), sharex=True, sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(9.2, 4.5), sharex=True, sharey=True)
 
     for ax, value_idx, panel_title, chance_level, chance_label in (
         (axes[0], 1, "Character readout (FG digit)", 10.0, "chance = 10%"),
         (axes[1], 2, "Sector readout", 100.0 / 9.0, "chance = 11.1%"),
     ):
-        for curve in curves:
-            model_key = curve[0]
-            values = curve[value_idx]
+        for model_key, char_acc, sector_acc in curves:
+            values = char_acc if value_idx == 1 else sector_acc
             ax.plot(
                 x,
                 values,
                 marker=MODEL_MARKERS.get(model_key, "o"),
+                markevery=selected_indices.tolist(),
                 linewidth=1.9,
-                markersize=4.2,
+                markersize=4.5,
                 label=MODEL_LABELS.get(model_key, model_key.upper()),
                 color=MODEL_COLORS.get(model_key),
             )
         ax.set_title(panel_title)
-        ax.set_xlabel(f"Frames relative to {kind}_switch")
+        ax.set_xlabel("Frame relative to switch")
         ax.set_ylim(0.0, 100.0)
-        ax.set_xticks(x)
-        ax.set_xticklabels(labels, rotation=35, ha="right")
-        ax.axhline(
-            chance_level,
-            color="0.3",
-            linewidth=1.1,
-            linestyle=(0, (4, 3)),
-            zorder=0,
-        )
-        ax.text(
-            0.99,
-            chance_level + 1.2,
-            chance_label,
-            transform=ax.get_yaxis_transform(),
-            ha="right",
-            va="bottom",
-            color="0.3",
-            fontsize=8,
-        )
-        pre_count = int(np.count_nonzero(offsets < 0))
-        if 0 < pre_count < offsets.size:
-            ax.axvline(pre_count - 0.5, color="0.35", linewidth=1.0, linestyle="--")
+        ax.set_xticks(selected_indices, selected_labels)
+        ax.axhline(chance_level, color="0.3", linewidth=1.0, linestyle=(0, (4, 3)), zorder=0)
+        ax.text(0.99, chance_level + 1.2, chance_label, transform=ax.get_yaxis_transform(), ha="right", va="bottom", color="0.3", fontsize=8)
+        if "switch" in selected_labels:
+            switch_index = selected_indices[selected_labels.index("switch")]
+            ax.axvline(switch_index, color="0.35", linewidth=1.0, linestyle="--")
         _style_axis(ax)
 
     axes[0].set_ylabel("Accuracy (%)")
     handles, legend_labels = axes[1].get_legend_handles_labels()
-    fig.legend(
-        handles,
-        legend_labels,
-        frameon=False,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.925),
-        ncol=min(len(legend_labels), 6),
-        fontsize=9,
-    )
+    fig.legend(handles, legend_labels, frameon=False, loc="upper center", bbox_to_anchor=(0.5, 0.94), ncol=min(len(legend_labels), 6), fontsize=9)
     figure_title = title or f"{kind.upper()}-switch recovery across models"
     fig.suptitle(figure_title, fontsize=13)
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.86])
     kind_dir = os.path.join(save_dir, kind)
     os.makedirs(kind_dir, exist_ok=True)
     filename_prefix = f"{condition_tag}_" if condition_tag else ""
-    out_path = os.path.join(
-        kind_dir,
-        f"{filename_prefix}{kind}_switch_offset_acc_models.png",
-    )
+    out_path = os.path.join(kind_dir, f"{filename_prefix}{kind}_switch_offset_acc_models.png")
     fig.savefig(out_path, dpi=150, bbox_inches="tight", pad_inches=0.06)
+    pdf_path = os.path.splitext(out_path)[0] + ".pdf"
+    if os.path.isfile(pdf_path):
+        fig.savefig(pdf_path, bbox_inches="tight", pad_inches=0.06)
     plt.close(fig)
     print(f"Saved figure: {out_path}")
 

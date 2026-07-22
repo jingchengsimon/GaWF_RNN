@@ -27,6 +27,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 from train_model import MC_RNN_Dataset
 from utils.clutter_task_models import (
     GRUConv,
@@ -104,7 +106,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_data/pop_act",
+        default=str(output_dir("D_variance_decomposition", "export_pop_act", "data")),
         help="Parent directory; writes <save_dir>/<run_tag>/{pop_act.npy, labels.tsv}.",
     )
     p.add_argument(

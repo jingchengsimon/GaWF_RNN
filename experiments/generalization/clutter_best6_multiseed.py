@@ -22,8 +22,9 @@ MODELS = ("gawf", "rnn", "lstm", "gru", "mamba", "s5")
 SEEDS = tuple(range(1, 11))
 NUM_EPOCHS = 150
 PATIENCE = 0
-DATA_SUFFIX = "40h-float32"
-EVAL_DATA_SUFFIX = "40h-float32"
+DATA_SUFFIX = "40h-uint8"
+EVAL_DATA_SUFFIX = "40h-uint8"
+COMPATIBLE_DATA_SUFFIXES = ("40h-uint8", "40h-float32")
 CNN_DROPOUT = 0.0
 RNN_DROPOUT = 0.5
 CHAN_NUM = 2
@@ -162,9 +163,38 @@ def task_config(task_id: int) -> TaskConfig:
     return tasks[task_id]
 
 
-def shell_assignments(config: TaskConfig, root: str) -> str:
+def _results_root(root: str, override: str | None = None) -> str:
+    """Resolve the directory that directly contains ``train_data``."""
+
+    value = (
+        override
+        or os.environ.get("AIM3_RESULTS_PATH")
+        or os.environ.get("FAW_RNN_RESULTS_PATH")
+        or os.path.join(root, "results")
+    )
+    return os.path.abspath(value)
+
+
+def _result_paths(config: TaskConfig, root: str, results_root: str | None = None) -> dict[str, str]:
+    """Return absolute output paths while allowing results to live on scratch."""
+
+    base = _results_root(root, results_root)
+    result_dir = os.path.join(base, "train_data", config.result_suffix)
+    return {
+        "metrics": os.path.join(result_dir, f"{config.result_stem}_metrics.json"),
+        "checkpoint": os.path.join(result_dir, f"{config.result_stem}_model.pth"),
+        "pickle": os.path.join(result_dir, f"{config.result_stem}.pkl"),
+    }
+
+
+def shell_assignments(
+    config: TaskConfig,
+    root: str,
+    results_root: str | None = None,
+) -> str:
     """Emit shell-safe assignments consumed by the Amarel array runner."""
 
+    result_paths = _result_paths(config, root, results_root)
     values = {
         "TASK_ID": str(config.task_id),
         "UNIT_ID": config.unit_id,
@@ -184,9 +214,10 @@ def shell_assignments(config: TaskConfig, root: str) -> str:
         "DATA_SUFFIX": DATA_SUFFIX,
         "EVAL_DATA_SUFFIX": EVAL_DATA_SUFFIX,
         "RESULT_SUFFIX": config.result_suffix,
-        "METRICS_PATH": os.path.join(root, config.metrics_relpath),
-        "CHECKPOINT_PATH": os.path.join(root, config.checkpoint_relpath),
-        "PICKLE_PATH": os.path.join(root, config.pickle_relpath),
+        "RESULTS_ROOT": _results_root(root, results_root),
+        "METRICS_PATH": result_paths["metrics"],
+        "CHECKPOINT_PATH": result_paths["checkpoint"],
+        "PICKLE_PATH": result_paths["pickle"],
         "DONE_FILE": os.path.join(root, config.done_relpath),
         "FAIL_FILE": os.path.join(root, config.fail_relpath),
     }
@@ -202,14 +233,14 @@ def _matches_float(metrics: dict[str, Any], key: str, expected: float) -> bool:
         return False
 
 
-def validate_task_output(config: TaskConfig, root: str) -> dict[str, Any]:
+def validate_task_output(
+    config: TaskConfig,
+    root: str,
+    results_root: str | None = None,
+) -> dict[str, Any]:
     """Validate metrics, checkpoint, pickle, seed, and full-epoch completion for one unit."""
 
-    paths = {
-        "metrics": os.path.join(root, config.metrics_relpath),
-        "checkpoint": os.path.join(root, config.checkpoint_relpath),
-        "pickle": os.path.join(root, config.pickle_relpath),
-    }
+    paths = _result_paths(config, root, results_root)
     report: dict[str, Any] = {
         "task_id": config.task_id,
         "unit_id": config.unit_id,
@@ -236,8 +267,9 @@ def validate_task_output(config: TaskConfig, root: str) -> dict[str, Any]:
         "actual_epochs": metrics.get("actual_epochs") == NUM_EPOCHS,
         "patience": metrics.get("patience") == PATIENCE,
         "stopped_by_patience": metrics.get("stopped_by_patience") is False,
-        "dataset_suffix": metrics.get("dataset_suffix") == DATA_SUFFIX,
-        "eval_dataset_suffix": metrics.get("eval_dataset_suffix") == EVAL_DATA_SUFFIX,
+        "dataset_suffix": metrics.get("dataset_suffix") in COMPATIBLE_DATA_SUFFIXES,
+        "eval_dataset_suffix": metrics.get("eval_dataset_suffix")
+        in COMPATIBLE_DATA_SUFFIXES,
         "dataset_mode": metrics.get("dataset_mode") == "sector",
         "use_acceleration": metrics.get("use_acceleration") is True,
         "use_mmap": metrics.get("use_mmap") is True,
@@ -263,6 +295,8 @@ def validate_task_output(config: TaskConfig, root: str) -> dict[str, Any]:
         return report
     report["valid"] = True
     report["reason"] = "ok"
+    report["dataset_suffix"] = metrics.get("dataset_suffix")
+    report["eval_dataset_suffix"] = metrics.get("eval_dataset_suffix")
     report["val_acc_at_best"] = metrics.get("val_acc_at_best")
     return report
 
@@ -363,14 +397,17 @@ def parse_args() -> argparse.Namespace:
     emit = subparsers.add_parser("emit-task")
     emit.add_argument("--task-id", type=int, required=True)
     emit.add_argument("--root", default=os.getcwd())
+    emit.add_argument("--results-root", default="")
 
     validate = subparsers.add_parser("validate")
     validate.add_argument("--task-id", type=int, required=True)
     validate.add_argument("--root", default=os.getcwd())
+    validate.add_argument("--results-root", default="")
     validate.add_argument("--json", action="store_true")
 
     status = subparsers.add_parser("status")
     status.add_argument("--root", default=os.getcwd())
+    status.add_argument("--results-root", default="")
     status.add_argument("--json", action="store_true")
 
     manifest = subparsers.add_parser("emit-manifest")
@@ -386,10 +423,20 @@ def main() -> None:
 
     args = parse_args()
     if args.command == "emit-task":
-        print(shell_assignments(task_config(args.task_id), os.path.abspath(args.root)))
+        print(
+            shell_assignments(
+                task_config(args.task_id),
+                os.path.abspath(args.root),
+                args.results_root or None,
+            )
+        )
         return
     if args.command == "validate":
-        report = validate_task_output(task_config(args.task_id), os.path.abspath(args.root))
+        report = validate_task_output(
+            task_config(args.task_id),
+            os.path.abspath(args.root),
+            args.results_root or None,
+        )
         if args.json:
             _write_json(report, None)
         elif report["valid"]:
@@ -399,7 +446,11 @@ def main() -> None:
         raise SystemExit(0 if report["valid"] else 1)
     if args.command == "status":
         reports = [
-            validate_task_output(config, os.path.abspath(args.root))
+            validate_task_output(
+                config,
+                os.path.abspath(args.root),
+                args.results_root or None,
+            )
             for config in all_task_configs()
         ]
         valid = sum(report["valid"] for report in reports)

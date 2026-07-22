@@ -26,10 +26,29 @@ names and output formats are defined in `CONVENTIONS.md`; architecture boundarie
 - Put recurrent computation in `utils/recurrent_cores/`, not task wrappers.
 - Extend `AccelerationConfig` rather than adding acceleration branches to the training loop.
 - Official curves use the train-eval and validation passes, not online batch averages.
+- Standard long jobs pass `--checkpoint_interval_epochs 5 --auto_resume`. Checkpoints are atomic
+  and occur only after a complete epoch, so interruption loses at most four completed epochs.
+  Resume rejects model, optimizer, data-pipeline, seed, or hyperparameter mismatches. Dataset
+  samples are deterministic, so restoring the loader and sampler generators is sufficient even
+  though persistent worker process internals are recreated.
+- A signal-triggered stop must retain the last periodic training checkpoint and exit without
+  writing final `.pkl`, metrics JSON, or best-model artifacts from partial state.
 
 ### mmap and devices
 
-- mmap loaders use `num_workers=0` and `pin_memory=False`.
+- **Historical reproduction only:** the legacy `40h-float32` mmap pipeline used
+  `num_workers=0` and `pin_memory=False`. Keep this configuration available when reproducing
+  historical runs, but do not treat it as a general mmap requirement or the default for new
+  experiments.
+- **Current standard Clutter 40h configuration:** use `40h-uint8` with `--use_mmap`,
+  `--input_cast_mode device`, `--frame_layout compact`, and `--shuffle_block_size -1` together
+  with `AIM3_NUM_WORKERS=2` and `AIM3_PIN_MEMORY=1` on CUDA compute nodes. The loaders use
+  persistent workers and `prefetch_factor=2`; the batch-sized block sampler preserves epoch
+  coverage while reducing random shared-filesystem access.
+- mmap and pinned memory are not inherently incompatible: mmap backs the CPU dataset, while
+  pinning applies to the collated uint8 batches transferred asynchronously to CUDA. Do not raise
+  the standard two-worker value without an endpoint-specific benchmark; more workers can increase
+  page faults and shared-filesystem contention.
 - Convert float64 inputs to float32 before MPS/CUDA transfer.
 - Do not load the full dataset onto the accelerator.
 - Scope `torch.no_grad()` to evaluation/inference blocks.
@@ -90,6 +109,12 @@ from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset
 
 Analysis requirements:
 
+- Resolve every analysis data/figure destination with
+  `utils_anal.anal_paths.output_dir(category, script_name, kind)`. The only output tree is
+  `results/anal_index/<CATEGORY>/<script_name>/{data,figs}/`; do not recreate the legacy split
+  roots or a symlink index view.
+- Each run writes a sibling `manifest.json` containing script path, commit, timestamp, category,
+  files written, and a flat dictionary of key numerical results.
 - Accumulate averages/statistics in float64 and cast to float32 before saving.
 - Use `.npy` for one array and `.npz` for related arrays.
 - Save companion metadata with mode, selected index, frame/sample counts, model/input sizes,
@@ -97,6 +122,31 @@ Analysis requirements:
 - Print qualifying-sample progress every 200 samples.
 - Raise `RuntimeError` when no frames match; do not silently emit empty outputs.
 - Do not import plotting code from `utils_viz/`.
+
+### Unified GaWF variance decomposition
+
+Use `utils_anal.variance_decomposition` for encoder activation, input/recurrent gate synapses,
+effective input/recurrent weights, hidden state, and feedback/readout vectors. Every run balances
+all 90 sector-digit cells to a common `n`, repeats the subsample for 20 fixed-seed draws, and
+reports aggregate plus per-unit condition-mean and trial-level fractions. Gate/effective-weight
+unit axes index synapses, not neurons. Trial-level gate analysis must stream second-order moments
+under an explicit memory budget; a trial-by-synapse array is forbidden. Object figures label each
+aggregate bar with its 20-draw mean and show per-unit fractions as violins after averaging each
+unit across the 20 draws; the black line marks the mean of those draw-averaged unit values.
+The additional compact 2-by-2 aggregate figure compares condition-mean and trial-level results
+for input gate, recurrent gate, encoder activation, and hidden activation with adjacent factor bars.
+
+`utils_anal/run_unified_variance_decomposition.py` reads saved mmap `.npy` representations,
+including the input and recurrent gate tensors. A saved GaWF trajectory may supply labels,
+feedback, and static weights only; the runner never reconstructs gates from `U/V`, reruns the
+model, or regenerates activations. Missing trial-level representations are a hard failure. When
+those saved representations do not yet exist, run
+`utils_anal/export_unified_variance_sources.py` once on a CUDA host with enough disk space. The
+exporter loads the canonical checkpoint/test dataset, writes frame-major float32 mmap sources
+without materializing a complete trial-by-synapse tensor, and emits the runner input manifest.
+Use
+`utils_anal/migrate_analysis_outputs.py` to plan or apply the one-time legacy output move;
+ambiguous mixed artifacts remain in place and appear in its migration report.
 
 ## Visualisation scripts
 

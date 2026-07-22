@@ -665,6 +665,7 @@ def create_datasets(
     stims_test=None,
     lbls_test=None,
     logger=None,
+    dataset_kwargs=None,
 ):
     """Create train/validation/test dataset(s) and return dataset objects and num_pos.
 
@@ -725,6 +726,9 @@ def create_datasets(
         _kw = {"chan_num": chan_num, "use_sector": False, "predict_all_chars": False}
         if logger is not None:
             logger.info("Using coordinate mode (directly predict x, y coordinates)")
+
+    if dataset_kwargs:
+        _kw.update(dataset_kwargs)
 
     def make_ds(stims, lbls):
         return dataset_class(stims, lbls, **_kw)
@@ -1044,11 +1048,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--data_suffix",
         type=str,
-        default="40h-float32",
+        default="40h-uint8",
         help=(
             "Suffix appended to stimulus_reg-* file names. "
             "Example: 'cplx' -> 'stimulus_reg-train-cplx.npy'. "
-            "Default: empty string (no suffix)."
+            "Default: '40h-uint8'."
         ),
     )
     parser.add_argument(
@@ -1061,12 +1065,63 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--input_cast_mode",
+        choices=("sample", "batch_cpu", "device"),
+        default="device",
+        help=(
+            "Where uint8 inputs are converted to float32. Default: device, which preserves "
+            "pinned uint8 transfer and casts once on the accelerator."
+        ),
+    )
+    parser.add_argument(
+        "--frame_layout",
+        choices=("stacked", "compact"),
+        default="compact",
+        help=(
+            "Host-side frame representation before transfer. Default: compact; temporal "
+            "channel windows are expanded after transfer."
+        ),
+    )
+    parser.add_argument(
+        "--shuffle_block_size",
+        type=int,
+        default=-1,
+        help=(
+            "Training sampler locality block. Default -1 uses the effective batch size; "
+            "0 restores global random sampling."
+        ),
+    )
+    parser.add_argument(
         "--patience",
         type=int,
         default=15,
         help=(
             "Early stopping patience on validation character accuracy (fair eval). "
             "0 disables early stopping. Default: 15."
+        ),
+    )
+    parser.add_argument(
+        "--checkpoint_interval_epochs",
+        type=int,
+        default=0,
+        help=(
+            "Atomically save resumable training state every N completed epochs. "
+            "0 disables periodic checkpoints; standard long Clutter jobs use 5."
+        ),
+    )
+    parser.add_argument(
+        "--auto_resume",
+        action="store_true",
+        default=False,
+        help="Automatically resume from the deterministic per-experiment training checkpoint.",
+    )
+    parser.add_argument(
+        "--resume_from",
+        type=str,
+        default="",
+        help=(
+            "Explicit Clutter training-state checkpoint. Only valid when the command "
+            "contains one model/hyperparameter experiment."
         ),
     )
     parser.add_argument(

@@ -28,7 +28,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from source.GenerateMovies import MovingCharacter, StimulusConfig, load_mnist_data, paste_character
+from source.clutter.generate_movies import (
+    MovingCharacter,
+    StimulusConfig,
+    load_mnist_data,
+    paste_character,
+)
 
 
 LOGGER = logging.getLogger(__name__)

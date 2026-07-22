@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "id": "amarel-gawf-symmetric-relevance-58306146",
+  "description": "GaWF symmetric 2x2 relevance, interaction sensitivity, and switch timing (vectorized null)",
+  "host": "amarel",
+  "status": "failed",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58306146"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/gawf_symmetric_relevance_timing/slurm-58306146.out",
+      "experiments/amarel/artifacts/gawf_symmetric_relevance_timing/slurm-58306146.err"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "/scratch/js3269/results/anal_data/gawf_symmetric_relevance_timing/part0_splits.json",
+      "/scratch/js3269/results/anal_data/gawf_symmetric_relevance_timing/part1_selectivity.npz",
+      "/scratch/js3269/results/anal_data/gawf_symmetric_relevance_timing/part1_summary.json",
+      "/scratch/js3269/results/anal_data/gawf_symmetric_relevance_timing/part2_results.json",
+      "/scratch/js3269/results/anal_data/gawf_symmetric_relevance_timing/part2_inference.npz",
+      "/scratch/js3269/results/anal_data/gawf_symmetric_relevance_timing/part3_results.json",
+      "/scratch/js3269/results/anal_data/gawf_symmetric_relevance_timing/part3_events.npz",
+      "/scratch/js3269/results/anal_data/gawf_symmetric_relevance_timing/run_metadata.json",
+      "/scratch/js3269/results/anal_figs/gawf_symmetric_relevance_timing/*.png"
+    ]
+  },
+  "tracking": {
+    "expected_units": 9,
+    "auto_complete": false,
+    "result_globs": [
+      "/scratch/js3269/results/anal_data/gawf_symmetric_relevance_timing/part0_splits.json",
+      "/scratch/js3269/results/anal_data/gawf_symmetric_relevance_timing/part1_selectivity.npz",
+      "/scratch/js3269/results/anal_data/gawf_symmetric_relevance_timing/part1_summary.json",
+      "/scratch/js3269/results/anal_data/gawf_symmetric_relevance_timing/part2_results.json",
+      "/scratch/js3269/results/anal_data/gawf_symmetric_relevance_timing/part2_inference.npz",
+      "/scratch/js3269/results/anal_data/gawf_symmetric_relevance_timing/part3_results.json",
+      "/scratch/js3269/results/anal_data/gawf_symmetric_relevance_timing/part3_events.npz",
+      "/scratch/js3269/results/anal_data/gawf_symmetric_relevance_timing/run_metadata.json",
+      "/scratch/js3269/results/anal_figs/gawf_symmetric_relevance_timing/*.png"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "Replacement for 58306145 after equivalent vectorization of per-unit relevance-label shuffles. One Ada Lovelace GPU, 16 CPUs, 64G, 24h; exact checkpoint SHA-256 5b109ff973bc54726be5a58cb50699d3e150da9d521da0a1126c089a2aeefc25; 1000 permutations/bootstrap draws; sequence-level split-half.",
+    "All Part 0-3 statistics completed and were fetched. Slurm failed only because SLURM_TMPDIR was unset during final plotting; plots-only recovery 58306176 completed all six figures. Directional Part 3 crossings were then recomputed from saved event arrays to require a prior negative frame."
+  ],
+  "created_at": "2026-07-19T02:51:59+00:00",
+  "updated_at": "2026-07-19T02:59:22+00:00"
+}

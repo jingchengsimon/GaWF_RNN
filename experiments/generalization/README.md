@@ -7,7 +7,7 @@ uses `train_model.py`; aggregation uses `collect_results.py`; plotting uses
 ## Shared protocol
 
 - Train scales: 4h, 10h, 20h, and 40h.
-- Validation: `--eval_data_suffix 40h-float32` for every scale.
+- Validation: `--eval_data_suffix 40h-uint8` for every scale.
 - Official selection metric: highest fair `val_acc_at_best` for character recognition; sector
   metrics come from the same selected epoch/run.
 - `--patience 0` disables early stopping; otherwise best weights are restored before saving.
@@ -81,8 +81,14 @@ generalization plotter.
 Mamba, and S5. It maps seeds 1--10 to 60 tasks, trains every task for 150 epochs with
 `--patience 0`, and validates the metrics, checkpoint, pickle, seed, and full-epoch completion.
 Amarel submission uses ten independent jobs, each containing the six model tasks for one seed.
-The 40h training and validation splits both use `40h-float32`; checkpoints retain the
+The 40h training and validation splits both use `40h-uint8`; checkpoints retain the
 best-validation state observed during the complete 150-epoch trajectory.
+
+Completed checkpoints are evaluated on the standard `40h-uint8` **test** split with
+`utils_anal/evaluate_clutter_multiseed_test.py`. The companion
+`utils_viz/clutter_multiseed_test_bars.py` writes one compact character/sector grouped-bar figure as mean ± sample SD;
+its model colors reuse `utils_viz/fg_switch_offset_acc.py`. Until every recovery run finishes,
+the summary records and plots the completed seed count separately for each model.
 
 ## Launch environments
 

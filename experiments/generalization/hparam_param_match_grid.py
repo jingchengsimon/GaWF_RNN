@@ -56,7 +56,7 @@ class TaskConfig:
 
     @property
     def eval_data_suffix(self) -> str:
-        return "40h-float32"
+        return "40h-uint8"
 
     @property
     def result_root_suffix(self) -> str:

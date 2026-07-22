@@ -13,6 +13,10 @@ import torch
 from torch.utils.data import DataLoader, Subset
 
 from .clutter_train_helpers import worker_init_fn
+from .clutter_data_pipeline import (
+    BlockShuffleSampler,
+    prepare_clutter_inputs,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -150,8 +154,13 @@ def setup_acceleration(accel_config, device, logger=None):
         logger.info("Enabling acceleration training...")
 
     batch_size = int(os.environ.get("AIM3_BATCH_SIZE", "256"))
-    num_workers = int(os.environ.get("AIM3_NUM_WORKERS", "0"))
-    pin_memory = os.environ.get("AIM3_PIN_MEMORY", "0").lower() in ("1", "true", "yes")
+    num_workers = int(os.environ.get("AIM3_NUM_WORKERS", "2"))
+    pin_default = "1" if _is_cuda(device) else "0"
+    pin_memory = os.environ.get("AIM3_PIN_MEMORY", pin_default).lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     use_amp = _is_cuda(device) and accel_config.enable_amp
     autocast_fn = (
         (lambda d: autocast_cls(device_type=_device_type(d))) if use_amp else (lambda _: nullcontext())
@@ -174,11 +183,20 @@ def build_loaders(train_data, val_data, batch_size, num_workers, pin_memory, acc
     """Build train, train-eval, and val DataLoaders from config. Single code path."""
     worker_init_fn_param = partial(worker_init_fn, seed=seed) if num_workers > 0 else None
     train_generator = torch.Generator().manual_seed(seed)
+    block_size = int(getattr(train_data, "shuffle_block_size", 0))
+    if block_size == -1:
+        block_size = batch_size
+    train_sampler = (
+        BlockShuffleSampler(train_data, block_size=block_size, seed=seed)
+        if block_size > 0
+        else None
+    )
 
     train_kw = dict(
         dataset=train_data,
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=train_sampler is None,
+        sampler=train_sampler,
         num_workers=num_workers,
         pin_memory=pin_memory and num_workers > 0,
         persistent_workers=(num_workers > 0),
@@ -429,6 +447,7 @@ class TrainStepper:
         scaler,
         autocast_fn,
         pin_memory,
+        train_data,
         gawf_diagnostics=None,
     ):
         self.mdl = mdl
@@ -439,6 +458,9 @@ class TrainStepper:
         self.scaler = scaler
         self.autocast_fn = autocast_fn
         self.pin_memory = pin_memory
+        self.input_cast_mode = getattr(train_data, "input_cast_mode", "sample")
+        self.frame_layout = getattr(train_data, "frame_layout", "stacked")
+        self.chan_num = int(getattr(train_data, "chan_num", 2))
         self.gawf_diagnostics = gawf_diagnostics
 
     def step(self, batch, batch_idx, use_feedback_this_epoch):
@@ -453,11 +475,15 @@ class TrainStepper:
         else:
             inputs, labels = batch, None
 
-        # MPS/CUDA: avoid float64 on device (cast only when necessary to avoid CUDA overhead)
-        if inputs.dtype == torch.float64:
-            inputs = inputs.float()
         non_blocking = self.pin_memory
-        inputs = inputs.to(self.device, non_blocking=non_blocking)
+        inputs = prepare_clutter_inputs(
+            inputs,
+            device=self.device,
+            cast_mode=self.input_cast_mode,
+            frame_layout=self.frame_layout,
+            chan_num=self.chan_num,
+            non_blocking=non_blocking,
+        )
         if labels is not None:
             if labels.dtype == torch.float64:
                 labels = labels.float()

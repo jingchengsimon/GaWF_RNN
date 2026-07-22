@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "id": "amarel-clutter-multiseed-test-58272851",
+  "description": "Evaluate completed Clutter multi-seed checkpoints on standard 40h uint8 test split and plot mean±SD",
+  "host": "amarel",
+  "status": "queued",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58272851"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/clutter_multiseed_test/58272851.*"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "/scratch/js3269/results/anal_data/clutter_multiseed_test/per_seed_test_accuracy.csv",
+      "/scratch/js3269/results/anal_data/clutter_multiseed_test/test_accuracy_mean_sd.csv",
+      "/scratch/js3269/results/anal_figs/clutter_multiseed_test/test_accuracy_mean_sd.png"
+    ]
+  },
+  "tracking": {
+    "expected_units": 3,
+    "auto_complete": false,
+    "result_globs": [
+      "/scratch/js3269/results/anal_data/clutter_multiseed_test/per_seed_test_accuracy.csv",
+      "/scratch/js3269/results/anal_data/clutter_multiseed_test/test_accuracy_mean_sd.csv",
+      "/scratch/js3269/results/anal_figs/clutter_multiseed_test/test_accuracy_mean_sd.png"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "Evaluation-only compute-node job; does not run on the Amarel login node."
+  ],
+  "created_at": "2026-07-18T00:29:06+00:00",
+  "updated_at": "2026-07-18T00:29:06+00:00"
+}

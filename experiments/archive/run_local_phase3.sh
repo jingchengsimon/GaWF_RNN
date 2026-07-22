@@ -60,5 +60,5 @@ else
   TAG="${CSV_TAG}_ep${NUM_EPOCHS}"
   python "$ROOT/utils_viz/plot_generalization.py" --csv_tag "$TAG"
   echo "Done. csv_tag=$TAG  (phase3_summary_*${TAG}.csv under artifacts/)"
-  echo "Figures: results/anal_figs/generalization/*${TAG#_}.*"
+  echo "Figures: results/anal_index/G_behaviour/plot_generalization/figs/*${TAG#_}.*"
 fi

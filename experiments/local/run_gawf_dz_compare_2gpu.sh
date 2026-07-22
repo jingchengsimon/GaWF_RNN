@@ -24,7 +24,7 @@ cd "$ROOT"
 
 SCALE="${SCALE:-40h}"
 DATA_SUFFIX="${DATA_SUFFIX:-${SCALE}-float32}"
-EVAL_DATA_SUFFIX="${EVAL_DATA_SUFFIX:-40h-float32}"
+EVAL_DATA_SUFFIX="${EVAL_DATA_SUFFIX:-40h-uint8}"
 RESULT_SUFFIX="${RESULT_SUFFIX:-gawf_dz_compare_${SCALE}_fullfb}"
 LOG_DIR="${LOG_DIR:-$ROOT/experiments/local/artifacts/gawf_dz_compare_${SCALE}_fullfb}"
 STATUS_DIR="$LOG_DIR/status"

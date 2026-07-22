@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "id": "amarel-pong-fs4-stack4-l1-1m-58238753",
+  "description": "Strict 6-action Pong fs4/stack4 L1: 7 models x Pong/Flickering x 5 seeds, 1M",
+  "host": "amarel",
+  "status": "completed",
+  "created_at": "2026-07-17T03:35:49+00:00",
+  "updated_at": "2026-07-18T04:31:15+00:00",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58238753"
+    ],
+    "run_ids": [],
+    "tmux_session": null,
+    "process_patterns": [],
+    "collect_gpu": true
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/atari_pong_fs4_stack4_l1/58238753_*.*"
+    ],
+    "status_dir": "experiments/amarel/artifacts/atari_pong_fs4_stack4_l1/status",
+    "result_paths": [
+      "/scratch/js3269/results/train_data/atari_dqn_pong_fs4_stack4_l1_*_seed*"
+    ]
+  },
+  "tracking": {
+    "expected_units": 70,
+    "auto_complete": true,
+    "result_globs": [
+      "/scratch/js3269/results/train_data/atari_dqn_pong_fs4_stack4_l1_ann_seed*",
+      "/scratch/js3269/results/train_data/atari_dqn_pong_fs4_stack4_l1_rnn_seed*",
+      "/scratch/js3269/results/train_data/atari_dqn_pong_fs4_stack4_l1_gru_seed*",
+      "/scratch/js3269/results/train_data/atari_dqn_pong_fs4_stack4_l1_lstm_seed*",
+      "/scratch/js3269/results/train_data/atari_dqn_pong_fs4_stack4_l1_gawf_seed*",
+      "/scratch/js3269/results/train_data/atari_dqn_pong_fs4_stack4_l1_s5_seed*",
+      "/scratch/js3269/results/train_data/atari_dqn_pong_fs4_stack4_l1_mamba_seed*",
+      "/scratch/js3269/results/train_data/atari_dqn_pong_fs4_stack4_l1_flicker_ann_seed*",
+      "/scratch/js3269/results/train_data/atari_dqn_pong_fs4_stack4_l1_flicker_rnn_seed*",
+      "/scratch/js3269/results/train_data/atari_dqn_pong_fs4_stack4_l1_flicker_gru_seed*",
+      "/scratch/js3269/results/train_data/atari_dqn_pong_fs4_stack4_l1_flicker_lstm_seed*",
+      "/scratch/js3269/results/train_data/atari_dqn_pong_fs4_stack4_l1_flicker_gawf_seed*",
+      "/scratch/js3269/results/train_data/atari_dqn_pong_fs4_stack4_l1_flicker_s5_seed*",
+      "/scratch/js3269/results/train_data/atari_dqn_pong_fs4_stack4_l1_flicker_mamba_seed*"
+    ],
+    "done_glob": "experiments/amarel/artifacts/atari_pong_fs4_stack4_l1/status/*.done",
+    "fail_glob": "experiments/amarel/artifacts/atari_pong_fs4_stack4_l1/status/*.fail",
+    "defaults": {
+      "checkpoint_glob": "*.pth",
+      "checkpoint_count": 1,
+      "expected": {
+        "global_step": 1000000,
+        "frame_skip": 4,
+        "frame_stack": 4,
+        "num_layers": 1,
+        "action_space_mode": "minimal",
+        "num_actions": 6
+      }
+    },
+    "units": []
+  },
+  "notes": [
+    "Array 0-69 with concurrency 20; seeds are 42,1,2,3,4 and settings are plain Pong and flicker_prob=0.5.",
+    "Models: ANN, RNN, GRU, LSTM, GaWF, S5, Mamba.",
+    "Depends afterok on smoke arrays 58238750 and 58238751."
+  ],
+  "completed_at": "2026-07-18T04:31:15+00:00"
+}

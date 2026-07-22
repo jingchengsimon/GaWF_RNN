@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "id": "amarel-minigrid-paper-risk-memory-ckpt-58301383",
+  "description": "MiniGrid paper-aligned PPO MemoryS7 checkpoint recovery: LSTM-core, GRU, and GaWF",
+  "host": "amarel",
+  "status": "queued",
+  "created_at": "2026-07-18T18:35:29+00:00",
+  "updated_at": "2026-07-18T18:35:29+00:00",
+  "remote_root": "/cache/home/js3269/projects/FAW_RNN-minigrid-paper-20260715",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": ["58301383"],
+    "run_ids": [],
+    "tmux_session": null,
+    "process_patterns": [],
+    "collect_gpu": false
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/minigrid_ppo_paper/58301383_*.*"
+    ],
+    "status_dir": "experiments/amarel/artifacts/minigrid_ppo_paper/status",
+    "result_paths": [
+      "results/train_data/mg_ppo_paper_MemoryS7_fov3_lstm_core_seed42_100m",
+      "results/train_data/mg_ppo_paper_MemoryS7_fov3_gru_seed42_100m",
+      "results/train_data/mg_ppo_paper_MemoryS7_fov3_gawf_seed42_100m"
+    ]
+  },
+  "tracking": {
+    "expected_units": 3,
+    "auto_complete": false,
+    "result_globs": [
+      "results/train_data/mg_ppo_paper_MemoryS7_fov3_lstm_core_seed42_100m",
+      "results/train_data/mg_ppo_paper_MemoryS7_fov3_gru_seed42_100m",
+      "results/train_data/mg_ppo_paper_MemoryS7_fov3_gawf_seed42_100m"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {"global_step": 100000000},
+      "checkpoint_glob": "checkpoint.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "Replaces legacy no-checkpoint tasks 58190643_1, 58190643_3, and 58190643_4, canceled near 62.5M, 60.5M, and 55.8M steps.",
+    "Old partials are preserved under results/archive/minigrid_ppo_paper_no_checkpoint_cancel_20260718T143418/.",
+    "Fresh runs checkpoint atomically every 100 PPO updates and were submitted with --requeue from the formal project root."
+  ]
+}

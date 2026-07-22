@@ -35,7 +35,8 @@ if [[ -z "${AIM3_CONDA_INIT:-}" || ! -f "$AIM3_CONDA_INIT" ]]; then
 fi
 source "$AIM3_CONDA_INIT"
 conda activate "${AIM3_CONDA_ENV:-aim3_rnn}"
-eval "$(python "$GRID_UTIL" emit-task --task-id "$TASK_ID" --root "$ROOT")"
+RESULTS_ROOT="${AIM3_RESULTS_PATH:-${FAW_RNN_RESULTS_PATH:-$ROOT/results}}"
+eval "$(python "$GRID_UTIL" emit-task --task-id "$TASK_ID" --root "$ROOT" --results-root "$RESULTS_ROOT")"
 mkdir -p "$(dirname "$DONE_FILE")"
 
 write_failure() {
@@ -58,12 +59,12 @@ if [[ ! -f "$DATA_DIR/stimulus_reg-train-${DATA_SUFFIX}.npy" ]]; then
   echo "Missing Clutter training data under $DATA_DIR" >&2
   exit 2
 fi
-if [[ "${AIM3_NUM_WORKERS:-}" != "0" || "${AIM3_PIN_MEMORY:-}" != "0" ]]; then
-  echo "mmap run requires AIM3_NUM_WORKERS=0 and AIM3_PIN_MEMORY=0." >&2
-  exit 2
-fi
+AIM3_NUM_WORKERS="${AIM3_NUM_WORKERS:-2}"
+AIM3_PIN_MEMORY="${AIM3_PIN_MEMORY:-1}"
+CHECKPOINT_INTERVAL_EPOCHS="${CHECKPOINT_INTERVAL_EPOCHS:-5}"
+export AIM3_NUM_WORKERS AIM3_PIN_MEMORY
 
-if python "$GRID_UTIL" validate --task-id "$TASK_ID" --root "$ROOT" >/dev/null 2>&1; then
+if python "$GRID_UTIL" validate --task-id "$TASK_ID" --root "$ROOT" --results-root "$RESULTS_ROOT" >/dev/null 2>&1; then
   echo "Task $TASK_ID ($UNIT_ID) already valid; skipping."
   printf 'status=skipped_existing\ntask_id=%s\nunit_id=%s\ntimestamp=%s\n' \
     "$TASK_ID" "$UNIT_ID" "$(date -Is)" > "$DONE_FILE"
@@ -81,8 +82,11 @@ fi
 
 echo "[$(date -Is)] task=$TASK_ID unit=$UNIT_ID model=$MODEL_TYPE seed=$SEED"
 echo "epochs=$NUM_EPOCHS patience=$PATIENCE data=$DATA_SUFFIX eval=$EVAL_DATA_SUFFIX"
-echo "lr=$LR wd=$WD width=$MODEL_WIDTH chan_num=$CHAN_NUM mmap=true workers=0 pin_memory=false"
+echo "lr=$LR wd=$WD width=$MODEL_WIDTH chan_num=$CHAN_NUM mmap=true workers=$AIM3_NUM_WORKERS pin_memory=$AIM3_PIN_MEMORY"
+echo "dataloader=uint8,device_cast,compact,shuffle_block_size=batch"
+echo "checkpoint=auto_resume,interval_epochs=$CHECKPOINT_INTERVAL_EPOCHS"
 echo "result_suffix=$RESULT_SUFFIX"
+echo "results_root=$RESULTS_ROOT"
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 DISABLE_TQDM=1 python train_model.py \
@@ -93,6 +97,7 @@ DISABLE_TQDM=1 python train_model.py \
   --data_suffix "$DATA_SUFFIX" \
   --eval_data_suffix "$EVAL_DATA_SUFFIX" \
   --data_dir "$DATA_DIR" \
+  --results_dir "$RESULTS_ROOT" \
   --lrs "$LR" \
   --wds "$WD" \
   --cnn_dropout "$CNN_DROPOUT" \
@@ -104,9 +109,14 @@ DISABLE_TQDM=1 python train_model.py \
   --use_acceleration \
   --use_sector_mode \
   --use_mmap \
+  --input_cast_mode device \
+  --frame_layout compact \
+  --shuffle_block_size -1 \
+  --checkpoint_interval_epochs "$CHECKPOINT_INTERVAL_EPOCHS" \
+  --auto_resume \
   --result_suffix "$RESULT_SUFFIX"
 
-python "$GRID_UTIL" validate --task-id "$TASK_ID" --root "$ROOT" --json
+python "$GRID_UTIL" validate --task-id "$TASK_ID" --root "$ROOT" --results-root "$RESULTS_ROOT" --json
 {
   echo "status=done"
   echo "task_id=$TASK_ID"

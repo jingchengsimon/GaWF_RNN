@@ -9,6 +9,7 @@ Smoke-test (run 1 epoch, minimal config):
 """
 
 import os
+import random
 import sys
 import time
 from itertools import product
@@ -54,6 +55,173 @@ from utils.clutter_task_models import (
 torch.set_num_threads(4)
 
 
+CLUTTER_CHECKPOINT_FORMAT_VERSION = 1
+_CLUTTER_METRIC_ARRAY_KEYS = (
+    "train_acc_char",
+    "val_acc_char",
+    "train_metric_pos",
+    "val_metric_pos",
+    "train_loss_char",
+    "val_loss_char",
+    "train_loss_pos",
+    "val_loss_pos",
+    "glob_train_acc_char",
+    "glob_val_acc_char",
+    "glob_train_acc_pos",
+    "glob_val_acc_pos",
+    "fg_switch_pre5_train_acc_char",
+    "fg_switch_pre5_val_acc_char",
+    "fg_switch_pre5_train_acc_pos",
+    "fg_switch_pre5_val_acc_pos",
+    "fg_switch_post5_train_acc_char",
+    "fg_switch_post5_val_acc_char",
+    "fg_switch_post5_train_acc_pos",
+    "fg_switch_post5_val_acc_pos",
+)
+
+
+class ClutterTrainingInterrupted(RuntimeError):
+    """Raised after a signal so partial state is never mistaken for a final result."""
+
+
+def _clutter_rng_state():
+    state = {
+        "python": random.getstate(),
+        "numpy": np.random.get_state(),
+        "torch": torch.get_rng_state(),
+    }
+    if torch.cuda.is_available():
+        state["torch_cuda"] = torch.cuda.get_rng_state_all()
+    return state
+
+
+def _restore_clutter_rng_state(state):
+    random.setstate(state["python"])
+    np.random.set_state(state["numpy"])
+    torch.set_rng_state(state["torch"].cpu())
+    if torch.cuda.is_available() and "torch_cuda" in state:
+        torch.cuda.set_rng_state_all([value.cpu() for value in state["torch_cuda"]])
+
+
+def _loader_rng_state(components):
+    train_dl = components.get("train_dl")
+    if train_dl is None:
+        return {}
+    state = {}
+    generator = getattr(train_dl, "generator", None)
+    if generator is not None:
+        state["loader_generator"] = generator.get_state()
+    sampler_generator = getattr(getattr(train_dl, "sampler", None), "generator", None)
+    if sampler_generator is not None:
+        state["sampler_generator"] = sampler_generator.get_state()
+    return state
+
+
+def _restore_loader_rng_state(components, state):
+    train_dl = components.get("train_dl")
+    if train_dl is None:
+        return
+    generator = getattr(train_dl, "generator", None)
+    if generator is not None and "loader_generator" in state:
+        generator.set_state(state["loader_generator"].cpu())
+    sampler_generator = getattr(getattr(train_dl, "sampler", None), "generator", None)
+    if sampler_generator is not None and "sampler_generator" in state:
+        sampler_generator.set_state(state["sampler_generator"].cpu())
+
+
+def _atomic_clutter_checkpoint_save(payload, path):
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    temporary_path = f"{path}.tmp.{os.getpid()}"
+    try:
+        torch.save(payload, temporary_path)
+        os.replace(temporary_path, path)
+    finally:
+        if os.path.exists(temporary_path):
+            os.remove(temporary_path)
+
+
+def _save_clutter_checkpoint(
+    path,
+    *,
+    mdl,
+    components,
+    metadata,
+    completed_epochs,
+    best_val_acc,
+    best_epoch_idx,
+    best_state,
+    epochs_without_improvement,
+    stopped_by_patience,
+):
+    metric_arrays = {
+        key: value.copy()
+        for key in _CLUTTER_METRIC_ARRAY_KEYS
+        if isinstance((value := components.get(key)), np.ndarray)
+    }
+    scaler = components.get("scaler")
+    payload = {
+        "format_version": CLUTTER_CHECKPOINT_FORMAT_VERSION,
+        "metadata": dict(metadata),
+        "completed_epochs": int(completed_epochs),
+        "model": {key: value.detach().cpu() for key, value in mdl.state_dict().items()},
+        "optimizer": components["optim"].state_dict(),
+        "scaler": scaler.state_dict() if scaler is not None else None,
+        "metric_arrays": metric_arrays,
+        "best_val_acc": float(best_val_acc),
+        "best_epoch_idx": int(best_epoch_idx),
+        "best_state": best_state,
+        "epochs_without_improvement": int(epochs_without_improvement),
+        "stopped_by_patience": bool(stopped_by_patience),
+        "rng_state": _clutter_rng_state(),
+        "loader_rng_state": _loader_rng_state(components),
+    }
+    _atomic_clutter_checkpoint_save(payload, path)
+
+
+def _load_clutter_checkpoint(path, *, mdl, components, expected_metadata):
+    device = next(mdl.parameters()).device
+    try:
+        checkpoint = torch.load(path, map_location=device, weights_only=False)
+    except TypeError:
+        checkpoint = torch.load(path, map_location=device)
+    if not isinstance(checkpoint, dict):
+        raise ValueError(f"Invalid Clutter checkpoint payload: {path}")
+    if checkpoint.get("format_version") != CLUTTER_CHECKPOINT_FORMAT_VERSION:
+        raise ValueError(f"Unsupported Clutter checkpoint format: {path}")
+    saved_metadata = checkpoint.get("metadata")
+    if not isinstance(saved_metadata, dict):
+        raise ValueError(f"Clutter checkpoint is missing metadata: {path}")
+    mismatches = [
+        key
+        for key, expected in expected_metadata.items()
+        if key not in saved_metadata or saved_metadata[key] != expected
+    ]
+    if mismatches:
+        raise ValueError(
+            "Clutter checkpoint protocol mismatch for: "
+            + ", ".join(sorted(mismatches))
+        )
+
+    mdl.load_state_dict(checkpoint["model"], strict=True)
+    components["optim"].load_state_dict(checkpoint["optimizer"])
+    scaler = components.get("scaler")
+    if scaler is not None and checkpoint.get("scaler") is not None:
+        scaler.load_state_dict(checkpoint["scaler"])
+
+    saved_arrays = checkpoint.get("metric_arrays", {})
+    for key, saved in saved_arrays.items():
+        target = components.get(key)
+        if not isinstance(target, np.ndarray) or target.shape != saved.shape:
+            raise ValueError(f"Clutter checkpoint metric shape mismatch for {key}")
+        np.copyto(target, saved)
+
+    _restore_loader_rng_state(components, checkpoint.get("loader_rng_state", {}))
+    _restore_clutter_rng_state(checkpoint["rng_state"])
+    return checkpoint
+
+
 # ==================== Dataset Class ====================
 class MC_RNN_Dataset(Dataset):
     def __init__(
@@ -66,10 +234,13 @@ class MC_RNN_Dataset(Dataset):
         num_sectors=9,
         max_chars=15,
         predict_all_chars=False,
+        input_cast_mode="sample",
+        frame_layout="stacked",
+        shuffle_block_size=0,
     ):
         """
         Args:
-            data (np.ndarray): Array of shape (num_frames_total, height, width); supports float32 for faster loading.
+            data (np.ndarray): Array of shape (num_frames_total, height, width); standard storage is uint8.
             labels (DataFrame): columns include ``fg_char_id``, ``fg_char_x``, ``fg_char_y``, ``bg_char_ids``;
                 optional ``fg_switch`` (0/1 per frame) for transition-window eval in sector mode.
             frame_num (int): Number of frames to stack for input as multichannel image
@@ -88,6 +259,15 @@ class MC_RNN_Dataset(Dataset):
         self.num_sectors = num_sectors
         self.max_chars = max_chars
         self.predict_all_chars = predict_all_chars
+        if input_cast_mode not in ("sample", "batch_cpu", "device"):
+            raise ValueError(f"unsupported input_cast_mode={input_cast_mode!r}")
+        if frame_layout not in ("stacked", "compact"):
+            raise ValueError(f"unsupported frame_layout={frame_layout!r}")
+        if int(shuffle_block_size) < -1:
+            raise ValueError("shuffle_block_size must be -1, 0, or a positive integer")
+        self.input_cast_mode = input_cast_mode
+        self.frame_layout = frame_layout
+        self.shuffle_block_size = int(shuffle_block_size)
         self.data_dtype = getattr(data, "dtype", np.uint8)
 
         if predict_all_chars:
@@ -169,7 +349,9 @@ class MC_RNN_Dataset(Dataset):
             and block.strides[1] >= 0
             and block.strides[2] >= 0
         )
-        if use_strided:
+        if self.frame_layout == "compact":
+            stacked_frames = block
+        elif use_strided:
             s0, s1, s2 = block.strides[0], block.strides[1], block.strides[2]
             H, W = block.shape[1], block.shape[2]
             stacked_frames = np.lib.stride_tricks.as_strided(
@@ -179,7 +361,7 @@ class MC_RNN_Dataset(Dataset):
             frames = [self.data[start_idx + i : end_idx + i] for i in range(-(C - 1), 1)]
             stacked_frames = np.stack(frames, axis=1)
 
-        if stacked_frames.dtype != np.float32:
+        if self.input_cast_mode == "sample" and stacked_frames.dtype != np.float32:
             stacked_frames = stacked_frames.astype(np.float32, copy=False)
 
         # When using np.memmap (use_mmap=True), stride views may be backed by
@@ -248,6 +430,10 @@ def network_train(
     gawf_diag_every: int = 1,
     gawf_diag_gate_eps: float = 0.01,
     s5_ssm_lr_scale: float = 0.1,
+    checkpoint_path: str | None = None,
+    checkpoint_interval_epochs: int = 0,
+    resume_from: str | None = None,
+    checkpoint_metadata: dict | None = None,
 ):
     """
     Train model, supports sector mode and coordinate mode.
@@ -279,15 +465,49 @@ def network_train(
         s5_ssm_lr_scale=s5_ssm_lr_scale,
     )
 
+    if checkpoint_interval_epochs < 0:
+        raise ValueError("checkpoint_interval_epochs must be non-negative")
+    if checkpoint_interval_epochs > 0 and not checkpoint_path:
+        raise ValueError("checkpoint_path is required when periodic checkpointing is enabled")
+    checkpoint_metadata = dict(checkpoint_metadata or {})
+
     val_every = 1  # run full validation only every N epochs
+    start_epoch = 0
     epoch = -1
     best_val_acc = float("-inf")
     best_epoch_idx = 0
     best_state = None
     epochs_without_improvement = 0
     stopped_by_patience = False
+    if resume_from is not None:
+        checkpoint = _load_clutter_checkpoint(
+            resume_from,
+            mdl=mdl,
+            components=components,
+            expected_metadata=checkpoint_metadata,
+        )
+        start_epoch = int(checkpoint["completed_epochs"])
+        if start_epoch < 0 or start_epoch > num_epochs:
+            raise ValueError(
+                f"Invalid completed_epochs={start_epoch} in Clutter checkpoint"
+            )
+        epoch = start_epoch - 1
+        best_val_acc = float(checkpoint["best_val_acc"])
+        best_epoch_idx = int(checkpoint["best_epoch_idx"])
+        best_state = checkpoint.get("best_state")
+        epochs_without_improvement = int(checkpoint["epochs_without_improvement"])
+        stopped_by_patience = bool(checkpoint.get("stopped_by_patience", False))
+        if logger is not None:
+            logger.info(
+                "Resumed Clutter checkpoint=%s completed_epochs=%s next_epoch=%s",
+                resume_from,
+                start_epoch,
+                start_epoch + 1,
+            )
+    completed_epoch_count = start_epoch
     try:
-        for epoch in range(num_epochs):
+        stop_epoch = start_epoch if stopped_by_patience else num_epochs
+        for epoch in range(start_epoch, stop_epoch):
             epoch_wall_start = time.perf_counter()
             mdl.train()
 
@@ -337,7 +557,8 @@ def network_train(
             else:
                 epochs_without_improvement += 1
 
-            if patience > 0 and epochs_without_improvement >= patience:
+            should_stop = patience > 0 and epochs_without_improvement >= patience
+            if should_stop:
                 stopped_by_patience = True
                 if logger is not None:
                     logger.info(
@@ -347,12 +568,45 @@ def network_train(
                         best_epoch_idx + 1,
                         best_val_acc,
                     )
+
+            completed_epochs = epoch + 1
+            completed_epoch_count = completed_epochs
+            should_checkpoint = checkpoint_interval_epochs > 0 and (
+                completed_epochs % checkpoint_interval_epochs == 0
+                or completed_epochs == num_epochs
+                or should_stop
+            )
+            if should_checkpoint:
+                _save_clutter_checkpoint(
+                    checkpoint_path,
+                    mdl=mdl,
+                    components=components,
+                    metadata=checkpoint_metadata,
+                    completed_epochs=completed_epochs,
+                    best_val_acc=best_val_acc,
+                    best_epoch_idx=best_epoch_idx,
+                    best_state=best_state,
+                    epochs_without_improvement=epochs_without_improvement,
+                    stopped_by_patience=stopped_by_patience,
+                )
+                if logger is not None:
+                    logger.info(
+                        "Saved resumable checkpoint: epoch=%s path=%s",
+                        completed_epochs,
+                        checkpoint_path,
+                    )
+
+            if should_stop:
                 break
 
-    except (KeyboardInterrupt, SystemExit):
-        # Handle interruption gracefully
+    except (KeyboardInterrupt, SystemExit) as exc:
         if logger is not None:
-            logger.info("Training interrupted, cleaning up resources...")
+            logger.info(
+                "Training interrupted; preserving the last complete periodic checkpoint."
+            )
+        raise ClutterTrainingInterrupted(
+            "Clutter training interrupted before final result generation"
+        ) from exc
     finally:
         # Explicit resource cleanup for DataLoader so worker processes exit.
         # Use Ctrl+C (SIGINT) to stop training; kill -9 skips this and can leave workers running.
@@ -363,8 +617,7 @@ def network_train(
     ):
         torch.cuda.empty_cache()
 
-    # Epochs actually completed (epoch is last finished epoch index, or -1 if none).
-    actual_epochs = epoch + 1 if epoch >= 0 else 0
+    actual_epochs = completed_epoch_count
 
     if best_state is not None and actual_epochs > 0:
         load_dev = next(mdl.parameters()).device
@@ -438,6 +691,9 @@ def network_train(
         ),
         "early_stop_epoch_1based": actual_epochs,
         "stopped_by_patience": stopped_by_patience,
+        "checkpoint_path": checkpoint_path,
+        "checkpoint_interval_epochs": int(checkpoint_interval_epochs),
+        "resumed_from": resume_from,
     }
 
     out = metrics_mode.add_pos_to_result_dict(
@@ -498,6 +754,8 @@ if __name__ == "__main__":
         parser.error("--gawf_diag_every must be > 0")
     if args.gawf_diag_gate_eps <= 0 or args.gawf_diag_gate_eps >= 0.5:
         parser.error("--gawf_diag_gate_eps must be in (0, 0.5)")
+    if args.checkpoint_interval_epochs < 0:
+        parser.error("--checkpoint_interval_epochs must be >= 0")
 
     # GPU selection before any CUDA init. If the launcher already set
     # CUDA_VISIBLE_DEVICES, respect it (logical cuda:0 is that device).
@@ -579,6 +837,11 @@ if __name__ == "__main__":
         dataset_class=MC_RNN_Dataset,
         splits=("train", "valid"),
         logger=logger,
+        dataset_kwargs={
+            "input_cast_mode": args.input_cast_mode,
+            "frame_layout": args.frame_layout,
+            "shuffle_block_size": args.shuffle_block_size,
+        },
     )
 
     model_classes = get_model_classes(
@@ -653,6 +916,8 @@ if __name__ == "__main__":
 
     # Training loop over all hyperparameter combinations
     total_experiments = len(experiment_configs)
+    if args.resume_from.strip() and total_experiments != 1:
+        parser.error("--resume_from requires exactly one model/hyperparameter experiment")
     experiment_num = 0
 
     LoggingHelper.log_experiment_config(
@@ -792,6 +1057,36 @@ if __name__ == "__main__":
             f"{layer_suffix}{hp_suffix}{dz_suffix}{fb_path_suffix}"
         )
         results_path = os.path.join(results_dir, results_stem)
+        checkpoint_path = f"{results_path}_train_state.pth"
+        explicit_resume = args.resume_from.strip()
+        if explicit_resume:
+            if not os.path.isfile(explicit_resume):
+                raise FileNotFoundError(f"Resume checkpoint not found: {explicit_resume}")
+            resume_from = explicit_resume
+        elif args.auto_resume and os.path.isfile(checkpoint_path):
+            resume_from = checkpoint_path
+        else:
+            resume_from = None
+        checkpoint_metadata = {
+            "model_type": model_type,
+            "model_width": int(model_width),
+            "state_size": int(state_size) if state_size is not None else None,
+            "num_layers": int(num_layers),
+            "seed": int(args.seed),
+            "num_epochs": int(args.num_epochs),
+            "patience": int(args.patience),
+            "lr": float(train_lr),
+            "weight_decay": float(weight_decay),
+            "cnn_dropout": float(cnn_dropout),
+            "rnn_dropout": float(rnn_dropout),
+            "optimizer": args.optim,
+            "data_suffix": args.data_suffix,
+            "eval_data_suffix": eval_suffix,
+            "chan_num": int(args.chan_num),
+            "input_cast_mode": args.input_cast_mode,
+            "frame_layout": args.frame_layout,
+            "shuffle_block_size": int(args.shuffle_block_size),
+        }
 
         gawf_diag_path = None
         if args.gawf_diag and model_type == "gawf":
@@ -843,6 +1138,10 @@ if __name__ == "__main__":
             gawf_diag_every=args.gawf_diag_every,
             gawf_diag_gate_eps=args.gawf_diag_gate_eps,
             s5_ssm_lr_scale=args.s5_ssm_lr_scale,
+            checkpoint_path=checkpoint_path,
+            checkpoint_interval_epochs=args.checkpoint_interval_epochs,
+            resume_from=resume_from,
+            checkpoint_metadata=checkpoint_metadata,
         )
 
         # Save training results
@@ -874,6 +1173,14 @@ if __name__ == "__main__":
         metric_summary["patience"] = int(args.patience)
         metric_summary["use_acceleration"] = bool(args.use_acceleration)
         metric_summary["use_mmap"] = bool(args.use_mmap)
+        metric_summary["input_cast_mode"] = args.input_cast_mode
+        metric_summary["frame_layout"] = args.frame_layout
+        metric_summary["shuffle_block_size"] = int(args.shuffle_block_size)
+        metric_summary["checkpoint_path"] = checkpoint_path
+        metric_summary["checkpoint_interval_epochs"] = int(
+            args.checkpoint_interval_epochs
+        )
+        metric_summary["resumed_from"] = resume_from
         if train_lr != lr:
             metric_summary["requested_lr"] = lr
             metric_summary["effective_lr"] = train_lr

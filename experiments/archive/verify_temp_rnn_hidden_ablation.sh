@@ -117,4 +117,4 @@ echo "=== Plotting (y-lims vs Phase3 ref tag $REF_CSV_TAG) ==="
 python "$SCRIPT_DIR/verify_temp_rnn_hidden_ablation_plot.py" --epoch "$NUM_EPOCHS" \
   --ref_csv_tag "$REF_CSV_TAG" \
   --write_csv "experiments/generalization/artifacts/phase3_summary_verify_rnn_h256_h275_ep${NUM_EPOCHS}.csv"
-echo "Done. Figures: results/anal_figs/generalization/overfit_gap_verify_rnn_h256_h275_ep${NUM_EPOCHS}.png (and train/val)."
+echo "Done. Figures: results/anal_index/G_behaviour/plot_generalization/figs/overfit_gap_verify_rnn_h256_h275_ep${NUM_EPOCHS}.png (and train/val)."

@@ -44,7 +44,7 @@ fi
 
 MODEL_TYPE="${MODELS[$TASK_ID]}"
 DATA_SUFFIX="4h-float32"
-EVAL_DATA_SUFFIX="40h-float32"
+EVAL_DATA_SUFFIX="40h-uint8"
 RESULT_SUFFIX="${RESULT_ROOT_SUFFIX}/task_$(printf '%04d' "$TASK_ID")"
 RESULT_STEM="${MODEL_TYPE}_sector_acc_h${HIDDEN_SIZE}_lr${LR}_wd${WD}_cdo${CNN_DROPOUT}_rdo${RNN_DROPOUT}"
 METRICS_PATH="$ROOT/results/train_data/${RESULT_SUFFIX}/${RESULT_STEM}_metrics.json"

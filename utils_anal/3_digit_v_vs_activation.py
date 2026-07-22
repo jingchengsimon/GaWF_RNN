@@ -36,6 +36,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset, resolve_device
 
 
@@ -56,25 +58,37 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_data/3_digit_v_vs_activation",
+        default=str(output_dir("E_relevance_alignment", "3_digit_v_vs_activation", "data")),
         help="Directory for .npy and metadata outputs.",
     )
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="./results/anal_figs/3_digit_v_vs_activation",
+        default=str(output_dir("E_relevance_alignment", "3_digit_v_vs_activation", "figs")),
         help="Directory for figure outputs.",
     )
     parser.add_argument(
         "--cnn_stats",
         type=str,
-        default="./results/anal_data/cnn_channel/cnn_channel_activation_stats.npz",
+        default=str(
+            output_dir(
+                "E_relevance_alignment",
+                "cnn_channel_stats",
+                "data",
+            ) / "cnn_channel_activation_stats.npz"
+        ),
         help="Path to cnn_channel_activation_stats.npz or its containing directory.",
     )
     parser.add_argument(
         "--channel_order_path",
         type=str,
-        default="./results/anal_data/cnn_channel/channel_order_by_cosine_similarity.npy",
+        default=str(
+            output_dir(
+                "E_relevance_alignment",
+                "cnn_channel_stats",
+                "data",
+            ) / "channel_order_by_cosine_similarity.npy"
+        ),
         help="Optional channel order produced by cnn_channel_stats.py.",
     )
     parser.add_argument(

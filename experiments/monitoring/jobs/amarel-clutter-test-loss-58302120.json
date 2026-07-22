@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "id": "amarel-clutter-test-loss-58302120",
+  "description": "Clutter best-6 56-seed test loss and accuracy evaluation",
+  "host": "amarel",
+  "status": "failed",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58302120"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/clutter_multiseed_test/58302120.out",
+      "experiments/amarel/artifacts/clutter_multiseed_test/58302120.err"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "/scratch/js3269/results/anal_data/clutter_multiseed_test/per_seed_test_metrics.csv",
+      "/scratch/js3269/results/anal_data/clutter_multiseed_test/per_seed_test_metrics_meta.json",
+      "/scratch/js3269/results/anal_data/clutter_multiseed_test/test_loss_mean_sd.csv",
+      "/scratch/js3269/results/anal_figs/clutter_multiseed_test/test_loss_mean_sd.png",
+      "/scratch/js3269/results/anal_figs/clutter_multiseed_test/test_accuracy_mean_sd.png"
+    ]
+  },
+  "tracking": {
+    "expected_units": 5,
+    "auto_complete": false,
+    "result_globs": [
+      "/scratch/js3269/results/anal_data/clutter_multiseed_test/per_seed_test_metrics.csv",
+      "/scratch/js3269/results/anal_data/clutter_multiseed_test/per_seed_test_metrics_meta.json",
+      "/scratch/js3269/results/anal_data/clutter_multiseed_test/test_loss_mean_sd.csv",
+      "/scratch/js3269/results/anal_figs/clutter_multiseed_test/test_loss_mean_sd.png",
+      "/scratch/js3269/results/anal_figs/clutter_multiseed_test/test_accuracy_mean_sd.png"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "Exact cohort is filtered by the prior per_seed_test_accuracy.csv: 56 validation-selected checkpoints.",
+    "All 56 test inferences and metrics completed; the Slurm job failed only in the final plotting import. Metrics were fetched and the loss figure was regenerated and verified locally. The runner now uses python -m for future executions."
+  ],
+  "created_at": "2026-07-18T22:10:56+00:00",
+  "updated_at": "2026-07-18T22:14:07+00:00"
+}

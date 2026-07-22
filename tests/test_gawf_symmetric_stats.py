@@ -9,6 +9,7 @@ from utils_anal.gawf_symmetric_stats import (
     benjamini_hochberg,
     bootstrap_d,
     first_crossing,
+    first_negative_to_nonnegative,
     interaction_dominant,
     joint_design,
     paired_lead_test,
@@ -107,3 +108,17 @@ def test_first_crossing_and_paired_lead_direction() -> None:
     assert paired["difference_definition"].startswith("readout_frame_minus_gate_frame")
     assert paired["mean_difference"] == 0.5
     assert paired["fraction_gate_leads"] == 0.5
+
+
+def test_directional_crossing_rejects_initial_positive_value() -> None:
+    values = np.asarray(
+        [
+            [-1.0, -0.2, 0.3, 0.5],
+            [0.2, -0.4, -0.1, 0.1],
+            [0.3, 0.2, 0.1, 0.4],
+            [-0.2, -0.1, -0.3, -0.4],
+        ]
+    )
+    crossing = first_negative_to_nonnegative(values)
+    np.testing.assert_allclose(crossing[:2], [3.0, 4.0])
+    assert np.isnan(crossing[2:]).all()

@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "id": "amarel-minigrid-paper-risk-redblue-ckpt-58301375",
+  "description": "MiniGrid paper-aligned PPO RedBlueDoors checkpoint recovery: paper-LSTM and GaWF",
+  "host": "amarel",
+  "status": "cancelled",
+  "created_at": "2026-07-18T18:34:18+00:00",
+  "updated_at": "2026-07-18T18:35:29+00:00",
+  "remote_root": "/cache/home/js3269/projects/FAW_RNN-minigrid-paper-20260715",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": ["58301375"],
+    "run_ids": [],
+    "tmux_session": null,
+    "process_patterns": [],
+    "collect_gpu": false
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/minigrid_ppo_paper/58301375_*.*"
+    ],
+    "status_dir": "experiments/amarel/artifacts/minigrid_ppo_paper/status",
+    "result_paths": [
+      "results/train_data/mg_ppo_paper_RedBlueDoors-8x8_fov3_paper_lstm_seed42_100m",
+      "results/train_data/mg_ppo_paper_RedBlueDoors-8x8_fov3_gawf_seed42_100m"
+    ]
+  },
+  "tracking": {
+    "expected_units": 2,
+    "auto_complete": false,
+    "result_globs": [
+      "results/train_data/mg_ppo_paper_RedBlueDoors-8x8_fov3_paper_lstm_seed42_100m",
+      "results/train_data/mg_ppo_paper_RedBlueDoors-8x8_fov3_gawf_seed42_100m"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {"global_step": 100000000},
+      "checkpoint_glob": "checkpoint.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "Replaces legacy no-checkpoint tasks 58190642_0 and 58190642_4, canceled near 72.1M and 57.0M steps.",
+    "Old partials are preserved under results/archive/minigrid_ppo_paper_no_checkpoint_cancel_20260718T143418/.",
+    "Fresh runs checkpoint atomically every 100 PPO updates and were submitted with --requeue.",
+    "This pending submission was cancelled before start because its Slurm working directory resolved relative log paths outside the project root; no training output was created."
+  ]
+}

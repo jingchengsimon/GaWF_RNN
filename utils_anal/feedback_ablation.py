@@ -27,6 +27,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+from utils_anal.anal_paths import output_dir
+
 from utils.clutter_train_helpers import set_seed
 from utils_anal.anal_helpers import build_model_from_ckpt, build_test_dataset
 
@@ -70,11 +72,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_data/feedback_ablation",
+        default=str(output_dir("G_behaviour", "feedback_ablation", "data")),
         help="Directory for analysis outputs.",
     )
     parser.add_argument("--data_dir", type=str, default="")
-    parser.add_argument("--data_suffix", type=str, default="40h-float32")
+    parser.add_argument("--data_suffix", type=str, default="40h-uint8")
     parser.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda"])
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--seed", type=int, default=42)

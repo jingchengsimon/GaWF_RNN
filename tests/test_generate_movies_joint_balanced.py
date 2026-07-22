@@ -8,7 +8,7 @@ import unittest
 
 import numpy as np
 
-from source.GenerateMovies import StimulusConfig
+from source.clutter.generate_movies import StimulusConfig
 from source.GenerateMovies_joint_balanced import (
     NUM_DIGITS,
     NUM_SECTORS,

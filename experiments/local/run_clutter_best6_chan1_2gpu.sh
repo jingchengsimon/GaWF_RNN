@@ -10,7 +10,7 @@ CONDA_INIT="${AIM3_CONDA_INIT:-/home/${USER}/enter/etc/profile.d/conda.sh}"
 CONDA_ENV="${AIM3_CONDA_ENV:-aim3_rnn}"
 DATA_DIR="${AIM3_DATA_DIR:-/G/MIMOlab/Codes/aim3_RNN/stimuli}"
 TEST_SUFFIX="40h-float32-jointswitch-balanced"
-ANALYSIS_ROOT="$ROOT/results/anal_data/fg_switch_offset_acc_clutter_best6_jointswitch_balanced_chan1"
+ANALYSIS_ROOT="$ROOT/results/anal_index/G_behaviour/export_fg_switch_offset_acc/data/clutter_best6_jointswitch_balanced_chan1"
 RUN_ID="${AIM3_RUN_ID:-clutter-best6-chan1-10seed-ep150}"
 ARTIFACT_DIR="$ROOT/experiments/amarel/artifacts/clutter_best6_chan1_10seed_ep150"
 LOG_PATH="$ARTIFACT_DIR/$RUN_ID.log"
@@ -28,7 +28,7 @@ conda activate "$CONDA_ENV"
 set -u
 cd "$ROOT"
 
-for suffix in train-40h-float32 validation-40h-float32 test-${TEST_SUFFIX}; do
+for suffix in train-40h-uint8 validation-40h-uint8 test-${TEST_SUFFIX}; do
   if [[ ! -f "$DATA_DIR/stimulus_reg-${suffix}.npy" ]]; then
     echo "Missing stimulus: $DATA_DIR/stimulus_reg-${suffix}.npy" >&2
     exit 2
@@ -56,7 +56,7 @@ run_one() {
       MODEL_WIDTH_ARGS=(--s5_d_models "$MODEL_WIDTH" --s5_state_sizes "$S5_STATE_SIZE")
     fi
     CUDA_VISIBLE_DEVICES="$gpu" DISABLE_TQDM=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
-      AIM3_NUM_WORKERS=0 AIM3_PIN_MEMORY=0 python train_model.py \
+      AIM3_NUM_WORKERS=2 AIM3_PIN_MEMORY=1 python train_model.py \
       --model_types "$MODEL_TYPE" \
       "${MODEL_WIDTH_ARGS[@]}" \
       --num_layers 1 \
@@ -75,6 +75,9 @@ run_one() {
       --use_acceleration \
       --use_sector_mode \
       --use_mmap \
+      --input_cast_mode device \
+      --frame_layout compact \
+      --shuffle_block_size -1 \
       --result_suffix "$RESULT_SUFFIX"
     rc=$?
     if [[ $rc -ne 0 ]]; then

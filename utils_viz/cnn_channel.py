@@ -10,6 +10,16 @@ Output:
     cnn_channel_activation_matrix.png in --output_dir.
 """
 
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
+
 import argparse
 import os
 
@@ -28,7 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="./results/anal_data/cnn_channel",
+        default=str(output_dir("E_relevance_alignment", "cnn_channel_stats", "data")),
         help=(
             "Path to cnn_channel_activation_stats.npz. If a directory is given, "
             "file name will be auto-completed as 'cnn_channel_activation_stats.npz'."
@@ -37,13 +47,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./results/anal_figs/cnn_channel",
+        default=str(output_dir("E_relevance_alignment", "cnn_channel", "figs")),
         help="Directory to save figures.",
     )
     parser.add_argument(
         "--channel_order_path",
         type=str,
-        default="./results/anal_data/cnn_channel/channel_order_by_cosine_similarity.npy",
+        default=str(
+            output_dir(
+                "E_relevance_alignment",
+                "cnn_channel_stats",
+                "data",
+            ) / "channel_order_by_cosine_similarity.npy"
+        ),
         help=(
             "Path to a NumPy array specifying the feature-channel order to use "
             "for visualization (e.g., output from analyze_cnn_channel_activation.py). "
@@ -269,7 +285,7 @@ def main() -> None:
 
     raw_in_path = args.data_dir
     if raw_in_path is None or raw_in_path == "":
-        raw_in_path = "./results/anal_data/cnn_channel"
+        raw_in_path = str(output_dir("E_relevance_alignment", "cnn_channel_stats", "data"))
     # If input_path is a directory or lacks an extension, auto-complete filename.
     if os.path.isdir(raw_in_path) or not os.path.splitext(raw_in_path)[1]:
         raw_in_path = os.path.join(raw_in_path, "cnn_channel_activation_stats.npz")

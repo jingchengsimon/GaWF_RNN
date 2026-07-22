@@ -1,7 +1,8 @@
 """
 Shared helpers for analysis scripts: test split dataset construction and GaWF checkpoint loading.
 
-Imports: train_model (MC_RNN_Dataset), utils.clutter_train_helpers (paths/datasets), utils_viz (hparam parsing).
+Imports: train_model (MC_RNN_Dataset), clutter helpers (paths/datasets), and the canonical
+checkpoint-filename hyperparameter parser.
 """
 
 from __future__ import annotations
@@ -43,14 +44,24 @@ def resolve_device(
     return torch.device(device_flag)
 
 
-def build_test_dataset(args: argparse.Namespace) -> Tuple[MC_RNN_Dataset, int]:
-    """
-    Build test dataset only, using the same helpers as training (splits=("test",)).
+def build_eval_dataset(
+    args: argparse.Namespace,
+    split: str,
+) -> Tuple[MC_RNN_Dataset, int]:
+    """Build one held-out Clutter split with the same helpers used by training.
+
+    ``split`` must be ``"validation"``/``"valid"`` or ``"test"``.  This helper exists so
+    analyses that
+    estimate statistics on validation and test hypotheses on test cannot accidentally load the
+    training split or silently reuse one held-out split for both roles.
 
     If ``args.switch_target`` is ``"fg"`` or ``"bg"`` (export script): sector single-char
-    test split; timing windows use ``fg_switch`` vs ``bg_switch`` only in the export script.
+    labels are used; timing windows use ``fg_switch`` vs ``bg_switch`` only in the caller.
     Otherwise uses ``args.use_sector_mode`` and ``args.predict_all_chars`` (legacy callers).
     """
+    if split not in ("validation", "valid", "test"):
+        raise ValueError(f"split must be 'validation', 'valid', or 'test', got {split!r}")
+    canonical_split = "valid" if split == "validation" else split
     switch = getattr(args, "switch_target", None)
     if switch in ("fg", "bg"):
         use_sector_mode, predict_all_chars = True, False
@@ -59,31 +70,37 @@ def build_test_dataset(args: argparse.Namespace) -> Tuple[MC_RNN_Dataset, int]:
         predict_all_chars = getattr(args, "predict_all_chars", False)
 
     base_path = PathHelper.get_base_path(override=args.data_dir or None)
-    paths = PathHelper.prepare_data_paths(base_path, data_suffix=args.data_suffix, splits=("test",))
-    stims_test, lbls_test = PathHelper.load_raw_data(
-        None,
-        None,
-        None,
-        None,
-        use_mmap=args.use_mmap,
-        paths_tuple=paths,
+    paths = PathHelper.prepare_data_paths(
+        base_path, data_suffix=args.data_suffix, splits=(canonical_split,)
     )
+    loaded = PathHelper.load_raw_data(
+        None, None, None, None, use_mmap=args.use_mmap, paths_tuple=paths
+    )
+    split_stims, split_labels = loaded[:2]
+    if canonical_split == "test":
+        dataset_args = (None, None, None, None)
+        dataset_kwargs = {"stims_test": split_stims, "lbls_test": split_labels}
+    else:
+        dataset_args = (None, None, split_stims, split_labels)
+        dataset_kwargs = {}
 
-    test_ds, num_pos = create_datasets(
-        None,
-        None,
-        None,
-        None,
+    dataset, num_pos = create_datasets(
+        *dataset_args,
         use_sector_mode=use_sector_mode,
         predict_all_chars=predict_all_chars,
         chan_num=int(getattr(args, "chan_num", 2)),
         max_chars=15,
         dataset_class=MC_RNN_Dataset,
-        splits=("test",),
-        stims_test=stims_test,
-        lbls_test=lbls_test,
+        splits=(canonical_split,),
+        **dataset_kwargs,
     )
-    return test_ds, num_pos
+    return dataset, num_pos
+
+
+def build_test_dataset(args: argparse.Namespace) -> Tuple[MC_RNN_Dataset, int]:
+    """Build the test split; retained as the compatibility entry point for existing analyses."""
+
+    return build_eval_dataset(args, "test")
 
 
 def build_train_dataset_allchars(args: argparse.Namespace) -> MC_RNN_Dataset:
@@ -124,6 +141,46 @@ _HPARAM_MODEL_TO_KEY: Dict[str, str] = {
     "MAMBA": "mamba",
     "S5": "s5",
 }
+
+
+def _remap_legacy_clutter_state_dict(
+    state_dict: Dict[str, torch.Tensor],
+    model: torch.nn.Module,
+) -> Dict[str, torch.Tensor]:
+    """Map pre-componentization clutter checkpoint keys to the current module layout."""
+
+    target_keys = set(model.state_dict())
+    if any(key.startswith("encoder_module.") for key in state_dict):
+        return {key: value for key, value in state_dict.items() if key != "prev_feedback"}
+
+    encoder_prefixes = ("conv1.", "LNorm1.", "conv2.", "LNorm2.", "conv_reduce.")
+    head_prefixes = ("fcchar.", "fcchars.", "fcpos.")
+    sequence_core_prefix = (
+        "core." if getattr(model, "uses_mamba_core", False) or getattr(model, "uses_s5_core", False)
+        else "core.rnn."
+    )
+    remapped: Dict[str, torch.Tensor] = {}
+    for key, value in state_dict.items():
+        if key == "prev_feedback":
+            continue
+        if key in target_keys:
+            new_key = key
+        elif key.startswith(encoder_prefixes):
+            new_key = f"encoder_module.{key}"
+        elif key.startswith(head_prefixes):
+            new_key = f"head.{key}"
+        elif key.startswith("rnn."):
+            new_key = f"{sequence_core_prefix}{key[len('rnn.') :]}"
+        elif key.startswith("LNormRNN."):
+            new_key = f"core.norm.{key[len('LNormRNN.') :]}"
+        elif key in ("U", "V"):
+            new_key = f"core.{key}"
+        else:
+            new_key = key
+        if new_key in remapped:
+            raise RuntimeError(f"Checkpoint keys collide after legacy remapping: {new_key}")
+        remapped[new_key] = value
+    return remapped
 
 
 def build_model_from_ckpt(
@@ -188,7 +245,7 @@ def build_model_from_ckpt(
         **model_kwargs,
     )
     state_dict = torch.load(ckpt_path, map_location=device, weights_only=False)
-    state_dict = {k: v for k, v in state_dict.items() if k != "prev_feedback"}
+    state_dict = _remap_legacy_clutter_state_dict(state_dict, model)
     load_result = model.load_state_dict(state_dict, strict=False)
     print("[load_state_dict] missing_keys:", load_result.missing_keys)
     print("[load_state_dict] unexpected_keys:", load_result.unexpected_keys)
@@ -247,7 +304,7 @@ def build_rnn_allchars_model_from_sector_ckpt(
         predict_all_chars=True,
     )
     state_dict = torch.load(ckpt_path, map_location=device, weights_only=False)
-    state_dict = {k: v for k, v in state_dict.items() if k != "prev_feedback"}
+    state_dict = _remap_legacy_clutter_state_dict(state_dict, model)
     load_result = model.load_state_dict(state_dict, strict=False)
     print("[load_state_dict allchars head] missing_keys:", load_result.missing_keys)
     print("[load_state_dict allchars head] unexpected_keys:", load_result.unexpected_keys)

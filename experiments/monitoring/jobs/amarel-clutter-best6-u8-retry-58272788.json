@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "id": "amarel-clutter-best6-u8-retry-58272788",
+  "description": "Clutter GRU seed1 and RNN seed3 150-epoch retry with uint8 optimized DataLoader",
+  "host": "amarel",
+  "status": "queued",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58272788"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/clutter_best6_10seed_ep150/58272788_*.out"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "/scratch/js3269/results/train_data/clutter_best6_multiseed_40h_ep150/gru-seed01",
+      "/scratch/js3269/results/train_data/clutter_best6_multiseed_40h_ep150/rnn-seed03"
+    ]
+  },
+  "tracking": {
+    "expected_units": 2,
+    "auto_complete": false,
+    "result_globs": [
+      "/scratch/js3269/results/train_data/clutter_best6_multiseed_40h_ep150/gru-seed01",
+      "/scratch/js3269/results/train_data/clutter_best6_multiseed_40h_ep150/rnn-seed03"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "Tasks 3 and 13; uint8, device cast, compact layout, batch-local shuffle, workers=2, pinned memory.",
+    "Outputs and strict validation both resolve through /scratch/js3269/results."
+  ],
+  "created_at": "2026-07-18T00:29:06+00:00",
+  "updated_at": "2026-07-18T00:29:06+00:00"
+}

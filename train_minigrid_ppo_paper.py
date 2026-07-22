@@ -18,6 +18,8 @@ import json
 import logging
 import math
 import os
+import random
+import shutil
 import time
 from typing import Any
 
@@ -85,6 +87,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--result_suffix", default="minigrid_ppo_paper")
     parser.add_argument("--save_dir", default=None)
     parser.add_argument("--log_interval_updates", type=int, default=100)
+    parser.add_argument(
+        "--checkpoint_interval_updates",
+        type=int,
+        default=100,
+        help=(
+            "Atomically save a resumable checkpoint every N PPO updates "
+            "(0 disables periodic saves)."
+        ),
+    )
+    parser.add_argument(
+        "--resume_from",
+        default=None,
+        help="Resume model, optimizer, counters, and RNG from a paper-PPO checkpoint.",
+    )
     parser.add_argument("--overwrite", action="store_true")
     return parser
 
@@ -143,6 +159,165 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("Paper protocol requires --num_steps 128")
     if args.update_epochs != 4:
         raise ValueError("Paper protocol requires --update_epochs 4")
+    if args.checkpoint_interval_updates < 0:
+        raise ValueError("checkpoint_interval_updates must be non-negative")
+    if args.resume_from and args.overwrite:
+        raise ValueError("--resume_from and --overwrite are mutually exclusive")
+
+
+_RESUME_ARG_KEYS = (
+    "env_id",
+    "model_type",
+    "agent_view_size",
+    "encoder_hidden_size",
+    "hidden_size",
+    "core_dropout",
+    "ssm_d_model",
+    "ssm_state_size",
+    "ssm_num_layers",
+    "num_envs",
+    "num_steps",
+    "num_minibatches",
+    "update_epochs",
+    "gamma",
+    "gae_lambda",
+    "clip_coef",
+    "ent_coef",
+    "vf_coef",
+    "adam_eps",
+    "max_grad_norm",
+    "seed",
+)
+
+
+def _load_checkpoint(path: str, device: torch.device) -> dict[str, Any]:
+    """Load a trusted local training checkpoint across supported PyTorch versions."""
+    try:
+        checkpoint = torch.load(path, map_location=device, weights_only=False)
+    except TypeError:
+        checkpoint = torch.load(path, map_location=device)
+    if not isinstance(checkpoint, dict):
+        raise ValueError(f"Invalid checkpoint payload: {path}")
+    return checkpoint
+
+
+def _validate_resume_checkpoint(
+    checkpoint: dict[str, Any], args: argparse.Namespace, learning_rate: float
+) -> None:
+    """Reject continuation when the saved scientific protocol is incompatible."""
+    if checkpoint.get("format_version") != 2:
+        raise ValueError("Checkpoint predates resumable paper-PPO format_version=2")
+    saved_args = checkpoint.get("args")
+    if not isinstance(saved_args, dict):
+        raise ValueError("Checkpoint is missing saved arguments")
+    mismatches = [
+        key
+        for key in _RESUME_ARG_KEYS
+        if key not in saved_args or saved_args[key] != getattr(args, key)
+    ]
+    saved_learning_rate = float(checkpoint.get("learning_rate", float("nan")))
+    if not math.isclose(saved_learning_rate, learning_rate, rel_tol=0.0, abs_tol=0.0):
+        mismatches.append("learning_rate")
+    if mismatches:
+        raise ValueError(
+            "Resume checkpoint protocol mismatch for: " + ", ".join(sorted(set(mismatches)))
+        )
+
+
+def _rng_state() -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "python": random.getstate(),
+        "numpy": np.random.get_state(),
+        "torch": torch.get_rng_state(),
+    }
+    if torch.cuda.is_available():
+        state["torch_cuda"] = torch.cuda.get_rng_state_all()
+    return state
+
+
+def _restore_rng_state(state: dict[str, Any]) -> None:
+    random.setstate(state["python"])
+    np.random.set_state(state["numpy"])
+    torch.set_rng_state(state["torch"].cpu())
+    if torch.cuda.is_available() and "torch_cuda" in state:
+        torch.cuda.set_rng_state_all([item.cpu() for item in state["torch_cuda"]])
+
+
+def _atomic_torch_save(payload: dict[str, Any], path: str) -> None:
+    """Replace a checkpoint atomically so preemption cannot leave a half-written file."""
+    temporary_path = f"{path}.tmp.{os.getpid()}"
+    try:
+        torch.save(payload, temporary_path)
+        os.replace(temporary_path, path)
+    finally:
+        if os.path.exists(temporary_path):
+            os.remove(temporary_path)
+
+
+def _reconcile_history(history_path: str, global_step: int) -> str | None:
+    """Archive and trim log records newer than the checkpoint before appending."""
+    if not os.path.exists(history_path):
+        return None
+    with open(history_path, "r", encoding="utf-8") as stream:
+        lines = stream.readlines()
+    kept: list[str] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        if int(record["global_step"]) <= global_step:
+            kept.append(line if line.endswith("\n") else line + "\n")
+    if len(kept) == len(lines):
+        return None
+    timestamp = time.strftime("%Y%m%dT%H%M%S")
+    archive_path = f"{history_path}.pre_resume_{timestamp}"
+    shutil.copy2(history_path, archive_path)
+    temporary_path = f"{history_path}.tmp.{os.getpid()}"
+    with open(temporary_path, "w", encoding="utf-8") as stream:
+        stream.writelines(kept)
+    os.replace(temporary_path, history_path)
+    return archive_path
+
+
+def _checkpoint_payload(
+    *,
+    model: PaperMiniGridActorCritic,
+    optimizer: optim.Optimizer,
+    args: argparse.Namespace,
+    learning_rate: float,
+    update: int,
+    global_step: int,
+    elapsed_seconds: float,
+    recent_returns: list[float],
+    gawf_grad_norm: float | None,
+    mean_return: float,
+    success_rate: float,
+    last_policy_loss: float,
+    last_value_loss: float,
+    last_entropy: float,
+    completed: bool,
+) -> dict[str, Any]:
+    return {
+        "format_version": 2,
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "update": update,
+        "global_step": global_step,
+        "elapsed_seconds": elapsed_seconds,
+        "recent_returns": recent_returns,
+        "gawf_grad_norm": gawf_grad_norm,
+        "mean_return": mean_return,
+        "success_rate": success_rate,
+        "last_policy_loss": last_policy_loss,
+        "last_value_loss": last_value_loss,
+        "last_entropy": last_entropy,
+        "rng_state": _rng_state(),
+        "learning_rate": learning_rate,
+        "args": vars(args),
+        "completed": completed,
+        # Gymnasium/MiniGrid environment internals are intentionally not serialized.
+        "environment_state_restored": False,
+    }
 
 
 def train(args: argparse.Namespace) -> dict[str, Any]:
@@ -164,12 +339,24 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
     ensure_dir(save_dir)
     history_path = os.path.join(save_dir, "metrics_history.jsonl")
     metrics_path = os.path.join(save_dir, "metrics.json")
-    if not args.overwrite and (os.path.exists(history_path) or os.path.exists(metrics_path)):
+    checkpoint_path = os.path.join(save_dir, "checkpoint.pth")
+    if not args.resume_from and not args.overwrite and (
+        os.path.exists(history_path)
+        or os.path.exists(metrics_path)
+        or os.path.exists(checkpoint_path)
+    ):
         raise FileExistsError(f"Refusing to overwrite existing result directory: {save_dir}")
     if args.overwrite:
-        for path in (history_path, metrics_path):
+        for path in (history_path, metrics_path, checkpoint_path):
             if os.path.exists(path):
                 os.remove(path)
+
+    resume_checkpoint = None
+    if args.resume_from:
+        if not os.path.isfile(args.resume_from):
+            raise FileNotFoundError(f"Resume checkpoint not found: {args.resume_from}")
+        resume_checkpoint = _load_checkpoint(args.resume_from, device)
+        _validate_resume_checkpoint(resume_checkpoint, args, learning_rate)
 
     envs = make_vector_minigrid_env(
         args.env_id,
@@ -218,13 +405,45 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         next_done = torch.ones(num_envs, device=device)
         state = None
         global_step = 0
-        start_time = time.time()
+        start_update = 1
+        elapsed_before_resume = 0.0
         recent_returns: list[float] = []
         batch_size = num_envs * num_steps
         num_updates = max(1, math.ceil(args.total_timesteps / batch_size))
         gawf_grad_norm: float | None = None
         mean_return = success_rate = float("nan")
         last_policy_loss = last_value_loss = last_entropy = float("nan")
+
+        if resume_checkpoint is not None:
+            model.load_state_dict(resume_checkpoint["model"])
+            optimizer.load_state_dict(resume_checkpoint["optimizer"])
+            global_step = int(resume_checkpoint["global_step"])
+            start_update = int(resume_checkpoint["update"]) + 1
+            elapsed_before_resume = float(resume_checkpoint.get("elapsed_seconds", 0.0))
+            recent_returns = [
+                float(value) for value in resume_checkpoint.get("recent_returns", [])
+            ]
+            gawf_grad_norm = resume_checkpoint.get("gawf_grad_norm")
+            mean_return = float(resume_checkpoint.get("mean_return", float("nan")))
+            success_rate = float(resume_checkpoint.get("success_rate", float("nan")))
+            last_policy_loss = float(
+                resume_checkpoint.get("last_policy_loss", float("nan"))
+            )
+            last_value_loss = float(
+                resume_checkpoint.get("last_value_loss", float("nan"))
+            )
+            last_entropy = float(resume_checkpoint.get("last_entropy", float("nan")))
+            archived_history = _reconcile_history(history_path, global_step)
+            _restore_rng_state(resume_checkpoint["rng_state"])
+            logger.info(
+                "resumed checkpoint=%s update=%d step=%d history_archive=%s env_state=fresh_reset",
+                args.resume_from,
+                start_update - 1,
+                global_step,
+                archived_history,
+            )
+
+        start_time = time.time()
 
         logger.info(
             "protocol=paper_ppo2 env=%s model=%s seed=%d lr=%g steps=%d updates=%d",
@@ -236,7 +455,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
             num_updates,
         )
 
-        for update in range(1, num_updates + 1):
+        for update in range(start_update, num_updates + 1):
             rollout_start_state = model.detach_state(state)
             for step in range(num_steps):
                 global_step += num_envs
@@ -343,7 +562,8 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
                 success_rate = float(np.mean(np.asarray(recent_returns) > 0.0))
 
             if update % args.log_interval_updates == 0 or update == num_updates:
-                fps = int(global_step / max(time.time() - start_time, 1e-6))
+                elapsed_seconds = elapsed_before_resume + (time.time() - start_time)
+                fps = int(global_step / max(elapsed_seconds, 1e-6))
                 record = {
                     "global_step": global_step,
                     "update": update,
@@ -366,16 +586,39 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
                 with open(history_path, "a", encoding="utf-8") as stream:
                     stream.write(json.dumps(record, sort_keys=True) + "\n")
 
-        checkpoint_path = os.path.join(save_dir, "checkpoint.pth")
-        torch.save(
-            {
-                "model": model.state_dict(),
-                "optimizer": optimizer.state_dict(),
-                "global_step": global_step,
-                "args": vars(args),
-            },
-            checkpoint_path,
-        )
+            should_checkpoint = (
+                args.checkpoint_interval_updates > 0
+                and update % args.checkpoint_interval_updates == 0
+            ) or update == num_updates
+            if should_checkpoint:
+                elapsed_seconds = elapsed_before_resume + (time.time() - start_time)
+                _atomic_torch_save(
+                    _checkpoint_payload(
+                        model=model,
+                        optimizer=optimizer,
+                        args=args,
+                        learning_rate=learning_rate,
+                        update=update,
+                        global_step=global_step,
+                        elapsed_seconds=elapsed_seconds,
+                        recent_returns=recent_returns,
+                        gawf_grad_norm=gawf_grad_norm,
+                        mean_return=mean_return,
+                        success_rate=success_rate,
+                        last_policy_loss=last_policy_loss,
+                        last_value_loss=last_value_loss,
+                        last_entropy=last_entropy,
+                        completed=update == num_updates,
+                    ),
+                    checkpoint_path,
+                )
+                logger.info(
+                    "checkpoint update=%d step=%d path=%s",
+                    update,
+                    global_step,
+                    checkpoint_path,
+                )
+
         metrics: dict[str, Any] = {
             "protocol": "toro_icarte_2020_openai_baselines_ppo2",
             "protocol_layer": (
@@ -419,6 +662,12 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
             "success_rate": success_rate,
             "episodic_return_100": mean_return,
             "checkpoint": checkpoint_path,
+            "checkpoint_format_version": 2,
+            "checkpoint_interval_updates": args.checkpoint_interval_updates,
+            "resumed_from": args.resume_from,
+            "resume_environment_state": (
+                "fresh_reset" if args.resume_from else "not_applicable"
+            ),
         }
         save_json(metrics_path, metrics)
         return metrics

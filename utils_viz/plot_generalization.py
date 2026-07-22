@@ -27,6 +27,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from utils_anal.anal_paths import output_dir
+
 SCALE_ORDER = ["4h", "10h", "20h", "40h"]
 MODELS = ["rnn", "lstm", "gru", "gawf"]
 STYLES = {
@@ -131,7 +133,7 @@ def main() -> None:
     ap.add_argument(
         "--out_dir",
         default="",
-        help="Figure output directory (default: results/anal_figs/generalization)",
+        help="Figure output directory (default: category-indexed behaviour output)",
     )
     ap.add_argument(
         "--save-pdf",
@@ -148,7 +150,7 @@ def main() -> None:
     tag_suffix = args.csv_tag.lstrip("_") if args.csv_tag else ""
     mid = f"_{tag_suffix}" if tag_suffix else ""
 
-    out_dir = args.out_dir or os.path.join(root, "results", "anal_figs", "generalization")
+    out_dir = args.out_dir or str(output_dir("G_behaviour", "plot_generalization", "figs"))
     out_dir = os.path.abspath(out_dir)
 
     rows = load_rows_for_scales(art, args.csv_tag)

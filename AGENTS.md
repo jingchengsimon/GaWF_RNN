@@ -40,6 +40,7 @@ is missing, copy `.agents/local.example.md` and fill it in. Do not guess remote 
   `utils/clutter_train_engine.py`.
 - `AccelerationConfig` is the single source of truth for clutter AMP and gradient accumulation.
   Acceleration must not change sampling, losses, update cadence, UTD, or model structure.
+  `--shuffle_block_size` is an explicit recorded data-pipeline protocol independent of AMP.
 
 ## Architecture contracts
 
@@ -62,8 +63,13 @@ is missing, copy `.agents/local.example.md` and fill it in. Do not guess remote 
 ## Data and result safety
 
 - Keep datasets on CPU or mmap; do not load a full dataset into GPU memory.
-- With mmap data, use `num_workers=0` and `pin_memory=False`.
-- Explicitly cast saved NumPy arrays to `np.float32` or `np.int64`.
+- Standard Clutter 40h training uses mmap uint8, device-side float32 cast, compact frame windows,
+  block shuffle sized to the effective batch, `num_workers=2`, and CUDA pinned memory. The
+  legacy `sample/stacked/global/0-workers` path remains an explicit reproduction fallback.
+- Standard long Clutter runs atomically checkpoint every 5 completed epochs and enable automatic
+  resume. A preempted run must not emit or overwrite final result artifacts from partial state.
+- Explicitly cast saved NumPy arrays to `np.uint8`, `np.float32`, or `np.int64` as required
+  by the documented storage/tensor contract.
 - Preserve existing checkpoint and result naming contracts in `docs/CONVENTIONS.md`, including
   compatibility with historical `gawf_multi_` and `_do` filenames.
 - Do not delete experiment results, checkpoints, or pending-cleanup records without explicit
@@ -98,13 +104,28 @@ is missing, copy `.agents/local.example.md` and fill it in. Do not guess remote 
 
 - Before remote diagnostics, tests, training, or result inspection, read the remote runbook and
   local configuration. Use the `aim3_rnn` environment; never use the remote default Python.
+- Treat every Amarel login node as control-plane only. A `submit_*.sh` launcher may perform
+  bounded shell/stdlib validation and scheduler/file-status operations, but must never activate
+  Conda or directly run training, inference, preprocessing, parameter matching, smoke tests,
+  visualization, project-module imports, or any PyTorch/NumPy/JAX/TensorFlow workload. Put all
+  such work in an `sbatch`-launched `run_*.sh`, including preflight jobs, and connect dependent
+  arrays with `afterok`.
+- Before synchronizing or executing any new or modified Amarel `submit_*.sh`, run
+  `python -m pytest -q tests/test_amarel_submit_safety.py` on the local development host (or in a
+  Slurm compute job), never on an Amarel login node. A failing safety test is a stop condition; do
+  not bypass it or add an exception for a new launcher. Also use the launcher's `--dry-run` when
+  available, and verify submitted work is assigned to a compute node.
 - Consolidate related Amarel queries into one foreground SSH session. Do not open background SSH
   sessions; use the documented single-heredoc fallback only when direct SSH cannot proceed.
 - Codex-submitted Amarel training requests use one Ada Lovelace GPU, 16 CPUs, 64G memory,
-  `AIM3_NUM_WORKERS=12`, `AIM3_PIN_MEMORY=1`, and an explicit `AIM3_RESULTS_PATH`, unless a human
-  explicitly specifies otherwise.
+  and an explicit `AIM3_RESULTS_PATH`, unless a human explicitly specifies otherwise. General
+  tasks use `AIM3_NUM_WORKERS=12`, while standard Clutter 40h mmap runs use the benchmarked
+  `AIM3_NUM_WORKERS=2`; both use `AIM3_PIN_MEMORY=1` on CUDA compute nodes.
 - After submission, report the job/run ID, remote root, result location, requested resources, and
   the status/check command, then register it in `experiments/monitoring/`.
+- Before resubmitting an existing experiment unit, query all active scheduler jobs and process
+  commands for the exact result suffix across historical job IDs/worktrees. Final-result absence
+  alone is not evidence that no older writer is still active.
 - Reusable launchers may be tracked. Generated Slurm scripts stay under
   `experiments/amarel/generated/`; clearly marked one-off scripts must be removed before branch
   synchronization.

@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import torch
 
-from train_minigrid_ppo_paper import build_arg_parser, paper_learning_rate
+from train_minigrid_ppo_paper import (
+    _reconcile_history,
+    build_arg_parser,
+    paper_learning_rate,
+)
 from utils.minigrid_ppo_paper_models import (
     GaWFPolicyState,
     PaperMiniGridActorCritic,
@@ -31,6 +37,25 @@ def test_paper_defaults_match_ppo2_protocol() -> None:
     assert args.gae_lambda == 0.95
     assert args.ent_coef == 0.01
     assert args.adam_eps == 1e-5
+    assert args.checkpoint_interval_updates == 100
+    assert args.resume_from is None
+
+
+def test_resume_history_discards_and_archives_rows_beyond_checkpoint(tmp_path) -> None:
+    history_path = tmp_path / "metrics_history.jsonl"
+    history_path.write_text(
+        '{"global_step": 1024, "update": 1}\n'
+        '{"global_step": 2048, "update": 2}\n',
+        encoding="utf-8",
+    )
+
+    archive_path = _reconcile_history(str(history_path), global_step=1024)
+
+    assert archive_path is not None
+    assert history_path.read_text(encoding="utf-8") == (
+        '{"global_step": 1024, "update": 1}\n'
+    )
+    assert "2048" in Path(archive_path).read_text(encoding="utf-8")
 
 
 def test_paper_learning_rate_is_baseline_specific() -> None:

@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "id": "amarel-clutter-best6-u8-gru-seed1-58301179",
+  "description": "Clutter GRU seed1 150-epoch retry with the standard uint8 optimized DataLoader configuration",
+  "host": "amarel",
+  "status": "queued",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58301179"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/clutter_best6_10seed_ep150/58301179_*.out"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "/scratch/js3269/results/train_data/clutter_best6_multiseed_40h_ep150/gru-seed01"
+    ]
+  },
+  "tracking": {
+    "expected_units": 1,
+    "auto_complete": false,
+    "result_globs": [
+      "/scratch/js3269/results/train_data/clutter_best6_multiseed_40h_ep150/gru-seed01"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "Task 3 only: GRU seed1; uint8 mmap, device cast, compact layout, batch-local shuffle, workers=2, pinned memory.",
+    "The prior 36-epoch partial run had no checkpoint and was archived at /scratch/js3269/results/archive/clutter_best6_multiseed_40h_ep150/gru-seed01_preempted_58272788_3; this retry starts from epoch 0.",
+    "Before this pending job starts, its runner was upgraded to atomic five-epoch checkpoints with automatic resume."
+  ],
+  "created_at": "2026-07-18T17:37:52+00:00",
+  "updated_at": "2026-07-18T17:37:52+00:00"
+}

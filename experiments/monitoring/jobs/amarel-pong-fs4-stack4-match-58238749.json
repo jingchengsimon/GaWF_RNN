@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "id": "amarel-pong-fs4-stack4-match-58238749",
+  "description": "Prepare complete L1 Atari Pong parameter-match table including Mamba",
+  "host": "amarel",
+  "status": "completed",
+  "created_at": "2026-07-17T03:35:49+00:00",
+  "updated_at": "2026-07-17T18:01:25+00:00",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58238749"
+    ],
+    "run_ids": [],
+    "tmux_session": null,
+    "process_patterns": [],
+    "collect_gpu": false
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/atari_pong_fs4_stack4_match/58238749.*"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "/scratch/js3269/results/atari_param_match_fs4_stack4_l1"
+    ]
+  },
+  "tracking": {
+    "expected_units": 1,
+    "auto_complete": true,
+    "result_globs": [
+      "/scratch/js3269/results/atari_param_match_fs4_stack4_l1"
+    ],
+    "defaults": {
+      "metrics_file": "atari_param_match.json",
+      "checkpoint_glob": "*.pth",
+      "checkpoint_count": 0,
+      "expected": {
+        "num_actions": 6,
+        "candidate_num_layers": 1
+      }
+    },
+    "units": []
+  },
+  "notes": [
+    "Computes only the missing Mamba entry on a compute node, then merges it with the L1 matching table used by the strict fs1/stack1 batch.",
+    "Jobs 58238750 and 58238751 depend on successful completion."
+  ],
+  "completed_at": "2026-07-17T18:01:25+00:00"
+}

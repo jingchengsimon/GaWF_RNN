@@ -39,10 +39,10 @@ utils/<task>_task_models.py + task data/train helpers
 train_<task>.py
         |
         v
-utils_anal/  ->  results/anal_data/
+utils_anal/  ->  results/anal_index/<CATEGORY>/<script>/data/
         |
         v
-utils_viz/   ->  results/anal_figs/
+utils_viz/   ->  results/anal_index/<CATEGORY>/<script>/figs/
 ```
 
 The arrows are one-way:
@@ -110,6 +110,11 @@ Official train and validation curves come from full evaluation passes, not onlin
 Sector single-character data may include `fg_switch`; when present, evaluation also records
 strict global and `pre5`/`post5` foreground-transition accuracies.
 
+Long Clutter runs checkpoint only at completed epoch boundaries. The resumable state contains the
+current model, optimizer, AMP scaler, completed epoch count, metric arrays, best-validation state,
+early-stopping counters, process RNG, and DataLoader/sampler RNG. Final `_model.pth` files remain
+best-validation inference artifacts and are distinct from `*_train_state.pth` continuation files.
+
 ## Text architecture
 
 `TextSequenceClassifier` combines embeddings, a shared recurrent core, and classification heads.
@@ -154,8 +159,11 @@ only; recurrent-state dataclasses are not passed through Dynamo. Replay reset de
 on CPU, and logging-only scalar synchronization occurs at log intervals. These optimizations
 must not alter sampled indices, losses, update cadence, environment steps, or network structure.
 
-Pong result labels always encode both frame skip and stack. Historical five-seed results use
-`pong_fs4_stack1`; strict one-decision/one-ALE-frame runs use `pong_fs1_stack1`.
+Pong result labels always encode both frame skip and stack. Curated active six-action results use
+matched strict protocols: `pong_fs1_stack1` for one-decision/one-ALE-frame runs and
+`pong_fs4_stack4` for the standard four-frame protocol. Historical `pong_fs4_stack1` results
+remain scientifically identifiable but belong under `results/archive/`, not the active curated
+tree.
 
 ## MiniGrid architecture
 
@@ -177,16 +185,22 @@ source/<task>/ or external datasets/environments
         -> CPU arrays/datasets/replay
         -> DataLoader or replay sampling
         -> task wrapper + recurrent core
-        -> results/train_data/<suffix>/
+        -> results/train_data/<suffix>/  (job-local staging)
              *_model.pth
              *.pkl
              *_metrics.json
-        -> utils_anal/ -> results/anal_data/<module>/
-        -> utils_viz/  -> results/anal_figs/<module>/
+        -> results/train_data/{rl,clutter}/...  (curated task hierarchy)
+        -> utils_anal/ -> results/anal_index/<CATEGORY>/<module>/data/
+        -> utils_viz/  -> results/anal_index/<CATEGORY>/<module>/figs/
 ```
 
 Clutter data resolution order is CLI `--data_dir`, `AIM3_STIMULI_PATH`,
-`FAW_RNN_DATA_PATH`, then `<repo>/stimuli`. Large arrays stay on CPU or mmap.
+`FAW_RNN_DATA_PATH`, then `<repo>/stimuli`. Standard 40h arrays stay mmap-backed uint8 on CPU.
+The Dataset emits a compact `(T+C-1,H,W)` window; the training/evaluation boundary transfers
+the uint8 batch, casts once to float32 on the target device, and expands it to
+`(B,T,C,H,W)`. `BlockShuffleSampler` preserves exact epoch coverage while shuffling contiguous
+blocks; the default block equals the effective batch size and can be disabled with
+`--shuffle_block_size 0` for historical global-random reproduction.
 
 ## Shared interfaces
 

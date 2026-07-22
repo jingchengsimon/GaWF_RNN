@@ -7,6 +7,15 @@ Inputs are the compact NPZ/JSON artifacts produced by
 
 from __future__ import annotations
 
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
+
 import argparse
 import json
 import os
@@ -25,11 +34,28 @@ def parse_args() -> argparse.Namespace:
     """Parse plotting arguments."""
 
     parser = argparse.ArgumentParser(description=__doc__)
+    for factor, category in (
+        ("decomposition", "D_variance_decomposition"),
+        ("relevance", "E_relevance_alignment"),
+        ("timing", "F_timing"),
+    ):
+        parser.add_argument(
+            f"--{factor}_data_dir",
+            default=str(output_dir(category, "gawf_symmetric_relevance_timing", "data")),
+        )
+        parser.add_argument(
+            f"--{factor}_fig_dir",
+            default=str(output_dir(category, "gawf_symmetric_relevance_timing", "figs")),
+        )
     parser.add_argument(
-        "--data_dir", default="./results/anal_data/gawf_symmetric_relevance_timing"
+        "--data_dir",
+        default="",
+        help="Deprecated compatibility override; reads every part from one directory.",
     )
     parser.add_argument(
-        "--save_dir", default="./results/anal_figs/gawf_symmetric_relevance_timing"
+        "--save_dir",
+        default="",
+        help="Deprecated compatibility override; writes every figure to one directory.",
     )
     parser.add_argument("--dpi", type=int, default=150)
     return parser.parse_args()
@@ -230,20 +256,29 @@ def main() -> None:
     """Render every saved analysis figure."""
 
     args = parse_args()
-    os.makedirs(args.save_dir, exist_ok=True)
-    part1_path = os.path.join(args.data_dir, "part1_selectivity.npz")
-    part2_npz_path = os.path.join(args.data_dir, "part2_inference.npz")
-    part2_json_path = os.path.join(args.data_dir, "part2_results.json")
-    part3_path = os.path.join(args.data_dir, "part3_events.npz")
+    if args.data_dir:
+        args.decomposition_data_dir = args.relevance_data_dir = args.timing_data_dir = args.data_dir
+    if args.save_dir:
+        args.decomposition_fig_dir = args.relevance_fig_dir = args.timing_fig_dir = args.save_dir
+    for directory in (
+        args.decomposition_fig_dir,
+        args.relevance_fig_dir,
+        args.timing_fig_dir,
+    ):
+        os.makedirs(directory, exist_ok=True)
+    part1_path = os.path.join(args.decomposition_data_dir, "part1_selectivity.npz")
+    part2_npz_path = os.path.join(args.relevance_data_dir, "part2_inference.npz")
+    part2_json_path = os.path.join(args.relevance_data_dir, "part2_results.json")
+    part3_path = os.path.join(args.timing_data_dir, "part3_events.npz")
     with np.load(part1_path) as part1:
-        plot_part1_selectivity(part1, args.save_dir, args.dpi)
-        plot_architecture_axis(part1, args.save_dir, args.dpi)
-    plot_part2_effects(_load_json(part2_json_path), args.save_dir, args.dpi)
+        plot_part1_selectivity(part1, args.decomposition_fig_dir, args.dpi)
+        plot_architecture_axis(part1, args.decomposition_fig_dir, args.dpi)
+    plot_part2_effects(_load_json(part2_json_path), args.relevance_fig_dir, args.dpi)
     with np.load(part2_npz_path) as part2:
-        plot_part2_alignment(part2, args.save_dir, args.dpi)
+        plot_part2_alignment(part2, args.relevance_fig_dir, args.dpi)
     with np.load(part3_path) as part3:
-        plot_part3_timing(part3, args.save_dir, args.dpi)
-        plot_part3_event_leads(part3, args.save_dir, args.dpi)
+        plot_part3_timing(part3, args.timing_fig_dir, args.dpi)
+        plot_part3_event_leads(part3, args.timing_fig_dir, args.dpi)
 
 
 if __name__ == "__main__":

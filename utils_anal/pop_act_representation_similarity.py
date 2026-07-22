@@ -6,12 +6,21 @@ representational dissimilarity matrix (RDM) for each model, and computes cross-m
 RDM Spearman RSA and centered Linear CKA matrices. Different models may have different
 hidden widths because both comparisons operate in the shared condition space.
 
-All arrays, CSV files, and JSON metadata are written below
-``results/anal_data/5_pop_act_umap``. Plotting is handled by
+All arrays, CSV files, and JSON metadata are written below the script's
+``D_variance_decomposition`` data directory. Plotting is handled by
 ``utils_viz/pop_act_representation_similarity.py``.
 """
 
 from __future__ import annotations
+
+import os as _anal_os
+import sys as _anal_sys
+
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+if _ANAL_PROJECT_ROOT not in _anal_sys.path:
+    _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
+
+from utils_anal.anal_paths import output_dir
 
 import argparse
 import csv
@@ -50,13 +59,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input_root",
         type=str,
-        default="results/anal_data/pop_act",
+        default=str(output_dir("D_variance_decomposition", "export_pop_act", "data")),
         help="Root containing <model>/pop_act_dpca.npy arrays.",
     )
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="results/anal_data/5_pop_act_umap",
+        default=str(
+            output_dir(
+                "D_variance_decomposition",
+                "pop_act_representation_similarity",
+                "data",
+            )
+        ),
         help="Analysis-data root for per-model RDMs and cross-model similarity matrices.",
     )
     parser.add_argument("--models", nargs="+", default=DEFAULT_MODELS)
