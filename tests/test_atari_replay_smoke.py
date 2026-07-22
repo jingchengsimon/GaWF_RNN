@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import unittest
 
 import numpy as np
@@ -157,6 +158,104 @@ class AtariReplayBufferSmokeTest(unittest.TestCase):
             sequence_tasks.append(int(valid_task_ids[0]))
         counts = np.bincount(sequence_tasks, minlength=2)
         np.testing.assert_array_equal(counts, np.array([16, 16]))
+
+
+class AtariReplayMemmapTest(unittest.TestCase):
+    """The mmap backing exists so a preempted run resumes on identical samples."""
+
+    def _build(self, storage_dir: str | None, reuse_existing: bool = False):
+        return AtariReplayBuffer(
+            buffer_size=40,
+            num_envs=1,
+            obs_shape=OBS_SHAPE,
+            device="cpu",
+            seed=11,
+            num_tasks=1,
+            sampling_mode="global_uniform",
+            storage_dir=storage_dir,
+            reuse_existing=reuse_existing,
+        )
+
+    def test_memory_backing_writes_no_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            buffer = self._build(None)
+            _fill(buffer, 20)
+            self.assertIsNone(buffer.storage_dir)
+            self.assertEqual(os.listdir(tmp), [])
+
+    def test_reopened_storage_resumes_identical_sampling(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = os.path.join(tmp, "replay")
+            original = self._build(storage)
+            _fill(original, 30)
+            state = original.state_dict()
+            original.flush()
+            reference = original.sample_transitions(16)
+
+            reopened = self._build(storage, reuse_existing=True)
+            reopened.load_state_dict(state)
+            self.assertEqual(reopened.size, original.size)
+            resumed = reopened.sample_transitions(16)
+
+            # Same stored frames and same sampler RNG position.
+            np.testing.assert_array_equal(
+                reference.obs.numpy(), resumed.obs.numpy()
+            )
+            np.testing.assert_array_equal(
+                reference.next_obs.numpy(), resumed.next_obs.numpy()
+            )
+            np.testing.assert_array_equal(
+                reference.rewards.numpy(), resumed.rewards.numpy()
+            )
+
+    def test_appending_after_resume_continues_at_saved_position(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = os.path.join(tmp, "replay")
+            original = self._build(storage)
+            _fill(original, 12)
+            state = original.state_dict()
+            original.flush()
+
+            reopened = self._build(storage, reuse_existing=True)
+            reopened.load_state_dict(state)
+            self.assertEqual(reopened.size, 12)
+            _fill(reopened, 5)
+            self.assertEqual(reopened.size, 17)
+            batch = reopened.sample_transitions(64)
+            self.assertTrue(bool((batch.obs[:, 0, 0, 0] < 17).all()))
+
+    def test_geometry_mismatch_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            storage = os.path.join(tmp, "replay")
+            _fill(self._build(storage), 8)
+            with self.assertRaises(ValueError):
+                AtariReplayBuffer(
+                    buffer_size=40,
+                    num_envs=1,
+                    obs_shape=(3, 4, 4),  # different observation geometry
+                    device="cpu",
+                    seed=11,
+                    sampling_mode="global_uniform",
+                    storage_dir=storage,
+                    reuse_existing=True,
+                )
+
+    def test_state_dict_from_other_geometry_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            buffer = self._build(os.path.join(tmp, "replay"))
+            state = buffer.state_dict()
+            state["capacity"] = state["capacity"] + 1
+            with self.assertRaises(ValueError):
+                buffer.load_state_dict(state)
+
+    def test_reuse_without_existing_storage_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(FileNotFoundError):
+                self._build(os.path.join(tmp, "absent"), reuse_existing=True)
+
+    def test_reuse_requires_storage_dir(self) -> None:
+        with self.assertRaises(ValueError):
+            self._build(None, reuse_existing=True)
 
 
 def torch_all_equal(a, b) -> bool:

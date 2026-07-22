@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "id": "amarel-atari-recovery-smoke-58890853",
+  "description": "Atari DQN checkpoint/resume GPU validation: SIGUSR1 preemption then auto-resume to 60k",
+  "host": "amarel",
+  "status": "completed",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58890853"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/atari_breakout_recovery_smoke/58890853.*"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "/scratch/js3269/results/train_data/breakout_recovery_smoke"
+    ]
+  },
+  "tracking": {
+    "expected_units": 1,
+    "auto_complete": false,
+    "result_globs": [
+      "/scratch/js3269/results/train_data/breakout_recovery_smoke"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "Validates the Atari DQN recovery path end to end on a GPU node: run with mmap replay and periodic checkpoints, SIGUSR1 mid-run, then --auto_resume to completion.",
+    "Asserts global_step reaches the target, resume_count=1, metrics_history is monotone without duplicates, and both the replay directory and the scaffolding checkpoint.pth are reclaimed.",
+    "Scratch space is temporary and deleted by the job; it is not a scientific result.",
+    "Result: preempted at step 21636/60000, resumed with replay_size=21636 intact, completed to 60000 with resume_count=1. History monotone; replay and scaffolding checkpoint reclaimed. ALL CHECKS PASSED.",
+    "Observed: mmap replay files are sparse, so a partially filled buffer occupies far less than its nominal size (616 MB at 21.6k of 60k steps). The 28 GB per-unit quota budget is therefore an upper bound."
+  ],
+  "created_at": "2026-07-22T17:36:26+00:00",
+  "updated_at": "2026-07-22T17:36:26+00:00",
+  "completed_at": "2026-07-22T17:45:00+00:00"
+}

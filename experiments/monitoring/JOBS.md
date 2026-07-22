@@ -6,6 +6,7 @@
 
 | Job | Status | Host | Scheduler / run IDs | Units | Remote root | Description |
 |---|---|---|---|---:|---|---|
+| `amarel-atari-recovery-smoke-58890853` | completed | `amarel` | 58890853 | 1 | `/cache/home/js3269/projects/aim3_gawf_rnn` | Atari DQN checkpoint/resume GPU validation: SIGUSR1 preemption then auto-resume to 60k |
 | `sjc-unified-variance-20260719` | completed | `sjc-remote` | run_20260719_142654, sjc_unified_variance_20260719 | 1 | `/G/MIMOlab/Codes/aim3_gawf_rnn` | GaWF unified balanced variance decomposition: 7 objects, 4 cells, and summary |
 | `amarel-gawf-symmetric-plots-58306176` | completed | `amarel` | 58306176 | 6 | `/cache/home/js3269/projects/aim3_gawf_rnn` | Plots-only recovery using strict directional gate crossings |
 | `amarel-gawf-symmetric-plots-58306167` | cancelled | `amarel` | 58306167 | 6 | `/cache/home/js3269/projects/aim3_gawf_rnn` | Plots-only recovery for completed GaWF relevance/timing statistics |

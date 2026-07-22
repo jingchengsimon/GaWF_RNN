@@ -77,6 +77,24 @@ encode the seed even though checkpoint stems retain the standard model naming co
 Atari DQN additionally uses `--frame_skip`, `--frame_stack`, `--task_schedule`,
 `--replay_sampling`, `--amp_dtype`, `--allow_tf32`, `--compile_model`, and `--feedback_mode`.
 
+Atari DQN recovery uses `--checkpoint_interval_steps` (0 disables, and is the default),
+`--resume_from` or `--auto_resume`, `--replay_backing {memory,mmap}`, and
+`--keep_replay_on_success`. Because a DQN checkpoint is only meaningful together with its
+replay buffer, resume requires `--replay_backing mmap`: the six replay arrays are then backed
+by files under `<save_dir>/replay/` and the checkpoint carries only the position, task counts,
+and sampler RNG state. Each checkpoint flushes the replay memmaps before the atomic save, so
+the recorded position never outruns the durable data. A completed run deletes both the replay
+directory and the scaffolding `checkpoint.pth`, leaving the usual single final `.pth`.
+SIGTERM and SIGUSR1 are caught, converted into one final checkpoint, and reported as
+`status=preempted`; pair them with `--requeue` and `--signal=B:USR1@120`.
+As with paper-aligned MiniGrid PPO, the ALE environment and the recurrent state are reset
+rather than serialized, so a resumed run is a valid continuation and not a bitwise replay;
+metrics record `resume_count` and `resumed_at_steps` so interruptions stay visible in the
+result. A runner must never append to an existing history when no compatible checkpoint is
+present. The mmap backing costs roughly 28 GB per fs4/stack4 unit against a 1 TiB `/scratch`
+soft quota, so recoverable Atari arrays must cap concurrency (`--array=0-N%12`) and check the
+quota before starting.
+
 MiniGrid PPO exposes the same CUDA acceleration names plus `--env_backend {sync,async}`,
 `--cudnn_benchmark`, and `--fused_optimizer`. Saved metrics must record the active backend and
 all acceleration settings. Amarel accelerated reruns append a distinct tag such as `_accel_v1`

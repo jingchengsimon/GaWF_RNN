@@ -1,23 +1,46 @@
 """Replay buffers for Atari DQN experiments.
 
 Frames are stored once per step as uint8 and successors are derived by index,
-so a 1M-step buffer with 4 stacked 84x84 frames costs ~28 GB RAM. Gymnasium
+so a 1M-step buffer with 4 stacked 84x84 frames costs ~28 GB. Gymnasium
 >=1.0 vector envs use NEXT_STEP autoreset: the step after a terminal one
 returns the reset observation with the chosen action ignored. Such rows are
 recorded with ``resets=1`` and excluded from TD losses (rejected as transition
 bases; masked out of sequence losses). Task ids are sampling metadata only and
 are never model inputs.
+
+Storage is anonymous RAM by default. Passing ``storage_dir`` backs the six
+arrays with ``np.memmap`` files instead, so a preempted run can reopen the exact
+same replay contents with ``reuse_existing=True`` and resume from a checkpoint
+that only carries the small position/RNG metadata. That path costs disk instead
+of RAM; the caller is responsible for the quota budget and for deleting the
+directory once the run completes.
 """
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import torch
 
 
 REPLAY_SAMPLING_MODES = ("task_balanced", "global_uniform")
+
+REPLAY_META_FILENAME = "meta.json"
+REPLAY_STATE_FORMAT_VERSION = 1
+
+# (attribute, filename, dtype, whether the array carries the observation shape)
+_REPLAY_ARRAY_SPECS: tuple[tuple[str, str, Any, bool], ...] = (
+    ("_obs", "obs.dat", np.uint8, True),
+    ("_actions", "actions.dat", np.int64, False),
+    ("_rewards", "rewards.dat", np.float32, False),
+    ("_dones", "dones.dat", np.uint8, False),
+    ("_resets", "resets.dat", np.uint8, False),
+    ("_task_ids", "task_ids.dat", np.int16, False),
+)
 
 
 @dataclass(frozen=True)
@@ -50,6 +73,27 @@ class SequenceBatch:
     has_internal_reset: bool  # CPU-side reset check for fused recurrent scans
 
 
+def _assert_replay_geometry_matches(
+    stored: dict[str, Any],
+    expected: dict[str, Any],
+    *,
+    source: str,
+) -> None:
+    """Reject any replay storage or state whose shape contract differs."""
+    mismatches = []
+    for key, expected_value in expected.items():
+        stored_value = stored.get(key)
+        if key == "obs_shape":
+            stored_value = list(stored_value) if stored_value is not None else None
+            expected_value = list(expected_value)
+        if stored_value != expected_value:
+            mismatches.append(f"{key}: stored={stored_value!r} expected={expected_value!r}")
+    if mismatches:
+        raise ValueError(
+            f"Replay geometry mismatch from {source}: " + "; ".join(mismatches)
+        )
+
+
 class AtariReplayBuffer:
     """Circular per-env replay storage with transition and sequence sampling."""
 
@@ -62,6 +106,8 @@ class AtariReplayBuffer:
         seed: int,
         num_tasks: int = 1,
         sampling_mode: str = "task_balanced",
+        storage_dir: str | None = None,
+        reuse_existing: bool = False,
     ) -> None:
         if buffer_size < num_envs:
             raise ValueError("buffer_size must be at least num_envs")
@@ -76,18 +122,135 @@ class AtariReplayBuffer:
             raise ValueError(
                 f"sampling_mode must be one of {REPLAY_SAMPLING_MODES}, got {sampling_mode!r}"
             )
+        if reuse_existing and storage_dir is None:
+            raise ValueError("reuse_existing requires storage_dir")
         self.sampling_mode = sampling_mode
+        self.storage_dir = storage_dir
         self._rng = np.random.default_rng(seed)
         self._pos = 0
         self._full = False
 
-        self._obs = np.zeros((self.capacity, self.num_envs, *self.obs_shape), dtype=np.uint8)
-        self._actions = np.zeros((self.capacity, self.num_envs), dtype=np.int64)
-        self._rewards = np.zeros((self.capacity, self.num_envs), dtype=np.float32)
-        self._dones = np.zeros((self.capacity, self.num_envs), dtype=np.uint8)
-        self._resets = np.zeros((self.capacity, self.num_envs), dtype=np.uint8)
-        self._task_ids = np.zeros((self.capacity, self.num_envs), dtype=np.int16)
+        if storage_dir is None:
+            self._allocate_in_memory()
+        else:
+            self._allocate_memmap(storage_dir, reuse_existing=reuse_existing)
         self._stored_task_counts = np.zeros(self.num_tasks, dtype=np.int64)
+
+    def _array_shape(self, carries_obs_shape: bool) -> tuple[int, ...]:
+        if carries_obs_shape:
+            return (self.capacity, self.num_envs, *self.obs_shape)
+        return (self.capacity, self.num_envs)
+
+    def _allocate_in_memory(self) -> None:
+        for attribute, _filename, dtype, carries_obs_shape in _REPLAY_ARRAY_SPECS:
+            setattr(
+                self,
+                attribute,
+                np.zeros(self._array_shape(carries_obs_shape), dtype=dtype),
+            )
+
+    def _geometry(self) -> dict[str, Any]:
+        return {
+            "format_version": REPLAY_STATE_FORMAT_VERSION,
+            "capacity": self.capacity,
+            "num_envs": self.num_envs,
+            "obs_shape": list(self.obs_shape),
+            "num_tasks": self.num_tasks,
+            "sampling_mode": self.sampling_mode,
+        }
+
+    def _allocate_memmap(self, storage_dir: str, *, reuse_existing: bool) -> None:
+        meta_path = os.path.join(storage_dir, REPLAY_META_FILENAME)
+        geometry = self._geometry()
+        if reuse_existing:
+            if not os.path.isfile(meta_path):
+                raise FileNotFoundError(
+                    f"Cannot reuse replay storage without {meta_path}"
+                )
+            with open(meta_path, "r", encoding="utf-8") as stream:
+                stored = json.load(stream)
+            _assert_replay_geometry_matches(stored, geometry, source=meta_path)
+            mode = "r+"
+        else:
+            os.makedirs(storage_dir, exist_ok=True)
+            mode = "w+"
+
+        for attribute, filename, dtype, carries_obs_shape in _REPLAY_ARRAY_SPECS:
+            path = os.path.join(storage_dir, filename)
+            if reuse_existing and not os.path.isfile(path):
+                raise FileNotFoundError(f"Missing replay storage file: {path}")
+            setattr(
+                self,
+                attribute,
+                np.memmap(
+                    path,
+                    dtype=dtype,
+                    mode=mode,
+                    shape=self._array_shape(carries_obs_shape),
+                ),
+            )
+
+        if not reuse_existing:
+            with open(meta_path, "w", encoding="utf-8") as stream:
+                json.dump(geometry, stream, indent=2, sort_keys=True)
+
+    def flush(self) -> None:
+        """Persist memmap pages so a checkpoint never outruns the stored data.
+
+        No-op for the in-memory backing.
+        """
+        if self.storage_dir is None:
+            return
+        for attribute, _filename, _dtype, _carries_obs_shape in _REPLAY_ARRAY_SPECS:
+            getattr(self, attribute).flush()
+
+    def close(self) -> None:
+        """Flush and drop the memmap handles so the files can be removed.
+
+        The buffer is unusable afterwards; call this only once the run's results
+        are written.
+        """
+        if self.storage_dir is None:
+            return
+        self.flush()
+        for attribute, _filename, _dtype, _carries_obs_shape in _REPLAY_ARRAY_SPECS:
+            setattr(self, attribute, None)
+
+    def state_dict(self) -> dict[str, Any]:
+        """Small resumable metadata; the samples themselves live in the memmaps."""
+        state = self._geometry()
+        state.update(
+            {
+                "pos": int(self._pos),
+                "full": bool(self._full),
+                "stored_task_counts": self._stored_task_counts.tolist(),
+                "rng_state": self._rng.bit_generator.state,
+                "storage_dir": self.storage_dir,
+            }
+        )
+        return state
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        """Restore position, task counts, and the sampler RNG.
+
+        Geometry must match exactly; a mismatch means the checkpoint and the
+        storage describe different experiments and resuming would silently mix
+        them.
+        """
+        _assert_replay_geometry_matches(state, self._geometry(), source="checkpoint")
+        pos = int(state["pos"])
+        if not 0 <= pos < self.capacity:
+            raise ValueError(f"Replay pos={pos} outside capacity={self.capacity}")
+        stored_task_counts = np.asarray(state["stored_task_counts"], dtype=np.int64)
+        if stored_task_counts.shape != (self.num_tasks,):
+            raise ValueError(
+                "stored_task_counts shape "
+                f"{stored_task_counts.shape} does not match num_tasks={self.num_tasks}"
+            )
+        self._pos = pos
+        self._full = bool(state["full"])
+        self._stored_task_counts = stored_task_counts
+        self._rng.bit_generator.state = state["rng_state"]
 
     @property
     def size(self) -> int:

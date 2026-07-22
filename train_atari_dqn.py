@@ -12,6 +12,8 @@ import argparse
 import json
 import logging
 import os
+import shutil
+import signal
 import time
 from typing import Any, Callable
 
@@ -41,6 +43,14 @@ from utils.atari_train_utils import (
     to_channel_first_obs,
 )
 from utils.recurrent_cores import configure_gawf_feedback_acceleration
+from utils.train_checkpointing import (
+    atomic_torch_save,
+    load_checkpoint,
+    reconcile_history,
+    restore_rng_state,
+    rng_state,
+    validate_resume_protocol,
+)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -166,7 +176,90 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default="reduce-overhead",
         choices=["default", "reduce-overhead", "max-autotune"],
     )
+    parser.add_argument(
+        "--checkpoint_interval_steps",
+        type=int,
+        default=0,
+        help=(
+            "Atomically save a resumable checkpoint every N environment steps. "
+            "0 disables checkpointing and preserves the historical single-save behaviour."
+        ),
+    )
+    parser.add_argument(
+        "--resume_from",
+        type=str,
+        default=None,
+        help="Resume model, optimizer, replay position, counters, and RNG from a checkpoint.",
+    )
+    parser.add_argument(
+        "--auto_resume",
+        action="store_true",
+        help="Resume from <save_dir>/checkpoint.pth when it exists.",
+    )
+    parser.add_argument(
+        "--replay_backing",
+        type=str,
+        default="memory",
+        choices=["memory", "mmap"],
+        help=(
+            "mmap backs replay with files under <save_dir>/replay so a preempted run "
+            "resumes with the exact same transitions; memory keeps the historical "
+            "anonymous-RAM allocation."
+        ),
+    )
+    parser.add_argument(
+        "--keep_replay_on_success",
+        action="store_true",
+        help="Keep <save_dir>/replay after a completed run instead of reclaiming the space.",
+    )
     return parser
+
+
+# Every field that defines the scientific protocol. A resume that disagrees on
+# any of these would splice two different experiments into one result directory.
+RESUME_ARG_KEYS = (
+    "env_id",
+    "env_ids",
+    "action_space_mode",
+    "task_schedule",
+    "algo",
+    "model_type",
+    "feedback_mode",
+    "hidden_size",
+    "num_layers",
+    "gawf_feedback_lr_scale",
+    "encoder_feature_dim",
+    "core_dropout",
+    "frame_stack",
+    "frame_skip",
+    "flicker_prob",
+    "ssm_d_model",
+    "ssm_state_size",
+    "ssm_num_layers",
+    "ssm_context_len",
+    "total_timesteps",
+    "num_envs",
+    "buffer_size",
+    "replay_sampling",
+    "learning_rate",
+    "gamma",
+    "learning_starts",
+    "start_epsilon",
+    "end_epsilon",
+    "exploration_fraction",
+    "train_frequency",
+    "batch_size",
+    "seq_len",
+    "sequences_per_batch",
+    "target_network_frequency",
+    "max_grad_norm",
+    "double_dqn",
+    "seed",
+)
+
+CHECKPOINT_FORMAT_VERSION = 1
+CHECKPOINT_FILENAME = "checkpoint.pth"
+REPLAY_SUBDIR = "replay"
 
 
 SequenceForward = Callable[
@@ -342,6 +435,113 @@ def _linear_epsilon(args: argparse.Namespace, global_step: int) -> float:
     return max(args.end_epsilon, args.start_epsilon + slope * global_step)
 
 
+class _PreemptionWatcher:
+    """Turn Slurm's preemption signals into a checkpoint-then-exit request.
+
+    The handler only flips a flag; the training loop performs the actual save at
+    a point where model, optimizer, and replay are mutually consistent. Slurm
+    sends SIGTERM on preemption and can be asked for an early SIGUSR1 warning
+    via ``--signal=B:USR1@120``.
+    """
+
+    def __init__(self) -> None:
+        self.requested = False
+        self.signal_name: str | None = None
+        self._previous: dict[int, Any] = {}
+
+    def install(self, logger: logging.Logger) -> None:
+        for signal_number in (signal.SIGTERM, signal.SIGUSR1):
+            try:
+                self._previous[signal_number] = signal.signal(
+                    signal_number, self._handle
+                )
+            except (ValueError, OSError):  # Not on the main thread, or unsupported.
+                logger.warning("Could not install handler for signal %s", signal_number)
+
+    def restore(self) -> None:
+        for signal_number, handler in self._previous.items():
+            try:
+                signal.signal(signal_number, handler)
+            except (ValueError, OSError):
+                pass
+        self._previous.clear()
+
+    def _handle(self, signal_number: int, _frame: Any) -> None:
+        self.requested = True
+        self.signal_name = signal.Signals(signal_number).name
+
+
+def _release_replay_storage(
+    *,
+    buffer: AtariReplayBuffer,
+    replay_dir: str,
+    keep: bool,
+    logger: logging.Logger,
+) -> None:
+    """Reclaim the mmap replay directory once the run has produced its results.
+
+    A completed fs4/stack4 run leaves ~28 GB behind, which would exhaust the
+    shared /scratch quota within a few seeds.
+    """
+    if buffer.storage_dir is None or not os.path.isdir(replay_dir):
+        return
+    if keep:
+        logger.info("keeping replay storage at %s", replay_dir)
+        return
+    buffer.close()
+    shutil.rmtree(replay_dir, ignore_errors=True)
+    logger.info("released replay storage at %s", replay_dir)
+
+
+def _checkpoint_payload(
+    *,
+    model: AtariQNetwork,
+    target_net: AtariQNetwork,
+    optimizer: optim.Optimizer,
+    scaler: Any,
+    buffer: AtariReplayBuffer,
+    args: argparse.Namespace,
+    global_step: int,
+    elapsed_seconds: float,
+    rolling_returns: list[float],
+    rolling_returns_by_env: dict[str, list[float]],
+    episode_counts: dict[str, int],
+    environment_steps: dict[str, int],
+    last_loss: float,
+    last_q_mean: float,
+    resume_count: int,
+    resumed_at_steps: list[int],
+) -> dict[str, Any]:
+    return {
+        "format_version": CHECKPOINT_FORMAT_VERSION,
+        "model": model.state_dict(),
+        "target_net": target_net.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "scaler": scaler.state_dict(),
+        "replay": buffer.state_dict(),
+        "global_step": global_step,
+        "elapsed_seconds": elapsed_seconds,
+        "rolling_returns": list(rolling_returns),
+        "rolling_returns_by_env": {
+            env_id: list(returns) for env_id, returns in rolling_returns_by_env.items()
+        },
+        "episode_counts": dict(episode_counts),
+        "environment_steps": dict(environment_steps),
+        "last_loss": float(last_loss),
+        "last_q_mean": float(last_q_mean),
+        "resume_count": resume_count,
+        "resumed_at_steps": list(resumed_at_steps),
+        "rng_state": rng_state(),
+        "learning_rate": float(args.learning_rate),
+        "args": vars(args),
+        # ALE internals and the recurrent hidden state are deliberately not
+        # serialized: the env is re-seeded and the state restarts from zero, so
+        # each resume injects one artificial episode boundary.
+        "environment_state_restored": False,
+        "recurrent_state_restored": False,
+    }
+
+
 def _next_state_reset_flags(dones: np.ndarray, autoreset_rows: np.ndarray) -> np.ndarray:
     """Reset on terminal rows and again after NEXT_STEP's ignored autoreset row."""
     return np.logical_or(dones, autoreset_rows).astype(np.uint8)
@@ -470,6 +670,10 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError(f"frame_skip must be >= 1, got {args.frame_skip}")
     if args.gawf_feedback_lr_scale <= 0:
         raise ValueError("gawf_feedback_lr_scale must be > 0")
+    if args.checkpoint_interval_steps < 0:
+        raise ValueError("checkpoint_interval_steps must be non-negative")
+    if args.resume_from and args.auto_resume:
+        raise ValueError("--resume_from and --auto_resume are mutually exclusive")
     set_atari_seed(args.seed)
     device = select_device(args.device)
     acceleration = AtariAcceleration(
@@ -485,6 +689,41 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
     ensure_dir(save_dir)
     video_dir = os.path.join(save_dir, "videos")
     history_path = os.path.join(save_dir, "metrics_history.jsonl")
+    checkpoint_path = os.path.join(save_dir, CHECKPOINT_FILENAME)
+    replay_dir = os.path.join(save_dir, REPLAY_SUBDIR)
+
+    resume_path = args.resume_from
+    if args.auto_resume and os.path.isfile(checkpoint_path):
+        resume_path = checkpoint_path
+    resume_checkpoint = None
+    if resume_path:
+        if not os.path.isfile(resume_path):
+            raise FileNotFoundError(f"Resume checkpoint not found: {resume_path}")
+        resume_checkpoint = load_checkpoint(resume_path, device)
+        validate_resume_protocol(
+            resume_checkpoint,
+            args,
+            RESUME_ARG_KEYS,
+            expected_format_version=CHECKPOINT_FORMAT_VERSION,
+            learning_rate=float(args.learning_rate),
+        )
+        if args.replay_backing != "mmap":
+            raise ValueError(
+                "Resuming requires --replay_backing mmap; the memory backing keeps no "
+                "transitions across processes"
+            )
+    elif args.checkpoint_interval_steps > 0 and (
+        os.path.exists(history_path)
+        or os.path.exists(os.path.join(save_dir, "metrics.json"))
+        or os.path.exists(checkpoint_path)
+    ):
+        # A checkpointing run that finds leftovers it was not asked to resume
+        # would append a second trajectory to the same history. Refuse instead
+        # of silently mixing two runs.
+        raise FileExistsError(
+            "Refusing to start a checkpointing run over existing results without "
+            f"--resume_from/--auto_resume: {save_dir}"
+        )
 
     is_multitask = len(env_ids) > 1
     if is_multitask:
@@ -589,6 +828,8 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
             seed=args.seed,
             num_tasks=len(env_ids),
             sampling_mode=args.replay_sampling,
+            storage_dir=replay_dir if args.replay_backing == "mmap" else None,
+            reuse_existing=resume_checkpoint is not None,
         )
 
         state = None
@@ -596,6 +837,9 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         prev_done_np = np.zeros(args.num_envs, dtype=np.uint8)
         global_step = 0
         start_time = time.time()
+        elapsed_before_resume = 0.0
+        resume_count = 0
+        resumed_at_steps: list[int] = []
         rolling_returns: list[float] = []
         rolling_returns_by_env: dict[str, list[float]] = {env_id: [] for env_id in env_ids}
         episode_counts = {env_id: 0 for env_id in env_ids}
@@ -603,9 +847,101 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         env_id_to_task = {env_id: task_id for task_id, env_id in enumerate(env_ids)}
         last_loss_tensor: torch.Tensor | None = None
         last_q_mean_tensor: torch.Tensor | None = None
+        restored_last_loss = float("nan")
+        restored_last_q_mean = float("nan")
         final_metrics: dict[str, Any] = {}
 
+        if resume_checkpoint is not None:
+            model.load_state_dict(resume_checkpoint["model"])
+            target_net.load_state_dict(resume_checkpoint["target_net"])
+            optimizer.load_state_dict(resume_checkpoint["optimizer"])
+            scaler.load_state_dict(resume_checkpoint["scaler"])
+            buffer.load_state_dict(resume_checkpoint["replay"])
+            global_step = int(resume_checkpoint["global_step"])
+            elapsed_before_resume = float(resume_checkpoint.get("elapsed_seconds", 0.0))
+            rolling_returns = [
+                float(value) for value in resume_checkpoint.get("rolling_returns", [])
+            ]
+            for env_id, returns in resume_checkpoint.get(
+                "rolling_returns_by_env", {}
+            ).items():
+                if env_id in rolling_returns_by_env:
+                    rolling_returns_by_env[env_id] = [float(value) for value in returns]
+            for env_id, count in resume_checkpoint.get("episode_counts", {}).items():
+                if env_id in episode_counts:
+                    episode_counts[env_id] = int(count)
+            for env_id, steps in resume_checkpoint.get("environment_steps", {}).items():
+                if env_id in environment_steps:
+                    environment_steps[env_id] = int(steps)
+            restored_last_loss = float(resume_checkpoint.get("last_loss", float("nan")))
+            restored_last_q_mean = float(
+                resume_checkpoint.get("last_q_mean", float("nan"))
+            )
+            resume_count = int(resume_checkpoint.get("resume_count", 0)) + 1
+            resumed_at_steps = [
+                int(step) for step in resume_checkpoint.get("resumed_at_steps", [])
+            ]
+            resumed_at_steps.append(global_step)
+            restore_rng_state(resume_checkpoint["rng_state"])
+            history_archive = reconcile_history(history_path, global_step)
+            logger.info(
+                "resumed checkpoint=%s step=%d replay_size=%d resume_count=%d "
+                "history_archive=%s env_state=fresh_reset recurrent_state=zero",
+                resume_path,
+                global_step,
+                buffer.size,
+                resume_count,
+                history_archive,
+            )
+
+        preemption = _PreemptionWatcher()
+        if args.checkpoint_interval_steps > 0:
+            preemption.install(logger)
+
+        def write_checkpoint() -> None:
+            """Flush replay first so the saved position never outruns the data."""
+            last_loss_value, last_q_mean_value = _materialize_training_stats(
+                last_loss_tensor,
+                last_q_mean_tensor,
+            )
+            if last_loss_tensor is None:
+                last_loss_value = restored_last_loss
+            if last_q_mean_tensor is None:
+                last_q_mean_value = restored_last_q_mean
+            buffer.flush()
+            atomic_torch_save(
+                _checkpoint_payload(
+                    model=model,
+                    target_net=target_net,
+                    optimizer=optimizer,
+                    scaler=scaler,
+                    buffer=buffer,
+                    args=args,
+                    global_step=global_step,
+                    elapsed_seconds=elapsed_before_resume + (time.time() - start_time),
+                    rolling_returns=rolling_returns,
+                    rolling_returns_by_env=rolling_returns_by_env,
+                    episode_counts=episode_counts,
+                    environment_steps=environment_steps,
+                    last_loss=last_loss_value,
+                    last_q_mean=last_q_mean_value,
+                    resume_count=resume_count,
+                    resumed_at_steps=resumed_at_steps,
+                ),
+                checkpoint_path,
+            )
+
+        preempted = False
         while global_step < args.total_timesteps:
+            if preemption.requested:
+                logger.info(
+                    "preemption signal=%s at step=%d; checkpointing and exiting",
+                    preemption.signal_name,
+                    global_step,
+                )
+                write_checkpoint()
+                preempted = True
+                break
             global_step += args.num_envs
             epsilon = _linear_epsilon(args, global_step)
 
@@ -693,7 +1029,10 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
                 target_net.load_state_dict(model.state_dict())
 
             if global_step % args.log_interval == 0:
-                fps = int(global_step / max(time.time() - start_time, 1e-6))
+                fps = int(
+                    global_step
+                    / max(elapsed_before_resume + (time.time() - start_time), 1e-6)
+                )
                 last_loss, last_q_mean = _materialize_training_stats(
                     last_loss_tensor,
                     last_q_mean_tensor,
@@ -731,14 +1070,38 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
                                 "loss": last_loss,
                                 "q_values_mean": last_q_mean,
                                 "fps": fps,
-                                "wall_time_s": time.time() - start_time,
+                                "wall_time_s": elapsed_before_resume
+                                + (time.time() - start_time),
                                 "per_env": per_env_history,
                             }
                         )
                         + "\n"
                     )
 
-        fps = int(global_step / max(time.time() - start_time, 1e-6))
+            if (
+                args.checkpoint_interval_steps > 0
+                and global_step % args.checkpoint_interval_steps == 0
+            ):
+                write_checkpoint()
+
+        preemption.restore()
+        if preempted:
+            logger.info(
+                "exiting after preemption checkpoint at step=%d/%d",
+                global_step,
+                args.total_timesteps,
+            )
+            return {
+                "status": "preempted",
+                "global_step": global_step,
+                "total_timesteps": args.total_timesteps,
+                "checkpoint": checkpoint_path,
+                "resume_count": resume_count,
+            }
+
+        fps = int(
+            global_step / max(elapsed_before_resume + (time.time() - start_time), 1e-6)
+        )
         last_loss, last_q_mean = _materialize_training_stats(
             last_loss_tensor,
             last_q_mean_tensor,
@@ -793,6 +1156,12 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
             "compile_model": acceleration.compile_model,
             "compile_mode": acceleration.compile_mode,
             "per_env": per_env_metrics,
+            # Interruption provenance: a resumed run restarts the env and the
+            # recurrent state, so these fields belong in the result, not the log.
+            "replay_backing": args.replay_backing,
+            "checkpoint_interval_steps": args.checkpoint_interval_steps,
+            "resume_count": resume_count,
+            "resumed_at_steps": resumed_at_steps,
         }
         layer_suffix = f"_L{args.num_layers}" if args.num_layers > 1 else ""
         env_tag = "__".join(env_id.replace("/", "_") for env_id in env_ids)
@@ -803,6 +1172,17 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         torch.save(model.state_dict(), ckpt_path)
         final_metrics["checkpoint"] = ckpt_path
         save_json(os.path.join(save_dir, "metrics.json"), final_metrics)
+        # The resumable checkpoint is scaffolding: once metrics.json and the
+        # final model exist the run is complete, and leaving it behind would
+        # both waste space and break the "exactly one .pth" result contract.
+        if os.path.exists(checkpoint_path):
+            os.remove(checkpoint_path)
+        _release_replay_storage(
+            buffer=buffer,
+            replay_dir=replay_dir,
+            keep=args.keep_replay_on_success,
+            logger=logger,
+        )
         return final_metrics
     finally:
         envs.close()

@@ -274,3 +274,25 @@
   sector frame 数对 raw mean 的直接加权差异。
 - **现状（Current）：** sequential equal-n included/excluded maps 作为更新后的主要 sigmoid
   mean view；legacy one-step/reset mean 仅用于 protocol comparison。
+
+## 2026-07-22 — Atari DQN 可恢复训练与 mmap replay
+
+- **改动（Change）：** `train_atari_dqn.py` 新增周期性原子 checkpoint、`--resume_from` /
+  `--auto_resume` 续跑和抢占信号处理；replay buffer 增加 `mmap` backing，六个数组落在
+  `<save_dir>/replay/`，checkpoint 只保存 position、task counts、sampler RNG 与
+  model/target/optimizer/scaler 状态。默认 `--checkpoint_interval_steps 0` 且
+  `--replay_backing memory`，不传新参数时执行路径与历史实验完全一致。
+- **原因（Reason）：** DQN 的 checkpoint 离开 replay buffer 没有意义，而 fs4/stack4 的
+  buffer 约 28 GB，无法随 checkpoint 反复写盘；丢弃 buffer 续跑则会让被抢占的 run 在
+  epsilon 已退火到 0.01 时用空 buffer 重新填充，replay 分布与其他 seed 不可比。
+  历史代价是真实的：strict Pong fs1/stack1 的 70 个 unit 中 50 个因抢占或失败作废，
+  只能整段重跑。
+- **证据（Evidence）：** amarel GPU 端到端验证（job 58890853）在 SIGUSR1 抢占后落盘并
+  自动续跑至 60k steps，`resume_count=1`、history 单调无重复、replay 与 scaffolding
+  checkpoint 均被回收。单元测试覆盖 memmap 重开后采样逐元素一致、两次独立 resume 的
+  最终权重逐参数相同，以及 protocol 不匹配（`hidden_size`/`total_timesteps`/
+  `format_version`）时拒绝续跑。
+- **现状（Current）：** ALE 环境与 recurrent state 按设计重置，因此续跑是统计上有效的
+  continuation 而非逐位重放；每次中断记入 metrics 的 `resume_count` 与 `resumed_at_steps`。
+  仅新实验启用；已完成的 Pong 70+50+35 个 run 不受影响也不重跑。mmap replay 受
+  `/scratch` 1 TiB soft quota 约束，fs4/stack4 数组并发上限为 12，并在启动前做配额守卫。
