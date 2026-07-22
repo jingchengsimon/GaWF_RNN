@@ -21,7 +21,7 @@
 # preempted or timed-out unit resumes instead of restarting from step 0.
 #
 # Submit with a concurrency cap; see the quota guard below for why:
-#   sbatch --array=0-69%12 experiments/amarel/run_atari_breakout_fs4_stack4_l1_array.sh
+#   sbatch --array=0-69%8 experiments/amarel/run_atari_breakout_fs4_stack4_l1_array.sh
 
 set -euo pipefail
 
@@ -127,58 +127,24 @@ DONE_FILE="$STATUS_DIR/${SUFFIX}.done"
 FAIL_FILE="$STATUS_DIR/${SUFFIX}.fail"
 CHECKPOINT="$RESULT_DIR/checkpoint.pth"
 
-# Quota guard. The mmap replay for one fs4/stack4 unit is ~28 GB and /scratch
-# enforces a 1 TiB per-user soft quota. Exhausting it does not surface as a
-# clean ENOSPC: writing to an already-mapped page raises SIGBUS, which is hard
-# to diagnose after the fact and leaves a truncated replay that fails the resume
-# geometry check. Refuse to start instead.
-REQUIRED_GB="${REQUIRED_GB:-28}"
-python - "$REQUIRED_GB" "$STATUS_DIR/${SUFFIX}.quota" <<'PY' || QUOTA_RC=$?
-import subprocess
-import sys
-
-required_gb = int(sys.argv[1])
-marker_path = sys.argv[2]
-try:
-    output = subprocess.run(
-        ["mmlsquota", "-u", "js3269", "scratch"],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=True,
-    ).stdout
-except Exception as error:  # quota tool unavailable: do not block the science
-    print(f"quota check skipped: {error}")
-    sys.exit(0)
-
-for line in output.splitlines():
-    fields = line.split()
-    if len(fields) < 5 or fields[0] != "scratch":
-        continue
-    used_kb, soft_kb = int(fields[3]), int(fields[4])
-    if soft_kb <= 0:
-        print("quota check skipped: no soft limit reported")
-        sys.exit(0)
-    free_gb = (soft_kb - used_kb) / (1024 * 1024)
-    # Three units of headroom: this run, a concurrent peer, and the final
-    # artifacts that are written while replay is still mapped.
-    if free_gb < required_gb * 3:
-        with open(marker_path, "w", encoding="utf-8") as handle:
-            handle.write(
-                f"status=blocked_quota free_gb={free_gb:.1f} required_gb={required_gb}\n"
-            )
-        print(
-            f"Refusing to start: only {free_gb:.1f} GB below the scratch soft quota, "
-            f"need {required_gb * 3} GB of headroom",
-            file=sys.stderr,
-        )
-        sys.exit(4)
-    print(f"quota ok: {free_gb:.1f} GB below soft limit")
-    sys.exit(0)
-print("quota check skipped: could not parse mmlsquota output")
-PY
-if [[ "${QUOTA_RC:-0}" -ne 0 ]]; then
-  exit "${QUOTA_RC}"
+# Quota guard; see experiments/amarel/scratch_quota_guard.py for why running out
+# of quota under an mmap replay is a SIGBUS, not a clean ENOSPC, and why the two
+# GPFS clusters serving /scratch report different headroom for the same data.
+# Headroom factor 2, not 3: the %8 array cap already bounds how many units hold a
+# replay at once, so demanding three units of slack would block legitimate starts
+# once the array reaches steady state (~68 GiB free with 8 buffers mapped).
+REQUIRED_GIB="${REQUIRED_GIB:-27}"
+set +e
+python -m experiments.amarel.scratch_quota_guard \
+  --user "${QUOTA_USER:-js3269}" \
+  --filesystem scratch \
+  --required_gib "$REQUIRED_GIB" \
+  --headroom_factor "${QUOTA_HEADROOM_FACTOR:-2}" \
+  --marker_path "$STATUS_DIR/${SUFFIX}.quota"
+QUOTA_RC=$?
+set -e
+if (( QUOTA_RC != 0 )); then
+  exit "$QUOTA_RC"
 fi
 
 # Resume guard, mirroring the paper-aligned MiniGrid runner: continue from a

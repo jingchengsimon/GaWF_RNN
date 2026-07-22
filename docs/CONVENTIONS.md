@@ -91,9 +91,12 @@ As with paper-aligned MiniGrid PPO, the ALE environment and the recurrent state 
 rather than serialized, so a resumed run is a valid continuation and not a bitwise replay;
 metrics record `resume_count` and `resumed_at_steps` so interruptions stay visible in the
 result. A runner must never append to an existing history when no compatible checkpoint is
-present. The mmap backing costs roughly 28 GB per fs4/stack4 unit against a 1 TiB `/scratch`
-soft quota, so recoverable Atari arrays must cap concurrency (`--array=0-N%12`) and check the
-quota before starting.
+present. The mmap backing costs roughly 27 GiB per fs4/stack4 unit against a 1 TiB `/scratch`
+soft quota, so recoverable Atari arrays must cap concurrency (`--array=0-N%8`) and check the
+quota before starting via `experiments/amarel/scratch_quota_guard.py`. Measure headroom on a
+`gpuk###` node, not the login node: Amarel serves one `/scratch` namespace from two GPFS
+clusters whose fileset accounting disagrees for identical data (DSSP reports ~652 GiB free,
+DSSK ~284 GiB), and a task may be enforced by either.
 
 MiniGrid PPO exposes the same CUDA acceleration names plus `--env_backend {sync,async}`,
 `--cudnn_benchmark`, and `--fused_optimizer`. Saved metrics must record the active backend and

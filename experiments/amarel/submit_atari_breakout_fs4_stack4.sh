@@ -5,11 +5,17 @@
 # Every task is recoverable: it checkpoints periodically, keeps its replay buffer
 # on disk, and resumes after a preemption or timeout instead of restarting.
 #
-# Concurrency defaults to 12 because each running task holds a ~28 GB mmap replay
-# and /scratch enforces a 1 TiB per-user soft quota. 12 x 28 GB leaves roughly
-# 300 GiB of headroom over the ~372 GB already stored. Raising this risks SIGBUS
-# crashes once the quota is hit, so change it only after re-checking
-# `mmlsquota -u "$USER" scratch`.
+# Concurrency defaults to 8 because each running task holds a ~27 GiB mmap replay
+# against a 1 TiB per-user soft quota on /scratch.
+#
+# The headroom is smaller than the login node suggests. Amarel serves one
+# /scratch namespace from two GPFS clusters that report different fileset
+# accounting for identical data: DSSP (login node, gpu### nodes) shows ~652 GiB
+# free, while DSSK (gpuk### nodes, which are also in the adalovelace pool) shows
+# only ~284 GiB. A task may land on either, so the tighter view binds:
+# 8 x 27 GiB = 216 GiB leaves ~68 GiB of margin. Raising this risks SIGBUS once
+# the quota is hit. Re-measure with `mmlsquota -u "$USER" scratch` on a gpuk###
+# node -- not on the login node -- before changing it.
 
 set -euo pipefail
 
@@ -20,7 +26,7 @@ cd "$ROOT"
 DRY_RUN=0
 SKIP_SMOKE=0
 SMOKE_STEPS=25000
-CONCURRENCY=12
+CONCURRENCY=8
 CHECKPOINT_INTERVAL_STEPS=50000
 while (( $# )); do
   case "$1" in
@@ -36,10 +42,10 @@ done
 MODELS=(ann rnn gru lstm gawf s5 mamba)
 SEEDS=(42 1 2 3 4)
 TASKS=$((${#MODELS[@]} * ${#SEEDS[@]} * 2))
-REPLAY_GB_PER_TASK=28
+REPLAY_GIB_PER_TASK=27
 
-if (( CONCURRENCY > 15 )); then
-  echo "Refusing concurrency=$CONCURRENCY: ${REPLAY_GB_PER_TASK} GB of replay per task" >&2
+if (( CONCURRENCY > 10 )); then
+  echo "Refusing concurrency=$CONCURRENCY: ${REPLAY_GIB_PER_TASK} GiB of replay per task" >&2
   echo "would exceed the 1 TiB scratch soft quota. Check mmlsquota first." >&2
   exit 2
 fi
@@ -50,7 +56,7 @@ if (( DRY_RUN )); then
   echo "seeds: ${SEEDS[*]}"
   echo "L1: models=${MODELS[*]} tasks=$TASKS array=0-$((TASKS - 1))%$CONCURRENCY"
   echo "recovery: checkpoint_interval_steps=$CHECKPOINT_INTERVAL_STEPS replay_backing=mmap --requeue"
-  echo "peak replay footprint: $((CONCURRENCY * REPLAY_GB_PER_TASK)) GB across $CONCURRENCY concurrent tasks"
+  echo "peak replay footprint: $((CONCURRENCY * REPLAY_GIB_PER_TASK)) GiB across $CONCURRENCY concurrent tasks"
   echo "total_timesteps per task: 1000000"
   if (( SKIP_SMOKE )); then
     echo "smoke: skipped"
@@ -97,7 +103,7 @@ if (( ! SKIP_SMOKE )); then
     --output="$SMOKE_ART/%A_%a.out" \
     --error="$SMOKE_ART/%A_%a.err" \
     --dependency="afterok:$MATCH_JOB_ID" \
-    --export="ALL,$COMMON_EXPORT,MATCH_JSON=$MATCH_JSON,TOTAL_TIMESTEPS=$SMOKE_STEPS,CHECKPOINT_INTERVAL_STEPS=5000,REQUIRED_GB=1,RUN_TAG=breakout_fs4_stack4_l1_smoke,ARTIFACT_TAG=atari_breakout_fs4_stack4_smoke" \
+    --export="ALL,$COMMON_EXPORT,MATCH_JSON=$MATCH_JSON,TOTAL_TIMESTEPS=$SMOKE_STEPS,CHECKPOINT_INTERVAL_STEPS=5000,REQUIRED_GIB=1,RUN_TAG=breakout_fs4_stack4_l1_smoke,ARTIFACT_TAG=atari_breakout_fs4_stack4_smoke" \
     "$RUNNER")"
   SMOKE_JOB_ID="${SMOKE_RAW%%;*}"
   FORMAL_DEPENDENCY_ARGS=(--dependency="afterok:$SMOKE_JOB_ID")
@@ -117,4 +123,4 @@ FORMAL_JOB_ID="${FORMAL_RAW%%;*}"
 echo "MATCH_JOB_ID=$MATCH_JOB_ID"
 echo "SMOKE_JOB_ID=$SMOKE_JOB_ID"
 echo "FORMAL_JOB_ID=$FORMAL_JOB_ID tasks=$TASKS concurrency=$CONCURRENCY"
-echo "peak_replay_gb=$((CONCURRENCY * REPLAY_GB_PER_TASK))"
+echo "peak_replay_gib=$((CONCURRENCY * REPLAY_GIB_PER_TASK))"
