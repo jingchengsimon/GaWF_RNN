@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "id": "amarel-clutter-u8-convert-58262776",
+  "description": "Lossless Clutter 40h float32 to uint8 conversion for train/validation/test",
+  "host": "amarel",
+  "status": "completed",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58262776"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/clutter_uint8_conversion/58262776.*"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "/scratch/js3269/stimuli/stimulus_reg-train-40h-uint8.npy",
+      "/scratch/js3269/stimuli/stimulus_reg-validation-40h-uint8.npy",
+      "/scratch/js3269/stimuli/stimulus_reg-test-40h-uint8.npy"
+    ]
+  },
+  "tracking": {
+    "expected_units": 3,
+    "auto_complete": false,
+    "result_globs": [
+      "/scratch/js3269/stimuli/stimulus_reg-train-40h-uint8.npy",
+      "/scratch/js3269/stimuli/stimulus_reg-validation-40h-uint8.npy",
+      "/scratch/js3269/stimuli/stimulus_reg-test-40h-uint8.npy"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "CPU-only conversion runs on an Amarel main-partition compute node; never on the login node.",
+    "Each chunk must round-trip exactly to the float32 source; TSV labels use SHA-256 equality."
+  ],
+  "created_at": "2026-07-17T21:25:03+00:00",
+  "updated_at": "2026-07-17T22:09:11+00:00",
+  "completed_at": "2026-07-17T22:09:11+00:00"
+}

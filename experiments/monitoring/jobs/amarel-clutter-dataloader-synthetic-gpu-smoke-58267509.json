@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "id": "amarel-clutter-dataloader-synthetic-gpu-smoke-58267509",
+  "description": "Clutter uint8 optimized DataLoader production-default smoke on Amarel synthetic data with shared output",
+  "host": "amarel",
+  "status": "failed",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58267509"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/clutter_dataloader_gpu_synthetic_smoke/58267509.*"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/amarel/artifacts/clutter_dataloader_gpu_synthetic_smoke/results/benchmarks/clutter_dataloader/amarel_gpu_synthetic_58267509/e2e_amp.json",
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/amarel/artifacts/clutter_dataloader_gpu_synthetic_smoke/results/benchmarks/clutter_dataloader/amarel_gpu_synthetic_58267509/production_smoke_summary.json"
+    ]
+  },
+  "tracking": {
+    "expected_units": 2,
+    "auto_complete": false,
+    "result_globs": [
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/amarel/artifacts/clutter_dataloader_gpu_synthetic_smoke/results/benchmarks/clutter_dataloader/amarel_gpu_synthetic_58267509/e2e_amp.json",
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/amarel/artifacts/clutter_dataloader_gpu_synthetic_smoke/results/benchmarks/clutter_dataloader/amarel_gpu_synthetic_58267509/production_smoke_summary.json"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "Uses compute-local synthetic uint8 input and shared cache/home output so production logs and metrics remain inspectable across Amarel clusters."
+  ],
+  "created_at": "2026-07-17T22:45:42+00:00",
+  "updated_at": "2026-07-17T22:47:42+00:00"
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "amarel-clutter-dataloader-cpu-smoke-58267249",
+  "description": "Clutter uint8 DataLoader shared-scratch CPU smoke",
+  "host": "amarel",
+  "status": "completed",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "58267249"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/amarel/artifacts/clutter_dataloader_cpu_smoke/58267249.*"
+    ],
+    "status_dir": null,
+    "result_paths": [
+      "/scratch/js3269/results/benchmarks/clutter_dataloader/amarel_cpu_58267249/loader.json"
+    ]
+  },
+  "tracking": {
+    "expected_units": 1,
+    "auto_complete": false,
+    "result_globs": [
+      "/scratch/js3269/results/benchmarks/clutter_dataloader/amarel_cpu_58267249/loader.json"
+    ],
+    "done_glob": null,
+    "fail_glob": null,
+    "defaults": {
+      "expected": {}
+    },
+    "units": []
+  },
+  "notes": [
+    "Completed on main compute node hal0299; selected pipeline was 8.67x faster than legacy in this short shared-scratch run."
+  ],
+  "created_at": "2026-07-17T22:37:27+00:00",
+  "updated_at": "2026-07-17T22:37:27+00:00"
+}
