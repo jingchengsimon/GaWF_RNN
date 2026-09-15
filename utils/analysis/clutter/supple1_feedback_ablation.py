@@ -73,7 +73,18 @@ def _load_metrics(data_dir: str) -> List[Dict[str, Any]]:
         paths = [path] if os.path.isfile(path) else []
     if len(paths) != 10:
         raise RuntimeError(f"Expected exactly ten ablation metrics files, found {len(paths)}.")
-    return [json.load(open(path)) for path in paths]
+    metrics = [json.load(open(path)) for path in paths]
+    invalid = [
+        path
+        for path, record in zip(paths, metrics)
+        if record.get("exclude_window_initial_frame") is not True
+    ]
+    if invalid:
+        raise RuntimeError(
+            "Ablation recovery input includes or does not document rollout t=0: "
+            + ", ".join(invalid)
+        )
+    return metrics
 
 
 def _conditions(metrics: List[Dict[str, Any]], selected: List[str] | None) -> List[str]:

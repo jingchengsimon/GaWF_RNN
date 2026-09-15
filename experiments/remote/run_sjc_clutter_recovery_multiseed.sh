@@ -45,7 +45,7 @@ run_fig1_task() {
   CUDA_VISIBLE_DEVICES="$gpu" python -m utils.analysis.clutter.fig1_target_switch_recovery \
     --ckpts "$checkpoint" --save_dir "$output" --data_dir "$DATA_DIR" \
     --data_suffix "$DATA_SUFFIX" --window_radius 10 --batch_size 64 --device cuda \
-    --seed "${seed#0}"
+    --seed "${seed#0}" --exclude_window_initial_frame
 }
 
 run_supple1_task() {
@@ -60,7 +60,7 @@ run_supple1_task() {
     --ckpt "$checkpoint" --save_dir "$output" --data_dir "$DATA_DIR" \
     --data_suffix "$DATA_SUFFIX" --conditions baseline clear_digit clear_sector clear_all \
     --K 10 --pre_K 10 --sequence_length 512 --batch_size 16 --device cuda \
-    --seed "${seed#0}"
+    --seed "${seed#0}" --exclude_window_initial_frame
 }
 
 worker() {

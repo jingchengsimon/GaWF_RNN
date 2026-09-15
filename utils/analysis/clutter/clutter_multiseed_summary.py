@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import csv
 import glob
+import json
 import shutil
 from collections import defaultdict
 from pathlib import Path
@@ -133,7 +134,7 @@ def load_test_metrics(path: Path) -> dict[str, dict[str, np.ndarray]]:
 
 
 def load_recovery_curves(path: Path) -> tuple[np.ndarray, dict[str, dict[str, np.ndarray]]]:
-    """Load aligned ten-seed foreground-switch curves grouped by model."""
+    """Load reset-excluded, aligned ten-seed foreground-switch curves grouped by model."""
 
     paths = sorted(glob.glob(str(path / "**" / "fg_switch_offset_acc_*.npz"), recursive=True))
     if not paths:
@@ -147,6 +148,16 @@ def load_recovery_curves(path: Path) -> tuple[np.ndarray, dict[str, dict[str, np
         model = _model_key(tag)
         if model not in MODEL_ORDER:
             continue
+        metadata_path = Path(filename).with_name(
+            Path(filename).name.replace("_acc_", "_meta_", 1).replace(".npz", ".json")
+        )
+        if not metadata_path.is_file():
+            raise RuntimeError(f"Missing recovery provenance metadata for {filename}")
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if metadata.get("exclude_window_initial_frame") is not True:
+            raise RuntimeError(
+                f"Recovery input includes or does not document rollout t=0: {metadata_path}"
+            )
         with np.load(filename) as payload:
             current_offsets = payload["offset_order"].astype(np.int64)
             if offsets is None:

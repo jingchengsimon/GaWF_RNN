@@ -122,11 +122,17 @@ def _conditions_from_ablation(
     files = sorted(glob.glob(str(ablation_dir / "gawf-seed*" / "ablation_metrics.json")))
     if len(files) != 10:
         raise FileNotFoundError(
-            f"Expected ten gawf-seed*/ablation_metrics.json under {ablation_dir}, found {len(files)}."
+            "Expected ten gawf-seed*/ablation_metrics.json under "
+            f"{ablation_dir}, found {len(files)}."
         )
     collected: dict[str, dict[str, list[float]]] = {}
     for path in files:
-        conditions = json.load(open(path))["conditions"]
+        record = json.load(open(path))
+        if record.get("exclude_window_initial_frame") is not True:
+            raise RuntimeError(
+                f"Ablation input includes or does not document rollout t=0: {path}"
+            )
+        conditions = record["conditions"]
         for cond in conditions_to_load:
             collected.setdefault(cond, {"char_acc": [], "sector_acc": []})
             for key in ("char_acc", "sector_acc"):

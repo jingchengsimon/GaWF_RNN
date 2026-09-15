@@ -149,8 +149,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--exclude_window_initial_frame",
         action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Exclude timestep 0 of every fixed rollout window from each recovery offset.",
+        default=True,
+        help=(
+            "Exclude timestep 0 of every fixed rollout window from each recovery offset "
+            "(default: enabled; use --no-exclude-window-initial-frame only for legacy results)."
+        ),
     )
     return parser.parse_args()
 
@@ -530,6 +533,7 @@ def _save_outputs_bg(
     frame_counts: np.ndarray,
     offset_order: List[int],
     offset_labels: List[str],
+    exclude_window_initial_frame: bool,
 ) -> None:
     ckpt_tag = os.path.basename(ckpt_path).replace("_model.pth", "")
     npz_path = os.path.join(save_dir, f"bg_switch_offset_acc_{ckpt_tag}.npz")
@@ -552,6 +556,7 @@ def _save_outputs_bg(
                 "offset_order": offset_order,
                 "offset_labels": offset_labels,
                 "frame_counts": frame_counts.astype(np.int64).tolist(),
+                "exclude_window_initial_frame": exclude_window_initial_frame,
             },
             f,
             indent=2,
@@ -652,6 +657,7 @@ def main() -> None:
                 frame_counts,
                 offset_order,
                 offset_labels,
+                args.exclude_window_initial_frame,
             )
 
 

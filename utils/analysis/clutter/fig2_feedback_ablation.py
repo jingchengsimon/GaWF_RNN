@@ -119,8 +119,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--exclude_window_initial_frame",
         action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Exclude timestep 0 of each recurrent window from accuracy and recovery metrics.",
+        default=True,
+        help=(
+            "Exclude timestep 0 of each recurrent window from accuracy and recovery metrics "
+            "(default: enabled; use --no-exclude-window-initial-frame only for legacy results)."
+        ),
     )
     parser.add_argument("--use_mmap", action="store_true", default=True)
     parser.add_argument("--use_sector_mode", action="store_true", default=True)
