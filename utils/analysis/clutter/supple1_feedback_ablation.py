@@ -210,6 +210,7 @@ def _plot_recovery(metrics: List[Dict[str, Any]], conds: List[str], out_path: st
         "clear_all": "#E45756",
         "shuffle_digit": "#72B7B2",
         "shuffle_sector": "#B279A2",
+        "shuffle_all": "#E45756",
     }
     first = metrics[0]["conditions"][conds[0]]
     first_offsets = np.asarray(

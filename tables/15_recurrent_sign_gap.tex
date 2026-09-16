@@ -1,0 +1,26 @@
+% Table 15: recurrent-gate sign dependence.
+\begin{table*}[t]
+\caption{Recurrent \(\dg\) within the shared positive/negative \(|W|\) support. The sign gap is \(\dg_{W>0}-\dg_{W<0}\). Values are mean \(\pm\) seed-level SEM over ten training seeds.}
+\label{tab:recurrent-sign-gap}
+\begin{center}
+\small
+\setlength{\tabcolsep}{8pt}
+\begin{tabular}{lrrrr}
+\multicolumn{1}{c}{\bf Metric (\(\times 10^{-3}\))} &
+\multicolumn{1}{c}{\bf \(T\!\to\!T\)} &
+\multicolumn{1}{c}{\bf \(T\!\to\!R\)} &
+\multicolumn{1}{c}{\bf \(R\!\to\!T\)} &
+\multicolumn{1}{c}{\bf \(R\!\to\!R\)}
+\\ \hline \\
+\multicolumn{5}{l}{\bf Target identity} \\
+\(W>0\) & \(-251\pm9\) & \(-140\pm7\) & \(-14\pm2\) & \(+18\pm1\) \\
+\(W<0\) & \(-361\pm7\) & \(-70\pm4\) & \(0\pm3\) & \(+11\pm{<}1\) \\
+Gap & \(+110\pm6\) & \(-70\pm4\) & \(-14\pm3\) & \(+7\pm1\) \\
+\hline \\
+\multicolumn{5}{l}{\bf Target location} \\
+\(W>0\) & \(-102\pm4\) & \(-87\pm3\) & \(+6\pm1\) & \(+10\pm{<}1\) \\
+\(W<0\) & \(-89\pm3\) & \(-74\pm3\) & \(+16\pm1\) & \(+7\pm{<}1\) \\
+Gap & \(-13\pm3\) & \(-13\pm2\) & \(-10\pm1\) & \(+4\pm{<}1\) \\
+\end{tabular}
+\end{center}
+\end{table*}
