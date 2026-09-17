@@ -18,7 +18,7 @@ import torch
 import torch.nn.functional as F
 from torch import optim
 
-from utils.training.atari.atari_envs import ATARI_PILOT_ENVS, make_vector_atari_env
+from utils.training.atari.atari_envs import make_vector_atari_env, parse_ale_env_id
 from utils.training.atari.atari_task_models import AtariActorCritic
 from utils.training.atari.atari_train_utils import (
     compute_gae,
@@ -33,7 +33,7 @@ from utils.training.atari.atari_train_utils import (
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train Atari recurrent A2C models")
-    parser.add_argument("--env_id", type=str, default="ALE/Pong-v5", choices=ATARI_PILOT_ENVS)
+    parser.add_argument("--env_id", type=parse_ale_env_id, default="ALE/Pong-v5")
     parser.add_argument("--algo", type=str, default="a2c", choices=["a2c"])
     parser.add_argument("--model_type", type=str, default="gawf", choices=["lstm", "gawf"])
     parser.add_argument(

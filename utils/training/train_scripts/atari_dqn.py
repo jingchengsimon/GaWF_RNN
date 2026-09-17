@@ -28,11 +28,11 @@ from torch import optim
 from utils.training.atari.atari_dqn_models import AtariQNetwork, AtariQNetworkState
 from utils.training.atari.atari_envs import (
     ATARI_ENV_PROTOCOLS,
-    ATARI_PILOT_ENVS,
     ATARI_TASK_SCHEDULES,
     make_multitask_vector_atari_env,
     make_vector_atari_env,
     multitask_scheduler_states,
+    parse_ale_env_id,
 )
 from utils.training.atari.atari_replay import (
     REPLAY_SAMPLING_MODES,
@@ -78,16 +78,16 @@ def _json_safe(value: Any) -> Any:
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train Atari DQN models")
     env_group = parser.add_mutually_exclusive_group()
-    env_group.add_argument(
-        "--env_id", type=str, default="ALE/Pong-v5", choices=ATARI_PILOT_ENVS
-    )
+    env_group.add_argument("--env_id", type=parse_ale_env_id, default="ALE/Pong-v5")
     env_group.add_argument(
         "--env_ids",
-        type=str,
+        type=parse_ale_env_id,
         nargs="+",
         default=None,
-        choices=ATARI_PILOT_ENVS,
-        help="Phase0 task list. Multiple games are selected only at episode boundaries.",
+        help=(
+            "ALE task list. Any registered ALE/* environment is accepted; multiple games "
+            "are selected only at episode boundaries."
+        ),
     )
     parser.add_argument(
         "--action_space_mode",

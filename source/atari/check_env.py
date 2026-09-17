@@ -10,12 +10,12 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from utils.training.atari.atari_envs import ATARI_PILOT_ENVS, make_vector_atari_env
+from utils.training.atari.atari_envs import make_vector_atari_env, parse_ale_env_id
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--env_id", type=str, default="ALE/Pong-v5", choices=ATARI_PILOT_ENVS)
+    parser.add_argument("--env_id", type=parse_ale_env_id, default="ALE/Pong-v5")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--frame_stack", type=int, default=1)
     parser.add_argument("--frame_skip", type=int, default=1)

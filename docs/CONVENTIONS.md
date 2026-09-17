@@ -83,6 +83,8 @@ Atari DQN additionally uses `--frame_skip`, `--frame_stack`, `--task_schedule`,
 `--learning_rate_decay_per_task_steps`, `--amp_dtype`, `--allow_tf32`, `--compile_model`, and
 `--feedback_mode`. `--atari_env_protocol` selects the versioned environment boundary/action
 mapping contract; its default `baseline` retains historical behavior.
+Atari `--env_id` and DQN `--env_ids` accept any registered Gymnasium `ALE/*` environment;
+the environment registry, rather than a hard-coded pilot list, validates the game identifier.
 `--init_weights_from` accepts only a pure model `state_dict` and starts with a fresh
 optimizer, replay, global step, RNG trajectory, epsilon schedule, and LR schedule. It is mutually
 exclusive with `--resume_from` and `--auto_resume`. The SJC Skiing launcher requires a completed

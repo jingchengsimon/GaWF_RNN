@@ -15,6 +15,7 @@ from utils.training.train_scripts.atari_dqn import (
     _learning_ready,
     _linear_epsilon,
     _resolve_exploration_steps,
+    build_arg_parser,
 )
 
 
@@ -168,6 +169,17 @@ def test_atari_rejects_ambiguous_epsilon_schedule() -> None:
         _resolve_exploration_steps(args)
 
 
+def test_atari_cli_accepts_any_ale_namespace_environment() -> None:
+    parser = build_arg_parser()
+
+    assert parser.parse_args(["--env_id", "ALE/Alien-v5"]).env_id == "ALE/Alien-v5"
+    assert parser.parse_args(
+        ["--env_ids", "ALE/Riverraid-v5", "ALE/Qbert-v5"]
+    ).env_ids == ["ALE/Riverraid-v5", "ALE/Qbert-v5"]
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--env_id", "CartPole-v1"])
+
+
 def test_unavailable_atari_metrics_are_json_null_not_nan() -> None:
     assert _json_safe({"loss": float("nan"), "fps": 12.0}) == {"loss": None, "fps": 12.0}
 
@@ -220,4 +232,33 @@ def test_five_task_runner_signals_training_step_for_checkpoint_requeue() -> None
 
     assert "#SBATCH --signal=USR1@600" in runner
     assert "#SBATCH --signal=B:USR1" not in runner
+    assert 'scontrol requeue "$SLURM_JOB_ID"' in runner
+
+
+def test_riverraid_c_formal_launcher_records_exact_protocol_and_recovery() -> None:
+    submitter = (
+        ROOT
+        / "experiments/rl/atari/amarel/"
+        "submit_atari_5task_18action_l3_riverraid_20m.sh"
+    ).read_text(encoding="utf-8")
+    runner = (
+        ROOT
+        / "experiments/rl/atari/amarel/"
+        "run_atari_5task_18action_l3_riverraid_20m_array.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'ARRAY_TASKS="0-24"' in submitter
+    assert "ARRAY_CONCURRENCY=8" in submitter
+    assert "SEED_COUNT=5" in submitter
+    assert "TOTAL_TIMESTEPS=20000000" in submitter
+    assert "EXPLORATION_STEPS=5000000,END_EPSILON=0.05" in submitter
+    assert "LR_DECAY_PER_TASK_STEPS=2000000" in submitter
+    assert "REQUIRED_GIB=65.8" in submitter
+    assert "MODELS=(gawf ann rnn gru lstm)" in runner
+    assert "ALE/Riverraid-v5" in runner
+    assert '--start_epsilon 1.0 --end_epsilon "$END_EPSILON"' in runner
+    assert '--required_gib "${REQUIRED_GIB:-65.8}"' in runner
+    assert "#SBATCH --requeue" in runner
+    assert "#SBATCH --signal=USR1@600" in runner
+    assert 'RESUME_ARGS=(--resume_from "$CHECKPOINT")' in runner
     assert 'scontrol requeue "$SLURM_JOB_ID"' in runner

@@ -33,6 +33,15 @@ SKIING_PROGRESS_RAM_SLICE = slice(86, 94)
 _CANONICAL_ACTION_FALLBACK = (0, 0, 2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5, 6, 7, 8, 9)
 
 
+def parse_ale_env_id(value: str) -> str:
+    """Accept any Gymnasium ALE namespace environment identifier."""
+
+    env_id = value.strip()
+    if not env_id.startswith("ALE/") or len(env_id) == len("ALE/"):
+        raise ValueError(f"Atari environment ids must use the ALE/ namespace: {value!r}")
+    return env_id
+
+
 class _EpisodeTaskScheduler:
     """Choose tasks at episode boundaries while tracking collected transitions."""
 

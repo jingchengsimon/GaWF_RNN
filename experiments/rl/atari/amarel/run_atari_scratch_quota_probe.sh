@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=aim3-atari-quota-probe
-#SBATCH --partition=gpu-redhat
+#SBATCH --partition=gpu
 #SBATCH --account=general
 #SBATCH --gres=gpu:1
 #SBATCH --constraint=adalovelace

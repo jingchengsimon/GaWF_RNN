@@ -64,6 +64,20 @@ per-task 1M LR decay 和固定 500K global-step epsilon decay。追加 GRU/LSTM/
 checkpoint 后由 runner requeue。runner 的可选 `SEED_OFFSET` 为连续 seed 添加偏移；未设置时仍保持连续
 `1..SEED_COUNT` 的既有行为。
 
+### Riverraid configuration C formal run
+
+`amarel/submit_atari_5task_18action_l3_riverraid_20m.sh` submits one shared
+Pong/Breakout/Assault/Seaquest/Riverraid model per unit for ANN/RNN/GRU/LSTM/GaWF seeds 1-5.
+The array is `0-24%8`; each unit trains for 20M global steps with full18, fs4/stack4, L3,
+BF16, transition-balanced collection, task-balanced replay, and five independent 500K mmap
+replay partitions. Configuration C explicitly decays epsilon from 1.0 to 0.05 over 5M global
+steps and decays the shared LR by 0.1 only after every task reaches 2M environment steps.
+The quota guard budgets 65.8 GiB per unit. Every unit checkpoints each 50K steps; Slurm sends
+`SIGUSR1` ten minutes before the 72-hour limit, then the runner requeues and resumes from the
+same checkpoint plus mmap replay. Repaired submissions use the distinct
+`formal_20m_4mpertask_riverraid_c_eps005_20260917` result root and never overwrite the failed
+`formal_20m_4mpertask_raw_seeds_riverraid_20260914` attempt.
+
 ## SJC two-task L3 GRU comparison
 
 The SJC comparison launcher `experiments/remote/run_sjc_atari_multitask_l3_gru.sh` evaluates a
