@@ -1,101 +1,45 @@
 {
   "schema_version": 1,
   "id": "text-imdb-full50-best5-l1-ep50-lstm-rnn-gru-gawf-gawflogits-seeds1-10",
-  "description": "Formal IMDB 10-seed training and validation-selected test evaluation for five parameter-matched models.",
-  "host": "amarel",
-  "status": "cancelled",
+  "description": "Formal IMDB 10-seed training and validation-selected test evaluation for five parameter-matched models, migrated from Amarel to two serial SJC GPU lanes.",
+  "host": "sjc-remote",
+  "status": "running",
   "created_at": "2026-09-20T00:35:11-04:00",
-  "updated_at": "2026-09-20T00:41:10-04:00",
-  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948",
-  "source_commit": "62ff94890f91767ad1aa5fe5caa518d5c309c027",
+  "updated_at": "2026-09-20T02:44:47-04:00",
+  "remote_root": "/G/MIMOlab/Codes/aim3_gawf_rnn_imdb_sjc2gpu_02b712e",
+  "source_commit": "02b712e97559cf36c8c68309c8b4f91c194fe822",
   "environment": {
     "name": "aim3_rnn",
-    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+    "conda_init": "/G/anaconda3/etc/profile.d/conda.sh"
   },
   "scheduler": {
-    "type": "slurm",
-    "job_ids": [
-      "61717068",
-      "61717069"
+    "type": "tmux",
+    "job_ids": [],
+    "run_ids": [
+      "sjc_imdb_best10seed_2gpu_20260920"
     ],
-    "canceled_job_ids": [
-      "61717049",
-      "61717050"
-    ],
-    "run_ids": [],
-    "tmux_session": null,
+    "tmux_session": "sjc_imdb_best10seed_2gpu_20260920",
     "process_patterns": [
-      "imdb_5model_best10seed/lstm/seed_01",
-      "imdb_5model_best10seed/lstm/seed_02",
-      "imdb_5model_best10seed/lstm/seed_03",
-      "imdb_5model_best10seed/lstm/seed_04",
-      "imdb_5model_best10seed/lstm/seed_05",
-      "imdb_5model_best10seed/lstm/seed_06",
-      "imdb_5model_best10seed/lstm/seed_07",
-      "imdb_5model_best10seed/lstm/seed_08",
-      "imdb_5model_best10seed/lstm/seed_09",
-      "imdb_5model_best10seed/lstm/seed_10",
-      "imdb_5model_best10seed/rnn/seed_01",
-      "imdb_5model_best10seed/rnn/seed_02",
-      "imdb_5model_best10seed/rnn/seed_03",
-      "imdb_5model_best10seed/rnn/seed_04",
-      "imdb_5model_best10seed/rnn/seed_05",
-      "imdb_5model_best10seed/rnn/seed_06",
-      "imdb_5model_best10seed/rnn/seed_07",
-      "imdb_5model_best10seed/rnn/seed_08",
-      "imdb_5model_best10seed/rnn/seed_09",
-      "imdb_5model_best10seed/rnn/seed_10",
-      "imdb_5model_best10seed/gru/seed_01",
-      "imdb_5model_best10seed/gru/seed_02",
-      "imdb_5model_best10seed/gru/seed_03",
-      "imdb_5model_best10seed/gru/seed_04",
-      "imdb_5model_best10seed/gru/seed_05",
-      "imdb_5model_best10seed/gru/seed_06",
-      "imdb_5model_best10seed/gru/seed_07",
-      "imdb_5model_best10seed/gru/seed_08",
-      "imdb_5model_best10seed/gru/seed_09",
-      "imdb_5model_best10seed/gru/seed_10",
-      "imdb_5model_best10seed/gawf/seed_01",
-      "imdb_5model_best10seed/gawf/seed_02",
-      "imdb_5model_best10seed/gawf/seed_03",
-      "imdb_5model_best10seed/gawf/seed_04",
-      "imdb_5model_best10seed/gawf/seed_05",
-      "imdb_5model_best10seed/gawf/seed_06",
-      "imdb_5model_best10seed/gawf/seed_07",
-      "imdb_5model_best10seed/gawf/seed_08",
-      "imdb_5model_best10seed/gawf/seed_09",
-      "imdb_5model_best10seed/gawf/seed_10",
-      "imdb_5model_best10seed/gawf_logits/seed_01",
-      "imdb_5model_best10seed/gawf_logits/seed_02",
-      "imdb_5model_best10seed/gawf_logits/seed_03",
-      "imdb_5model_best10seed/gawf_logits/seed_04",
-      "imdb_5model_best10seed/gawf_logits/seed_05",
-      "imdb_5model_best10seed/gawf_logits/seed_06",
-      "imdb_5model_best10seed/gawf_logits/seed_07",
-      "imdb_5model_best10seed/gawf_logits/seed_08",
-      "imdb_5model_best10seed/gawf_logits/seed_09",
-      "imdb_5model_best10seed/gawf_logits/seed_10"
+      "run_sjc_imdb_5model_best10seed_2gpu.sh",
+      "run_task.py imdb.*imdb_5model_best10seed"
     ],
-    "collect_gpu": false,
+    "collect_gpu": true,
     "dependency_strategy": {
-      "type": "afterok_preflight",
-      "preflight_job_id": "61717068",
-      "training_array_job_id": "61717069",
-      "array_tasks": "0-49%10"
+      "type": "two_serial_gpu_lanes",
+      "gpu0_tasks": "0,2,...,48",
+      "gpu1_tasks": "1,3,...,49"
     }
   },
   "paths": {
     "log_globs": [
-      "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/61717068_prep.out",
-      "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/61717068_prep.err",
-      "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/61717069_*.out",
-      "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/61717069_*.err"
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/run_20260920_024500_imdb_sjc2gpu.log",
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/task_*.log"
     ],
-    "status_dir": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status",
+    "status_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status",
     "result_paths": [
-      "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed"
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed"
     ],
-    "data_path": "/scratch/js3269/stimuli/imdb"
+    "data_path": "/G/MIMOlab/Codes/aim3_gawf_rnn/source/text/data/imdb"
   },
   "tracking": {
     "expected_units": 50,
@@ -108,10 +52,10 @@
     "units": [
       {
         "id": "lstm-seed01",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/lstm/seed_01",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/lstm/seed_01",
         "metrics_file": "lstm_imdb_h128_emb128_lr0.005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0000.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0000.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0000.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0000.fail",
         "expected": {
           "model_type": "lstm",
           "dataset": "imdb",
@@ -135,10 +79,10 @@
       },
       {
         "id": "lstm-seed02",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/lstm/seed_02",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/lstm/seed_02",
         "metrics_file": "lstm_imdb_h128_emb128_lr0.005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0001.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0001.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0001.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0001.fail",
         "expected": {
           "model_type": "lstm",
           "dataset": "imdb",
@@ -162,10 +106,10 @@
       },
       {
         "id": "lstm-seed03",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/lstm/seed_03",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/lstm/seed_03",
         "metrics_file": "lstm_imdb_h128_emb128_lr0.005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0002.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0002.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0002.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0002.fail",
         "expected": {
           "model_type": "lstm",
           "dataset": "imdb",
@@ -189,10 +133,10 @@
       },
       {
         "id": "lstm-seed04",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/lstm/seed_04",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/lstm/seed_04",
         "metrics_file": "lstm_imdb_h128_emb128_lr0.005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0003.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0003.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0003.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0003.fail",
         "expected": {
           "model_type": "lstm",
           "dataset": "imdb",
@@ -216,10 +160,10 @@
       },
       {
         "id": "lstm-seed05",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/lstm/seed_05",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/lstm/seed_05",
         "metrics_file": "lstm_imdb_h128_emb128_lr0.005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0004.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0004.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0004.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0004.fail",
         "expected": {
           "model_type": "lstm",
           "dataset": "imdb",
@@ -243,10 +187,10 @@
       },
       {
         "id": "lstm-seed06",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/lstm/seed_06",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/lstm/seed_06",
         "metrics_file": "lstm_imdb_h128_emb128_lr0.005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0005.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0005.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0005.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0005.fail",
         "expected": {
           "model_type": "lstm",
           "dataset": "imdb",
@@ -270,10 +214,10 @@
       },
       {
         "id": "lstm-seed07",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/lstm/seed_07",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/lstm/seed_07",
         "metrics_file": "lstm_imdb_h128_emb128_lr0.005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0006.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0006.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0006.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0006.fail",
         "expected": {
           "model_type": "lstm",
           "dataset": "imdb",
@@ -297,10 +241,10 @@
       },
       {
         "id": "lstm-seed08",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/lstm/seed_08",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/lstm/seed_08",
         "metrics_file": "lstm_imdb_h128_emb128_lr0.005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0007.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0007.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0007.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0007.fail",
         "expected": {
           "model_type": "lstm",
           "dataset": "imdb",
@@ -324,10 +268,10 @@
       },
       {
         "id": "lstm-seed09",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/lstm/seed_09",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/lstm/seed_09",
         "metrics_file": "lstm_imdb_h128_emb128_lr0.005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0008.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0008.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0008.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0008.fail",
         "expected": {
           "model_type": "lstm",
           "dataset": "imdb",
@@ -351,10 +295,10 @@
       },
       {
         "id": "lstm-seed10",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/lstm/seed_10",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/lstm/seed_10",
         "metrics_file": "lstm_imdb_h128_emb128_lr0.005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0009.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0009.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0009.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0009.fail",
         "expected": {
           "model_type": "lstm",
           "dataset": "imdb",
@@ -378,10 +322,10 @@
       },
       {
         "id": "rnn-seed01",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/rnn/seed_01",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/rnn/seed_01",
         "metrics_file": "rnn_imdb_h304_emb128_lr0.0005_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0010.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0010.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0010.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0010.fail",
         "expected": {
           "model_type": "rnn",
           "dataset": "imdb",
@@ -405,10 +349,10 @@
       },
       {
         "id": "rnn-seed02",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/rnn/seed_02",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/rnn/seed_02",
         "metrics_file": "rnn_imdb_h304_emb128_lr0.0005_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0011.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0011.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0011.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0011.fail",
         "expected": {
           "model_type": "rnn",
           "dataset": "imdb",
@@ -432,10 +376,10 @@
       },
       {
         "id": "rnn-seed03",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/rnn/seed_03",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/rnn/seed_03",
         "metrics_file": "rnn_imdb_h304_emb128_lr0.0005_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0012.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0012.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0012.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0012.fail",
         "expected": {
           "model_type": "rnn",
           "dataset": "imdb",
@@ -459,10 +403,10 @@
       },
       {
         "id": "rnn-seed04",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/rnn/seed_04",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/rnn/seed_04",
         "metrics_file": "rnn_imdb_h304_emb128_lr0.0005_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0013.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0013.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0013.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0013.fail",
         "expected": {
           "model_type": "rnn",
           "dataset": "imdb",
@@ -486,10 +430,10 @@
       },
       {
         "id": "rnn-seed05",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/rnn/seed_05",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/rnn/seed_05",
         "metrics_file": "rnn_imdb_h304_emb128_lr0.0005_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0014.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0014.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0014.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0014.fail",
         "expected": {
           "model_type": "rnn",
           "dataset": "imdb",
@@ -513,10 +457,10 @@
       },
       {
         "id": "rnn-seed06",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/rnn/seed_06",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/rnn/seed_06",
         "metrics_file": "rnn_imdb_h304_emb128_lr0.0005_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0015.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0015.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0015.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0015.fail",
         "expected": {
           "model_type": "rnn",
           "dataset": "imdb",
@@ -540,10 +484,10 @@
       },
       {
         "id": "rnn-seed07",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/rnn/seed_07",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/rnn/seed_07",
         "metrics_file": "rnn_imdb_h304_emb128_lr0.0005_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0016.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0016.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0016.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0016.fail",
         "expected": {
           "model_type": "rnn",
           "dataset": "imdb",
@@ -567,10 +511,10 @@
       },
       {
         "id": "rnn-seed08",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/rnn/seed_08",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/rnn/seed_08",
         "metrics_file": "rnn_imdb_h304_emb128_lr0.0005_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0017.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0017.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0017.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0017.fail",
         "expected": {
           "model_type": "rnn",
           "dataset": "imdb",
@@ -594,10 +538,10 @@
       },
       {
         "id": "rnn-seed09",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/rnn/seed_09",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/rnn/seed_09",
         "metrics_file": "rnn_imdb_h304_emb128_lr0.0005_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0018.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0018.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0018.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0018.fail",
         "expected": {
           "model_type": "rnn",
           "dataset": "imdb",
@@ -621,10 +565,10 @@
       },
       {
         "id": "rnn-seed10",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/rnn/seed_10",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/rnn/seed_10",
         "metrics_file": "rnn_imdb_h304_emb128_lr0.0005_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0019.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0019.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0019.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0019.fail",
         "expected": {
           "model_type": "rnn",
           "dataset": "imdb",
@@ -648,10 +592,10 @@
       },
       {
         "id": "gru-seed01",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gru/seed_01",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gru/seed_01",
         "metrics_file": "gru_imdb_h155_emb128_lr0.005_wd1e-05_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0020.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0020.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0020.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0020.fail",
         "expected": {
           "model_type": "gru",
           "dataset": "imdb",
@@ -675,10 +619,10 @@
       },
       {
         "id": "gru-seed02",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gru/seed_02",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gru/seed_02",
         "metrics_file": "gru_imdb_h155_emb128_lr0.005_wd1e-05_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0021.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0021.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0021.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0021.fail",
         "expected": {
           "model_type": "gru",
           "dataset": "imdb",
@@ -702,10 +646,10 @@
       },
       {
         "id": "gru-seed03",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gru/seed_03",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gru/seed_03",
         "metrics_file": "gru_imdb_h155_emb128_lr0.005_wd1e-05_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0022.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0022.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0022.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0022.fail",
         "expected": {
           "model_type": "gru",
           "dataset": "imdb",
@@ -729,10 +673,10 @@
       },
       {
         "id": "gru-seed04",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gru/seed_04",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gru/seed_04",
         "metrics_file": "gru_imdb_h155_emb128_lr0.005_wd1e-05_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0023.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0023.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0023.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0023.fail",
         "expected": {
           "model_type": "gru",
           "dataset": "imdb",
@@ -756,10 +700,10 @@
       },
       {
         "id": "gru-seed05",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gru/seed_05",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gru/seed_05",
         "metrics_file": "gru_imdb_h155_emb128_lr0.005_wd1e-05_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0024.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0024.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0024.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0024.fail",
         "expected": {
           "model_type": "gru",
           "dataset": "imdb",
@@ -783,10 +727,10 @@
       },
       {
         "id": "gru-seed06",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gru/seed_06",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gru/seed_06",
         "metrics_file": "gru_imdb_h155_emb128_lr0.005_wd1e-05_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0025.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0025.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0025.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0025.fail",
         "expected": {
           "model_type": "gru",
           "dataset": "imdb",
@@ -810,10 +754,10 @@
       },
       {
         "id": "gru-seed07",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gru/seed_07",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gru/seed_07",
         "metrics_file": "gru_imdb_h155_emb128_lr0.005_wd1e-05_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0026.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0026.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0026.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0026.fail",
         "expected": {
           "model_type": "gru",
           "dataset": "imdb",
@@ -837,10 +781,10 @@
       },
       {
         "id": "gru-seed08",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gru/seed_08",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gru/seed_08",
         "metrics_file": "gru_imdb_h155_emb128_lr0.005_wd1e-05_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0027.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0027.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0027.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0027.fail",
         "expected": {
           "model_type": "gru",
           "dataset": "imdb",
@@ -864,10 +808,10 @@
       },
       {
         "id": "gru-seed09",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gru/seed_09",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gru/seed_09",
         "metrics_file": "gru_imdb_h155_emb128_lr0.005_wd1e-05_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0028.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0028.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0028.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0028.fail",
         "expected": {
           "model_type": "gru",
           "dataset": "imdb",
@@ -891,10 +835,10 @@
       },
       {
         "id": "gru-seed10",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gru/seed_10",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gru/seed_10",
         "metrics_file": "gru_imdb_h155_emb128_lr0.005_wd1e-05_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0029.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0029.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0029.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0029.fail",
         "expected": {
           "model_type": "gru",
           "dataset": "imdb",
@@ -918,10 +862,10 @@
       },
       {
         "id": "gawf-seed01",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf/seed_01",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf/seed_01",
         "metrics_file": "gawf_imdb_h171_emb128_lr0.001_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0030.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0030.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0030.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0030.fail",
         "expected": {
           "model_type": "gawf",
           "dataset": "imdb",
@@ -945,10 +889,10 @@
       },
       {
         "id": "gawf-seed02",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf/seed_02",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf/seed_02",
         "metrics_file": "gawf_imdb_h171_emb128_lr0.001_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0031.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0031.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0031.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0031.fail",
         "expected": {
           "model_type": "gawf",
           "dataset": "imdb",
@@ -972,10 +916,10 @@
       },
       {
         "id": "gawf-seed03",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf/seed_03",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf/seed_03",
         "metrics_file": "gawf_imdb_h171_emb128_lr0.001_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0032.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0032.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0032.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0032.fail",
         "expected": {
           "model_type": "gawf",
           "dataset": "imdb",
@@ -999,10 +943,10 @@
       },
       {
         "id": "gawf-seed04",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf/seed_04",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf/seed_04",
         "metrics_file": "gawf_imdb_h171_emb128_lr0.001_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0033.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0033.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0033.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0033.fail",
         "expected": {
           "model_type": "gawf",
           "dataset": "imdb",
@@ -1026,10 +970,10 @@
       },
       {
         "id": "gawf-seed05",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf/seed_05",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf/seed_05",
         "metrics_file": "gawf_imdb_h171_emb128_lr0.001_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0034.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0034.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0034.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0034.fail",
         "expected": {
           "model_type": "gawf",
           "dataset": "imdb",
@@ -1053,10 +997,10 @@
       },
       {
         "id": "gawf-seed06",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf/seed_06",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf/seed_06",
         "metrics_file": "gawf_imdb_h171_emb128_lr0.001_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0035.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0035.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0035.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0035.fail",
         "expected": {
           "model_type": "gawf",
           "dataset": "imdb",
@@ -1080,10 +1024,10 @@
       },
       {
         "id": "gawf-seed07",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf/seed_07",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf/seed_07",
         "metrics_file": "gawf_imdb_h171_emb128_lr0.001_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0036.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0036.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0036.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0036.fail",
         "expected": {
           "model_type": "gawf",
           "dataset": "imdb",
@@ -1107,10 +1051,10 @@
       },
       {
         "id": "gawf-seed08",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf/seed_08",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf/seed_08",
         "metrics_file": "gawf_imdb_h171_emb128_lr0.001_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0037.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0037.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0037.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0037.fail",
         "expected": {
           "model_type": "gawf",
           "dataset": "imdb",
@@ -1134,10 +1078,10 @@
       },
       {
         "id": "gawf-seed09",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf/seed_09",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf/seed_09",
         "metrics_file": "gawf_imdb_h171_emb128_lr0.001_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0038.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0038.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0038.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0038.fail",
         "expected": {
           "model_type": "gawf",
           "dataset": "imdb",
@@ -1161,10 +1105,10 @@
       },
       {
         "id": "gawf-seed10",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf/seed_10",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf/seed_10",
         "metrics_file": "gawf_imdb_h171_emb128_lr0.001_wd0.001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0039.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0039.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0039.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0039.fail",
         "expected": {
           "model_type": "gawf",
           "dataset": "imdb",
@@ -1188,10 +1132,10 @@
       },
       {
         "id": "gawf_logits-seed01",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_01",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_01",
         "metrics_file": "gawf_logits_imdb_h301_emb128_lr0.0005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0040.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0040.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0040.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0040.fail",
         "expected": {
           "model_type": "gawf_logits",
           "dataset": "imdb",
@@ -1215,10 +1159,10 @@
       },
       {
         "id": "gawf_logits-seed02",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_02",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_02",
         "metrics_file": "gawf_logits_imdb_h301_emb128_lr0.0005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0041.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0041.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0041.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0041.fail",
         "expected": {
           "model_type": "gawf_logits",
           "dataset": "imdb",
@@ -1242,10 +1186,10 @@
       },
       {
         "id": "gawf_logits-seed03",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_03",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_03",
         "metrics_file": "gawf_logits_imdb_h301_emb128_lr0.0005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0042.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0042.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0042.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0042.fail",
         "expected": {
           "model_type": "gawf_logits",
           "dataset": "imdb",
@@ -1269,10 +1213,10 @@
       },
       {
         "id": "gawf_logits-seed04",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_04",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_04",
         "metrics_file": "gawf_logits_imdb_h301_emb128_lr0.0005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0043.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0043.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0043.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0043.fail",
         "expected": {
           "model_type": "gawf_logits",
           "dataset": "imdb",
@@ -1296,10 +1240,10 @@
       },
       {
         "id": "gawf_logits-seed05",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_05",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_05",
         "metrics_file": "gawf_logits_imdb_h301_emb128_lr0.0005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0044.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0044.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0044.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0044.fail",
         "expected": {
           "model_type": "gawf_logits",
           "dataset": "imdb",
@@ -1323,10 +1267,10 @@
       },
       {
         "id": "gawf_logits-seed06",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_06",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_06",
         "metrics_file": "gawf_logits_imdb_h301_emb128_lr0.0005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0045.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0045.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0045.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0045.fail",
         "expected": {
           "model_type": "gawf_logits",
           "dataset": "imdb",
@@ -1350,10 +1294,10 @@
       },
       {
         "id": "gawf_logits-seed07",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_07",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_07",
         "metrics_file": "gawf_logits_imdb_h301_emb128_lr0.0005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0046.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0046.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0046.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0046.fail",
         "expected": {
           "model_type": "gawf_logits",
           "dataset": "imdb",
@@ -1377,10 +1321,10 @@
       },
       {
         "id": "gawf_logits-seed08",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_08",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_08",
         "metrics_file": "gawf_logits_imdb_h301_emb128_lr0.0005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0047.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0047.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0047.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0047.fail",
         "expected": {
           "model_type": "gawf_logits",
           "dataset": "imdb",
@@ -1404,10 +1348,10 @@
       },
       {
         "id": "gawf_logits-seed09",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_09",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_09",
         "metrics_file": "gawf_logits_imdb_h301_emb128_lr0.0005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0048.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0048.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0048.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0048.fail",
         "expected": {
           "model_type": "gawf_logits",
           "dataset": "imdb",
@@ -1431,10 +1375,10 @@
       },
       {
         "id": "gawf_logits-seed10",
-        "result_dir": "/scratch/js3269/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_10",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/text/runs/imdb_5model_best10seed/gawf_logits/seed_10",
         "metrics_file": "gawf_logits_imdb_h301_emb128_lr0.0005_wd0.0001_edo0.0_rdo0.5_metrics.json",
-        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0049.done",
-        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948/experiments/text/amarel/artifacts/imdb_5model_best10seed/status/task_0049.fail",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0049.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/imdb_5model_best10seed_sjc2gpu/status/task_0049.fail",
         "expected": {
           "model_type": "gawf_logits",
           "dataset": "imdb",
@@ -1459,11 +1403,10 @@
     ]
   },
   "notes": [
-    "Fixed validation-best hyperparameters from the completed seed42 imdb_5model_full50_grid; that completed full-budget grid is the readiness evidence, so no separate training smoke was added.",
-    "Each unit trains all 50 epochs with patience=999999 and evaluates the test split once from its validation-best checkpoint.",
-    "Mamba and S5 are intentionally excluded by user request.",
-    "Processed IMDB data was absent at submission; CPU preflight 61717068 prepares and validates the deterministic seed42, vocab25000, max_len400 dataset before afterok releases the GPU array.",
-    "Initial pending jobs 61717049 and 61717050 were canceled before execution after post-submit verification found an incorrect repository root. No result directory was created by that attempt.",
-    "Paused by user on 2026-09-20 for later continuation. Data preflight 61717068 completed successfully in 4m11s; array task 0 was canceled after 52s and tasks 1-49 were canceled before allocation. The pause snapshot had 0/50 valid final units. Processed data and all artifacts are retained; later continuation should resubmit the 50-unit array, whose validator skips any complete units."
+    "The prior Amarel preflight 61717068 completed; array 61717069 task 0 was cancelled after 52 seconds and tasks 1-49 never started. The Amarel campaign remains cancelled with 0/50 valid units.",
+    "The SJC campaign preserves the canonical five-model task map: LSTM H128, RNN H304, GRU H155, GaWF H171, and GaWF-logits H301; seeds 1-10; one layer; 50 epochs; no Mamba or S5.",
+    "GPU 0 runs even task IDs serially and GPU 1 runs odd task IDs serially. The runner validates each unit with experiments/text/imdb_5model_best10seed.py before writing its done marker.",
+    "The 11 processed IMDB files total 161250922 bytes and were verified by per-file SHA256 before promotion to the SJC data path.",
+    "A first wrapper attempt exited before the launcher because the outer Conda activation saw an unset MKL_INTERFACE_LAYER; it created no result or status artifacts. The active direct tmux launch uses the corrected commit."
   ]
 }

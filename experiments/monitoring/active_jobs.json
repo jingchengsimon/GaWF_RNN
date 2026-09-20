@@ -21,6 +21,19 @@
       "updated_at": "2026-09-20T04:24:50+00:00"
     },
     {
+      "id": "text-imdb-full50-best5-l1-ep50-lstm-rnn-gru-gawf-gawflogits-seeds1-10",
+      "description": "Formal IMDB 10-seed training and validation-selected test evaluation for five parameter-matched models, migrated from Amarel to two serial SJC GPU lanes.",
+      "host": "sjc-remote",
+      "status": "running",
+      "job_ids": [],
+      "run_ids": [
+        "sjc_imdb_best10seed_2gpu_20260920"
+      ],
+      "tmux_session": "sjc_imdb_best10seed_2gpu_20260920",
+      "remote_root": "/G/MIMOlab/Codes/aim3_gawf_rnn_imdb_sjc2gpu_02b712e",
+      "updated_at": "2026-09-20T02:44:47-04:00"
+    },
+    {
       "id": "rl-atari-seaquest-full18-fs4-stack4-l3-ac-3m-lstm-gawf-s1-4",
       "description": "Seaquest A/C LSTM/GaWF seeds1-4: sixteen independent 3M cells, each with isolated 25k smoke; original SJC diagnostic protocol.",
       "host": "amarel",
