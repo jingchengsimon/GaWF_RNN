@@ -23,19 +23,6 @@
       "updated_at": "2026-09-20T05:54:24+00:00"
     },
     {
-      "id": "clutter-cm-mnist-feedback-controls-ep150-gawfadd-rnnfb-grufb-lstmfb-seeds1-10",
-      "description": "CM-MNIST non-multiplicative feedback controls: parameter-matched GaWF-additive, RNN-FB, GRU-FB, and LSTM-FB; 150 epochs, seeds 1-10, reset-excluded test accuracy and feedback-shuffle evaluation.",
-      "host": "sjc-remote",
-      "status": "running",
-      "job_ids": [],
-      "run_ids": [
-        "sjc_clutter_feedback_controls_v1"
-      ],
-      "tmux_session": "sjc_clutter_feedback_controls_v1",
-      "remote_root": "/G/MIMOlab/Codes/aim3_gawf_rnn",
-      "updated_at": "2026-09-20T04:24:50+00:00"
-    },
-    {
       "id": "rl-atari-seaquest-full18-fs4-stack4-l3-ac-3m-lstm-gawf-s1-4",
       "description": "Seaquest A/C LSTM/GaWF seeds1-4: sixteen independent 3M cells, each with isolated 25k smoke; original SJC diagnostic protocol.",
       "host": "amarel",
