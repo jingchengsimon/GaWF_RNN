@@ -8,6 +8,21 @@
   ],
   "jobs": [
     {
+      "id": "clutter-cm-mnist-feedback-controls-replica-ep150-gawfadd-rnnfb-grufb-lstmfb-seeds1-10",
+      "description": "Independent Amarel replica of the CM-MNIST non-multiplicative feedback controls: GaWF-additive, RNN-FB, GRU-FB, and LSTM-FB; 150 epochs, seeds 1-10, reset-excluded test and feedback-shuffle evaluation.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61717218",
+        "61717219",
+        "61717220"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260920/feedback_controls_amarel_f2772ad",
+      "updated_at": "2026-09-20T04:41:28+00:00"
+    },
+    {
       "id": "clutter-cm-mnist-feedback-controls-ep150-gawfadd-rnnfb-grufb-lstmfb-seeds1-10",
       "description": "CM-MNIST non-multiplicative feedback controls: parameter-matched GaWF-additive, RNN-FB, GRU-FB, and LSTM-FB; 150 epochs, seeds 1-10, reset-excluded test accuracy and feedback-shuffle evaluation.",
       "host": "sjc-remote",

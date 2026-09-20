@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "id": "clutter-cm-mnist-feedback-controls-replica-ep150-gawfadd-rnnfb-grufb-lstmfb-seeds1-10",
+  "description": "Independent Amarel replica of the CM-MNIST non-multiplicative feedback controls: GaWF-additive, RNN-FB, GRU-FB, and LSTM-FB; 150 epochs, seeds 1-10, reset-excluded test and feedback-shuffle evaluation.",
+  "host": "amarel",
+  "status": "queued",
+  "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260920/feedback_controls_amarel_f2772ad",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61717218",
+      "61717219",
+      "61717220"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel/*.out",
+      "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel/*.err"
+    ],
+    "status_dir": "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel/status",
+    "result_paths": [
+      "/scratch/js3269/results/data/clutter/runs/feedback_controls/clutter_feedback_controls_ep150_v1/*"
+    ]
+  },
+  "tracking": {
+    "expected_units": 40,
+    "auto_complete": true,
+    "result_globs": [
+      "/scratch/js3269/results/data/clutter/runs/feedback_controls/clutter_feedback_controls_ep150_v1/*"
+    ],
+    "done_glob": "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel/status/task_*.done",
+    "fail_glob": "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel/status/task_*.fail",
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "Source snapshot f2772adfd70369c99c2d08a0e43d69ec3375968d; preflight 61717218 gates array 61717219 (0-39%6), followed by aggregate 61717220.",
+    "Each array unit requests one Ada Lovelace GPU, 16 CPUs, 64G, and 12 hours; preflight requests the same hardware for 30 minutes."
+  ],
+  "created_at": "2026-09-20T04:41:28+00:00",
+  "updated_at": "2026-09-20T04:41:28+00:00"
+}
