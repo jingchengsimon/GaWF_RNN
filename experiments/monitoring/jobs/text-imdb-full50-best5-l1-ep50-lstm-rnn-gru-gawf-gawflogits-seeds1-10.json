@@ -3,9 +3,9 @@
   "id": "text-imdb-full50-best5-l1-ep50-lstm-rnn-gru-gawf-gawflogits-seeds1-10",
   "description": "Formal IMDB 10-seed training and validation-selected test evaluation for five parameter-matched models.",
   "host": "amarel",
-  "status": "queued",
+  "status": "cancelled",
   "created_at": "2026-09-20T00:35:11-04:00",
-  "updated_at": "2026-09-20T00:35:11-04:00",
+  "updated_at": "2026-09-20T00:41:10-04:00",
   "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_imdb_best10seed_62ff948",
   "source_commit": "62ff94890f91767ad1aa5fe5caa518d5c309c027",
   "environment": {
@@ -1463,6 +1463,7 @@
     "Each unit trains all 50 epochs with patience=999999 and evaluates the test split once from its validation-best checkpoint.",
     "Mamba and S5 are intentionally excluded by user request.",
     "Processed IMDB data was absent at submission; CPU preflight 61717068 prepares and validates the deterministic seed42, vocab25000, max_len400 dataset before afterok releases the GPU array.",
-    "Initial pending jobs 61717049 and 61717050 were canceled before execution after post-submit verification found an incorrect repository root. No result directory was created by that attempt."
+    "Initial pending jobs 61717049 and 61717050 were canceled before execution after post-submit verification found an incorrect repository root. No result directory was created by that attempt.",
+    "Paused by user on 2026-09-20 for later continuation. Data preflight 61717068 completed successfully in 4m11s; array task 0 was canceled after 52s and tasks 1-49 were canceled before allocation. The pause snapshot had 0/50 valid final units. Processed data and all artifacts are retained; later continuation should resubmit the 50-unit array, whose validator skips any complete units."
   ]
 }
