@@ -40,6 +40,7 @@ TEST_DIR="$RESULTS/data/analysis/dynamic_weight_baselines_reset_excluded_test_10
 DONE_FILE="$STATUS_DIR/task_${TASK_ID}.done"
 FAIL_FILE="$STATUS_DIR/task_${TASK_ID}.fail"
 RUNNING_FILE="$STATUS_DIR/task_${TASK_ID}.running"
+SOURCE_COMMIT_STAMP="${AIM3_SOURCE_COMMIT_FILE:-$STATUS_DIR/source_commit.txt}"
 
 mkdir -p "$STATUS_DIR"
 on_error() {
@@ -54,11 +55,13 @@ printf 'status=running task=%s model=%s seed=%s timestamp=%s\n' \
   "$TASK_ID" "$MODEL" "$SEED" "$(date -Is)" > "$RUNNING_FILE"
 
 cd "$ROOT"
-GIT_BIN="${AIM3_GIT_BIN:-/usr/bin/git}"
-[[ -x "$GIT_BIN" ]] || { echo "Git executable unavailable: $GIT_BIN" >&2; exit 1; }
-[[ "$("$GIT_BIN" -C "$ROOT" rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || {
-  echo "Source commit changed after submission" >&2; exit 1;
-}
+# shellcheck source=../../remote/amarel_source_guard.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../remote" && pwd)/amarel_source_guard.sh"
+if ! amarel_require_source_commit "$ROOT" "$SOURCE_COMMIT" "$SOURCE_COMMIT_STAMP"; then
+  printf 'status=failed task=%s model=%s seed=%s timestamp=%s\n' \
+    "$TASK_ID" "$MODEL" "$SEED" "$(date -Is)" > "$FAIL_FILE"
+  exit 1
+fi
 CONDA_SH="${AIM3_CONDA_SH:-/home/js3269/enter/etc/profile.d/conda.sh}"
 set +u
 source "$CONDA_SH"

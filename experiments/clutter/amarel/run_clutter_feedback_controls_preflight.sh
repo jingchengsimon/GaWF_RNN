@@ -17,6 +17,7 @@ ROOT="${AIM3_ROOT:?AIM3_ROOT is required}"
 STATUS_DIR="${AIM3_STATUS_DIR:?AIM3_STATUS_DIR is required}"
 PREFLIGHT_DIR="${AIM3_PREFLIGHT_DIR:?AIM3_PREFLIGHT_DIR is required}"
 SOURCE_COMMIT="${AIM3_SOURCE_COMMIT:?AIM3_SOURCE_COMMIT is required}"
+SOURCE_COMMIT_STAMP="${AIM3_SOURCE_COMMIT_FILE:-$STATUS_DIR/source_commit.txt}"
 mkdir -p "$STATUS_DIR" "$PREFLIGHT_DIR"
 
 on_error() {
@@ -29,9 +30,12 @@ on_error() {
 trap on_error ERR
 
 cd "$ROOT"
-[[ "$(git rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || {
-  echo "Source commit changed after submission" >&2; exit 1;
-}
+# shellcheck source=../../remote/amarel_source_guard.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../remote" && pwd)/amarel_source_guard.sh"
+if ! amarel_require_source_commit "$ROOT" "$SOURCE_COMMIT" "$SOURCE_COMMIT_STAMP"; then
+  printf 'status=failed timestamp=%s\n' "$(date -Is)" > "$STATUS_DIR/preflight.fail"
+  exit 1
+fi
 
 CONDA_SH="${AIM3_CONDA_SH:-/home/js3269/enter/etc/profile.d/conda.sh}"
 set +u

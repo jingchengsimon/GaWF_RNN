@@ -15,6 +15,7 @@ ROOT="${AIM3_ROOT:?AIM3_ROOT is required}"
 RESULTS="${AIM3_RESULTS_PATH:?AIM3_RESULTS_PATH is required}"
 STATUS_DIR="${AIM3_STATUS_DIR:?AIM3_STATUS_DIR is required}"
 SOURCE_COMMIT="${AIM3_SOURCE_COMMIT:?AIM3_SOURCE_COMMIT is required}"
+SOURCE_COMMIT_STAMP="${AIM3_SOURCE_COMMIT_FILE:-$STATUS_DIR/source_commit.txt}"
 RUN_BASE="$RESULTS/data/clutter/runs/dynamic_weight_baselines/clutter_dynamic_weight_baselines_ep150_v1"
 TEST_BASE="$RESULTS/data/analysis/dynamic_weight_baselines_reset_excluded_test_10seed_v1"
 SUMMARY_ROOT="$RESULTS/data/analysis/dynamic_weight_baselines_formal_10seed_v1"
@@ -33,11 +34,12 @@ trap on_error ERR
 [[ ! -e "$SUMMARY_ROOT" ]] || { echo "Refusing to overwrite summary root" >&2; exit 1; }
 
 cd "$ROOT"
-GIT_BIN="${AIM3_GIT_BIN:-/usr/bin/git}"
-[[ -x "$GIT_BIN" ]] || { echo "Git executable unavailable: $GIT_BIN" >&2; exit 1; }
-[[ "$("$GIT_BIN" -C "$ROOT" rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || {
-  echo "Source commit changed after submission" >&2; exit 1;
-}
+# shellcheck source=../../remote/amarel_source_guard.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../remote" && pwd)/amarel_source_guard.sh"
+if ! amarel_require_source_commit "$ROOT" "$SOURCE_COMMIT" "$SOURCE_COMMIT_STAMP"; then
+  printf 'status=failed timestamp=%s\n' "$(date -Is)" > "$STATUS_DIR/aggregate.fail"
+  exit 1
+fi
 CONDA_SH="${AIM3_CONDA_SH:-/home/js3269/enter/etc/profile.d/conda.sh}"
 set +u
 source "$CONDA_SH"

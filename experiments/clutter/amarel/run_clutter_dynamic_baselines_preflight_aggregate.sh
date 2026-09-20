@@ -16,6 +16,7 @@ STATUS_DIR="${AIM3_STATUS_DIR:?AIM3_STATUS_DIR is required}"
 REPORTS_DIR="${AIM3_PREFLIGHT_REPORTS_DIR:?AIM3_PREFLIGHT_REPORTS_DIR is required}"
 SUMMARY="${AIM3_PREFLIGHT_SUMMARY:?AIM3_PREFLIGHT_SUMMARY is required}"
 SOURCE_COMMIT="${AIM3_SOURCE_COMMIT:?AIM3_SOURCE_COMMIT is required}"
+SOURCE_COMMIT_STAMP="${AIM3_SOURCE_COMMIT_FILE:-$STATUS_DIR/source_commit.txt}"
 
 on_error() {
   status=$?
@@ -27,11 +28,12 @@ on_error() {
 trap on_error ERR
 
 cd "$ROOT"
-GIT_BIN="${AIM3_GIT_BIN:-/usr/bin/git}"
-[[ -x "$GIT_BIN" ]] || { echo "Git executable unavailable: $GIT_BIN" >&2; exit 1; }
-[[ "$("$GIT_BIN" -C "$ROOT" rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || {
-  echo "Source commit changed after submission" >&2; exit 1;
-}
+# shellcheck source=../../remote/amarel_source_guard.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../remote" && pwd)/amarel_source_guard.sh"
+if ! amarel_require_source_commit "$ROOT" "$SOURCE_COMMIT" "$SOURCE_COMMIT_STAMP"; then
+  printf 'status=failed timestamp=%s\n' "$(date -Is)" > "$STATUS_DIR/aggregate.fail"
+  exit 1
+fi
 CONDA_SH="${AIM3_CONDA_SH:-/home/js3269/enter/etc/profile.d/conda.sh}"
 set +u
 source "$CONDA_SH"

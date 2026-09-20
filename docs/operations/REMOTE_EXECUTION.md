@@ -219,6 +219,28 @@ move the operation into a Slurm preflight runner instead. After submission, conf
 that each running task has a compute-node assignment. If a workload is ever found on a login node,
 stop that process first, then repair the launcher before resubmitting.
 
+### Compute-node tool assumptions and source identity
+
+An Amarel compute node is not guaranteed to provide the tools a login node has. In particular `git`
+is absent from several GPU nodes both on `PATH` and at the login-node path `/usr/bin/git`, so a
+runtime source check must never call git or hard-code a login-node absolute path. A failed check
+that aborts in seconds is indistinguishable from a real preflight failure in the accounting log,
+which is exactly what happened to `61717444` (`git: command not found`) and `61717748`
+(`Git executable unavailable: /usr/bin/git`).
+
+- A `submit_*.sh` launcher resolves the commit on the login node and writes it to
+  `$STATUS_DIR/source_commit.txt`; the stamp is part of the submitted artifact set.
+- A `run_*.sh` launcher verifies source identity through
+  `experiments/remote/amarel_source_guard.sh`, which tries a git executable, then reads
+  `.git/HEAD` (normal checkout, linked worktree, detached HEAD, packed refs) with shell builtins,
+  and finally accepts the submit-time stamp with an explicit note. A missing git executable alone
+  is never a failure condition.
+- Every `run_*.sh` launcher writes its own fail marker before leaving a failed guard. An `exit`
+  reached through a `|| { ...; }` list does not trigger the `ERR` trap, so the marker must be
+  written explicitly or the unit leaves no failure evidence.
+- Prefer an immutable execution snapshot or a pinned worktree for the campaign so source identity
+  does not depend on a mutable checkout.
+
 ## Long-running sjc jobs
 
 - Use the wrappers described in `experiments/remote/README.md` or the task-specific two-GPU launcher.

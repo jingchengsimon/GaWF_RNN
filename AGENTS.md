@@ -131,6 +131,10 @@ is missing, copy `.agents/local.example.md` and fill it in. Do not guess remote 
   visualization, project-module imports, or any PyTorch/NumPy/JAX/TensorFlow workload. Put all
   such work in an `sbatch`-launched `run_*.sh`, including preflight jobs, and connect dependent
   arrays with `afterok`.
+- Amarel compute nodes are not guaranteed to provide `git` or login-node paths. Resolve source
+  identity through `experiments/remote/amarel_source_guard.sh` plus the submit-time
+  `source_commit.txt` stamp, never by calling git or hard-coding a login-node path inside a
+  `run_*.sh`, and always write a fail marker before a guard exit.
 - Before synchronizing or executing any new or modified Amarel `submit_*.sh`, run
   `python -m pytest -q experiments/tests/test_amarel_submit_safety.py` on the local development host (or in a
   Slurm compute job), never on an Amarel login node. A failing safety test is a stop condition; do
