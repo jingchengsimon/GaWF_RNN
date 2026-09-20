@@ -33,7 +33,9 @@ trap on_error ERR
 [[ ! -e "$SUMMARY_ROOT" ]] || { echo "Refusing to overwrite summary root" >&2; exit 1; }
 
 cd "$ROOT"
-[[ "$(git rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || {
+GIT_BIN="${AIM3_GIT_BIN:-/usr/bin/git}"
+[[ -x "$GIT_BIN" ]] || { echo "Git executable unavailable: $GIT_BIN" >&2; exit 1; }
+[[ "$("$GIT_BIN" -C "$ROOT" rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || {
   echo "Source commit changed after submission" >&2; exit 1;
 }
 CONDA_SH="${AIM3_CONDA_SH:-/home/js3269/enter/etc/profile.d/conda.sh}"
