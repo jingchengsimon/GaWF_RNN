@@ -18,6 +18,7 @@ GAWF_ABLATION="$RESULTS/data/analysis/supple1_feedback_shuffle_recovery_resetexc
 ORIGINAL_TEST_CSV="$RESULTS/data/analysis/fig1_reset_excluded_behavior_6model_10seed_v8/final/reset_excluded_test_accuracy_10seed.csv"
 SUMMARY_ROOT="$RESULTS/data/analysis/feedback_controls_formal_10seed_v1"
 ARTIFACT_ROOT="$RESULTS/artifacts/clutter_feedback_controls_ep150_v1"
+PROTOCOL_JSON="$ARTIFACT_ROOT/protocol_checks.json"
 SANITY_JSON="$ARTIFACT_ROOT/sanity_seed1_200steps.json"
 BALANCED_SUFFIX="40h-float32-jointswitch-balanced-10digit-unique"
 
@@ -55,6 +56,13 @@ done
 }
 
 cd "$ROOT"
+if [[ ! -f "$PROTOCOL_JSON" ]]; then
+  [[ ! -e "$PROTOCOL_JSON" ]] || {
+    echo "Incomplete protocol-check output: $PROTOCOL_JSON" >&2; exit 1;
+  }
+  python -B -m experiments.clutter.feedback_control_protocol_check \
+    --output "$PROTOCOL_JSON" 2>&1 | tee "$ARTIFACT_ROOT/protocol_checks.log"
+fi
 if [[ ! -f "$SANITY_JSON" ]]; then
   [[ ! -e "$SANITY_JSON" ]] || { echo "Incomplete sanity output: $SANITY_JSON" >&2; exit 1; }
   CUDA_VISIBLE_DEVICES=0 python -B -m experiments.clutter.feedback_control_sanity \
