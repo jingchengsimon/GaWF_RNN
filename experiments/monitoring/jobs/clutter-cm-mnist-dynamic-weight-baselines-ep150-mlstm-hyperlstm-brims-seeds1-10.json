@@ -42,8 +42,9 @@
     "units": []
   },
   "notes": [
-    "Source commit 95df271c971ac5222425d8cb49980c0d27f08bcd; array 0-29%30 depends afterok on preflight aggregate 61717445; dependent formal aggregate job 61717689 writes /scratch/js3269/results/data/analysis/dynamic_weight_baselines_formal_10seed_v1."
+    "Source commit 95df271c971ac5222425d8cb49980c0d27f08bcd; array 0-29%30 depends afterok on preflight aggregate 61717445; dependent formal aggregate job 61717689 writes /scratch/js3269/results/data/analysis/dynamic_weight_baselines_formal_10seed_v1.",
+    "Cancelled on 2026-09-20 01:52:11 while the preflight chain was repaired. Not yet resubmitted: submission is gated on the v3 preflight summary, so run submit_clutter_dynamic_baselines_formal.sh from worktree dynamic_baselines_1f8795e (commit 1f8795e) with AIM3_DYNAMIC_BASELINE_PREFLIGHT_SUMMARY=/scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v3/summary.json and a fresh AIM3_ARTIFACT_ROOT, because /scratch/js3269/results/artifacts/clutter_dynamic_weight_baselines_ep150_v1 already holds an empty status directory."
   ],
   "created_at": "2026-09-20T05:36:30+00:00",
-  "updated_at": "2026-09-20T05:52:49+00:00"
+  "updated_at": "2026-09-20T23:28:53+00:00"
 }

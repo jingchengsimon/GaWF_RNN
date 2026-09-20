@@ -8,17 +8,18 @@
   ],
   "jobs": [
     {
-      "id": "clutter-cm-mnist-dynamic-weight-preflight-2ep-lstm-mlstm-hyperlstm-brims-s1-retry-gitpath-v2",
-      "description": "Retry of the CM-MNIST two-epoch sanity gate after fixing compute-node git PATH handling; LSTM, mLSTM, HyperLSTM, and BRIMs at seed 1.",
+      "id": "clutter-cm-mnist-dynamic-weight-preflight-2ep-lstm-mlstm-hyperlstm-brims-s1-retry-gitfree-v3",
+      "description": "Third attempt at the CM-MNIST two-epoch sanity gate: LSTM, mLSTM, HyperLSTM, and BRIMs at seed 1, with a compute-node-safe (git-free) source guard.",
       "host": "amarel",
       "status": "queued",
       "job_ids": [
-        "61717748"
+        "61723314",
+        "61723315"
       ],
       "run_ids": [],
       "tmux_session": null,
-      "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_e44cb2c",
-      "updated_at": "2026-09-20T05:52:49+00:00"
+      "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_1f8795e",
+      "updated_at": "2026-09-20T23:28:53+00:00"
     },
     {
       "id": "clutter-cm-mnist-feedback-controls-ep150-gawfadd-rnnfb-grufb-lstmfb-seeds1-10",

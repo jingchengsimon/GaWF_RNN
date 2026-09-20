@@ -3,7 +3,7 @@
   "id": "clutter-cm-mnist-dynamic-weight-preflight-2ep-lstm-mlstm-hyperlstm-brims-s1-retry-gitpath-v2",
   "description": "Retry of the CM-MNIST two-epoch sanity gate after fixing compute-node git PATH handling; LSTM, mLSTM, HyperLSTM, and BRIMs at seed 1.",
   "host": "amarel",
-  "status": "queued",
+  "status": "failed",
   "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_e44cb2c",
   "environment": {
     "name": "aim3_rnn",
@@ -42,8 +42,10 @@
     "units": []
   },
   "notes": [
-    "Source commit e44cb2c3819fb844932fb2d5cc5227bce486716a; fixes bare git lookup with /usr/bin/git. Dependent aggregate job 61717749 writes /scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v2_gitpath/summary.json."
+    "Source commit e44cb2c3819fb844932fb2d5cc5227bce486716a; fixes bare git lookup with /usr/bin/git. Dependent aggregate job 61717749 writes /scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v2_gitpath/summary.json.",
+    "Failed: released on 2026-09-20 18:57:26 EDT on gpu034; all four tasks exited 1 within 0-4 s with 'Git executable unavailable: /usr/bin/git'. The e44cb2c fix hard-coded the login-node path, which does not exist on the compute nodes, and the guard exit bypassed the ERR trap so no task_*.fail marker was written.",
+    "Superseded by clutter-cm-mnist-dynamic-weight-preflight-2ep-lstm-mlstm-hyperlstm-brims-s1-retry-gitfree-v3 (jobs 61723314/61723315, commit 1f8795e). Never-runnable dependent aggregate 61717749 was cancelled on 2026-09-20 19:28 EDT."
   ],
   "created_at": "2026-09-20T05:52:49+00:00",
-  "updated_at": "2026-09-20T05:52:49+00:00"
+  "updated_at": "2026-09-20T23:28:53+00:00"
 }
