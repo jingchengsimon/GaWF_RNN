@@ -17,9 +17,8 @@ export DISABLE_TQDM=1
 export AIM3_NUM_WORKERS="${AIM3_NUM_WORKERS:-2}"
 export AIM3_PIN_MEMORY="${AIM3_PIN_MEMORY:-1}"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/execution_snapshot_identity.sh"
 ROOT="${AIM3_ROOT:?AIM3_ROOT is required}"
+source "$ROOT/experiments/clutter/amarel/execution_snapshot_identity.sh"
 RESULTS="${AIM3_RESULTS_PATH:?AIM3_RESULTS_PATH is required}"
 DATA_DIR="${AIM3_CLUTTER_DATA_DIR:?AIM3_CLUTTER_DATA_DIR is required}"
 STATUS_DIR="${AIM3_STATUS_DIR:?AIM3_STATUS_DIR is required}"

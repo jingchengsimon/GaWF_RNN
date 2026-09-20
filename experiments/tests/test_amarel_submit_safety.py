@@ -132,6 +132,21 @@ def test_feedback_control_snapshot_check_does_not_require_git(tmp_path: Path) ->
     assert completed.returncode == 0, completed.stderr
 
 
+def test_feedback_control_runners_load_snapshot_helper_from_aim3_root() -> None:
+    """Slurm-spooled runners must not resolve sibling files from BASH_SOURCE."""
+
+    runner_names = (
+        "run_clutter_feedback_controls_preflight.sh",
+        "run_clutter_feedback_controls_formal.sh",
+        "run_clutter_feedback_controls_aggregate.sh",
+    )
+    expected = 'source "$ROOT/experiments/clutter/amarel/execution_snapshot_identity.sh"'
+    for runner_name in runner_names:
+        text = (ROOT / "experiments/clutter/amarel" / runner_name).read_text(encoding="utf-8")
+        assert expected in text
+        assert 'source "$SCRIPT_DIR/execution_snapshot_identity.sh"' not in text
+
+
 def test_per_task_pilot_submitter_supports_normalized_sparse_array_tasks() -> None:
     """Recovery submissions accept only unique task indices within the pilot array."""
 

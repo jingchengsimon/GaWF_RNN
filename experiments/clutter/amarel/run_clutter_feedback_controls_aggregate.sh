@@ -13,9 +13,8 @@
 set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/execution_snapshot_identity.sh"
 ROOT="${AIM3_ROOT:?AIM3_ROOT is required}"
+source "$ROOT/experiments/clutter/amarel/execution_snapshot_identity.sh"
 RESULTS="${AIM3_RESULTS_PATH:?AIM3_RESULTS_PATH is required}"
 PREREQ="${AIM3_PREREQ_ROOT:?AIM3_PREREQ_ROOT is required}"
 STATUS_DIR="${AIM3_STATUS_DIR:?AIM3_STATUS_DIR is required}"
