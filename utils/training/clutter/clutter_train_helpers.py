@@ -779,6 +779,9 @@ def get_model_classes(
     rnn_feedback_conv_class=None,
     gru_feedback_conv_class=None,
     lstm_feedback_conv_class=None,
+    mlstm_conv_class=None,
+    hyper_lstm_conv_class=None,
+    brims_conv_class=None,
 ):
     """Return mapping from model type name to model class.
 
@@ -813,6 +816,18 @@ def get_model_classes(
         for name, model_class in optional_feedback_classes.items()
         if model_class
     })
+    optional_dynamic_classes = {
+        "mlstm": mlstm_conv_class,
+        "hyperlstm": hyper_lstm_conv_class,
+        "brims": brims_conv_class,
+    }
+    model_classes.update(
+        {
+            name: model_class
+            for name, model_class in optional_dynamic_classes.items()
+            if model_class
+        }
+    )
     return model_classes
 
 
@@ -836,6 +851,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "rnn_fb",
             "gru_fb",
             "lstm_fb",
+            "mlstm",
+            "hyperlstm",
+            "brims",
         ],
         help='Model types to train (default: ["rnn"])',
     )
@@ -851,6 +869,71 @@ def build_arg_parser() -> argparse.ArgumentParser:
         nargs="+",
         default=[256],
         help="Hidden sizes to test (default: [256])",
+    )
+    parser.add_argument(
+        "--hyper_hidden_sizes",
+        type=int,
+        nargs="+",
+        default=[10],
+        help="HyperLSTM hyper-network hidden sizes (formal match: [10]).",
+    )
+    parser.add_argument(
+        "--hyper_embedding_size",
+        type=int,
+        default=4,
+        help="HyperLSTM row-scaling feature size n_z (default: 4).",
+    )
+    parser.add_argument(
+        "--brims_num_blocks",
+        type=int,
+        nargs=2,
+        default=[6, 3],
+        metavar=("LOWER", "UPPER"),
+        help="BRIMs module counts for its two internal layers (default: 6 3).",
+    )
+    parser.add_argument(
+        "--brims_topk",
+        type=int,
+        nargs=2,
+        default=[4, 2],
+        metavar=("LOWER", "UPPER"),
+        help="BRIMs active-module counts for its two internal layers (default: 4 2).",
+    )
+    parser.add_argument(
+        "--brims_input_attention_heads",
+        type=int,
+        default=4,
+        help="BRIMs input attention heads from the official MNIST core (default: 4).",
+    )
+    parser.add_argument(
+        "--brims_input_attention_key_size",
+        type=int,
+        default=64,
+        help="BRIMs input-attention per-head query/key size (default: 64).",
+    )
+    parser.add_argument(
+        "--brims_communication_attention_heads",
+        type=int,
+        default=4,
+        help="BRIMs within-layer communication attention heads (default: 4).",
+    )
+    parser.add_argument(
+        "--brims_communication_attention_key_size",
+        type=int,
+        default=32,
+        help="BRIMs communication per-head query/key size (default: 32).",
+    )
+    parser.add_argument(
+        "--brims_communication_attention_value_size",
+        type=int,
+        default=32,
+        help="BRIMs communication per-head value size (default: 32).",
+    )
+    parser.add_argument(
+        "--brims_attention_dropout",
+        type=float,
+        default=0.1,
+        help="BRIMs internal attention dropout (default: 0.1).",
     )
     parser.add_argument(
         "--mamba_d_models",

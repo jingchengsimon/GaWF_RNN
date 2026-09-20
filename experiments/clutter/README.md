@@ -134,3 +134,13 @@ files at commit `33ab02281c2b928e6b32792909cc79cbdcfe1d6a`; equation deviations 
 (2020), arXiv:2006.16981. The official repository was inspected at commit
 `f8af67e863ea751b45b70cc7a7b91fb277beb329`, but its absent license prevents source vendoring;
 see `third_party/brims/PROVENANCE.md`.
+
+Formal Amarel execution is split at the required sanity boundary. First,
+`submit_clutter_dynamic_baselines_preflight.sh` runs LSTM plus the three new models for two full
+epochs on seed 1 and reports finite loss reduction and wall-clock seconds per epoch relative to
+LSTM. Only after that summary passes may `submit_clutter_dynamic_baselines_formal.sh` submit the
+thirty independent units (`mlstm`, `hyperlstm`, and `brims`, seeds 1--10). The formal protocol is
+150 epochs with `patience=0`, the standard 40h uint8 train/validation/test data, reset-excluded
+test evaluation, and an isolated mean ± SEM aggregation. To avoid an unrequested search, all
+three new models inherit the existing LSTM baseline optimizer setting: AdamW, learning rate
+`0.001`, and weight decay `0.001`.

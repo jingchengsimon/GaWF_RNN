@@ -12,6 +12,7 @@ Architecture and workflow rules live in `ARCHITECTURE.md` and `DEVELOPMENT_WORKF
 | `ih`, `hh` | input-to-hidden and hidden-to-hidden paths |
 | `cdo`, `rdo` | CNN and recurrent/middle-path dropout filename fields |
 | `h`, `dmodel`, `state` | recurrent hidden size, sequence-model width, S5 state size |
+| `hh`, `nz` | HyperLSTM hyper-network hidden size and row-scaling feature size |
 | `L` | recurrent/readout layer count in filenames |
 | `fs`, `stack` | ALE frame skip and observation frame stack |
 | `glob` | global correct frames divided by global frame count |
@@ -28,7 +29,8 @@ Architecture and workflow rules live in `ARCHITECTURE.md` and `DEVELOPMENT_WORKF
 - Common loop indices: `sidx` sample, `t` time, `b` batch, `d` digit/component, `c` channel.
 - Public model keys use lowercase: `ann`, `rnn`, `gru`, `lstm`, `gawf`, `mamba`, `s5`.
   Clutter's isolated reviewer controls additionally use `gawf_additive`, `rnn_fb`, `gru_fb`,
-  and `lstm_fb`; these names must not alias or replace the original model keys.
+  `lstm_fb`, `mlstm`, `hyperlstm`, and `brims`; these names must not alias or replace the original
+  model keys. The latter three are open-loop baselines.
 
 Do not introduce a second name for an existing public argument or model. Historical aliases may
 remain parsable for compatibility but must not appear in new result names.
@@ -59,8 +61,12 @@ Clutter training uses:
 | `--mamba_d_models` | one or more Mamba widths |
 | `--ssm_d_models` | one or more S5 sequence widths |
 | `--s5_state_sizes` | one or more S5 latent state sizes |
+| `--hyper_hidden_sizes` | one or more HyperLSTM hyper-network hidden sizes |
+| `--hyper_embedding_size` | HyperLSTM feature size `n_z`; default `4` |
+| `--brims_num_blocks`, `--brims_topk` | two-layer BRIMs module/active-module structure |
+| `--brims_*_attention_*` | pinned input/communication attention dimensions from the official MNIST core |
 | `--feedback_dim`, `--dz` | GaWF projected feedback dimension; positive enables projectors |
-| `--num_layers` | ANN/RNN/GRU/LSTM/GaWF depth; integer >= 1 |
+| `--num_layers` | ANN/RNN/GRU/LSTM/GaWF depth; dynamic baselines require `1` because BRIMs owns its internal two-layer structure |
 | `--gawf_feedback_lr_scale` | U/V/projector LR multiplier; default `1.0` |
 | `--data_suffix` | training and default validation data suffix; default `40h-uint8` |
 | `--eval_data_suffix` | optional validation-only suffix |
@@ -248,6 +254,22 @@ Mamba/S5 use model-native width fields:
 mamba_{mode}{acc}_dmodel{width}_lr{lr}_wd{wd}_cdo{cnn}_rdo{rnn}_model.pth
 s5_{mode}{acc}_dmodel{width}_state{size}_lr{lr}_wd{wd}_cdo{cnn}_rdo{rnn}_model.pth
 ```
+
+HyperLSTM records both hidden widths and the feature size:
+
+```text
+hyperlstm_{mode}{acc}_h{hidden}_hh{hyper_hidden}_nz{n_z}_lr{lr}_wd{wd}_cdo{cnn}_rdo{rnn}_model.pth
+```
+
+`mlstm` and `brims` use the standard recurrent form. Their metrics JSON records the complete
+architecture and `open_loop=true`.
+
+The formal dynamic-baseline campaign uses
+`dynamic_weight_baselines/clutter_dynamic_weight_baselines_ep150_v1/{model}-seed{seed:02d}`
+below `data/clutter/runs/`. Its reset-excluded test outputs and ten-seed summary are written to
+`data/analysis/dynamic_weight_baselines_reset_excluded_test_10seed_v1/` and
+`data/analysis/dynamic_weight_baselines_formal_10seed_v1/`, respectively. Preflight runs use the
+separate `preflight/dynamic_weight_baselines_2epoch_seed1_v1/` training subtree.
 
 Resumable Clutter training state uses the same stem with `_train_state.pth`. It is not an
 inference checkpoint and must not replace the final `_model.pth` best-validation artifact.

@@ -61,6 +61,10 @@ The arrows are one-way:
 - `AdditiveFeedbackRNNCore` and `ConcatenatedFeedbackCellCore`, used only by the
   non-multiplicative Clutter feedback controls.
 - `MambaCore` and `S5Core` sequence models.
+- `MLSTMCore`, `HyperLSTMCore`, and `BRIMsCore` for the open-loop
+  dynamic/input-conditioned reviewer baselines. HyperLSTM uses the pinned minimal labml subset
+  under `third_party/labml_nn/`; BRIMs is a clean-room implementation because the inspected
+  upstream repository has no license grant.
 
 GaWF uses feedback-conditioned input/hidden transforms. For feedback vector `fb`:
 
@@ -100,8 +104,18 @@ channels or 6x6 spatial structure.
 
 `ClutterSequenceModel` composes the CNN, a middle recurrent/sequence model, and
 `ClutterCharPosHead`. Public wrappers include `RNNConv`, `GRUConv`, `LSTMConv`, `GaWFRNNConv`,
-`MambaConv`, and `S5Conv`. Historical multi-layer class/checkpoint names remain readable, while
-new runs use `gawf --num_layers N`.
+`MambaConv`, `S5Conv`, `MLSTMConv`, `HyperLSTMConv`, and `BRIMsConv`. Historical multi-layer
+class/checkpoint names remain readable, while new runs use `gawf --num_layers N`.
+
+The three dynamic/input-conditioned baselines are open-loop: none receives task-head output.
+`MLSTMConv` implements Krause et al. (2017) Equations (17)--(21), not the xLSTM matrix-memory
+mLSTM. `HyperLSTMConv` preserves labml's four-tensor main/hyper state. `BRIMsConv` contains the
+paper's two internal layers, bottom-up/current and top-down/previous-timestep attention, sparse
+module updates, and within-layer communication; its default MNIST structure is blocks `(6, 3)`
+and top-k `(4, 2)`. Its fixed attention dimensions follow the inspected MNIST core: input
+attention uses 4 heads with `d_k=64`, and within-layer communication uses 4 heads with
+`d_k=d_v=32`. All three return `(B,T,H)` and reset when called without an explicit state,
+then use the same external `LayerNorm -> ReLU -> dropout` contract as existing recurrent cores.
 
 The separate feedback-control model types are `gawf_additive`, `rnn_fb`, `gru_fb`, and
 `lstm_fb`. They reuse `GaWFRNNConv._compute_feedback`: the previous frame's detached raw digit

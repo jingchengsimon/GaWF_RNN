@@ -13,6 +13,9 @@ from ..recurrent_cores.additive_feedback import (
     ConcatenatedFeedbackCellCore,
 )
 from ..recurrent_cores.gawf import GaWFCore
+from ..recurrent_cores.brims import BRIMsCore
+from ..recurrent_cores.hyper_lstm import HyperLSTMCore
+from ..recurrent_cores.mlstm import MLSTMCore
 from ..recurrent_cores.rnn import (
     GRUCore,
     LSTMCore,
@@ -293,6 +296,139 @@ class LSTMConv(RNNConv):
             hidden_size,
             dropout=rnn_dropout,
             num_layers=self.num_layers,
+        )
+        self.to(self.device)
+
+
+class MLSTMConv(ClutterSequenceModel):
+    """Clutter CNN encoder + multiplicative LSTM core + shared heads."""
+
+    def __init__(
+        self,
+        num_classes: int,
+        num_pos: int,
+        kernel_size: int = 3,
+        device: str = "cuda",
+        input_channels: int = 2,
+        cnn_dropout: float = 0.0,
+        rnn_dropout: float = 0.5,
+        hidden_size: int = 256,
+        max_chars: int = 15,
+        predict_all_chars: bool = False,
+    ) -> None:
+        super().__init__(
+            num_classes,
+            num_pos,
+            hidden_size,
+            kernel_size=kernel_size,
+            device=device,
+            input_channels=input_channels,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
+            max_chars=max_chars,
+            predict_all_chars=predict_all_chars,
+        )
+        self.num_layers = 1
+        self.core = MLSTMCore(self.encoder_flatten_size, hidden_size, dropout=rnn_dropout)
+        self.to(self.device)
+
+
+class HyperLSTMConv(ClutterSequenceModel):
+    """Clutter CNN encoder + vendored labml HyperLSTM core + shared heads."""
+
+    def __init__(
+        self,
+        num_classes: int,
+        num_pos: int,
+        kernel_size: int = 3,
+        device: str = "cuda",
+        input_channels: int = 2,
+        cnn_dropout: float = 0.0,
+        rnn_dropout: float = 0.5,
+        hidden_size: int = 256,
+        hyper_hidden_size: int = 10,
+        hyper_embedding_size: int = 4,
+        max_chars: int = 15,
+        predict_all_chars: bool = False,
+    ) -> None:
+        super().__init__(
+            num_classes,
+            num_pos,
+            hidden_size,
+            kernel_size=kernel_size,
+            device=device,
+            input_channels=input_channels,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
+            max_chars=max_chars,
+            predict_all_chars=predict_all_chars,
+        )
+        self.num_layers = 1
+        self.hyper_hidden_size = int(hyper_hidden_size)
+        self.hyper_embedding_size = int(hyper_embedding_size)
+        self.core = HyperLSTMCore(
+            self.encoder_flatten_size,
+            hidden_size,
+            hyper_hidden_size=self.hyper_hidden_size,
+            hyper_embedding_size=self.hyper_embedding_size,
+            dropout=rnn_dropout,
+        )
+        self.to(self.device)
+
+
+class BRIMsConv(ClutterSequenceModel):
+    """Clutter CNN encoder + clean-room two-layer BRIMs core + shared heads."""
+
+    def __init__(
+        self,
+        num_classes: int,
+        num_pos: int,
+        kernel_size: int = 3,
+        device: str = "cuda",
+        input_channels: int = 2,
+        cnn_dropout: float = 0.0,
+        rnn_dropout: float = 0.5,
+        hidden_size: int = 84,
+        brims_num_blocks: tuple[int, int] = (6, 3),
+        brims_topk: tuple[int, int] = (4, 2),
+        brims_input_attention_heads: int = 4,
+        brims_input_attention_key_size: int = 64,
+        brims_communication_attention_heads: int = 4,
+        brims_communication_attention_key_size: int = 32,
+        brims_communication_attention_value_size: int = 32,
+        brims_attention_dropout: float = 0.1,
+        max_chars: int = 15,
+        predict_all_chars: bool = False,
+    ) -> None:
+        super().__init__(
+            num_classes,
+            num_pos,
+            hidden_size,
+            kernel_size=kernel_size,
+            device=device,
+            input_channels=input_channels,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
+            max_chars=max_chars,
+            predict_all_chars=predict_all_chars,
+        )
+        self.num_layers = 2
+        self.brims_num_blocks = tuple(int(value) for value in brims_num_blocks)
+        self.brims_topk = tuple(int(value) for value in brims_topk)
+        self.core = BRIMsCore(
+            self.encoder_flatten_size,
+            hidden_size,
+            num_blocks=self.brims_num_blocks,
+            topk=self.brims_topk,
+            input_attention_heads=brims_input_attention_heads,
+            input_attention_key_size=brims_input_attention_key_size,
+            communication_attention_heads=brims_communication_attention_heads,
+            communication_attention_key_size=brims_communication_attention_key_size,
+            communication_attention_value_size=(
+                brims_communication_attention_value_size
+            ),
+            attention_dropout=brims_attention_dropout,
+            dropout=rnn_dropout,
         )
         self.to(self.device)
 

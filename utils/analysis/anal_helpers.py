@@ -15,17 +15,20 @@ import torch
 
 from utils.training.train_scripts.clutter import MC_RNN_Dataset
 from utils.training.clutter.clutter_task_models import (
+    BRIMsConv,
     GaWFRNNConv,
     GaWFAdditiveConv,
     GRUConv,
     GRUFeedbackConv,
     LSTMConv,
     LSTMFeedbackConv,
+    HyperLSTMConv,
     MambaConv,
     MultiLayerGaWFRNNConv,
     RNNConv,
     RNNFeedbackConv,
     S5Conv,
+    MLSTMConv,
 )
 from utils.training.clutter.clutter_train_helpers import PathHelper, create_datasets
 from utils.analysis.model_train_single_result import parse_hparams_from_filename
@@ -153,6 +156,9 @@ _HPARAM_MODEL_TO_KEY: Dict[str, str] = {
     "RNNFB": "rnn_fb",
     "GRUFB": "gru_fb",
     "LSTMFB": "lstm_fb",
+    "MLSTM": "mlstm",
+    "HyperLSTM": "hyperlstm",
+    "BRIMs": "brims",
 }
 
 
@@ -231,6 +237,9 @@ def build_model_from_ckpt(
         "rnn_fb": RNNFeedbackConv,
         "gru_fb": GRUFeedbackConv,
         "lstm_fb": LSTMFeedbackConv,
+        "mlstm": MLSTMConv,
+        "hyperlstm": HyperLSTMConv,
+        "brims": BRIMsConv,
     }
     model_cls = model_class_map[model_key]
     model_kwargs = {}
@@ -247,6 +256,11 @@ def build_model_from_ckpt(
     elif model_key == "s5":
         model_kwargs["s5_d_model"] = int(hparams.get("d_model", 256))
         model_kwargs["s5_state_size"] = int(hparams.get("state_size", 128))
+    elif model_key == "hyperlstm":
+        model_kwargs["hyper_hidden_size"] = int(hparams.get("hyper_hidden_size", 10))
+        model_kwargs["hyper_embedding_size"] = int(
+            hparams.get("hyper_embedding_size", 4)
+        )
 
     model = model_cls(
         num_classes=num_classes,

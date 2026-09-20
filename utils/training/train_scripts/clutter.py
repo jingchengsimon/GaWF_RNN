@@ -43,17 +43,20 @@ from utils.training.clutter.clutter_train_engine import (
 )
 
 from utils.training.clutter.clutter_task_models import (
+    BRIMsConv,
     GaWFRNNConv,
     GaWFAdditiveConv,
     GRUConv,
     GRUFeedbackConv,
     LSTMConv,
     LSTMFeedbackConv,
+    HyperLSTMConv,
     MambaConv,
     MultiLayerGaWFRNNConv,
     RNNConv,
     RNNFeedbackConv,
     S5Conv,
+    MLSTMConv,
 )
 
 
@@ -780,6 +783,25 @@ if __name__ == "__main__":
         parser.error("--gawf_diag_gate_eps must be in (0, 0.5)")
     if args.checkpoint_interval_epochs < 0:
         parser.error("--checkpoint_interval_epochs must be >= 0")
+    if args.hyper_embedding_size <= 0:
+        parser.error("--hyper_embedding_size must be > 0")
+    if any(value <= 0 for value in args.hyper_hidden_sizes):
+        parser.error("--hyper_hidden_sizes values must be > 0")
+    if any(value <= 0 for value in args.brims_num_blocks):
+        parser.error("--brims_num_blocks values must be > 0")
+    if any(value <= 0 for value in args.brims_topk):
+        parser.error("--brims_topk values must be > 0")
+    if any(k > blocks for k, blocks in zip(args.brims_topk, args.brims_num_blocks)):
+        parser.error("each --brims_topk value must be <= its --brims_num_blocks value")
+    brims_attention_sizes = (
+        args.brims_input_attention_heads,
+        args.brims_input_attention_key_size,
+        args.brims_communication_attention_heads,
+        args.brims_communication_attention_key_size,
+        args.brims_communication_attention_value_size,
+    )
+    if any(value <= 0 for value in brims_attention_sizes):
+        parser.error("all BRIMs attention head/size values must be > 0")
 
     # GPU selection before any CUDA init. If the launcher already set
     # CUDA_VISIBLE_DEVICES, respect it (logical cuda:0 is that device).
@@ -879,6 +901,9 @@ if __name__ == "__main__":
         RNNFeedbackConv,
         GRUFeedbackConv,
         LSTMFeedbackConv,
+        MLSTMConv,
+        HyperLSTMConv,
+        BRIMsConv,
     )
 
     model_types = args.model_types
@@ -886,6 +911,7 @@ if __name__ == "__main__":
     mamba_d_models = args.mamba_d_models
     s5_d_models = args.s5_d_models
     s5_state_sizes = args.s5_state_sizes
+    hyper_hidden_sizes = args.hyper_hidden_sizes
     feedback_dim = args.feedback_dim
     lrs = args.lrs
     wds = args.wds
@@ -906,6 +932,7 @@ if __name__ == "__main__":
                         "model_width": mamba_d_model,
                         "width_label": "dmodel",
                         "state_size": None,
+                        "hyper_hidden_size": None,
                         "lr": lr,
                         "weight_decay": weight_decay,
                         "cnn_dropout": cnn_dropout,
@@ -921,6 +948,27 @@ if __name__ == "__main__":
                         "model_width": s5_d_model,
                         "width_label": "dmodel",
                         "state_size": s5_state_size,
+                        "hyper_hidden_size": None,
+                        "lr": lr,
+                        "weight_decay": weight_decay,
+                        "cnn_dropout": cnn_dropout,
+                    }
+                )
+        elif model_type == "hyperlstm":
+            for hidden_size, hyper_hidden_size, lr, weight_decay, cnn_dropout in product(
+                hidden_sizes,
+                hyper_hidden_sizes,
+                lrs,
+                wds,
+                cnn_dropout_grid,
+            ):
+                experiment_configs.append(
+                    {
+                        "model_type": model_type,
+                        "model_width": hidden_size,
+                        "width_label": "h",
+                        "state_size": None,
+                        "hyper_hidden_size": hyper_hidden_size,
                         "lr": lr,
                         "weight_decay": weight_decay,
                         "cnn_dropout": cnn_dropout,
@@ -936,6 +984,7 @@ if __name__ == "__main__":
                         "model_width": hidden_size,
                         "width_label": "h",
                         "state_size": None,
+                        "hyper_hidden_size": None,
                         "lr": lr,
                         "weight_decay": weight_decay,
                         "cnn_dropout": cnn_dropout,
@@ -964,6 +1013,7 @@ if __name__ == "__main__":
         model_width = config["model_width"]
         width_label = config["width_label"]
         state_size = config["state_size"]
+        hyper_hidden_size = config["hyper_hidden_size"]
         lr = config["lr"]
         weight_decay = config["weight_decay"]
         cnn_dropout = config["cnn_dropout"]
@@ -1013,6 +1063,37 @@ if __name__ == "__main__":
                 raise ValueError(f"{model_type} is a feedback control and does not support --nofb")
         elif model_type in ("rnn", "gru", "lstm"):
             model_kwargs["num_layers"] = num_layers
+        elif model_type in ("mlstm", "hyperlstm", "brims"):
+            if num_layers != 1:
+                raise ValueError(
+                    f"{model_type} uses its fixed paper architecture and requires --num_layers 1"
+                )
+            if model_type == "hyperlstm":
+                model_kwargs["hyper_hidden_size"] = hyper_hidden_size
+                model_kwargs["hyper_embedding_size"] = args.hyper_embedding_size
+            elif model_type == "brims":
+                model_kwargs.update(
+                    {
+                        "brims_num_blocks": tuple(args.brims_num_blocks),
+                        "brims_topk": tuple(args.brims_topk),
+                        "brims_input_attention_heads": (
+                            args.brims_input_attention_heads
+                        ),
+                        "brims_input_attention_key_size": (
+                            args.brims_input_attention_key_size
+                        ),
+                        "brims_communication_attention_heads": (
+                            args.brims_communication_attention_heads
+                        ),
+                        "brims_communication_attention_key_size": (
+                            args.brims_communication_attention_key_size
+                        ),
+                        "brims_communication_attention_value_size": (
+                            args.brims_communication_attention_value_size
+                        ),
+                        "brims_attention_dropout": args.brims_attention_dropout,
+                    }
+                )
         mdl = ModelClass(
             num_classes=10,
             num_pos=num_pos,
@@ -1038,6 +1119,16 @@ if __name__ == "__main__":
             else:
                 feedback_desc = "direct_feedback"
             width_desc = f"{width_desc}, layers={num_layers}, {feedback_desc}"
+        elif model_type == "hyperlstm":
+            width_desc = (
+                f"{width_desc}, hyper_h={hyper_hidden_size}, "
+                f"n_z={args.hyper_embedding_size}"
+            )
+        elif model_type == "brims":
+            width_desc = (
+                f"{width_desc}, internal_layers=2, blocks={tuple(args.brims_num_blocks)}, "
+                f"topk={tuple(args.brims_topk)}"
+            )
         logger.info(
             "Created %s model (predict_all_chars=%s, max_chars=%s, cnn_dropout=%s, rnn_dropout=%s, %s, cnn_feature_size=large)",
             model_type.upper(),
@@ -1073,6 +1164,10 @@ if __name__ == "__main__":
         width_suffix = f"_{width_label}{model_width}"
         if model_type in ("ssm", "s5"):
             width_suffix = f"_dmodel{model_width}_state{state_size}"
+        elif model_type == "hyperlstm":
+            width_suffix = (
+                f"_h{model_width}_hh{hyper_hidden_size}_nz{args.hyper_embedding_size}"
+            )
         layer_suffix = ""
         if model_type in ("rnn", "gru", "lstm", "gawf") and num_layers > 1:
             layer_suffix = f"_L{num_layers}"
@@ -1104,6 +1199,12 @@ if __name__ == "__main__":
             "model_type": model_type,
             "model_width": int(model_width),
             "state_size": int(state_size) if state_size is not None else None,
+            "hyper_hidden_size": (
+                int(hyper_hidden_size) if hyper_hidden_size is not None else None
+            ),
+            "hyper_embedding_size": (
+                int(args.hyper_embedding_size) if model_type == "hyperlstm" else None
+            ),
             "num_layers": int(num_layers),
             "seed": int(args.seed),
             "num_epochs": int(args.num_epochs),
@@ -1119,6 +1220,38 @@ if __name__ == "__main__":
             "input_cast_mode": args.input_cast_mode,
             "frame_layout": args.frame_layout,
             "shuffle_block_size": int(args.shuffle_block_size),
+            "brims_num_blocks": (
+                list(args.brims_num_blocks) if model_type == "brims" else None
+            ),
+            "brims_topk": list(args.brims_topk) if model_type == "brims" else None,
+            "brims_input_attention_heads": (
+                int(args.brims_input_attention_heads) if model_type == "brims" else None
+            ),
+            "brims_input_attention_key_size": (
+                int(args.brims_input_attention_key_size)
+                if model_type == "brims"
+                else None
+            ),
+            "brims_communication_attention_heads": (
+                int(args.brims_communication_attention_heads)
+                if model_type == "brims"
+                else None
+            ),
+            "brims_communication_attention_key_size": (
+                int(args.brims_communication_attention_key_size)
+                if model_type == "brims"
+                else None
+            ),
+            "brims_communication_attention_value_size": (
+                int(args.brims_communication_attention_value_size)
+                if model_type == "brims"
+                else None
+            ),
+            "brims_attention_dropout": (
+                float(args.brims_attention_dropout) if model_type == "brims" else None
+            ),
+            "open_loop": model_type in ("mlstm", "hyperlstm", "brims"),
+            "brims_internal_layers": 2 if model_type == "brims" else None,
         }
 
         gawf_diag_path = None
@@ -1226,6 +1359,9 @@ if __name__ == "__main__":
             "rnn_fb",
             "gru_fb",
             "lstm_fb",
+            "mlstm",
+            "hyperlstm",
+            "brims",
         ):
             metric_summary["num_layers"] = int(num_layers)
         metric_summary["core_param_count"] = int(sum(p.numel() for p in mdl.core.parameters()))
@@ -1259,6 +1395,35 @@ if __name__ == "__main__":
             )
             if model_type == "gawf_additive":
                 metric_summary["initial_recurrent_weight_scale"] = 0.5
+        elif model_type == "hyperlstm":
+            metric_summary["hyper_hidden_size"] = int(hyper_hidden_size)
+            metric_summary["hyper_embedding_size"] = int(args.hyper_embedding_size)
+            metric_summary["open_loop"] = True
+        elif model_type == "brims":
+            metric_summary["brims_internal_layers"] = 2
+            metric_summary["brims_num_blocks"] = list(args.brims_num_blocks)
+            metric_summary["brims_topk"] = list(args.brims_topk)
+            metric_summary["brims_input_attention_heads"] = int(
+                args.brims_input_attention_heads
+            )
+            metric_summary["brims_input_attention_key_size"] = int(
+                args.brims_input_attention_key_size
+            )
+            metric_summary["brims_communication_attention_heads"] = int(
+                args.brims_communication_attention_heads
+            )
+            metric_summary["brims_communication_attention_key_size"] = int(
+                args.brims_communication_attention_key_size
+            )
+            metric_summary["brims_communication_attention_value_size"] = int(
+                args.brims_communication_attention_value_size
+            )
+            metric_summary["brims_attention_dropout"] = float(
+                args.brims_attention_dropout
+            )
+            metric_summary["open_loop"] = True
+        elif model_type == "mlstm":
+            metric_summary["open_loop"] = True
         if gawf_diag_path is not None:
             metric_summary["gawf_diag_path"] = gawf_diag_path
             metric_summary["gawf_diag_every"] = args.gawf_diag_every

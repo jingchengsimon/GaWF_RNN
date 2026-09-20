@@ -360,7 +360,13 @@ def parse_hparams_from_filename(filename):
     hparams = {}
     
     # 提取 model_type
-    if filename.startswith('rnn_fb_'):
+    if filename.startswith('mlstm_'):
+        hparams['model_type'] = 'MLSTM'
+    elif filename.startswith('hyperlstm_'):
+        hparams['model_type'] = 'HyperLSTM'
+    elif filename.startswith('brims_'):
+        hparams['model_type'] = 'BRIMs'
+    elif filename.startswith('rnn_fb_'):
         hparams['model_type'] = 'RNNFB'
     elif filename.startswith('lstm_fb_'):
         hparams['model_type'] = 'LSTMFB'
@@ -398,6 +404,12 @@ def parse_hparams_from_filename(filename):
     state_match = re.search(r'_state(\d+)', filename)
     if state_match:
         hparams['state_size'] = int(state_match.group(1))
+    hyper_hidden_match = re.search(r'_hh(\d+)', filename)
+    if hyper_hidden_match:
+        hparams['hyper_hidden_size'] = int(hyper_hidden_match.group(1))
+    hyper_embedding_match = re.search(r'_nz(\d+)', filename)
+    if hyper_embedding_match:
+        hparams['hyper_embedding_size'] = int(hyper_embedding_match.group(1))
     dz_match = re.search(r'_dz(\d+)', filename)
     if dz_match:
         hparams['feedback_dim'] = int(dz_match.group(1))
