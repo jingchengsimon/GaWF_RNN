@@ -9,6 +9,7 @@ Q-values as gate feedback.
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 import hashlib
 import json
 import logging
@@ -25,11 +26,13 @@ import torch
 import torch.nn.functional as F
 from torch import optim
 
+from utils.training.atari.atari_stage_profile import AtariStageProfile
 from utils.training.atari.atari_dqn_models import AtariQNetwork, AtariQNetworkState
 from utils.training.atari.atari_envs import (
     ATARI_ENV_PROTOCOLS,
     ATARI_PILOT_ENVS,
     ATARI_TASK_SCHEDULES,
+    make_fixed_multitask_async_vector_atari_env,
     make_multitask_vector_atari_env,
     make_vector_atari_env,
     multitask_scheduler_states,
@@ -156,6 +159,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--total_timesteps", type=int, default=1_000_000)
     parser.add_argument("--num_envs", type=int, default=1)
+    parser.add_argument(
+        "--actor_workers",
+        type=int,
+        default=0,
+        choices=[0, 5],
+        help=(
+            "0 keeps synchronous episode-balanced collection. 5 uses one spawn-safe "
+            "asynchronous actor per task; it requires exactly five tasks, --num_envs 5, "
+            "and --replay_layout per_task."
+        ),
+    )
     parser.add_argument("--buffer_size", type=int, default=1_000_000)
     parser.add_argument(
         "--replay_layout",
@@ -184,6 +198,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument(
+        "--no_reward_clip",
+        action="store_false",
+        dest="reward_clip",
+        help="Use raw environment rewards in TD targets instead of the historical [-1, 1] clip.",
+    )
+    parser.set_defaults(reward_clip=True)
     parser.add_argument("--learning_starts", type=int, default=20_000)
     parser.add_argument(
         "--learning_starts_per_task",
@@ -221,6 +242,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--save_dir", type=str, default=None)
     parser.add_argument("--capture_video", action="store_true")
     parser.add_argument("--log_interval", type=int, default=1000)
+    parser.add_argument("--profile_stages", action="store_true",
+                        help="Capture a bounded post-warmup CPU/CUDA trace and stage timings.")
     parser.add_argument(
         "--record_timing",
         action="store_true",
@@ -334,6 +357,7 @@ RESUME_ARG_KEYS = (
     "ssm_context_len",
     "total_timesteps",
     "num_envs",
+    "actor_workers",
     "buffer_size",
     "replay_layout",
     "replay_sampling",
@@ -342,6 +366,7 @@ RESUME_ARG_KEYS = (
     "learning_rate_decay_scale",
     "learning_rate_decay_per_task_steps",
     "gamma",
+    "reward_clip",
     "learning_starts",
     "learning_starts_per_task",
     "start_epsilon",
@@ -393,6 +418,22 @@ def _resume_validation_keys(
         )
     origin = int(previous_origin) if previous_origin is not None else saved_total
     return tuple(key for key in RESUME_ARG_KEYS if key != "total_timesteps"), origin
+
+
+def _normalize_legacy_resume_args(saved_args: dict[str, Any]) -> None:
+    """Fill saved Atari protocol fields that were absent before their CLI existed."""
+    saved_args.setdefault("atari_env_protocol", "baseline")
+    saved_args.setdefault("reward_clip", True)
+    saved_args.setdefault("actor_workers", 0)
+    # Checkpoints created before the per-task gate retain historical semantics.
+    saved_args.setdefault("learning_starts_per_task", 0)
+    # Historical checkpoints parameterized epsilon decay as a fraction.
+    if "exploration_steps" not in saved_args:
+        fraction = saved_args.get("exploration_fraction")
+        if fraction is not None:
+            saved_args["exploration_steps"] = int(
+                float(fraction) * int(saved_args["total_timesteps"])
+            )
 
 
 def _step_with_sequence_forward(
@@ -525,6 +566,33 @@ def _resolve_task_config(args: argparse.Namespace) -> tuple[tuple[str, ...], str
     if len(env_ids) > 1 and action_space_mode != "full18":
         raise ValueError("Multi-task Atari requires --action_space_mode full18")
     return env_ids, action_space_mode
+
+
+def _validate_actor_workers(args: argparse.Namespace, env_ids: tuple[str, ...]) -> None:
+    """Reject actor settings that would interleave recurrent task trajectories."""
+    if args.num_envs < 1:
+        raise ValueError("--num_envs must be positive")
+    if args.actor_workers == 0:
+        return
+    if args.actor_workers != 5:
+        raise ValueError("Unsupported --actor_workers value")
+    if len(env_ids) != 5:
+        raise ValueError("--actor_workers 5 requires exactly five multi-task environments")
+    if args.num_envs != args.actor_workers:
+        raise ValueError("--actor_workers 5 requires --num_envs 5")
+    if args.replay_layout != "per_task":
+        raise ValueError("--actor_workers 5 requires --replay_layout per_task")
+    if args.total_timesteps % args.num_envs:
+        raise ValueError("--actor_workers 5 requires total_timesteps divisible by --num_envs")
+
+
+def _cadence_crossings(previous_step: int, current_step: int, frequency: int) -> int:
+    """Count periodic boundaries crossed by one vectorized collection batch."""
+    if frequency <= 0:
+        raise ValueError("frequency must be positive")
+    if current_step < previous_step:
+        raise ValueError("current_step must not precede previous_step")
+    return current_step // frequency - previous_step // frequency
 
 
 # Mirrors train_atari._extract_episode_returns (kept private there; entry
@@ -879,6 +947,11 @@ def _aggregate_td_loss(
     return torch.stack(task_losses).mean()
 
 
+def _td_rewards(rewards: torch.Tensor, reward_clip: bool) -> torch.Tensor:
+    """Apply the configured reward transform before constructing TD targets."""
+    return rewards.clamp(-1.0, 1.0) if reward_clip else rewards
+
+
 def _dqn_transition_loss(
     model_forward: SequenceForward,
     target_forward: SequenceForward,
@@ -900,7 +973,9 @@ def _dqn_transition_loss(
             q_next = q_next_target.gather(1, greedy).squeeze(1)
         else:
             q_next = q_next_target.max(dim=1).values
-        td_target = batch.rewards.clamp(-1.0, 1.0) + args.gamma * (1.0 - batch.dones) * q_next
+        td_target = _td_rewards(batch.rewards, args.reward_clip) + args.gamma * (
+            1.0 - batch.dones
+        ) * q_next
     loss = _aggregate_td_loss(
         F.smooth_l1_loss(q_taken, td_target, reduction="none"),
         batch.task_ids,
@@ -917,7 +992,10 @@ def _drqn_sequence_loss(
     args: argparse.Namespace,
     device: torch.device,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    seq = buffer.sample_sequences(args.sequences_per_batch, args.seq_len)
+    with torch.profiler.record_function("aim3/replay_sample") if getattr(
+        args, "_profile_window_active", False
+    ) else nullcontext():
+        seq = buffer.sample_sequences(args.sequences_per_batch, args.seq_len)
     n_steps = args.seq_len
     q_online, _ = model_forward(
         seq.obs,
@@ -946,7 +1024,7 @@ def _drqn_sequence_loss(
         else:
             q_next = q_target[:, 1:].max(-1).values
         td_target = (
-            seq.rewards[:, :n_steps].clamp(-1.0, 1.0)
+            _td_rewards(seq.rewards[:, :n_steps], args.reward_clip)
             + args.gamma * (1.0 - seq.dones[:, :n_steps]) * q_next
         )
     mask = seq.loss_mask[:, :n_steps]
@@ -978,6 +1056,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
     args.feedback_mode = _resolve_feedback_mode(args)
     _resolve_exploration_steps(args)
     env_ids, action_space_mode = _resolve_task_config(args)
+    _validate_actor_workers(args, env_ids)
     if args.num_layers < 1:
         raise ValueError(f"num_layers must be >= 1, got {args.num_layers}")
     if args.frame_skip < 1:
@@ -1034,16 +1113,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         resume_checkpoint = load_checkpoint(resume_path, device)
         saved_args = resume_checkpoint.get("args")
         if isinstance(saved_args, dict):
-            saved_args.setdefault("atari_env_protocol", "baseline")
-            # Checkpoints created before the per-task gate retain historical semantics.
-            saved_args.setdefault("learning_starts_per_task", 0)
-            # Historical checkpoints parameterized epsilon decay as a fraction.
-            if "exploration_steps" not in saved_args:
-                fraction = saved_args.get("exploration_fraction")
-                if fraction is not None:
-                    saved_args["exploration_steps"] = int(
-                        float(fraction) * int(saved_args["total_timesteps"])
-                    )
+            _normalize_legacy_resume_args(saved_args)
         resume_keys, extended_from_total_timesteps = _resume_validation_keys(
             resume_checkpoint, args
         )
@@ -1088,17 +1158,28 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
     if is_multitask:
         if args.capture_video:
             raise ValueError("Phase0 multi-task training does not support --capture_video")
-        envs = make_multitask_vector_atari_env(
-            env_ids=env_ids,
-            seed=args.seed,
-            num_envs=args.num_envs,
-            frame_stack=args.frame_stack,
-            frame_skip=args.frame_skip,
-            flicker_prob=args.flicker_prob,
-            task_schedule=args.task_schedule,
-            scheduler_states=restored_scheduler_states,
-            atari_env_protocol=args.atari_env_protocol,
-        )
+        if args.actor_workers:
+            envs = make_fixed_multitask_async_vector_atari_env(
+                env_ids=env_ids,
+                seed=args.seed,
+                frame_stack=args.frame_stack,
+                frame_skip=args.frame_skip,
+                flicker_prob=args.flicker_prob,
+                scheduler_states=restored_scheduler_states,
+                atari_env_protocol=args.atari_env_protocol,
+            )
+        else:
+            envs = make_multitask_vector_atari_env(
+                env_ids=env_ids,
+                seed=args.seed,
+                num_envs=args.num_envs,
+                frame_stack=args.frame_stack,
+                frame_skip=args.frame_skip,
+                flicker_prob=args.flicker_prob,
+                task_schedule=args.task_schedule,
+                scheduler_states=restored_scheduler_states,
+                atari_env_protocol=args.atari_env_protocol,
+            )
     else:
         envs = make_vector_atari_env(
             env_id=env_ids[0],
@@ -1351,6 +1432,8 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
                 checkpoint_path,
             )
 
+        stage_profile = (AtariStageProfile(Path(save_dir) / "profile", device)
+                         if getattr(args, "profile_stages", False) else None)
         preempted = False
         while global_step < args.total_timesteps:
             if preemption.requested:
@@ -1362,26 +1445,34 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
                 write_checkpoint()
                 preempted = True
                 break
+            previous_global_step = global_step
             global_step += args.num_envs
+            if stage_profile is not None:
+                stage_profile.begin(
+                    global_step, _learning_ready(args, global_step, environment_steps)
+                )
+                args._profile_window_active = stage_profile.active
             epsilon = _linear_epsilon(args, global_step)
 
             # Always advance the model step so the GaWF recurrent state and
             # prev-Q feedback evolve identically whether or not the epsilon
             # coin picks a random action.
             inference_start = time.perf_counter() if args.record_timing else 0.0
-            with torch.no_grad(), acceleration.autocast():
-                q_values, state = _step_with_sequence_forward(
-                    model_forward, next_obs, next_done, state
-                )
-            greedy_action = q_values.argmax(dim=-1).cpu().numpy()
-            random_action = np.random.randint(0, num_actions, size=args.num_envs)
-            explore = np.random.random(size=args.num_envs) < epsilon
-            action_np = np.where(explore, random_action, greedy_action)
+            with stage_profile.phase("inference") if stage_profile else nullcontext():
+                with torch.no_grad(), acceleration.autocast():
+                    q_values, state = _step_with_sequence_forward(
+                        model_forward, next_obs, next_done, state
+                    )
+                greedy_action = q_values.argmax(dim=-1).cpu().numpy()
+                random_action = np.random.randint(0, num_actions, size=args.num_envs)
+                explore = np.random.random(size=args.num_envs) < epsilon
+                action_np = np.where(explore, random_action, greedy_action)
             if args.record_timing:
                 timing["inference_seconds"] += time.perf_counter() - inference_start
 
             environment_start = time.perf_counter() if args.record_timing else 0.0
-            next_obs_np, reward_np, terminated_np, truncated_np, infos = envs.step(action_np)
+            with stage_profile.phase("environment") if stage_profile else nullcontext():
+                next_obs_np, reward_np, terminated_np, truncated_np, infos = envs.step(action_np)
             if args.record_timing:
                 timing["environment_seconds"] += time.perf_counter() - environment_start
             end_reasons = _extract_step_end_reasons(infos, args.num_envs)
@@ -1398,6 +1489,10 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
             state_reset_np = _next_state_reset_flags(episode_end_np, prev_done_np)
 
             step_env_ids = _extract_step_env_ids(infos, args.num_envs)
+            if stage_profile is not None and stage_profile.active:
+                for task in step_env_ids:
+                    key = str(task)
+                    stage_profile.tasks[key] = stage_profile.tasks.get(key, 0) + 1
             if not is_multitask:
                 step_env_ids = [env_ids[0]] * args.num_envs
             task_ids_np = np.zeros(args.num_envs, dtype=np.int16)
@@ -1412,14 +1507,15 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
                     environment_steps[env_id] += 1
 
             replay_io_start = time.perf_counter() if args.record_timing else 0.0
-            buffer.add(
-                obs=current_obs_np,
-                actions=action_np,
-                rewards=np.asarray(reward_np, dtype=np.float32),
-                dones=bootstrap_stop_np,
-                resets=prev_done_np,
-                task_ids=task_ids_np,
-            )
+            with stage_profile.phase("replay_write") if stage_profile else nullcontext():
+                buffer.add(
+                    obs=current_obs_np,
+                    actions=action_np,
+                    rewards=np.asarray(reward_np, dtype=np.float32),
+                    dones=bootstrap_stop_np,
+                    resets=prev_done_np,
+                    task_ids=task_ids_np,
+                )
             if args.record_timing:
                 timing["replay_io_seconds"] += time.perf_counter() - replay_io_start
             prev_done_np = episode_end_np
@@ -1446,9 +1542,12 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
                     end_reason_counts_by_env[env_id].get(reason, 0) + 1
                 )
 
-            if _learning_ready(args, global_step, environment_steps) and (
-                global_step % args.train_frequency == 0
-            ):
+            optimizer_updates_due = _cadence_crossings(
+                previous_global_step,
+                global_step,
+                args.train_frequency,
+            )
+            if _learning_ready(args, global_step, environment_steps) and optimizer_updates_due:
                 if learning_started_at_step is None:
                     learning_started_at_step = global_step
                     logger.info(
@@ -1467,36 +1566,40 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
                         global_step,
                         min(environment_steps.values()) if environment_steps else 0,
                     )
-                optimization_start = time.perf_counter() if args.record_timing else 0.0
-                with acceleration.autocast():
-                    if model.is_recurrent:
-                        loss, q_mean = _drqn_sequence_loss(
-                            model_forward, target_forward, buffer, args, device
-                        )
-                    else:
-                        loss, q_mean = _dqn_transition_loss(
-                            model_forward, target_forward, buffer, args, device
-                        )
-                optimizer.zero_grad(set_to_none=True)
-                if scaler.is_enabled():
-                    scaler.scale(loss).backward()
-                    scaler.unscale_(optimizer)
-                else:
-                    loss.backward()
-                if args.max_grad_norm > 0:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
-                if scaler.is_enabled():
-                    scaler.step(optimizer)
-                    scaler.update()
-                else:
-                    optimizer.step()
-                if args.record_timing:
-                    timing["optimization_seconds"] += time.perf_counter() - optimization_start
+                for _ in range(optimizer_updates_due):
+                    optimization_start = time.perf_counter() if args.record_timing else 0.0
+                    with stage_profile.phase("optimization") if stage_profile else nullcontext():
+                        with acceleration.autocast():
+                            if model.is_recurrent:
+                                loss, q_mean = _drqn_sequence_loss(
+                                    model_forward, target_forward, buffer, args, device
+                                )
+                            else:
+                                loss, q_mean = _dqn_transition_loss(
+                                    model_forward, target_forward, buffer, args, device
+                                )
+                        optimizer.zero_grad(set_to_none=True)
+                        if scaler.is_enabled():
+                            scaler.scale(loss).backward()
+                            scaler.unscale_(optimizer)
+                        else:
+                            loss.backward()
+                        if args.max_grad_norm > 0:
+                            torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                        if scaler.is_enabled():
+                            scaler.step(optimizer)
+                            scaler.update()
+                        else:
+                            optimizer.step()
+                    if args.record_timing:
+                        timing["optimization_seconds"] += time.perf_counter() - optimization_start
                     timing["optimizer_updates"] += 1
-                last_loss_tensor = loss.detach()
-                last_q_mean_tensor = q_mean.detach()
+                    last_loss_tensor = loss.detach()
+                    last_q_mean_tensor = q_mean.detach()
 
-            if global_step % args.target_network_frequency == 0:
+            if _cadence_crossings(
+                previous_global_step, global_step, args.target_network_frequency
+            ):
                 target_net.load_state_dict(model.state_dict())
 
             if global_step % args.log_interval == 0:
@@ -1583,6 +1686,8 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
                 "resume_count": resume_count,
             }
 
+        if stage_profile is not None:
+            stage_profile.close(global_step)
         fps = int(
             global_step / max(elapsed_before_resume + (time.time() - start_time), 1e-6)
         )
@@ -1665,6 +1770,10 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
                 True if args.atari_env_protocol == "skiing-stall-actionfix-v1" else None
             ),
             "task_schedule": args.task_schedule if is_multitask else None,
+            "collection_mode": (
+                "fixed_task_async_actors" if args.actor_workers else "episode_balanced_sync"
+            ),
+            "actor_workers": args.actor_workers,
             "replay_sampling": args.replay_sampling,
             "replay_layout": args.replay_layout,
             "buffer_size": args.buffer_size,
@@ -1680,6 +1789,8 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
             "seq_len": args.seq_len,
             "sequences_per_batch": args.sequences_per_batch,
             "learning_rate": args.learning_rate,
+            "reward_clip": args.reward_clip,
+            "gamma": args.gamma,
             "learning_rate_decay_step": args.learning_rate_decay_step,
             "learning_rate_decay_scale": args.learning_rate_decay_scale,
             "learning_rate_decay_per_task_steps": args.learning_rate_decay_per_task_steps,
@@ -1713,6 +1824,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
             "raw_ale_frames": global_step * args.frame_skip,
             "flicker_prob": args.flicker_prob,
             "global_step": global_step,
+            "optimizer_updates": int(timing["optimizer_updates"]),
             "seed": args.seed,
             "timing": timing_metrics,
             "episodic_return_100": rolling_return,

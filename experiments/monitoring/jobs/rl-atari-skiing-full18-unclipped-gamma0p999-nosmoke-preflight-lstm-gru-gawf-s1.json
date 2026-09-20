@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "id": "rl-atari-skiing-full18-unclipped-gamma0p999-nosmoke-preflight-lstm-gru-gawf-s1",
+  "description": "CPU compute-node submit-safety/reward/resume tests for explicitly authorized no-smoke 4M Skiing training.",
+  "host": "amarel",
+  "status": "completed",
+  "created_at": "2026-09-05T20:01:41.672354+00:00",
+  "updated_at": "2026-09-05T20:04:22.542223+00:00",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_skiing_unclipped_nosmoke_20260905",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61247746"
+    ],
+    "run_ids": [],
+    "process_patterns": [],
+    "collect_gpu": false
+  },
+  "paths": {
+    "log_globs": [
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_unclipped_nosmoke_preflight_20260905/61247746.out",
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_unclipped_nosmoke_preflight_20260905/61247746.err"
+    ],
+    "status_dir": "/scratch/js3269/results/artifacts/rl/atari/skiing_unclipped_nosmoke_preflight_20260905",
+    "result_paths": [
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_unclipped_nosmoke_preflight_20260905/accepted"
+    ]
+  },
+  "tracking": {
+    "expected_units": 1,
+    "auto_complete": true,
+    "validation_mode": "artifacts",
+    "result_globs": [
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_unclipped_nosmoke_preflight_20260905/accepted"
+    ]
+  },
+  "notes": [
+    "No smoke training or inference is run. This is code validation only, on a Slurm CPU compute node.",
+    "Explicit human waiver skips smoke, not submit-safety tests. No local pytest.",
+    "Resources: main partition, 4 CPUs, 16G, 30 minutes, no GPU.",
+    "Preserves all existing snapshots; freezes new candidate and initial weights after successful validation.",
+    "Verified 1/1 valid, Slurm COMPLETED and recent_errors=0; accepted marker confirms tests and dry-runs passed."
+  ],
+  "completed_at": "2026-09-05T20:04:22.542223+00:00"
+}

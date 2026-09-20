@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "id": "rl-atari-seaquest-full18-fs4-stack4-l3-ac-3m-preflight-lstm-gawf-s1-4",
+  "description": "Compute-only validation and 540 GiB quota gate for sixteen Seaquest A/C model/seed cells.",
+  "host": "amarel",
+  "status": "completed",
+  "created_at": "2026-09-08T15:08:09.849235+00:00",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_seaquest_ac_20260908",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61303166"
+    ],
+    "run_ids": []
+  },
+  "paths": {
+    "log_globs": [
+      "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/preflight_61303166.out",
+      "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/preflight_61303166.err"
+    ],
+    "result_paths": [
+      "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/preflight_61303166.out"
+    ]
+  },
+  "tracking": {
+    "expected_units": 1,
+    "validation_mode": "artifacts",
+    "result_globs": [
+      "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/preflight_61303166.out"
+    ]
+  },
+  "notes": [
+    "Tests execute only on Slurm CPU compute node; formal submission requires PREFLIGHT_PASSED in exact stdout. Quota marker is failure-only.",
+    "Exact preflight stdout confirmed 10 tests passed, quota ok, PREFLIGHT_PASSED."
+  ],
+  "updated_at": "2026-09-08T15:09:41.561249+00:00",
+  "completed_at": "2026-09-08T15:09:41.561249+00:00"
+}

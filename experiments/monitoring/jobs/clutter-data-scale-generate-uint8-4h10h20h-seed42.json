@@ -3,9 +3,9 @@
   "id": "clutter-data-scale-generate-uint8-4h10h20h-seed42",
   "description": "Generate formal 4h/10h/20h uint8 Clutter training datasets with seed 42.",
   "host": "amarel",
-  "status": "queued",
+  "status": "completed",
   "created_at": "2026-09-03T22:19:54+00:00",
-  "updated_at": "2026-09-04T03:51:49+00:00",
+  "updated_at": "2026-09-04T12:33:10+00:00",
   "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
   "environment": {
     "name": "aim3_rnn",
@@ -52,6 +52,7 @@
     ]
   },
   "notes": [
+    "Verified 2026-09-04: 3/3 valid published generation manifests, each status=complete and dtype=uint8; NPY/TSV byte sizes match the manifests. Initial failed attempts remain preserved; recovery completed.",
     "Submitted from source commit 51898ef9eab3d0659ab87eee6a46ea711b61f4ec.",
     "Job 61220716 prepares the shared MNIST cache; array 61220717 runs afterok with task mapping 0=4h, 1=10h, 2=20h.",
     "Each generation task uses the exclusive-switch 40h protocol, output_mode=simple, uint8 storage, and NumPy seed 42.",

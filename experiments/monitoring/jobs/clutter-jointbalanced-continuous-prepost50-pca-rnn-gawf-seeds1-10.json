@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "id": "clutter-jointbalanced-continuous-prepost50-pca-rnn-gawf-seeds1-10",
+  "description": "Joint-balanced CM-MNIST: RNN/GaWF seeds1-10 independent continuous B1 inference and pre50/post50 clean-switch PCA (no fixed points).",
+  "host": "amarel",
+  "status": "completed",
+  "created_at": "2026-09-06T04:46:09.825409+00:00",
+  "updated_at": "2026-09-06T12:24:35.947135+00:00",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_continuous_pca_20260906",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61255409",
+      "61255410",
+      "61258392"
+    ],
+    "run_ids": [],
+    "tmux_session": null,
+    "process_patterns": [],
+    "collect_gpu": false
+  },
+  "paths": {
+    "log_globs": [
+      "/scratch/js3269/results/artifacts/continuous_switch_pca_20260906/*.out",
+      "/scratch/js3269/results/artifacts/continuous_switch_pca_20260906/*.err"
+    ],
+    "status_dir": "/scratch/js3269/results/data/analysis/F_timing/continuous_switch_pca_20260906",
+    "result_paths": [
+      "/scratch/js3269/results/data/analysis/F_timing/continuous_switch_pca_20260906"
+    ]
+  },
+  "tracking": {
+    "expected_units": 20,
+    "auto_complete": false,
+    "validation_mode": "artifacts",
+    "result_globs": [
+      "/scratch/js3269/results/data/analysis/F_timing/continuous_switch_pca_20260906/*/.complete"
+    ]
+  },
+  "protocol": {
+    "batch_size": 1,
+    "chunk_size": 32,
+    "reset": "stream start only",
+    "event_offsets": [
+      -50,
+      49
+    ],
+    "expected_clean_events": 30,
+    "models": [
+      "rnn",
+      "gawf"
+    ],
+    "seeds": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "checkpoint_root": "/scratch/js3269/results/data/clutter/seed_search/clutter_best6_multiseed_40h_ep150",
+    "data_stem": "/scratch/js3269/stimuli/stimulus_reg-test-40h-float32-jointswitch-balanced-10digit-unique",
+    "snapshot_base_commit": "9afdede59d09832f51a7afbf087fd430b124b1b0",
+    "snapshot_tar_sha256": "8806a4b94331ee9d9812fa626057d4e6537ddccd54127497e630032df3f87815",
+    "compressed_dataset_sha256": "c43e04782158d7bbaa553e1acddb1996ce3013b914d53fb854fe59c5c5577879",
+    "local_data_dir": "results/data/analysis/F_timing/continuous_switch_pca_20260906",
+    "local_figure_dir": "results/figs/F_timing/continuous_switch_pca_20260906",
+    "dataset_sha256": "ba1f1f61047013df7051fdd33bfd7c04ef46debb2586c280a7ef639b9b38b1e0"
+  },
+  "notes": [
+    "Preflight 61255409 decompresses dataset and runs rollout/PCA tests on compute node; array 61255410 depends afterok.",
+    "Array 0-9=RNN seeds1-10; 10-19=GaWF seeds1-10; throttle4. Each task: 1 Ada Lovelace GPU,16 CPUs,64G,2h.",
+    "All 30 clean windows retained without digit/sector stratification; labels saved per frame.",
+    "Completion marker covers inference; final PCA/3D figures rendered locally after transfer, then manifest updated.",
+    "User pre50/post50 interpreted as 100 records (relative -50..49); parenthetical 60 frames treated as typo, pending clarification.",
+    "Thread heartbeat cm-mnist-continuous-pca checks every10min and completes local PCA/rendering after inference; pause after completion.",
+    "Preflight 61255409 failed exit1 after successful decompression: aim3_rnn lacked pytest. Original logs retained.",
+    "User authorized missing-dependency installation and preflight retry. Recovery 61258392 runs run_preflight_recovery.sh from the registered artifacts leaf on a compute node; installs only missing analysis/test packages and repeats decompression, tests and CLI import check.",
+    "Existing array 61255410 dependency successfully updated in place to afterok:61258392; no cancellation or duplicate inference submission. Heartbeat remains paused at user request.",
+    "Recovery 61258392 COMPLETED exit0 in59s on hal0321: installed pytest9.1.1, pluggy1.6.0, iniconfig2.3.0; other checked dependencies present. Decompression/size/hash and CLI import succeeded,5 tests passed. Array61255410 now PENDING Priority with Dependency=null.",
+    "20/20 inference verified; all event arrays transferred locally and validated against original TSV; independent per-seed PCA and40 PDFs complete. Full stream arrays retained remote. No fixed points. Monitoring remains paused.",
+    "User requested one variance figure: replaced20 per-seed variance PDFs with one two-panel mean\u00b1sample-SD figure; preserved20 independent3D PDFs and all seed PCA data. Numeric model-wise aggregates saved as variance_MODEL_mean_std.npz."
+  ],
+  "completion_evidence": {
+    "inference_units": 20,
+    "local_event_banks": 20,
+    "local_pca_arrays": 20,
+    "pdf_figures": 21,
+    "validation": "results/data/analysis/F_timing/continuous_switch_pca_20260906/validation.json",
+    "summary_csv": "results/data/analysis/F_timing/continuous_switch_pca_20260906/pca_summary.csv",
+    "visual_review": "RNN and GaWF seed01 3D and variance PDFs; final 3D contrast improved and re-rendered",
+    "pc3_mean_variance": {
+      "rnn": 0.2094370782,
+      "gawf": 0.2182322055
+    },
+    "heldout_pc3_mean_capture": {
+      "rnn": 0.1309151232,
+      "gawf": 0.1269355632
+    }
+  }
+}

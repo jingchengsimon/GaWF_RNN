@@ -58,6 +58,15 @@ HIGHLIGHT_BG = "#fef9c3"
 # --------------------------------------------------------------------------------------------
 # |W|-matched (overlap-band-only) sign stats
 # --------------------------------------------------------------------------------------------
+def _condition_means(frame: pd.DataFrame, y_col: str) -> np.ndarray:
+    """Return one equally weighted mean per condition from connection-level rows."""
+
+    values = frame.groupby("context", sort=True)[y_col].mean().to_numpy(dtype=np.float64)
+    if values.size == 0 or not np.all(np.isfinite(values)):
+        raise RuntimeError(f"No finite condition means for {y_col}.")
+    return values
+
+
 def print_overlap_bands(kind: str, overlap_stats: dict[str, dict]) -> None:
     print(f"\n=== {kind}: |W| overlap band per group ===")
     for g in GROUP_NAMES:
@@ -71,10 +80,11 @@ def print_overlap_bands(kind: str, overlap_stats: dict[str, dict]) -> None:
 def overlap_band_sign_stats(
     pooled: dict[str, pd.DataFrame], overlap_stats: dict[str, dict], y_col: str = "of"
 ) -> dict[str, dict]:
-    """{group -> {"+"/"-" -> {"mean", "sem", "n"}}}, restricted to that group's overlap band.
+    """Return sign statistics with equal condition weight inside the shared overlap band.
 
     ``y_col`` is "of" (default, raw open fraction) or "delta_of" (per-connection, cross-context
-    demeaned; see collect_pooled_records in the digit disinhibition module).
+    demeaned; see collect_pooled_records in the digit disinhibition module). Rows are first
+    averaged within each condition, then those condition means are averaged equally.
     """
 
     result: dict[str, dict] = {}
@@ -87,11 +97,22 @@ def overlap_band_sign_stats(
         in_band = df[(df["absW"] >= low) & (df["absW"] <= high)]
         stats: dict = {}
         for sign_label, signpos in (("+", 1), ("-", 0)):
-            sub = in_band.loc[in_band["signpos"] == signpos, y_col]
-            n = int(sub.size)
-            mean = float(sub.mean()) if n else float("nan")
-            sem = float(sub.std(ddof=1) / np.sqrt(n)) if n > 1 else 0.0
-            stats[sign_label] = {"mean": mean, "sem": sem, "n": n}
+            selected = in_band.loc[in_band["signpos"] == signpos]
+            condition_means = _condition_means(selected, y_col)
+            n = int(selected.shape[0])
+            n_conditions = int(condition_means.size)
+            mean = float(condition_means.mean())
+            sem = (
+                float(condition_means.std(ddof=1) / np.sqrt(n_conditions))
+                if n_conditions > 1
+                else 0.0
+            )
+            stats[sign_label] = {
+                "mean": mean,
+                "sem": sem,
+                "n": n,
+                "n_conditions": n_conditions,
+            }
         result[g] = stats
     return result
 

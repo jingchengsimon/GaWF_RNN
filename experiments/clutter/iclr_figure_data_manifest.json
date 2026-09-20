@@ -1,0 +1,236 @@
+{
+  "schema_version": 1,
+  "status": "frozen",
+  "frozen_at": "2026-09-14T12:19:57-04:00",
+  "verified_host": "amarel3.amarel.rutgers.edu",
+  "verified_remote_commit": "9afdede59d09832f51a7afbf087fd430b124b1b0",
+  "remote_roots": {
+    "project": "/cache/home/js3269/projects/aim3_gawf_rnn",
+    "results": "/scratch/js3269/results",
+    "stimuli": "/scratch/js3269/stimuli"
+  },
+  "policy": {
+    "purpose": "Freeze the exact numeric inputs used to redraw the six ICLR figures.",
+    "remote_paths_are_authoritative_except_where_explicitly_noted": true,
+    "local_paths_are_visualization_caches": true,
+    "layout_edits_must_not_change_numeric_inputs": true,
+    "do_not_search_for_replacements": true
+  },
+  "figures": {
+    "fig1": {
+      "output": "results/save/iclr_figs/Fig1_gawf_and_cm_mnist.pdf",
+      "renderer": "Frozen Illustrator vector master reflowed with pypdf vector clipping",
+      "plot_script": "utils/analysis/clutter/fig1_iclr_layout.py",
+      "non_numeric_source": {
+        "path": "results/save_data/fig1/layout_source/Fig1_gawf_and_cm_mnist_4p375in_master.pdf",
+        "sha256_before_layout_edit": "62a5b5a2994f3b1f0ad073cae5b6b24289c174936b50dc81a9d0ea9a0616f43d"
+      },
+      "timeline_plot_script": "utils/analysis/clutter/fig1_cmmnist_timeline.py",
+      "inputs": [
+        {
+          "role": "mnist_images",
+          "remote": "/scratch/js3269/stimuli/mnist/MNIST/raw/train-images-idx3-ubyte",
+          "expected_files": 1,
+          "expected_bytes": 47040016
+        },
+        {
+          "role": "mnist_labels",
+          "remote": "/scratch/js3269/stimuli/mnist/MNIST/raw/train-labels-idx1-ubyte",
+          "expected_files": 1,
+          "expected_bytes": 60008
+        }
+      ],
+      "timeline_protocol": {
+        "seed_start": 0,
+        "selected_seed": 0,
+        "selected_switch_frame": 261,
+        "mnist_limit": 1000
+      }
+    },
+    "fig2": {
+      "output": "results/save/iclr_figs/Fig2_best6_multiseed_shuffle_2x4_seq512.pdf",
+      "plot_script": "utils/analysis/clutter/fig1_multiseed_summary.py",
+      "inputs": [
+        {
+          "role": "test_accuracy",
+          "remote": "/scratch/js3269/results/save_data/fig1/test_accuracy_summary/best_acc_test_mean_std.csv",
+          "local": "results/save_data/fig1/test_accuracy_summary/best_acc_test_mean_std.csv",
+          "expected_files": 1,
+          "expected_bytes": 2934,
+          "local_aggregate_sha256": "9e9aae6db5e45972bcf8282fe17816c48ebd96506a207f387b600ab62f999f20"
+        },
+        {
+          "role": "validation_histories",
+          "remote": "/scratch/js3269/results/save_data/fig1/validation_loss_histories",
+          "local": "results/save_data/fig1/validation_loss_histories",
+          "pattern": "*-seed*/*.pkl",
+          "expected_files": 60,
+          "expected_bytes": 1534413,
+          "local_aggregate_sha256": "a4c8337c03f516ef636ba57228f8daf65b2b5c0bc179547081d3b100c91cde16"
+        },
+        {
+          "role": "legacy_target_switch_recovery_not_used_for_final_redraw",
+          "remote": "/scratch/js3269/results/save_data/fig1/target_switch_recovery",
+          "local": "results/save_data/fig1/target_switch_recovery",
+          "pattern": "*.npz|*.json",
+          "expected_files": 12,
+          "expected_bytes": 19765,
+          "local_aggregate_sha256": "e9064c80230f74bba519005680eb59d0149842737b5f52e5d366cbf6fe965299",
+          "note": "One aggregate vector per model; insufficient for the final ten-seed renderer."
+        },
+        {
+          "role": "legacy_shuffle_ablation_not_used_for_final_redraw",
+          "remote": "/scratch/js3269/results/save_data/fig2/gawf_shuffle_ablation",
+          "local": "results/save_data/fig2/gawf_shuffle_ablation",
+          "pattern": "gawf-seed*/ablation_metrics.json",
+          "expected_files": 10,
+          "expected_bytes": 176278,
+          "local_aggregate_sha256": "4a8c02b1dc9369a9a539aa45dd041fd86ec0ba97890730aa7b8a2ef722f829b4",
+          "note": "Retained raw ablation records; the final renderer uses the frozen analysis CSV below."
+        },
+        {
+          "role": "target_switch_recovery_final_ten_seed",
+          "remote": null,
+          "remote_status": "not_found_under_verified_project_or_results_roots",
+          "local": "results/data/analysis/fig1_target_switch_recovery_resetexcluded_6model_10seed_v4",
+          "provenance_host": "sjc-remote",
+          "pattern": "*-seed*/*.{npz,json}",
+          "expected_files": 120,
+          "expected_bytes": 201580,
+          "local_aggregate_sha256": "33b3e3a2622cf3ef16c9c4adc70dddad27722b1c58c70ed1bb4ba84869743e36"
+        },
+        {
+          "role": "shuffle_activation_anova_final_ten_seed",
+          "remote": null,
+          "remote_status": "not_found_under_verified_project_or_results_roots",
+          "local": "results/data/analysis/fig4_shuffle_activation_anova_10seed/final/Fig4_shuffle_activation_anova_long_10seed.csv",
+          "provenance_host": "sjc-remote",
+          "expected_files": 1,
+          "expected_bytes": 20971,
+          "local_aggregate_sha256": "df5992105d5d5acb1b741c10b2d3fa1b79bfb3fd00ce726f37ce1de628a80314"
+        }
+      ],
+      "amarel_exception": "The two final ten-seed analysis products were not found in the verified Amarel roots; their exact local visualization caches are frozen and must not be replaced by the older Amarel aggregates."
+    },
+    "fig3": {
+      "output": "results/save/iclr_figs/Fig3_gate_and_weight_distributions_1x4_10seed.pdf",
+      "plot_script": "utils/analysis/clutter/fig3_gate_distribution_plot.py",
+      "render_options": [
+        "--exclude_zero_feedback_reset",
+        "--gate_weight_layout",
+        "1x4"
+      ],
+      "inputs": [
+        {
+          "role": "ten_seed_gate_histograms",
+          "remote": "/scratch/js3269/results/save_data/fig3/multiseed_1_10",
+          "local": "results/save_data/fig3",
+          "pattern": "seed*/gawf_gate_distribution_{stats.npz,meta.json,trajectory.npz}",
+          "expected_seed_directories": 10,
+          "expected_histogram_files": 10,
+          "local_histogram_bytes": 118128313,
+          "local_histogram_aggregate_sha256": "90e33d9e86623f95df8b4000c85324ef025aa73574cb9e82e8e2d6a4d5e01730"
+        }
+      ],
+      "effective_weight_override": null,
+      "effective_weight_note": "The optional 5000-bin override is not present on Amarel; pool and reproject the frozen per-seed histograms instead."
+    },
+    "fig4": {
+      "output": "results/save/iclr_figs/Fig4_gate_task_variable_specialization_2x3_10seed.pdf",
+      "plot_script": "utils/analysis/clutter/fig4_combined_gate_specialization.py",
+      "inputs": [
+        {
+          "role": "synapse_gate_decomposition",
+          "remote": "/cache/home/js3269/projects/aim3_gawf_rnn/results/data/analysis/fig4_gate_synapse_anova_resetexcluded_10seed",
+          "local": "results/data/analysis/fig4_gate_synapse_anova_resetexcluded_10seed",
+          "pattern": "seed*/gate_synapse_anova.npz",
+          "expected_files": 10,
+          "expected_bytes": 38736,
+          "local_aggregate_sha256": "3465f992bc48888ee4b7002664f9f3bcdae4e78c20d0abf22b36e87f3f1ef2f1"
+        },
+        {
+          "role": "activation_decomposition",
+          "remote": "/cache/home/js3269/projects/aim3_gawf_rnn/results/data/analysis/fig4_activation_anova_6model_10seed_residual_resetexcluded",
+          "local": "results/data/analysis/fig4_activation_anova_6model_10seed_residual_resetexcluded",
+          "pattern": "*-seed*/activation_anova.npz",
+          "expected_files": 60,
+          "expected_bytes": 147960,
+          "local_aggregate_sha256": "7fcb7484123e25cc47e0611a348bfbe9886d162439343e51789bacd86e9dbc3f"
+        },
+        {
+          "role": "unit_gate_decomposition",
+          "remote": "/cache/home/js3269/projects/aim3_gawf_rnn/results/data/analysis/fig5_unit_gate_context_reset_excluded_10seed/unit_gate_context_variance_multiseed.json",
+          "local": "results/data/analysis/fig5_unit_gate_context_reset_excluded_10seed/unit_gate_context_variance_multiseed.json",
+          "expected_files": 1,
+          "expected_bytes": 10902
+        }
+      ]
+    },
+    "fig5": {
+      "output": "results/save/iclr_figs/Fig5_overall_sector_input_gate_1x3_10seed.pdf",
+      "plot_script": "utils/analysis/clutter/fig6_overall_sector_input_gate.py",
+      "inputs": [
+        {
+          "role": "encoder_sector_maps",
+          "remote": "/cache/home/js3269/projects/aim3_gawf_rnn/results/data/analysis/fig6_encoder_sector_patterns_gawf_10seed/final/encoder_sector_patterns_10seed_summary.npz",
+          "local": "results/data/analysis/fig6_encoder_sector_patterns_gawf_10seed/final/encoder_sector_patterns_10seed_summary.npz",
+          "expected_files": 1,
+          "expected_bytes": 3117,
+          "local_aggregate_sha256": "33174640444f5a9d73bf7afa1052688dec234c93b45238f134463a46a0be841d"
+        },
+        {
+          "role": "input_gate_sector_maps",
+          "remote": "/cache/home/js3269/projects/aim3_gawf_rnn/results/save_data/fig6",
+          "local": "results/save_data/fig6",
+          "pattern": "seed*/sector_gate_mean_sequential_equal_n.npz",
+          "expected_files": 10,
+          "expected_bytes": 27819,
+          "local_aggregate_sha256": "3f98648fb50692c2a1ebb19bf76460b8d24c6ea06fa0b3ed68185a9dfc150c48"
+        },
+        {
+          "role": "input_gate_sign_magnitude",
+          "remote": "/cache/home/js3269/projects/aim3_gawf_rnn/results/data/analysis/supple2_input_gate_sign_magnitude_9sector_reset_excluded_10seed",
+          "local": "results/data/analysis/supple2_input_gate_sign_magnitude_9sector_reset_excluded_10seed",
+          "pattern": "seed*/input_gate_sign_magnitude_9sector.npz",
+          "expected_files": 10,
+          "expected_bytes": 108523202,
+          "local_aggregate_sha256": "f5d77eb8619fbe5caf063ee607dd9081ab7d77bd041dcd5024f56e2a40e404e3"
+        }
+      ]
+    },
+    "fig6": {
+      "output": "results/save/iclr_figs/Fig6_recurrent_gate_disinhibition_and_current_2x3_10seed.pdf",
+      "plot_script": "utils/analysis/clutter/fig7_combined_recurrent_gate_and_current.py",
+      "render_options": [
+        "--pdf_only"
+      ],
+      "inputs": [
+        {
+          "role": "recurrent_gate_compact",
+          "remote": "/cache/home/js3269/projects/aim3_gawf_rnn/results/data/analysis/fig7_recurrent_gate_10seed",
+          "local": "results/data/analysis/fig7_recurrent_gate_10seed",
+          "pattern": "seed*/compact/recurrent_gate_condition_means.npz",
+          "expected_files": 10,
+          "expected_bytes": 47209868,
+          "local_aggregate_sha256": "ba90a51c3e69e0709e5634b573474d81bba1b7237763cf2ee2f6d81737c6cadb"
+        },
+        {
+          "role": "digit_connection_normalized_recurrent_current",
+          "remote": "/cache/home/js3269/projects/aim3_gawf_rnn/results/save_data/fig8/recurrent_current/connection/digit/net_recurrent_current_connection_10seed_long.csv",
+          "local": "results/save_data/fig8/recurrent_current/connection/digit/net_recurrent_current_connection_10seed_long.csv",
+          "expected_files": 1,
+          "expected_bytes": 185358,
+          "local_aggregate_sha256": "dbbf9ae2f97005378b1a0646d9fdcee74949a868fe3ea67d20cdbeeea2df18ea"
+        },
+        {
+          "role": "sector_connection_normalized_recurrent_current",
+          "remote": "/cache/home/js3269/projects/aim3_gawf_rnn/results/save_data/fig8/recurrent_current/connection/sector/net_recurrent_current_connection_10seed_long.csv",
+          "local": "results/save_data/fig8/recurrent_current/connection/sector/net_recurrent_current_connection_10seed_long.csv",
+          "expected_files": 1,
+          "expected_bytes": 166982,
+          "local_aggregate_sha256": "6e278a4052d3eed82c6433b282c94cd5b5bb376079631dd72a6811e959c00e22"
+        }
+      ]
+    }
+  }
+}

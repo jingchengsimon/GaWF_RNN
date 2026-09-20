@@ -65,7 +65,7 @@ Do not split loops, variables, or related checks across multiple paste blocks.
 
 Unless a human explicitly requests a different allocation, Codex-submitted training uses:
 
-- partition `gpu-redhat`, account `general`;
+- partition `gpu`, account `general` (`gpu-redhat` was rejected as invalid on 2026-09-07);
 - one GPU with `constraint=adalovelace`;
 - `cpus-per-task=16`, `mem=64G`;
 - `AIM3_PIN_MEMORY=1` exported at submission time;
@@ -137,6 +137,11 @@ first-development workflow only when a safety gate fails, a target is ambiguous,
 condition changes, or evidence indicates a genuine failure.
 
 ### Project-wide smoke acceptance contract
+
+Smoke is enabled by default where the training protocol defines a smoke gate. An explicit human
+prompt may waive that gate; expose the choice explicitly in the launcher and record the waiver
+in the experiment manifest. This does not waive SSH reuse, submit-safety tests, exact-path
+validation, or recovery requirements. The acceptance rules below apply when a smoke is run.
 
 All large-training smoke launchers use this common acceptance contract:
 

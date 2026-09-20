@@ -1,6 +1,6 @@
 # GaWF 正文与 Appendix A–I 实现/统计记录
 
-更新日期：2026-09-15
+更新日期：2026-09-18
 
 ## 口径与范围
 
@@ -14,6 +14,11 @@ seed-level SEM；bar 上每个灰点代表一个 training seed。Supplementary 2
 scatter 是 connection/context rows，不是 seed points。accuracy 与 variance fraction 使用百分数。
 门中位数先在每个 seed 内求得，再报告十个 seed median 的均值 ± SEM。除 §6.15 的指定
 interaction test 外，不报告 p value。
+
+Appendix 写作采用**按量类别固定精度**：accuracy、accuracy drop、generalization gap 与
+variance fraction 均保留 1 位小数；$\Delta g$、sign gap、slope 与
+$\Delta I^{\mathrm{gate}}$ 均保留 3 位小数。内部结构化文件和本记录的审计表可以保留更多
+小数，不据此增加论文正文的显示精度。
 
 数据审计发现：
 
@@ -69,7 +74,7 @@ window，而非总 frame 数。
 | 部件 | 当前实现 |
 |---|---|
 | 输入 | 每个 recurrent step 输入相邻两帧 grayscale CM-MNIST，tensor shape 为 `(B, T, 2, 96, 96)`。 |
-| CNN encoder | `Conv2d(2,32,3,padding=same)` → `MaxPool2d(2)` → `LayerNorm(32,48,48)` → ReLU；再经 `Conv2d(32,64,3,padding=1)` → `MaxPool2d(4)` → `LayerNorm(64,12,12)` → `1×1 Conv(64,32)` → ReLU → `AdaptiveAvgPool2d(6,6)`，得到固定 `(32,6,6)`，按 channel-major contiguous order flatten 为 **1152** features。 |
+| CNN encoder | `Conv2d(2,32,5,padding=same)` → `MaxPool2d(2)` → `LayerNorm(32,48,48)` → ReLU；再经 `Conv2d(32,64,3,padding=1)` → `MaxPool2d(4)` → `LayerNorm(64,12,12)` → `1×1 Conv(64,32)` → ReLU → `AdaptiveAvgPool2d(6,6)`，得到固定 `(32,6,6)`，按 channel-major contiguous order flatten 为 **1152** features。 |
 | recurrent core | 正式 GaWF 使用 hidden size $H=256$、一层 recurrent core、`LayerNorm(H)`、ReLU 与 recurrent-output dropout $p=0.5$；encoder dropout 为 0。 |
 | readouts | 同一个 hidden state 分别进入 10-class Digit linear head 与 9-class Sector linear head。 |
 | feedback | 上一时刻两个 head 的 raw logits 按 `[digit logits; sector logits]` 拼接成 $F=19$；不经过 softmax。正式 non-projected 模式下整个 feedback vector detached。每个 rollout 的初始 hidden state与 feedback 都置零。 |
@@ -95,16 +100,16 @@ $$h_t=\operatorname{Dropout}(\operatorname{ReLU}(\operatorname{LayerNorm}(\tanh 
 ### A.3 参数量口径
 
 匹配口径是完整 trainable Clutter model（共享 CNN encoder + recurrent core + 两个 heads），
-同时由于 encoder 共享，recurrent middle path 也近似匹配。当前代码可直接解析的四个模型为：
+同时由于 encoder 共享，recurrent middle path 也近似匹配。当前代码可直接解析的六个模型为：
 
 | Model | Width | Encoder | Recurrent core（含 core LayerNorm） | Heads | Total |
 |---|---:|---:|---:|---:|---:|
-| RNN | 275 | 187,072 | 393,525 | 5,244 | **585,841** |
-| LSTM | 80 | 187,072 | 395,040 | 1,539 | **583,651** |
-| GRU | 105 | 187,072 | 396,795 | 2,014 | **585,881** |
-| GaWF | 256 | 187,072 | 393,088 | 4,883 | **585,043** |
-| Mamba | 170 | 187,072 | 395,930 | 3,249 | **586,251** |
-| S5 | 256（state size 128） | 187,072 | 394,496 | 4,883 | **586,451** |
+| RNN | 275 | 188,096 | 393,525 | 5,244 | **586,865** |
+| LSTM | 80 | 188,096 | 395,040 | 1,539 | **584,675** |
+| GRU | 105 | 188,096 | 396,795 | 2,014 | **586,905** |
+| GaWF | 256 | 188,096 | 393,088 | 4,883 | **586,067** |
+| Mamba | 170 | 188,096 | 395,930 | 3,249 | **587,275** |
+| S5 | 256（state size 128） | 188,096 | 394,496 | 4,883 | **587,475** |
 
 以上不是把“约 586K”仅写成 GaWF core 参数量；GaWF core 本身为 393,088。Mamba/S5 的
 current-worktree 结构分别为：Mamba 一层 `mamba` block，`d_state=16`、`d_conv=4`、
@@ -168,10 +173,14 @@ seeds 1–10、150 epochs、patience 0，不再 search。
 ### B.2 跨 scale 的 10-seed 结果
 
 下表来自当前本地结构化文件 `data_scale_summary_10seed.json` / `data_scale_mean_sem_10seed.csv`。
-`Gap = train accuracy at best-validation checkpoint − validation accuracy`；所有单元均为
-mean ± seed-level SEM（percentage points）。应据此绘制 2×3 panel：第一行 Digit 的
-train/validation/gap，第二行 Sector 的 train/validation/gap。当前 plotting entry point 仍输出
-三张 1×2 图，**2×3 合并版尚未实现，不能写成已生成**。
+每个 readout 的 validation accuracy 取自该 readout 自身达到最大 validation accuracy 的 epoch，
+`Gap = train accuracy − validation accuracy` 也在该 epoch 计算。Identity 的 epoch 对应实际保存的
+best checkpoint；Location 的最佳 epoch 只作 summary，可与 Identity epoch 不同。所有单元均为
+mean ± seed-level SEM（percentage points）。2×3 panel 第一行为 Location 的
+train/validation/gap，第二行为 Identity 的 train/validation/gap。当前 plotting entry point 输出
+输出单一 2×3 图：
+`results/save/data_scale_performance_2x3_10seed.pdf`；第三列是 accuracy
+generalization gap，不是 loss gap。
 
 | Scale | Model | Digit train | Digit val | Digit gap | Sector train | Sector val | Sector gap |
 |---|---|---:|---:|---:|---:|---:|---:|
@@ -277,15 +286,16 @@ accuracy 先在每个 seed 内按 retained frames 计算：两个 head 分别取
 定义为 `post1`；横轴不含 offset 0。若相邻 switches 距离小于 `2 × radius`，两者之间可能受另一
 switch 污染的 frames 会被屏蔽，post assignment 优先于 pre assignment；各 offset 使用实际可用
 events，`frame_counts` 随 offset 可不同，不强制 equal-n。因此 recovery 曲线没有隐含的 pooled
-event-level error bar，也没有尚未定义的 scalar recovery threshold。
+event-level error bar。Appendix 只介绍 recovery curves 的构造与 mean ± SEM 绘制，不定义
+scalar recovery threshold、连续帧判据或 baseline reference；“earlier”等只作定性描述。
 
 | ID | 需要的统计值 | 具体值（10-seed） |
 |---|---|---|
 | 1.2 | GaWF 的 test accuracy：digit、sector 两个读出 | **每个 32-frame rollout 剔除 t=0 后**：Digit **86.6169% ± 0.1480%**；Sector **93.2852% ± 0.1238%**；各 n=10。 |
 | 1.3 | 五个 baseline 各自的 test accuracy，两个读出 | **每个 32-frame rollout 剔除 t=0 后**：RNN：Digit **80.8603% ± 0.1732%**，Sector **91.3516% ± 0.0858%**。LSTM：**80.4103% ± 0.2266%**，**90.9369% ± 0.0637%**。GRU：**79.4637% ± 0.1705%**，**90.9471% ± 0.0524%**。S5：**75.1772% ± 0.3548%**，**89.3149% ± 0.1764%**。Mamba：**83.0981% ± 0.1669%**，**92.5997% ± 0.0749%**。每项 n=10，顺序均为 Digit、Sector。 |
 | 1.4 | 全文统一的 seed 数 | 本记录所有已交付统计统一为 **n=10 training seeds（seeds 1–10）**；不满足 n=10 的现有结果不报数字。 |
-| 1.6 | 目标切换处准确率掉幅：GaWF 与各 baseline，两个读出 | 两张 recovery 图现均为 **n=10 training seeds**；Fig1 的每个 32-frame window 与 Supplementary 1 的每个 512-frame window 均排除 `t=0`，每个 offset 显示 seed mean ± SEM。尚未把“掉幅”压缩成单一 scalar，因为请求未指定使用 pre1、pre-window mean 或其他切换前基准。 |
-| 1.7 | 恢复到切换前水平所需帧数 | 10-seed curves 已完成，但“恢复”的 threshold 与连续帧判据仍未定义，因此不擅自报告 recovery-frame scalar。 |
+| 1.6 | 目标切换处准确率变化：GaWF 与各 baseline，两个读出 | 两张 recovery 图现均为 **n=10 training seeds**；Fig1 的每个 32-frame window 与 Supplementary 1 的每个 512-frame window 均排除 `t=0`，每个 offset 显示 seed mean ± SEM。只作曲线级定性分析，不压缩成单一 drop scalar。 |
+| 1.7 | recovery 的定性快慢 | 不定义 threshold、连续帧数或 baseline reference，也不报告 recovery-frame scalar；“earlier”等仅描述曲线形态。 |
 | 1.8 | switch window 横轴范围；绝对值或归一化 | Fig1 与 Supplementary 1 均为完整 **pre10–pre1、post1–post10**；纵轴为**绝对 accuracy (%)**，不是归一化值；每个点为 n=10 seed mean，阴影为 SEM。 |
 
 ## Appendix E / 正文 §3.1 — 反馈 shuffle 消融
@@ -477,14 +487,22 @@ mask 不是当前 formal protocol，不应写入 Appendix。每个 sector 的 ga
 上求每条 synapse 的 condition mean，再 reshape 为 `(destination, channel, 6, 6)` 并对 destination
 与 channel 平均。$\Delta g$ 从该 sector mean 减去九个 sector condition means 的等权 grand mean。
 sign/magnitude curves 使用 9 个 $|W|$ quantile bins；W+ 与 W− slope 在每个 seed 的 shared
-overlap band 内分别拟合，最后以 training seed 为 inference unit。
+overlap band 内分别拟合，最后以 training seed 为 inference unit。表中的 sign means 先在
+每个 Sector condition 内对 connection rows 求均值，再在 seed 内对九个 condition means
+等权平均；all-connections level 采用相同的 condition-first 等权汇总，但不限制 sign 或
+shared overlap band。slopes 与九分箱曲线仍在 observation level 计算，不受此次均值汇总修正影响。
 
 | ID | 需要的统计值 | 具体值（10-seed） |
 |---|---|---|
-| 5.9a | matching sources overlap gap，九个 sectors 汇总 | **剔除 reset frame 后**：W+ mean Δg **+0.2756 ± 0.0053**；W− **+0.2891 ± 0.0052**；overlap gap W+−W− **−0.0135 ± 0.0018**；n=10。 |
-| 5.9b | other sources overlap gap | **剔除 reset frame 后**：W+ mean Δg **−0.0345 ± 0.0007**；W− **−0.0361 ± 0.0007**；overlap gap **+0.0017 ± 0.0002**；n=10。 |
+| 5.9a | matching sources overlap gap，九个 sectors 等权汇总 | **剔除 reset frame 后**：W+ mean Δg **+0.27583 ± 0.00524**；W− **+0.28900 ± 0.00527**；per-seed overlap gap W+−W− **−0.01317 ± 0.00181**；n=10。 |
+| 5.9b | other sources overlap gap，九个 sectors 等权汇总 | **剔除 reset frame 后**：W+ mean Δg **−0.03446 ± 0.00066**；W− **−0.03614 ± 0.00065**；per-seed overlap gap **+0.00169 ± 0.00023**；n=10。 |
 | 5.9c | 分符号 slope 与 SEM，matching / other 分开 | 在各 seed 自己的 shared-\|W\| band 内拟合 OLS `Δg ~ \|W\|`，**剔除 reset frame 后**。Matching：W+ slope **−0.0429 ± 0.0060**，W− **+0.0073 ± 0.0027**。Other：W+ **+0.0054 ± 0.0008**，W− **−0.0009 ± 0.0003**；各 n=10。 |
-| 5.9d | matching / other 的 Δg 分箱均值水平 | **剔除 reset frame 后**，跨各组全部 connections 与 9 sectors 的 per-seed overall Δg：Matching **+0.2825 ± 0.0052**；Other **−0.0353 ± 0.0006**；各 n=10。图中的曲线仍是 binned mean ± SEM，仅作定性展示。 |
+| 5.9d | matching / other 的 all-connections Δg level | **剔除 reset frame 后**，先在每个 sector 内跨全部 nonzero connections 平均、再对 9 sectors 等权平均：Matching **+0.28251 ± 0.00518**；Other **−0.03531 ± 0.00065**；各 n=10。图中的曲线仍是 observation-level binned mean ± SEM，仅作定性展示。 |
+
+Table 14 若按五位小数显示 sign means 并由显示后的两行相减，则 matching gap 为
+`0.27583 - 0.28900 = -0.01317`，other gap 为
+`-0.03446 - (-0.03614) = +0.00168`；后者与未取整的 per-seed gap mean 四舍五入值
+`+0.00169` 相差 $10^{-5}$，统计推断使用未取整的 per-seed differences。
 
 ## Appendix I / 正文 §3.5 — 循环门的符号依赖调制
 
@@ -496,8 +514,9 @@ $\eta^2_{digit}$，该 unit 标为 interaction-dominant。factor-specific eligib
 `passed factor & not interaction-dominant`；每个 context 的 T 是该 pool 内 tuning 最高的
 `ceil(0.1 × |eligible|)` units，R 为其余 hidden units。T 的实际大小见 6.12，不把 24 固定写死。
 
-6.3–6.6 使用 sjc-remote formal 10-seed `fig7_seed_level_summary.npz`。每个 seed 先在该
-seed 自己的 positive/negative shared-|W| overlap band 内计算 unique-connection mean，gap 定义为
+6.3–6.6 使用 formal reset-excluded 10-seed compact arrays。每个 seed 先在该 seed 自己的
+positive/negative shared-|W| overlap band 内，分别为每个 Digit 或 Sector condition 计算
+connection mean，再对 10 个 Digit 或 9 个 Sector condition means 等权平均。gap 定义为
 $\Delta g_{W>0}-\Delta g_{W<0}$，再跨 training seeds 计算 SEM。下表沿用 efferent
 `src→dst` TT/TR/RT/RR 口径，不使用 afferent companion。
 
@@ -510,6 +529,12 @@ seed cell means；在 sign-gap 上做 `group × variable` repeated-measures ANOV
 cell means 上的 `group × sign(W) × variable` interaction。6.11 在每个 seed、variable 和
 TT/TR/RT/RR group 自己的 positive/negative shared-|W| overlap band 内分别拟合 W+、W−
 的 OLS `Δg ~ |W|`，再跨 10 个 training seeds 计算 SEM；overall level 不限制 overlap band。
+
+ICLR Fig7 顶行第三根 gate bar 的代码变量名仍为 `balanced_gate`，但其数值口径实际是
+**all connections**：每个 seed 先在每个 condition 内对该 group 的全部 nonzero connections
+求均值，再对 Digit 或 Sector conditions 等权平均。condition 内部自然按实际 positive/negative
+connection counts 加权，而不是将两个 sign means 等权平均。图中单独显示的 W+ / W− bars
+使用 shared-|W| overlap band，因此第三根 all-connections bar 不应由这两根经过筛选的 sign bars 反推。
 
 6.17 对每个 seed、Digit 或 Sector context 逐帧计算实际循环电流
 $I_{group}(c)=\sum_{(i,j)\in group}\langle g_{ij}(t)W_{ij}h_j(t-1)\rangle_{t\in c}$，并以
@@ -532,17 +557,22 @@ means 记录为灰点；其 p-value 字段只作结构化诊断记录。
 
 | ID | 需要的统计值 | 具体值（10-seed） |
 |---|---|---|
-| 6.3–6.5 | 四组 × 两变量符号缺口完整表，delta 版 | **剔除 reset frame 后**。Digit：TT **+0.1097 ± 0.0058**；TR **−0.0702 ± 0.0036**；RT **−0.0143 ± 0.0026**；RR **+0.0071 ± 0.0006**。Sector：TT **−0.0130 ± 0.0033**；TR **−0.0132 ± 0.0016**；RT **−0.0097 ± 0.0006**；RR **+0.0035 ± 0.0002**。各 n=10。 |
-| 6.6 | 同表 W>0、W<0 各自 Δg 水平 | **剔除 reset frame 后**。Digit：TT W+ **−0.2514 ± 0.0088**，W− **−0.3611 ± 0.0072**；TR **−0.1396 ± 0.0070 / −0.0695 ± 0.0041**；RT **−0.0142 ± 0.0020 / +0.0002 ± 0.0028**；RR **+0.0180 ± 0.0009 / +0.0109 ± 0.0004**。Sector：TT **−0.1020 ± 0.0037 / −0.0889 ± 0.0034**；TR **−0.0871 ± 0.0026 / −0.0739 ± 0.0031**；RT **+0.0063 ± 0.0006 / +0.0160 ± 0.0009**；RR **+0.0101 ± 0.0003 / +0.0066 ± 0.0003**。每对均为 W+ / W−，各 n=10。 |
+| 6.3–6.5 | 四组 × 两变量符号缺口完整表，delta 版 | **剔除 reset frame 后；condition-first 等权汇总。** Digit：TT **+0.09916 ± 0.00556**；TR **−0.07210 ± 0.00370**；RT **−0.01477 ± 0.00252**；RR **+0.00715 ± 0.00055**。Sector：TT **−0.01209 ± 0.00336**；TR **−0.01180 ± 0.00169**；RT **−0.00964 ± 0.00053**；RR **+0.00350 ± 0.00017**。各 n=10；这里的 inference mean 来自未取整的 per-seed differences。 |
+| 6.6 | 同表 W>0、W<0 各自 Δg 水平 | **剔除 reset frame 后；condition-first 等权汇总。** Digit：TT W+ **−0.25677 ± 0.00756**，W− **−0.35593 ± 0.00850**；TR **−0.14127 ± 0.00708 / −0.06917 ± 0.00415**；RT **−0.01457 ± 0.00201 / +0.00021 ± 0.00273**；RR **+0.01804 ± 0.00085 / +0.01089 ± 0.00042**。Sector：TT **−0.10145 ± 0.00348 / −0.08936 ± 0.00368**；TR **−0.08634 ± 0.00256 / −0.07453 ± 0.00306**；RT **+0.00630 ± 0.00062 / +0.01594 ± 0.00092**；RR **+0.01014 ± 0.00030 / +0.00664 ± 0.00033**。每对均为 W+ / W−，各 n=10。 |
 | 6.11a | 分符号 slope 与 SEM，Digit/Sector × TT/TR/RT/RR 分开 | 在各 seed 自己的 shared-\|W\| overlap band 内拟合、**剔除 reset frame 后**。Digit：TT W+ **+0.1285 ± 0.0161**，W− **−0.0210 ± 0.0144**；TR **+0.0386 ± 0.0043 / +0.0634 ± 0.0031**；RT **+0.0352 ± 0.0032 / +0.0211 ± 0.0017**；RR **−0.0082 ± 0.0008 / −0.0099 ± 0.0006**。Sector：TT **+0.0042 ± 0.0042 / +0.0032 ± 0.0020**；TR **+0.0169 ± 0.0022 / +0.0097 ± 0.0007**；RT **−0.0076 ± 0.0020 / +0.0089 ± 0.0010**；RR **+0.0004 ± 0.0003 / −0.0022 ± 0.0002**。每对均为 W+ / W−，各 n=10。 |
-| 6.11b | 八组的 overall Δg level，对齐 5.9d | **剔除 reset frame 后**，跨各组全部 connections 与 contexts 的 per-seed overall Δg（不限制 overlap band）：Digit TT **−0.3098 ± 0.0078**；TR **−0.0941 ± 0.0050**；RT **−0.0046 ± 0.0022**；RR **+0.0136 ± 0.0006**。Sector TT **−0.0952 ± 0.0032**；TR **−0.0790 ± 0.0028**；RT **+0.0124 ± 0.0008**；RR **+0.0079 ± 0.0003**。各 n=10。 |
+| 6.11b | 八组的 all-connections Δg level，对齐 5.9d | **剔除 reset frame 后**，每 seed 先在各 condition 内跨该组全部 nonzero connections 平均、再跨 conditions 等权平均（不限制 overlap band）：Digit TT **−0.3098 ± 0.0078**；TR **−0.0941 ± 0.0050**；RT **−0.0046 ± 0.0022**；RR **+0.0136 ± 0.0006**。Sector TT **−0.0952 ± 0.0032**；TR **−0.0790 ± 0.0028**；RT **+0.0124 ± 0.0008**；RR **+0.0079 ± 0.0003**。各 n=10。 |
 | 6.12 | hidden size、实际 \|T\|、diagonal 处理 | **H=256**。T 是每个 seed 中 FDR-eligible 且非 interaction-dominant units 的 top 10%，用 `ceil(0.1 × eligible)`；seeds 1–10 的实际 \|T\| 为 **[25, 24, 24, 24, 24, 24, 24, 24, 23, 25]**，同一 seed 的所有 Digit/Sector contexts 数量相同。formal 分组**保留 diagonal `i=j`**，所以 TT 候选规模为 \|T\|²（分别为 625、576 或 529，之后仍应用 `weight != 0`）。 |
 | 6.13 | 不同 digit 的 T 集合重叠度 | **剔除 reset frame 后**。每个 seed 的 10 个 digit `T` masks 来自同一 reset-excluded compact cache；45 个 digit pairs 的 normalized overlap 先在 seed 内取均值，再跨 seeds 汇总为 **12.14% ± 0.20%**（SEM，n=10）。固定各 seed 的 observed $|T|$、从其 FDR-eligible non-interaction pool 独立抽取的 chance baseline 为 **10.22% ± 0.04%**，故 observed − chance 为 **+1.93 ± 0.20 percentage points**。45 个 digit-pair 的跨-seed 均值范围为 **3.35%–21.51%**（最低 digit 0–1；最高 digit 4–6），保留了明显的 pair heterogeneity；所有 seed 内的 $|T|$ 分别固定为 23、24 或 25。 |
-| 6.15 | `group × sign(W) × variable` interaction test | **剔除 reset frame 后**，在 10-seed shared-\|W\| sign-gap cells 上做 `group × variable` repeated-measures ANOVA（等价原始 cell means 的三因素 interaction）：**F(3, 27) = 479.4657，p = 1.62 × 10⁻²³**。 |
+| 6.15 | `group × sign(W) × variable` interaction test | **剔除 reset frame 后**，在 condition-first 的 10-seed shared-\|W\| sign-gap cells 上做 `group × variable` repeated-measures ANOVA（等价原始 cell means 的三因素 interaction）：**F(3, 27) = 359.9072，p = 7.13 × 10⁻²²**。 |
 | 6.17a | 净循环贡献，Digit：`I`、`ΔI` 与 `ΔI^gate` | **剔除 reset frame 后**；下列 `I / ΔI^gate` 为每 seed 先跨十个 digits 平均、再作 10-seed mean ± SEM，顺序均为 E / I / total（每目的单元）。TT：`I` **+0.2270 ± 0.0150 / −0.1384 ± 0.0092 / +0.0885 ± 0.0114**；`ΔI^gate` **−0.1477 ± 0.0072 / +0.7385 ± 0.0330 / +0.5908 ± 0.0336**。TR：**+0.1418 ± 0.0051 / −1.1770 ± 0.0586 / −1.0352 ± 0.0543**；**−0.0739 ± 0.0033 / −0.0017 ± 0.0094 / −0.0756 ± 0.0094**。RT（R→T）：**+0.4781 ± 0.0213 / −0.9206 ± 0.0417 / −0.4424 ± 0.0273**；**−0.2545 ± 0.0121 / +1.7394 ± 0.0617 / +1.4850 ± 0.0572**。RR：**+0.5565 ± 0.0151 / −2.4798 ± 0.0699 / −1.9232 ± 0.0646**；**−0.1961 ± 0.0067 / +0.5801 ± 0.0172 / +0.3841 ± 0.0154**。`ΔI` 的跨 digit 平均按定义为 0；其十个 digit 的 10-seed mean 范围（E / I / total）是 TT **−0.0848–+0.2739 / −0.1376–+0.0610 / −0.0388–+0.1363**，TR **−0.0160–+0.0295 / −0.2591–+0.4644 / −0.2587–+0.4933**，RT **−0.1355–+0.4630 / −0.7879–+0.2758 / −0.3248–+0.1695**，RR **−0.0666–+0.0476 / −0.3636–+0.0993 / −0.4303–+0.1278**；各 digit 的 mean ± SEM 及所有 seed-level 值见同一 long CSV 与 Supple4。T→T 的 I 正贡献（减少负电流）大于 E 负贡献，且十个 digits 的总 `ΔI^gate` 均为正（**+0.0769–+0.8819**，最小 `mean−SEM=+0.0439`），故支持瞬时 **disinhibition**。R→T 亦不可忽略：总 `ΔI^gate` 十个 digits 均为正（**+1.0523–+1.8893**，最小 `mean−SEM=+0.9391`）。 |
 | 6.17b | 净循环贡献，Sector：`I`、`ΔI` 与 `ΔI^gate` | **剔除 reset frame 后**；每 seed 先跨九个 sectors 平均、再作 10-seed mean ± SEM，顺序均为 E / I / total（每目的单元）。TT：`I` **+0.2570 ± 0.0205 / −0.2478 ± 0.0158 / +0.0092 ± 0.0269**；`ΔI^gate` **−0.1183 ± 0.0056 / +0.1675 ± 0.0055 / +0.0491 ± 0.0078**。TR：**+0.1204 ± 0.0042 / −0.4924 ± 0.0211 / −0.3720 ± 0.0193**；**−0.0654 ± 0.0024 / +0.1944 ± 0.0067 / +0.1290 ± 0.0052**。RT（R→T）：**+0.5769 ± 0.0209 / −2.4396 ± 0.0986 / −1.8627 ± 0.0950**；**−0.2290 ± 0.0106 / +0.5085 ± 0.0299 / +0.2794 ± 0.0213**。RR：**+0.5603 ± 0.0148 / −3.0418 ± 0.0980 / −2.4815 ± 0.0919**；**−0.1958 ± 0.0064 / +0.5430 ± 0.0187 / +0.3472 ± 0.0165**。`ΔI` 的跨 sector 平均按定义为 0；九个 sector 的 10-seed mean 范围（E / I / total）是 TT **−0.1096–+0.3676 / −0.0934–+0.0621 / −0.1846–+0.3999**，TR **−0.0169–+0.0445 / −0.1190–+0.1131 / −0.1283–+0.1576**，RT **−0.0781–+0.1978 / −0.5872–+0.3352 / −0.3894–+0.2625**，RR **−0.0805–+0.0221 / −0.0941–+0.1772 / −0.0964–+0.1395**。Sector TT 的 E 项始终为负、I 项始终为正，但总 `ΔI^gate` 依 sector 变号（**−0.0350–+0.0912**；最小 `mean−SEM=−0.0554`），故其跨 sector 平均的正净贡献不能写成“每一 sector 均 disinhibition”。相反，RT 总 `ΔI^gate` 九个 sectors 均为正（**+0.0868–+0.3800**，最小 `mean−SEM=+0.0248`）。所有 condition-level mean ± SEM 与 seed-level 值见 sector long CSV 与 sector Supple4。 |
 | 6.18 | Fig8 的 per-connection `ΔI^gate` 四个正文填空 | **剔除 reset frame 后**；每 seed 先跨条件平均、再做 10-seed mean ± SEM，单位均为 per nonzero recurrent connection。Digit TT：`W > 0` **−0.01339 ± 0.00063**（`[VAL-8a]`）；`W < 0` **+0.05628 ± 0.00260**（`[VAL-8b]`）；total **+0.02461 ± 0.00149**（`[VAL-8c]`）。Sector TT total **+0.00200 ± 0.00032**（`[VAL-8d]`）。方向与正文预期一致：两种条件下 W>0 均为负、W<0 均为正，total 为正；sector total 约为 digit total 的 **8.1%**。各 n=10。 |
 | 6.16 | §6 10-seed 完成状态 | **reset-excluded 10-seed 数值完成：6.3–6.6、6.11、6.13、6.15、6.17 与 6.18。** 所需 recurrent-current panels 已并入 ICLR Fig7；standalone Fig8/Supplementary 4 不再列为 retained figures。6.9 已按用户要求删除，不计入完成状态。 |
+
+Table 15 按五位小数显示 W+ / W− means，并按显示后的两行相减生成 gap。因此正式表内 gap 为：
+Digit TT **+0.09916**、TR **−0.07210**、RT **−0.01478**、RR **+0.00715**；Sector TT
+**−0.01209**、TR **−0.01181**、RT **−0.00964**、RR **+0.00350**。其中 Digit RT 与
+Sector TR 分别和未取整的 per-seed gap mean 四舍五入值相差 $10^{-5}$；统计检验始终使用未取整值。
 
 ### 6.18 完整 per-connection current 表
 
@@ -660,10 +690,11 @@ E/I 分别对应 `W>0`/`W<0`。
 上述 remote 数值是此前核验并记录的固定结果，不代表本轮重新访问成功。本轮已在本地重新核验
 Fig1 recovery v4 的 60 个 metadata 均有 `exclude_window_initial_frame=true`，且 loader 产生
 20 个 offsets（`pre10`–`pre1`、`post1`–`post10`）；当前本地没有 Supplementary recovery v5
-数值叶。SSH 当前认证失败，因此 Supplementary recovery v5 只保留此前记录，不宣称完成了
-本轮 live re-audit。Mamba/S5 已按当前 dependency parameter shapes 重新计算，但训练节点 metrics
-交叉核验尚待 SSH 恢复；Appendix B 的 2×3 合并图也仍为明确待办。Supplementary figure 的最终
-编号暂不冻结，本文均以 analysis content 与当前代码 entry point 标识。
+数值叶。SSH control socket 当前不存在，因此 Supplementary recovery v5 只保留此前记录，
+不宣称完成了本轮 live re-audit。Mamba/S5 已按当前 dependency parameter shapes 重新计算，
+但 Amarel 正在维护，训练节点 metrics 与 cross-scale scheduler GPU-hours 交叉核验均暂缓；
+Appendix B 的 2×3 合并图已从当前本地 mean/SEM CSV 生成并完成 PDF render 检查。
+Supplementary figure 的最终编号暂不冻结，本文均以 analysis content 与当前代码 entry point 标识。
 
 ## 历史对照：未排除每个 window 的 t=0 的 accuracy（不作为正式结果）
 

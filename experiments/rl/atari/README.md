@@ -100,9 +100,180 @@ leaf，也不得建立平行 result parent。
 Skiing return panel，不生成 shared TD loss panel；running histories 可作为明确标注时间点的
 snapshot 重复渲染。
 
+完成模型的无视频 behavior audit 使用
+`utils.analysis.rl.atari.evaluate_skiing_behavior`。固定 greedy evaluation suite 保存逐 episode
+return、length、stall reason、course-progress 间隔和 action counts 到 JSON，并将逐 step 的
+canonical/legal action、reward、RAM 86:94 marker、Q-values 和 termination flags 保存为压缩
+NPZ。Amarel 三模型 array 入口为 `amarel/submit_atari_skiing_behavior_audit.sh`；输入必须是只读
+复制的 completed final metrics/state_dict，输出使用独立 result leaf，不写回训练结果。
+默认 audit 使用 BF16；设置 `AUDIT_AMP_DTYPE=none` 和独立 `AUDIT_TAG` 可在相同固定 episode
+suite 上运行 FP32-only inference，用于隔离 autocast quantization 对 greedy action ties 的影响。
+
 累计 2M diagnostic extension 对完成的 1M 模型使用 `--extend-from-skiing-1m`：只加载 final
 model weights，新增 phase 训练 1M steps，fresh 初始化 optimizer/replay/phase-local global
 step，并固定 epsilon=0.01、LR=1e-5。仍在运行且保留 resumable checkpoint/replay 的 unit 可用
 显式 budget-extension 开关把 target 从 1M 单向增加到 2M；除 `total_timesteps` 外的 resume
 协议字段继续严格匹配。两种路径必须在 manifest 中分别标注 continuous resume 与
 weights-only extension，不能把后者描述为严格续训。
+
+## Skiing unclipped-reward / gamma 0.999 comparison
+
+`amarel/submit_atari_skiing_unclipped_l3.sh` 提交 seed1 的 LSTM/GRU/GaWF：三个 25k
+smoke 验收成功后，以 `afterok` 释放各完整 4M environment steps 的新训练阶段。
+人类明确要求不做 smoke 时传入 `--skip-smoke`，直接提交三模型 4M array，并在 manifest
+记录该授权；提交安全测试仍在计算节点执行。2026-09-05 本次运行采用该显式豁免。
+复用上述 weights-only launcher，通过 `--gamma 0.999 --no-reward-clip` 恢复 TD reward
+幅度；不额外缩放 reward，不改 stall adjustment、bootstrap 或 action mapping，仍用 BF16。
+LSTM/GRU 初始化于原曲线的 20M source，GaWF 初始化于其 19.45M source；三者均 fresh
+optimizer/replay，epsilon 1→0.01（500k steps），LR 1e-4 在 1M steps 后降到 1e-5。
+每 unit 单 Ada GPU、16 CPUs、64G，formal 72h；walltime 前发送 SIGUSR1，保存后 requeue。
+smoke 不生成视频，final metrics 记录 `gamma` 和 `reward_clip`；新 run 保留 replay。
+
+该独立协议通过 `--result-parent` 写入
+`results/data/rl/atari/5task_18action/single_skiing/unclipped_gamma0p999_4m_seed1/{smoke,formal}/`。
+此显式新协议目录是上文 historical adaptation parent 约束的例外；既有 data/checkpoint
+路径不迁移、不覆盖。只读初始化输入与新代码 snapshot 分开保存，并验证 SHA256。
+
+本地 figures 已合并到 `results/figs/rl/atari/5task_18action/`：
+`formal_20m_4mpertask_raw_seeds/` 保存 Amarel 五任务正式曲线；并列的 `single_skiing/`
+保存原 SJC 单 Skiing 的 `01_skiing_learning_curves_environment_steps.png` 及 CSV/JSON
+分析输入。Amarel 旧 pilot 位于 `pilot_amarel/`，原 `pilot/` 保留不覆盖。
+
+已登记的 Seaquest/Skiing 进度图使用
+`python -m utils.analysis.rl.atari.atari_registered_task_curves`：显式传入完整
+`--experiment-id`（可重复）、`--snapshot-root`、`--task` 与 `--output-dir`。
+只从 manifest 指定的 result leaves 同步 metrics/history 到带日期的本地 snapshot，
+不读取 checkpoint/replay。图表区分 completed、in-progress 与 not-started，并保存
+`curves.npz`、`summary.csv`、带输入 SHA256 和 experiment IDs 的 `manifest.json`。
+Seaquest 图位于 `results/figs/rl/atari/5task_18action/seaquest_diagnostics/`；本次 Skiing
+图位于 `5task_18action/single_skiing/unclipped_gamma0p999_4m_seed1/`，保留原历史曲线。
+
+两次 Skiing 单任务比较使用
+`PYTHONDONTWRITEBYTECODE=1 python -B -m utils.analysis.rl.atari.compare_skiing_protocols`，
+显式传入 `--old-inputs`（旧 `figure_inputs.json`）、`--new-manifest`（新曲线
+`manifest.json`）与 `--output-dir`；可同时传 `--old-audit`、`--new-audit`，各根目录
+包含三个 model 的 `summary.json` / `step_trace.npz`。输出训练比较 PNG、Q-tie PNG、
+`curves.npz` 和 `comparison.json`，位于 `single_skiing/protocol_comparison/`。
+Q 分析验证 trace SHA256、finite values 和保存值的 BF16 可表示性；原 evaluator snapshot
+未在 summary 记录 AMP，精度依据已登记 launcher 的 BF16 参数与 forward autocast 实现，
+不能把 NPZ 的 FP32 存储 dtype 当成 forward 精度。legal-group tie 先按既定 18→9 mapping
+对每组取最大 Q，再判断是否有多个不同 legal groups 并列最优。
+旧方案为分段 weights-only extensions，新方案为一个可恢复的 4M phase，因此训练曲线
+比较不能作为仅改变 reward clip / gamma 的严格 ablation。
+
+## Skiing A/C/D/E/F seed1 diagnostics
+
+`amarel/run_atari_skiing_acdef_l3.sh` runs one independent array task using
+`amarel/skiing_acdef_diagnostic.py`; submit separate five-task arrays for LSTM/GRU/GaWF.
+Array indices 0–4 map to A/C/D/E/F, with no dependencies between models or variants.
+Each unit accepts its own isolated 25k smoke before starting a fresh 4M phase. Source weights
+are the same immutable five-task seed1 inputs used by the unclipped/gamma=.999 comparison,
+not that comparison's final Skiing weights. All units preserve BF16, unclipped reward,
+gamma=.999, single canonical mapping, stall boundary, 500k replay and eight sequences/batch.
+
+| Variant | Exploration steps / final epsilon | Initial LR / decay step | seq_len |
+|---|---|---|---|
+| A | 500k / .01 | 1e-4 / 1M | 16 |
+| C | 1M / .05 | 1e-4 / 1M | 16 |
+| D | 500k / .01 | 1e-4 / 3M | 16 |
+| E | 500k / .01 | 3e-5 / 1M | 16 |
+| F | 500k / .01 | 1e-4 / 1M | 64 |
+
+All LR decays multiply by .1. F processes four times as many sequence positions per update;
+it does not change the eight sequences/batch or update frequency. Clutter's 32-frame sample
+window is distinct from Atari's baseline replay seq_len=16 and batch_size=32.
+
+Results use `5task_18action/single_skiing/acdef_4m_seed1_20260907/{smoke,formal,evaluations}`.
+Formal training saves immutable model-only snapshots every 500k, in addition to its resumable
+50k checkpoint. After training, the same GPU evaluates all eight snapshots with BF16 greedy,
+20 episodes and eval_seed=20260904. Evaluation does not alter training RNG or replay.
+Each evaluation step retains summary.json, step_trace.npz, SHA256 and statistics.json containing
+unclipped wrapper return (including the existing stall adjustment), stall rate, top-Q ties across
+legal groups, canonical ties, margins, and canonical/legal action fractions. Final metrics serve
+as model construction metadata for every snapshot; statistics.json records the actual snapshot
+training_step separately. No video is generated. Interrupted audit attempts remain preserved.
+User protection of checkpoint/result/replay data keeps accepted smoke outputs in this campaign.
+
+For A/C/D/E/F training curves, use `atari_registered_task_curves --task Skiing --skiing-acdef`
+with the three complete model experiment IDs and a timestamped local snapshot. This renders
+three model panels with consistent variant colors and training-completion labels, plus numeric
+NPZ/CSV and source SHA256 provenance. Store each dated output under
+`results/figs/rl/atari/5task_18action/single_skiing/acdef_4m_seed1_20260907/`.
+These online rolling-100 training returns are distinct from the fixed-seed greedy audits;
+the plot's `done` label denotes completed training, not audit completion.
+
+## Seaquest A/C seeds 1–4 on Amarel
+
+`amarel/run_atari_seaquest_ac_l3.sh` runs independent array cells 0–15 using
+`amarel/seaquest_ac_diagnostic.py`: 0–3 LSTM A, 4–7 LSTM C, 8–11 GaWF A, 12–15 GaWF C,
+each in seed order 1–4. All cells use fresh initialization, isolated 25k smoke and fresh 3M
+formal training, with no dependencies between cells. Commands and validation reuse the SJC
+Seaquest diagnostics: full18, fs4/stack4, L3, LSTM h373/GaWF h605, BF16, clipped reward,
+gamma .99, replay 1M, seq_len 16, eight sequences per batch, LR 1e-4 decaying by .1.
+A uses epsilon 1→.01 over 300k and LR decay at 1M; C uses 1→.05 over 1M and decay at 2M.
+Results live under `5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/`
+with separate `smoke` and `formal` leaves. Existing SJC seed2 results remain untouched.
+Replay and smoke evidence are retained; Slurm warning flushes replay and saves training state
+before requeue. Resume resets the environment and recurrent state as in the existing trainer.
+The initial 16-cell quota budget is 450 GiB with 20% headroom; individual starts require
+27 GiB with 20% headroom. Each cell requests one Ada GPU, 16 CPUs, 64G, and 72 hours.
+
+### Seaquest A/C four-seed progress plots
+
+Use `utils.analysis.rl.atari.atari_registered_task_curves --task Seaquest` with
+`--seaquest-ac-multiseed` and the exact registered experiment ID. Four panels show
+LSTM/GaWF × A/C, individual seed curves and the four-seed mean only over their
+common step coverage (linear interpolation, no extrapolation). Numeric NPZ includes
+individual curves, mean and sample SD; summary CSV records each unit’s progress.
+Save each update to a new timestamped snapshot under `5task_18action/seaquest_diagnostics`.
+
+### GaWF Riverraid five-task C profiling
+
+The candidate tasks are Pong/Breakout/Assault/Seaquest/Riverraid. Use C optimization
+with epsilon 1→.05 over 5M global steps (about 1M/task), LR 1e-4 decayed ×.1
+when every task reaches 2M, gamma .99 and clipped rewards. Retain per-task 500k
+mmap replay (2.5M total), transition-balanced collection, task-balanced replay,
+BF16, fs4/stack4, L3, seq_len16 and eight sequences/batch. The formal budget and
+multi-actor implementation remain undecided; no A control is requested.
+
+`atari-dqn --profile_stages --record_timing` captures a 256-step CPU/CUDA trace
+1,000 global steps after replay warm-up allows optimization. `profile/stages.json`
+contains CUDA-synchronized host phase timings and collection task coverage;
+`optimization` includes replay sampling, whose nested `aim3/replay_sample` range
+is in the trace. `operators.txt` gives operator timings. These measurements include
+instrumentation overhead. `throughput.json` separately records post-trace normal
+throughput; this excludes replay warm-up and profiler serialization. The profiling
+window need not cover collection from every task, although replay remains task-balanced.
+Initial short diagnostics use seed1 and 200k steps; this is not the formal budget,
+and the partly filled replay cannot establish full-buffer mmap I/O performance.
+
+### One-allocation GaWF actor selection
+
+`amarel/run_atari_actor_benchmark.sh` runs compute-node tests and
+`amarel/actor_benchmark.py` on one allocated Ada GPU (16 CPUs, 64G). The candidate
+set is one original synchronous collector versus five subprocess collectors, one
+fixed game per subprocess; both learn one shared GaWF model from all five games.
+Five workers are not five independent training runs. Replay remains 500k/task and
+never mixes multiple actor trajectories within a task partition. Optimizer cadence
+is one update per four aggregate transitions, including multiple updates after a
+five-transition collection round. C schedules count aggregate/per-task experience
+as documented above. Formal training budget is not chosen by this benchmark.
+
+Both candidates run isolated 25k smoke checks, then fresh 300k trials in the order
+1,5,5,1 on the same GPU, using seed1 throughout. Every trial keeps results/replay and
+records GPU samples, stage traces and post-trace throughput. `recommendation.json`
+selects five only when its median throughput improves by at least 10% and both
+paired repeats improve; otherwise it selects one. It includes all raw trial summaries
+and a compute-time projection. This selection applies to this five-task allocation;
+short partly filled buffers do not establish full-buffer I/O or long-run score parity.
+No additional A optimization control or later actor sweep is required by this workflow.
+
+### Breakout depth comparison for slides
+
+Run `python -B -m utils.analysis.rl.atari.atari_breakout_depth_slides` to generate
+`layer1_vs_layer3_slides.{png,svg,npz,json}` under
+`results/figs/rl/atari/breakout_4action/fs4_stack4_l3_10seed_lrdecay/`.
+The two panels preserve the original 1-layer five-seed/1M and 3-layer ten-seed/3M
+histories and SD conventions, with a shared model legend and y scale. This is a
+presentation comparison, not a matched-budget depth-only ablation. Existing output
+files are protected against overwrite; numeric curves and source hashes are retained.

@@ -3,9 +3,9 @@
   "id": "clutter-data-scale-formal-40h-ep150-rnn-lstm-gru-gawf-mamba-s5-seed1",
   "description": "Formal 40h/seed1 data-scale units for the six best6 Clutter models.",
   "host": "amarel",
-  "status": "queued",
+  "status": "completed",
   "created_at": "2026-09-03T21:03:30+00:00",
-  "updated_at": "2026-09-03T21:03:30+00:00",
+  "updated_at": "2026-09-04T12:33:10+00:00",
   "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
   "environment": {
     "name": "aim3_rnn",
@@ -177,6 +177,7 @@
     ]
   },
   "notes": [
+    "Verified 2026-09-04: 6/6 strict-valid units, 6 done, 0 failed; sacct COMPLETED:6. All actual_epochs=150. GaWF has a non-fatal cuDNN plan OOM warning but valid completed artifacts.",
     "Submitted from source commit 78a58eaac0f349cdbf32b121cc2be7e7608cf47d.",
     "Sparse array tasks 0,10,20,30,40,50 map to RNN/LSTM/GRU/GaWF/Mamba/S5 at seed 1.",
     "Each unit requests one Ada Lovelace GPU, 16 CPUs, 64G memory, and 12 hours.",

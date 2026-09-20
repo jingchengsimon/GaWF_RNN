@@ -5,7 +5,9 @@ from __future__ import annotations
 import os as _anal_os
 import sys as _anal_sys
 
-_ANAL_PROJECT_ROOT = _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__))))
+_ANAL_PROJECT_ROOT = _anal_os.path.dirname(
+    _anal_os.path.dirname(_anal_os.path.dirname(_anal_os.path.abspath(__file__)))
+)
 if _ANAL_PROJECT_ROOT not in _anal_sys.path:
     _anal_sys.path.insert(0, _ANAL_PROJECT_ROOT)
 
@@ -155,8 +157,7 @@ def _style_probability_axis(axis: plt.Axes) -> None:
     axis.spines["right"].set_visible(False)
 
 
-GATE_YTICKS = {"input": (0, 15, 30, 45, 60), "recurrent": (0, 6, 12, 18, 24)}
-WEIGHT_YTICKS = {"input": (0, 12, 24, 36), "recurrent": (0, 7, 14, 21)}
+GATE_YTICKS = {"input": (0, 30, 60), "recurrent": (0, 12, 24)}
 GATE_XTICKS = (0.0, 0.25, 0.5, 0.75, 1.0)
 WEIGHT_XTICKS = (-2, -1, 0, 1, 2)
 GATE_REBIN_FACTOR = 4  # 400 saved bins at width 0.0025 -> 100 bins at width 0.01.
@@ -187,12 +188,23 @@ def _pooled_gate_probability_axes(
     (``GATE_REBIN_FACTOR``) so each curve carries enough probability mass to read clearly.
     """
 
-    for axis, kind, title in zip(axes, ("input", "recurrent"), ("Input gate", "Recurrent gate")):
+    for axis, kind, title in zip(
+        axes,
+        ("input", "recurrent"),
+        (r"$g^{\mathrm{in}}$", r"$g^{\mathrm{rec}}$"),
+    ):
         counts, coarse_edges = _rebin_counts(arrays[f"hist_{kind}_all"], edges, GATE_REBIN_FACTOR)
         centers = (coarse_edges[:-1] + coarse_edges[1:]) / 2.0
-        axis.plot(centers, _probability_percent(counts), color="#2b6cb0", linewidth=1.5, label="G")
+        axis.plot(
+            centers,
+            _probability_percent(counts),
+            color="#2b6cb0",
+            linewidth=1.5,
+            label=r"$g$",
+        )
         axis.set(title=title, xlabel="Gate value", ylabel="Probability (%)", xlim=(-0.01, 1.01))
-        axis.set_xticks(GATE_XTICKS)
+        axis.set_title(title, pad=0)
+        axis.set_xticks(GATE_XTICKS, ("0", "0.25", "0.5", "0.75", "1"))
         axis.set_yticks(GATE_YTICKS[kind])
         _style_probability_axis(axis)
 
@@ -200,26 +212,34 @@ def _pooled_gate_probability_axes(
 def _weight_probability_axes(axes: np.ndarray, arrays: dict[str, np.ndarray]) -> None:
     """Draw the base/effective input & recurrent weight probability panels (row 2)."""
 
-    titles = ("Input weights", "Recurrent weights")
+    titles = (r"$\widetilde{w}^{\mathrm{in}}$", r"$\widetilde{w}^{\mathrm{rec}}$")
     for axis, kind, title in zip(axes, ("input", "recurrent"), titles):
         effective_edges = arrays[f"effective_edges_{kind}"]
         effective_centers = (effective_edges[:-1] + effective_edges[1:]) / 2.0
         axis.plot(
             effective_centers,
             _probability_percent(arrays[f"hist_weight_{kind}"]),
-            label="W",
+            label=r"$w$",
             color="black",
         )
         axis.plot(
             effective_centers,
             _probability_percent(arrays[f"hist_effective_{kind}"]),
-            label=r"$G\odot W$",
+            label=r"$\widetilde{w}$",
             color="#dd6b20",
         )
-        axis.set(title=title, xlabel="Weight", ylabel="Probability (%)", xlim=(-2.0, 2.0))
+        axis.set(
+            title=title,
+            xlabel="Weight value",
+            ylabel="Probability (%)",
+            xlim=(-2.0, 2.0),
+        )
+        axis.set_title(title, pad=0)
         axis.set_xticks(WEIGHT_XTICKS)
         if effective_edges.size <= 1001:
-            axis.set_yticks(WEIGHT_YTICKS[kind])
+            upper = int(np.ceil(axis.get_ylim()[1]))
+            axis.set_ylim(0, upper)
+            axis.set_yticks((0, int(np.floor(upper / 2 + 0.5)), upper))
         _style_probability_axis(axis)
 
 
@@ -232,7 +252,7 @@ def _gate_weight_summary(
     """Return the gate/weight probability summary in the requested panel layout."""
 
     if layout == "1x4":
-        figure, axes = plt.subplots(1, 4, figsize=(0.7 * 4 * 5.05, 4.6))
+        figure, axes = plt.subplots(1, 4, figsize=(5.5, 1.3))
         gate_axes, weight_axes = axes[:2], axes[2:]
     else:
         figure, axes = plt.subplots(2, 2, figsize=(0.7 * 2 * 5.05, 2 * 4.1))
@@ -246,9 +266,22 @@ def _gate_weight_summary(
     if layout == "1x4":
         for axis in axes:
             axis.set_ylabel("")
-        figure.supylabel("Probability (%)", x=0.005)
-        figure.tight_layout(rect=(0.025, 0.0, 1.0, 0.82), w_pad=1.2)
-        legend_y = 0.965
+        figure.supylabel("Probability (%)", x=0.012, fontsize=8)
+        figure.subplots_adjust(
+            left=0.085, right=0.995, bottom=0.29, top=0.72, wspace=0.42
+        )
+        for label, axis in zip("ABCD", axes):
+            position = axis.get_position()
+            figure.text(
+                position.x0 - 0.012,
+                position.y1 + 0.035,
+                label,
+                ha="right",
+                va="bottom",
+                fontsize=9,
+                fontweight="bold",
+            )
+        legend_y = 0.99
     else:
         figure.tight_layout(rect=(0.0, 0.0, 1.0, 0.88))
         char_height_frac = (16.0 / 72.0) / (2 * 4.1)
@@ -305,7 +338,9 @@ def _reproject_histogram_counts(
         start = max(0, int(np.searchsorted(target_edges, left, side="right") - 1))
         stop = min(projected.size, int(np.searchsorted(target_edges, right, side="left") + 1))
         for target_index in range(start, stop):
-            overlap = min(right, target_edges[target_index + 1]) - max(left, target_edges[target_index])
+            overlap = min(right, target_edges[target_index + 1]) - max(
+                left, target_edges[target_index]
+            )
             if overlap > 0:
                 projected[target_index] += count * overlap / width
     if not np.isclose(projected.sum(), source_counts.sum(), rtol=1e-10, atol=1e-6):
@@ -383,7 +418,9 @@ def _load_multiseed_gate_statistics(
         if key.startswith("hist_") or key == "context_counts":
             pooled[key] = np.sum(np.stack(values, axis=0), axis=0, dtype=np.int64)
         elif key.startswith("context_mean_"):
-            pooled[key] = np.mean(np.stack(values, axis=0), axis=0, dtype=np.float64).astype(np.float32)
+            pooled[key] = np.mean(
+                np.stack(values, axis=0), axis=0, dtype=np.float64
+            ).astype(np.float32)
         else:
             if any(not np.array_equal(value, item) for item in values[1:]):
                 raise ValueError(f"Per-seed Fig3 bin/weight array mismatch for {key}")
@@ -472,12 +509,13 @@ def main() -> None:
     if args.only_gate_weight_2x2:
         with plt.rc_context(
             {
-                "font.size": 18 if args.gate_weight_layout == "1x4" else 16,
-                "axes.labelsize": 18 if args.gate_weight_layout == "1x4" else 16,
-                "axes.titlesize": 18 if args.gate_weight_layout == "1x4" else 16,
-                "xtick.labelsize": 18 if args.gate_weight_layout == "1x4" else 16,
-                "ytick.labelsize": 18 if args.gate_weight_layout == "1x4" else 16,
-                "legend.fontsize": 18 if args.gate_weight_layout == "1x4" else 16,
+                "font.size": 7 if args.gate_weight_layout == "1x4" else 16,
+                "axes.labelsize": 8 if args.gate_weight_layout == "1x4" else 16,
+                "axes.titlesize": 8 if args.gate_weight_layout == "1x4" else 16,
+                "xtick.labelsize": 7 if args.gate_weight_layout == "1x4" else 16,
+                "ytick.labelsize": 7 if args.gate_weight_layout == "1x4" else 16,
+                "legend.fontsize": 6.5 if args.gate_weight_layout == "1x4" else 16,
+                "axes.linewidth": 0.6 if args.gate_weight_layout == "1x4" else 0.8,
             }
         ):
             fig = _gate_weight_summary(
@@ -490,7 +528,10 @@ def main() -> None:
             extensions = ("png", "pdf") if args.format == "png" else (args.format,)
             for extension in extensions:
                 path = os.path.join(args.raw_dir, f"{stem}.{extension}")
-                fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.06)
+                if args.gate_weight_layout == "1x4":
+                    fig.savefig(path, dpi=300)
+                else:
+                    fig.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.06)
                 print(f"Saved figure: {path}")
             plt.close(fig)
         return

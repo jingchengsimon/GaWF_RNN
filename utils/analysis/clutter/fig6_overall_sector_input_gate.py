@@ -25,11 +25,6 @@ from utils.analysis.clutter.fig7_recurrent_gate_sign_magnitude import (
     binned_mean_curve,
     quantile_bin_edges,
 )
-from utils.analysis.clutter.supple2_input_gate_sign_magnitude_sector import (
-    _load_all_sector_by_seed,
-)
-
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT_NAME = Path(__file__).stem
 ENCODER_SUMMARY = (
@@ -43,6 +38,8 @@ SUPPLE2_ROOT = (
     / "supple2_input_gate_sign_magnitude_9sector_reset_excluded_10seed"
 )
 SAVE_FIGURE = PROJECT_ROOT / "results/save/Fig6_overall_sector_input_gate_1x3_10seed.pdf"
+NUM_SECTORS = 9
+SOURCE_GROUPS = ("sector0_sources", "other_sources")
 
 
 def parse_args() -> argparse.Namespace:
@@ -83,20 +80,62 @@ def _load_gate_delta_maps(root: Path) -> np.ndarray:
     return mean_gate - mean_gate.mean(axis=0, keepdims=True)
 
 
-def _source_curves(root: Path, group: str) -> tuple[np.ndarray, np.ndarray]:
+def _spatial_sector_indices(input_size: int) -> list[np.ndarray]:
+    """Map flattened 32-by-6-by-6 encoder features to the nine coarse sectors."""
+
+    if input_size != 32 * 6 * 6:
+        raise RuntimeError(f"Expected 1152 encoder sources, got {input_size}.")
+    layout = np.arange(input_size, dtype=np.int64).reshape(32, 6, 6)
+    result = []
+    for sector in range(NUM_SECTORS):
+        row, column = divmod(sector, 3)
+        result.append(
+            layout[:, row * 2 : row * 2 + 2, column * 2 : column * 2 + 2].reshape(-1)
+        )
+    return result
+
+
+def _source_arrays(root: Path) -> dict[str, dict[str, np.ndarray]]:
+    """Pool the frozen all-sector input-gate arrays without importing the GPU collector."""
+
+    paths = sorted(root.glob("seed*/input_gate_sign_magnitude_9sector.npz"))
+    if len(paths) != 10:
+        raise RuntimeError(f"Expected ten input-gate seed files in {root}, found {len(paths)}.")
+    pooled: dict[str, dict[str, list[np.ndarray]]] = {
+        group: {"absW": [], "delta_gate": [], "signpos": []} for group in SOURCE_GROUPS
+    }
+    for path in paths:
+        with np.load(path, allow_pickle=False) as arrays:
+            weight = np.asarray(arrays["weight"], dtype=np.float64)
+            means = np.asarray(arrays["sector_gate_mean"], dtype=np.float64)
+        if means.shape != (NUM_SECTORS, *weight.shape):
+            raise RuntimeError(f"Invalid nine-sector data in {path}: {means.shape}.")
+        grand = means.mean(axis=0)
+        indices = _spatial_sector_indices(weight.shape[1])
+        for sector in range(NUM_SECTORS):
+            matching = np.zeros(weight.shape[1], dtype=bool)
+            matching[indices[sector]] = True
+            for group, source_mask in zip(SOURCE_GROUPS, (matching, ~matching)):
+                selected_weight = weight[:, source_mask]
+                selected_delta = means[sector][:, source_mask] - grand[:, source_mask]
+                keep = selected_weight != 0.0
+                pooled[group]["absW"].append(np.abs(selected_weight[keep]))
+                pooled[group]["delta_gate"].append(selected_delta[keep])
+                pooled[group]["signpos"].append(selected_weight[keep] > 0.0)
+    return {
+        group: {name: np.concatenate(values) for name, values in arrays.items()}
+        for group, arrays in pooled.items()
+    }
+
+
+def _source_curves(
+    source_arrays: dict[str, dict[str, np.ndarray]], group: str
+) -> tuple[np.ndarray, np.ndarray]:
     """Return positive- and negative-weight nine-bin curves for one Supple2 source group."""
 
-    by_seed = _load_all_sector_by_seed(root)
-    frames = by_seed[group]
-    if len(frames) != 10:
-        raise RuntimeError(f"Expected ten Supple2 seed tables for {group}.")
-    abs_weight = np.concatenate([frame["absW"].to_numpy(dtype=np.float64) for frame in frames])
-    delta_gate = np.concatenate(
-        [frame["delta_gate"].to_numpy(dtype=np.float64) for frame in frames]
-    )
-    sign_positive = np.concatenate(
-        [frame["signpos"].to_numpy(dtype=bool) for frame in frames]
-    )
+    abs_weight = source_arrays[group]["absW"]
+    delta_gate = source_arrays[group]["delta_gate"]
+    sign_positive = source_arrays[group]["signpos"]
     edges = quantile_bin_edges(abs_weight)
     curves = []
     for select in (sign_positive, ~sign_positive):
@@ -130,6 +169,7 @@ def _draw_map_grid(
     vmin: float | None = None,
     vmax: float | None = None,
     colorbar_label: str | None = None,
+    block_title: str,
 ) -> None:
     """Draw one Fig6-style 3-by-3 spatial map block with its own colorbar."""
 
@@ -153,14 +193,22 @@ def _draw_map_grid(
         axis.set_xlim(0, 6)
         axis.set_ylim(6, 0)
         axis.set_aspect("equal")
-        axis.set_title(f"Sector {sector}", fontsize=16)
         axis.set_xticks([])
         axis.set_yticks([])
     assert image is not None
     colorbar = figure.colorbar(image, cax=figure.add_subplot(inner[:, 3]))
     if colorbar_label is not None:
-        colorbar.set_label(colorbar_label, fontsize=16)
-    colorbar.ax.tick_params(labelsize=14)
+        colorbar.set_label(colorbar_label, fontsize=7, labelpad=2)
+    colorbar.ax.tick_params(labelsize=6, length=2, pad=1)
+    position = grid.get_position(figure)
+    figure.text(
+        (position.x0 + position.x1) / 2,
+        position.y1 + 0.045,
+        block_title,
+        ha="center",
+        va="bottom",
+        fontsize=8,
+    )
 
 
 def _draw_curves(
@@ -170,11 +218,14 @@ def _draw_curves(
     *,
     baseline: float,
     y_label: str,
-    show_legend: bool,
+    show_xaxis: bool,
 ) -> None:
     """Draw only the retained Supple2 binned mean plus SEM curves, without point clouds."""
 
-    curves = ((positive, POS_COLOR, "W > 0 (+)"), (negative, NEG_COLOR, "W < 0 (-)"))
+    curves = (
+        (positive, POS_COLOR, r"$w^{\mathrm{in}}_{+}$"),
+        (negative, NEG_COLOR, r"$w^{\mathrm{in}}_{-}$"),
+    )
     for curve, color, label in curves:
         center, mean, sem, count = curve
         valid = count > 0
@@ -183,10 +234,10 @@ def _draw_curves(
             mean[valid],
             yerr=sem[valid],
             color=color,
-            linewidth=2.2,
+            linewidth=1.1,
             marker="o",
-            markersize=5,
-            capsize=2.5,
+            markersize=2.5,
+            capsize=1.5,
             label=label,
         )
     axis.set_xlim(0.0, 1.08 * max(np.nanmax(positive[0]), np.nanmax(negative[0])))
@@ -194,12 +245,11 @@ def _draw_curves(
     axis.set_ylim(y_low, y_high)
     tick_start = np.ceil(y_low * 10.0 - 1e-12) / 10.0
     axis.set_yticks(np.arange(tick_start, y_high + 1e-12, 0.1))
-    axis.set_xlabel("|W|", fontsize=16)
-    axis.set_ylabel(y_label, fontsize=16)
-    axis.tick_params(labelsize=14)
+    axis.set_xlabel(r"$|w^{\mathrm{in}}|$" if show_xaxis else "", fontsize=7, labelpad=1)
+    axis.set_ylabel(y_label, fontsize=7, labelpad=0)
+    axis.tick_params(labelsize=6, length=2)
+    axis.tick_params(axis="x", labelbottom=show_xaxis)
     axis.spines[["top", "right"]].set_visible(False)
-    if show_legend:
-        axis.legend(frameon=False, fontsize=14, loc="best")
 
 
 def render(
@@ -215,46 +265,93 @@ def render(
 ) -> None:
     """Render the title-free Figure 6 three-panel layout at every requested PDF path."""
 
-    with plt.rc_context({"font.size": 13, "axes.titlesize": 16}):
-        figure = plt.figure(figsize=(20.5, 6.8), layout="constrained")
-        outer = figure.add_gridspec(1, 3, width_ratios=(1, 1, 0.94), wspace=0.20)
+    with plt.rc_context({"font.size": 7, "axes.titlesize": 8}):
+        figure = plt.figure(figsize=(5.5, 2.0))
+        map_grid = figure.add_gridspec(
+            1,
+            2,
+            left=0.035,
+            right=0.605,
+            bottom=0.20,
+            top=0.82,
+            wspace=0.415,
+        )
         _draw_map_grid(
             figure,
-            outer[0, 0],
+            map_grid[0, 0],
             encoder_maps,
             cmap="Reds",
             vmin=float(encoder_maps.min()),
             vmax=float(encoder_maps.max()),
-            colorbar_label="Mean encoder activation",
+            block_title="Encoder activation",
         )
         limit = float(np.abs(gate_delta_maps).max())
         _draw_map_grid(
             figure,
-            outer[0, 1],
+            map_grid[0, 1],
             gate_delta_maps,
             cmap="RdBu_r",
             norm=TwoSlopeNorm(vmin=-limit, vcenter=0.0, vmax=limit),
+            block_title=r"$\Delta g^{\mathrm{in}}$",
         )
-        curve_grid = outer[0, 2].subgridspec(2, 1, hspace=0.34)
+        curve_grid = figure.add_gridspec(
+            2, 1, left=0.743, right=0.979, bottom=0.20, top=0.82, hspace=0.58
+        )
+        top_curve_axis = figure.add_subplot(curve_grid[0, 0])
+        curve_axes = (
+            top_curve_axis,
+            figure.add_subplot(curve_grid[1, 0], sharex=top_curve_axis),
+        )
         _draw_curves(
-            figure.add_subplot(curve_grid[0, 0]),
+            curve_axes[0],
             matching_positive,
             matching_negative,
             baseline=matching_baseline,
-            y_label="Matching Δg",
-            show_legend=True,
+            y_label=r"$\Delta g^{\mathrm{in}}$",
+            show_xaxis=False,
         )
         _draw_curves(
-            figure.add_subplot(curve_grid[1, 0]),
+            curve_axes[1],
             other_positive,
             other_negative,
             baseline=other_baseline,
-            y_label="Other Δg",
-            show_legend=False,
+            y_label=r"$\Delta g^{\mathrm{in}}$",
+            show_xaxis=True,
         )
+        curve_axes[0].set_title("Location-matched", fontsize=7, pad=2)
+        curve_axes[1].set_title("Other", fontsize=7, pad=2)
+        figure.align_ylabels(curve_axes)
+        handles, labels = curve_axes[0].get_legend_handles_labels()
+        right_position = curve_axes[0].get_position()
+        figure.legend(
+            handles,
+            labels,
+            frameon=False,
+            loc="lower center",
+            bbox_to_anchor=((right_position.x0 + right_position.x1) / 2, 0.89),
+            ncol=2,
+            fontsize=5.7,
+            handlelength=1.0,
+            columnspacing=0.8,
+        )
+        block_positions = (
+            map_grid[0, 0].get_position(figure),
+            map_grid[0, 1].get_position(figure),
+            right_position,
+        )
+        for label, position in zip("ABC", block_positions):
+            figure.text(
+                position.x0 - 0.018,
+                0.865,
+                label,
+                ha="right",
+                va="bottom",
+                fontsize=9,
+                fontweight="bold",
+            )
         for destination in destinations:
             destination.parent.mkdir(parents=True, exist_ok=True)
-            figure.savefig(destination, bbox_inches="tight", pad_inches=0.06)
+            figure.savefig(destination)
         plt.close(figure)
 
 
@@ -264,8 +361,11 @@ def main() -> None:
     args = parse_args()
     encoder_maps = _load_encoder_maps(args.encoder_summary)
     gate_delta_maps = _load_gate_delta_maps(args.gate_root)
-    matching_positive, matching_negative = _source_curves(args.supple2_root, "sector0_sources")
-    other_positive, other_negative = _source_curves(args.supple2_root, "other_sources")
+    source_arrays = _source_arrays(args.supple2_root)
+    matching_positive, matching_negative = _source_curves(
+        source_arrays, "sector0_sources"
+    )
+    other_positive, other_negative = _source_curves(source_arrays, "other_sources")
     matching_baseline = _zero_weight_baseline(matching_positive, matching_negative)
     other_baseline = _zero_weight_baseline(other_positive, other_negative)
     data_dir = output_dir("B_gate_by_context", SCRIPT_NAME, "data")

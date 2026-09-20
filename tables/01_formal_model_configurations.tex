@@ -1,0 +1,25 @@
+% Formal parameter-matched model and optimizer configurations.
+% Totals were verified against the completed formal 40h metrics for all six models.
+\begin{table*}[t]
+\caption{Formal parameter-matched model and optimizer configurations. Total denotes the complete trainable model, including the shared encoder, recurrent core, and two readout heads.}
+\label{tab:formal-config}
+\begin{center}
+\small
+\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{lrrrrl}
+\multicolumn{1}{c}{\bf Model} &
+\multicolumn{1}{c}{\bf Width} &
+\multicolumn{1}{c}{\bf Total} &
+\multicolumn{1}{c}{\bf LR} &
+\multicolumn{1}{c}{\bf WD} &
+\multicolumn{1}{c}{\bf Special optimizer rule}
+\\ \hline \\
+RNN   & 275 & 586,865 & \(1\times10^{-3}\) & \(1\times10^{-5}\) & --- \\
+LSTM  & 80  & 584,675 & \(1\times10^{-3}\) & \(1\times10^{-3}\) & --- \\
+GRU   & 105 & 586,905 & \(5\times10^{-3}\) & \(1\times10^{-3}\) & --- \\
+GaWF  & 256 & 586,067 & \(5\times10^{-3}\) & \(1\times10^{-3}\) & Feedback factors: no WD, \(1\times\) base LR \\
+Mamba & 170 & 587,275 & \(1\times10^{-3}\) & \(1\times10^{-3}\) & --- \\
+S5    & 256 & 587,475 & \(1\times10^{-3}\) & \(0\)              & State-space core: \(0.1\times\) base LR \\
+\end{tabular}
+\end{center}
+\end{table*}

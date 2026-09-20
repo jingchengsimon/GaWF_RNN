@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "id": "rl-atari-skiing-full18-acdef-unclipped-g0999-4m-preflight-lstm-gru-gawf-s1",
+  "description": "Compute-only validation for independent Skiing A/C/D/E/F training and BF16 audits.",
+  "host": "amarel",
+  "status": "completed",
+  "created_at": "2026-09-07T21:59:33.746998+00:00",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_skiing_acdef_20260907",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61287094",
+      "61287111"
+    ],
+    "run_ids": []
+  },
+  "paths": {
+    "log_globs": [
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_acdef_4m_seed1_20260907/preflight_61287094.out",
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_acdef_4m_seed1_20260907/preflight_61287094.err",
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_acdef_4m_seed1_20260907/preflight_61287111.out",
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_acdef_4m_seed1_20260907/preflight_61287111.err"
+    ],
+    "result_paths": [
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_acdef_4m_seed1_20260907/preflight_61287111.out"
+    ]
+  },
+  "tracking": {
+    "expected_units": 1,
+    "validation_mode": "artifacts",
+    "result_globs": [
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_acdef_4m_seed1_20260907/preflight_61287111.out"
+    ]
+  },
+  "notes": [
+    "Tests run only on Slurm compute node; no local pytest. No training in preflight.",
+    "Initial preflight exited before collection because a test file was absent from the new snapshot. Copied exact required tests and resubmitted 61287111; no training started.",
+    "Retry 61287111 passed all 10 tests and printed PREFLIGHT_PASSED; quota headroom 767.1 GiB against 300 GiB requirement. Quota marker is failure-only and absent on success."
+  ],
+  "updated_at": "2026-09-07T22:06:21.379412+00:00",
+  "completed_at": "2026-09-07T22:06:21.379412+00:00"
+}

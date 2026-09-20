@@ -223,18 +223,18 @@ def main() -> None:
 
     with plt.rc_context(
         {
-            "font.size": 13,
-            "axes.labelsize": 16,
-            "axes.titlesize": 15,
-            "xtick.labelsize": 13,
-            "ytick.labelsize": 13,
-            "legend.fontsize": 13,
+            "font.size": 7,
+            "axes.labelsize": 8,
+            "axes.titlesize": 8,
+            "xtick.labelsize": 7,
+            "ytick.labelsize": 7,
+            "legend.fontsize": 6.5,
         }
     ):
         # Match one row of core_objects_aggregate_2x2 (5.05in wide x 8.2in / 2 rows tall) so the
         # panel height aligns with that figure's first row and the bars share its tall-narrow
         # width-to-height ratio, while staying a single axis.
-        fig, axis = plt.subplots(figsize=(5.05, 4.1))
+        fig, axis = plt.subplots(figsize=(5.5, 2.4))
         xticks: List[float] = []
         xticklabels: List[str] = []
         for key, label, color in READOUTS:

@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "id": "rl-atari-skiing-full18-stall-actionfix-v1-behavior-audit20ep-lstm-gru-gawf-s1",
+  "description": "Fixed-seed 20-episode greedy behavior audit of the completed cumulative-4M single-Skiing LSTM, GRU, and GaWF final models.",
+  "host": "amarel",
+  "status": "completed",
+  "created_at": "2026-09-04T20:09:46Z",
+  "updated_at": "2026-09-05T03:09:22Z",
+  "completed_at": "2026-09-05T03:09:22Z",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_skiing_audit_20260904",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61237219"
+    ],
+    "run_ids": [],
+    "tmux_session": null,
+    "process_patterns": [
+      "utils.analysis.rl.atari.evaluate_skiing_behavior"
+    ],
+    "collect_gpu": true
+  },
+  "paths": {
+    "log_globs": [
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_behavior_audit_4m_greedy20_seed1/61237219_*.out",
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_behavior_audit_4m_greedy20_seed1/61237219_*.err"
+    ],
+    "status_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/formal_20m_4mpertask_raw_seeds/behavior_audit_4m_greedy20_seed1",
+    "result_paths": [
+      "/scratch/js3269/results/data/rl/atari/5task_18action/formal_20m_4mpertask_raw_seeds/behavior_audit_4m_greedy20_seed1/lstm",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/formal_20m_4mpertask_raw_seeds/behavior_audit_4m_greedy20_seed1/gru",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/formal_20m_4mpertask_raw_seeds/behavior_audit_4m_greedy20_seed1/gawf"
+    ]
+  },
+  "tracking": {
+    "expected_units": 3,
+    "auto_complete": true,
+    "validation_mode": "artifacts",
+    "result_globs": [
+      "/scratch/js3269/results/data/rl/atari/5task_18action/formal_20m_4mpertask_raw_seeds/behavior_audit_4m_greedy20_seed1/lstm/summary.json",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/formal_20m_4mpertask_raw_seeds/behavior_audit_4m_greedy20_seed1/gru/summary.json",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/formal_20m_4mpertask_raw_seeds/behavior_audit_4m_greedy20_seed1/gawf/summary.json"
+    ]
+  },
+  "notes": [
+    "Each model runs 20 greedy episodes with eval seed 20260904 under skiing-stall-actionfix-v1; no video or rendered frames are produced.",
+    "Each unit saves summary.json plus step_trace.npz with canonical/legal actions, rewards, RAM 86:94 course markers, progress changes, Q-values, and terminal/truncation flags.",
+    "The three source metrics/final state_dict pairs were copied read-only from the exact completed SJC cumulative-4M result leaves. Replay and resumable checkpoints do not exist and are not required for evaluation.",
+    "Source model SHA256: LSTM 62851c541fd7c74317b0d3e2e75a41e282ea57bc1cf2423a63c05995b51c6d93; GRU 148fe6d158653db3be3aa9cc8774452175270fdb74fb10e14370167779f2de01; GaWF 49a21fac3a1ea21f6f0acc3fdd3260c5c279e132fb3524afd21b537dcb186c03.",
+    "Execution uses an isolated read-only audit snapshot derived from snapshot 9afdede; existing formal snapshots and both long-lived dirty checkouts remain untouched.",
+    "Job 61237219 requests gpu/Ada Lovelace, one GPU, 16 CPUs, 64G memory, and two hours per array unit. A preceding submission attempt returned invalid partition gpu-redhat and created no job.",
+    "Verified completion: all three Slurm tasks completed with exit code 0, all three summary/trace pairs are non-empty and hash-valid, and recent_errors=0. In the fixed BF16 greedy suite, LSTM stalled 8/20 episodes, GRU 15/20, and GaWF 20/20; every stalled episode ended after exactly 450 consecutive no-progress steps."
+  ]
+}

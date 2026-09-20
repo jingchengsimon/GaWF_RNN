@@ -1,0 +1,230 @@
+{
+  "schema_version": 1,
+  "id": "rl-atari-seaquest-full18-fs4-stack4-l3-abcfgamma-3m-lstm-s2",
+  "description": "Seaquest single-seed paired diagnostics: LSTM serial A/B/C/F995/F999, 3M steps each, gated by an isolated 25k smoke.",
+  "host": "sjc-remote",
+  "status": "completed",
+  "created_at": "2026-09-04T16:53:58.511Z",
+  "remote_root": "/G/MIMOlab/Codes/aim3_gawf_rnn_snapshot_seaquest_abcfgamma_s2_20260904",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/G/anaconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "tmux",
+    "job_ids": [],
+    "run_ids": [
+      "sjc_seaquest_abcfgamma_lstm_s2_20260904"
+    ],
+    "tmux_session": "sjc_seaquest_abcfgamma_lstm_s2_20260904",
+    "process_patterns": [
+      "--model lstm --cuda-device 0 --result-parent /G/MIMOlab/Codes/aim3_gawf_rnn/results/data/rl/atari/seaquest_18action/fs4_stack4_l3_abcfgamma_3m_seed2",
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/rl/atari/seaquest_18action/fs4_stack4_l3_abcfgamma_3m_seed2/lstm_"
+    ],
+    "collect_gpu": true
+  },
+  "paths": {
+    "log_globs": [
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/seaquest_abcfgamma_s2_20260904/lstm_queue.log",
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/seaquest_abcfgamma_s2_20260904/lstm_*/train.log"
+    ],
+    "status_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/seaquest_abcfgamma_s2_20260904",
+    "result_paths": [
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/rl/atari/seaquest_18action/fs4_stack4_l3_abcfgamma_3m_seed2/lstm_a_seed2",
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/rl/atari/seaquest_18action/fs4_stack4_l3_abcfgamma_3m_seed2/lstm_b_seed2",
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/rl/atari/seaquest_18action/fs4_stack4_l3_abcfgamma_3m_seed2/lstm_c_seed2",
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/rl/atari/seaquest_18action/fs4_stack4_l3_abcfgamma_3m_seed2/lstm_f995_seed2",
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/rl/atari/seaquest_18action/fs4_stack4_l3_abcfgamma_3m_seed2/lstm_f999_seed2"
+    ]
+  },
+  "tracking": {
+    "expected_units": 5,
+    "auto_complete": true,
+    "validation_mode": "strict",
+    "defaults": {
+      "metrics_file": "metrics.json",
+      "history_file": "metrics_history.jsonl",
+      "checkpoint_glob": "*.pth",
+      "checkpoint_count": 1
+    },
+    "units": [
+      {
+        "id": "lstm-a-seed2",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/rl/atari/seaquest_18action/fs4_stack4_l3_abcfgamma_3m_seed2/lstm_a_seed2",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/seaquest_abcfgamma_s2_20260904/lstm_a_seed2/done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/seaquest_abcfgamma_s2_20260904/lstm_a_seed2/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "lstm",
+          "num_layers": 3,
+          "hidden_size": 373,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 1000000,
+          "exploration_steps": 300000,
+          "epsilon": 0.01
+        },
+        "protocol": {
+          "gamma": 0.99,
+          "start_epsilon": 1,
+          "end_epsilon": 0.01,
+          "seed": 2
+        }
+      },
+      {
+        "id": "lstm-b-seed2",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/rl/atari/seaquest_18action/fs4_stack4_l3_abcfgamma_3m_seed2/lstm_b_seed2",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/seaquest_abcfgamma_s2_20260904/lstm_b_seed2/done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/seaquest_abcfgamma_s2_20260904/lstm_b_seed2/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "lstm",
+          "num_layers": 3,
+          "hidden_size": 373,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 1000000,
+          "exploration_steps": 1000000,
+          "epsilon": 0.05
+        },
+        "protocol": {
+          "gamma": 0.99,
+          "start_epsilon": 1,
+          "end_epsilon": 0.05,
+          "seed": 2
+        }
+      },
+      {
+        "id": "lstm-c-seed2",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/rl/atari/seaquest_18action/fs4_stack4_l3_abcfgamma_3m_seed2/lstm_c_seed2",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/seaquest_abcfgamma_s2_20260904/lstm_c_seed2/done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/seaquest_abcfgamma_s2_20260904/lstm_c_seed2/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "lstm",
+          "num_layers": 3,
+          "hidden_size": 373,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 2000000,
+          "exploration_steps": 1000000,
+          "epsilon": 0.05
+        },
+        "protocol": {
+          "gamma": 0.99,
+          "start_epsilon": 1,
+          "end_epsilon": 0.05,
+          "seed": 2
+        }
+      },
+      {
+        "id": "lstm-f995-seed2",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/rl/atari/seaquest_18action/fs4_stack4_l3_abcfgamma_3m_seed2/lstm_f995_seed2",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/seaquest_abcfgamma_s2_20260904/lstm_f995_seed2/done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/seaquest_abcfgamma_s2_20260904/lstm_f995_seed2/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "lstm",
+          "num_layers": 3,
+          "hidden_size": 373,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 1000000,
+          "exploration_steps": 1000000,
+          "epsilon": 0.05
+        },
+        "protocol": {
+          "gamma": 0.995,
+          "start_epsilon": 1,
+          "end_epsilon": 0.05,
+          "seed": 2
+        }
+      },
+      {
+        "id": "lstm-f999-seed2",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/rl/atari/seaquest_18action/fs4_stack4_l3_abcfgamma_3m_seed2/lstm_f999_seed2",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/seaquest_abcfgamma_s2_20260904/lstm_f999_seed2/done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/seaquest_abcfgamma_s2_20260904/lstm_f999_seed2/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "lstm",
+          "num_layers": 3,
+          "hidden_size": 373,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 1000000,
+          "exploration_steps": 1000000,
+          "epsilon": 0.05
+        },
+        "protocol": {
+          "gamma": 0.999,
+          "start_epsilon": 1,
+          "end_epsilon": 0.05,
+          "seed": 2
+        }
+      }
+    ]
+  },
+  "resources": {
+    "gpu_index": 0,
+    "gpu_count": 1,
+    "gpu_model": "NVIDIA RTX A6000",
+    "cpu_threads": 8
+  },
+  "provenance": {
+    "base_commit": "d5ee88ea426c28dbe67c9e05134f331184e9803e",
+    "launcher_sha256": "6395ba1ad20b692e90afd1deb1f8e43d27264c08277483faedc0cfca9dec6310",
+    "source_mode": "fresh read-only snapshot of committed code plus isolated launcher/tests/documentation; no training-core changes"
+  },
+  "notes": [
+    "2026-09-04: original LSTM GPU0 queue/trainer remain unchanged (trainer PID 560845, start ticks 621861271 verified during handoff). After all five results validate, sjc_seaquest_split_v2_gpu0_s2_20260904 will run GaWF F995/F999 on GPU0; those units remain tracked under the GaWF experiment ID. Earlier rebalance-v1 schedulers remain cancelled.",
+    "Physical GPU 0; variants run serially in insertion order A, B, C, F995, F999. No weights-only initialization, TD(lambda), multi-step or boundary/mapping change.",
+    "Smoke exact result: /G/MIMOlab/Codes/aim3_gawf_rnn/results/data/rl/atari/seaquest_18action/fs4_stack4_l3_abcfgamma_3m_seed2/lstm_smoke25k_seed2; artifact: /G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/seaquest_abcfgamma_s2_20260904/lstm_smoke25k_seed2.",
+    "Smoke acceptance evidence: /G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/seaquest_abcfgamma_s2_20260904/lstm_smoke_accepted.json. Only accepted smoke leaves are removed; failed/paused evidence is retained and blocks the queue.",
+    "Gamma is recorded in per-unit command.json and this manifest because current final metrics do not emit gamma.",
+    "Submitted 2026-09-04: tmux pane PID 559777, live at submission. Queue starts with 25k smoke; formal units remain pending until acceptance. Remote structural check confirmed Seaquest Discrete(18), observation (4,84,84), PyTorch 2.3.1, Gymnasium 1.3.0.",
+    "2026-09-08 exact-ID no-update verification: 5/5 valid, 5 done, 0 failed, recent_errors=0. Final metrics/history snapshot synchronized for local visualization."
+  ],
+  "updated_at": "2026-09-08T14:42:23.812182+00:00",
+  "completed_at": "2026-09-07T14:32:23.346844+00:00"
+}

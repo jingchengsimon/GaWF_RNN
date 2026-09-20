@@ -1,0 +1,469 @@
+{
+  "schema_version": 1,
+  "id": "clutter-data-scale-formal-4h10h20h-ep150-rnn-lstm-gru-gawf-mamba-s5-seed1",
+  "description": "Remaining formal seed1 data-scale units: 4h/10h/20h for the six best6 Clutter models.",
+  "host": "amarel",
+  "status": "recovering",
+  "created_at": "2026-09-04T12:32:53+00:00",
+  "updated_at": "2026-09-04T17:07:51+00:00",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61229875",
+      "61229876",
+      "61229877",
+      "61232788"
+    ],
+    "run_ids": [],
+    "tmux_session": null,
+    "process_patterns": [
+      "data_scale/clutter_formal_4scale_ep150/4h/",
+      "data_scale/clutter_formal_4scale_ep150/10h/",
+      "data_scale/clutter_formal_4scale_ep150/20h/"
+    ],
+    "collect_gpu": true
+  },
+  "paths": {
+    "log_globs": [
+      "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/61229875_*.out",
+      "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/61229875_*.err",
+      "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/61229876_*.out",
+      "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/61229876_*.err",
+      "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/61229877_*.out",
+      "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/61229877_*.err",
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/61232788_30.out",
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/61232788_30.err"
+    ],
+    "result_paths": [
+      "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/4h",
+      "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/10h",
+      "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/20h"
+    ]
+  },
+  "tracking": {
+    "expected_units": 18,
+    "auto_complete": true,
+    "validation_mode": "strict",
+    "defaults": {
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": [
+      {
+        "id": "4h-rnn-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/4h/rnn-seed01",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_0.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_0.fail",
+        "expected": {
+          "model_type": "rnn",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "4h-lstm-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/4h/lstm-seed01",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_10.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_10.fail",
+        "expected": {
+          "model_type": "lstm",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "4h-gru-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/4h/gru-seed01",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_20.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_20.fail",
+        "expected": {
+          "model_type": "gru",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "4h-gawf-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/4h/gawf-seed01",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_30.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_30.fail",
+        "expected": {
+          "model_type": "gawf",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "4h-mamba-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/4h/mamba-seed01",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_40.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_40.fail",
+        "expected": {
+          "model_type": "mamba",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "4h-s5-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/4h/s5-seed01",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_50.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_50.fail",
+        "expected": {
+          "model_type": "s5",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "10h-rnn-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/10h/rnn-seed01",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_0.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_0.fail",
+        "expected": {
+          "model_type": "rnn",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "10h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "10h-lstm-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/10h/lstm-seed01",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_10.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_10.fail",
+        "expected": {
+          "model_type": "lstm",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "10h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "10h-gru-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/10h/gru-seed01",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_20.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_20.fail",
+        "expected": {
+          "model_type": "gru",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "10h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "10h-gawf-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/10h/gawf-seed01",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_30.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_30.fail",
+        "expected": {
+          "model_type": "gawf",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "10h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "10h-mamba-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/10h/mamba-seed01",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_40.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_40.fail",
+        "expected": {
+          "model_type": "mamba",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "10h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "10h-s5-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/10h/s5-seed01",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_50.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_50.fail",
+        "expected": {
+          "model_type": "s5",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "10h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "20h-rnn-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/20h/rnn-seed01",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_0.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_0.fail",
+        "expected": {
+          "model_type": "rnn",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "20h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "20h-lstm-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/20h/lstm-seed01",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_10.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_10.fail",
+        "expected": {
+          "model_type": "lstm",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "20h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "20h-gru-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/20h/gru-seed01",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_20.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_20.fail",
+        "expected": {
+          "model_type": "gru",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "20h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "20h-gawf-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/20h/gawf-seed01",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/resume-prev-feedback-9afdede/task_30.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/resume-prev-feedback-9afdede/task_30.fail",
+        "expected": {
+          "model_type": "gawf",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "20h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "20h-mamba-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/20h/mamba-seed01",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_40.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_40.fail",
+        "expected": {
+          "model_type": "mamba",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "20h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "20h-s5-seed01",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/20h/s5-seed01",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_50.done",
+        "fail_file": "experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_50.fail",
+        "expected": {
+          "model_type": "s5",
+          "seed": 1,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "20h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      }
+    ]
+  },
+  "notes": [
+    "Submitted from unchanged training source commit d5ee88ea426c28dbe67c9e05134f331184e9803e.",
+    "Arrays map 4h=61229875, 10h=61229876, 20h=61229877; each uses tasks 0,10,20,30,40,50 for RNN/LSTM/GRU/GaWF/Mamba/S5, seed 1, throttle 6 (18 total).",
+    "Each unit requests one Ada Lovelace GPU, 16 CPUs, 64G memory, 12 hours, on partition gpu; aim3_rnn environment, num_workers=2, pinned memory.",
+    "Pre-submission verification: prior 40h/seed1 has 6/6 valid strict artifacts at 150 epochs; generated 4h/10h/20h data has 3/3 valid completion manifests with matching NPY/TSV byte sizes.",
+    "All 18 exact destination leaves were absent and no active Clutter scheduler writer was present.",
+    "All units use 150 epochs, patience=0, fixed best6 hyperparameters, shared 40h-uint8 validation, checkpoint interval 5, auto-resume. No smoke, per user instruction.",
+    "Initial post-submission check confirmed all three arrays accepted with six units each, PENDING, no dependency, and the requested GPU resources; no compute node allocated yet.",
+    "2026-09-04 verification: 16/18 valid; 20h S5 still running; 20h GaWF failed during auto-resume on legacy prev_feedback, not a learned parameter mismatch.",
+    "Recovery array 61232788 task30 uses read-only source root /cache/home/js3269/projects/aim3_gawf_rnn_snapshot_9afdede, commit 9afdede59d09832f51a7afbf087fd430b124b1b0, no dependency. Initial state PENDING/Priority.",
+    "Exact retained GaWF train_state checkpoint was downloaded read-only and both model and best_state loaded successfully on CPU with the fixed formal model. completed_epochs=10; resumes at epoch11 with unchanged protocol.",
+    "Original 61229877_30 stderr and status/task_30.fail are preserved. The recovery uses distinct status/resume-prev-feedback-9afdede markers; no completed neighboring results were touched.",
+    "User authorized seed2-10 independently of seed1. Seed2-9 (192 units) submitted in separate per-seed manifests; seed10 (24) is still unsubmitted after QOSMaxSubmitJobPerUserLimit."
+  ]
+}

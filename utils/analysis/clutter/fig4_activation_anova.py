@@ -68,6 +68,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Add the trial-level residual bar to an extra Figure 4 rendering.",
     )
+    plot.add_argument(
+        "--iclr-width",
+        action="store_true",
+        help="Render at the 5.5-inch ICLR text width with publication-scale typography.",
+    )
     return parser.parse_args()
 
 
@@ -273,16 +278,28 @@ def plot(args: argparse.Namespace) -> tuple[Path, Path]:
     category_centers = np.arange(len(components), dtype=np.float64)
     bar_width = 0.13
     rng = np.random.default_rng(0)
-    with plt.rc_context(
+    style = (
         {
+            "font.size": 7.2,
+            "axes.labelsize": 8.2,
+            "xtick.labelsize": 7.0,
+            "ytick.labelsize": 7.0,
+            "legend.fontsize": 7.0,
+            "pdf.fonttype": 42,
+            "ps.fonttype": 42,
+        }
+        if args.iclr_width
+        else {
             "font.size": 13,
             "axes.labelsize": 16,
             "xtick.labelsize": 13,
             "ytick.labelsize": 13,
             "legend.fontsize": 13,
         }
-    ):
-        fig, axes = plt.subplots(1, 2, figsize=(10.4, 5.2), sharey=True)
+    )
+    with plt.rc_context(style):
+        figsize = (5.5, 2.65) if args.iclr_width else (10.4, 5.2)
+        fig, axes = plt.subplots(1, 2, figsize=figsize, sharey=True)
         for axis, object_name, title in zip(
             axes, OBJECTS, ("Input activation", "Hidden activation")
         ):
@@ -335,7 +352,11 @@ def plot(args: argparse.Namespace) -> tuple[Path, Path]:
                     show=args.show_seed_points,
                     rng=rng,
                 )
-            axis.set_title(title, fontsize=15, pad=43)
+            axis.set_title(
+                title,
+                fontsize=8.2 if args.iclr_width else 15,
+                pad=24 if args.iclr_width else 43,
+            )
             axis.set_xticks(
                 category_centers,
                 ("Sector", "Digit", "Interaction", "Residual\n(trial-level)")
@@ -364,7 +385,25 @@ def plot(args: argparse.Namespace) -> tuple[Path, Path]:
             handlelength=1.1,
             columnspacing=1.0,
         )
-        fig.subplots_adjust(left=0.085, right=0.995, bottom=0.14, top=0.72, wspace=0.20)
+        fig.subplots_adjust(
+            left=0.085,
+            right=0.995,
+            bottom=0.16 if args.iclr_width else 0.14,
+            top=0.72,
+            wspace=0.20,
+        )
+        if args.iclr_width:
+            for label, axis in zip("AB", axes):
+                position = axis.get_position()
+                fig.text(
+                    position.x0 - 0.012,
+                    0.835,
+                    label,
+                    ha="right",
+                    va="bottom",
+                    fontsize=9,
+                    fontweight="bold",
+                )
         stem = f"{args.stem}_with_residual" if args.with_residual else args.stem
         png = args.figure_dir / f"{stem}.png"
         pdf = args.figure_dir / f"{stem}.pdf"

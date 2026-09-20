@@ -106,6 +106,50 @@ Fetch one result subdirectory:
 
 Use `--all` only when the full remote history is intentionally required.
 
+## SJC Seaquest L3 paired diagnostics
+
+Run `python -B -m experiments.remote.run_sjc_seaquest_diagnostics` in `aim3_rnn`, with
+`--model lstm|gawf --cuda-device 0|1 --result-parent /absolute/leaf
+--artifact-parent /absolute/leaf`. Use one tmux queue per model, pinned to a separate GPU;
+each queue runs A, B, C, F995, F999 serially. `--dry-run` prints all five formal commands
+without creating files. A 25k-step A-protocol smoke precedes each model's queue. On acceptance,
+its metrics and file hashes are retained outside the smoke leaves, and only the exact accepted
+smoke result/artifact leaves are removed. Failed or paused units stop their queue and retain
+checkpoint/replay; a later explicit relaunch resumes from the checkpoint.
+
+The formal protocol is from-scratch Seaquest full18, baseline environment boundaries, seed 2,
+3M agent steps per unit, L3/fs4/stack4, 1M shared mmap replay, one-step DQN, BF16/TF32/fused Adam,
+and 50k-step checkpoints. Keep the Breakout widths (LSTM h373, GaWF h605), changing only the
+Q-head/action-feedback dimension to 18; do not silently rematch widths to the five-task h604.
+LR is 1e-4 times 0.1 after the specified decay step. The parameter matrix is:
+
+| Variant | Linear epsilon | Exploration steps | LR decay step | Gamma |
+|---|---|---|---|---|
+| A | 1.0 to 0.01 | 300k | 1M | 0.99 |
+| B | 1.0 to 0.05 | 1M | 1M | 0.99 |
+| C | 1.0 to 0.05 | 1M | 2M | 0.99 |
+| F995 | 1.0 to 0.05 | 1M | 1M | 0.995 |
+| F999 | 1.0 to 0.05 | 1M | 1M | 0.999 |
+
+Each unit's artifact `command.json` records gamma and all CLI arguments, including parameters
+not emitted by historical final metrics. No TD(lambda), multi-step, or truncation fix is included.
+Results live in `data/rl/atari/seaquest_18action/fs4_stack4_l3_abcfgamma_3m_seed2/` beneath
+the explicit result root, separately from every Breakout/five-task/Skiing result.
+
+The fixed original queue cannot be edited through an external task list. Do not use SIGSTOP of
+its tmux controller as an ownership transfer: SJC tmux resumed that controller during a verified
+2026-09-04 attempt. The attempted waiting schedulers were cancelled before starting any trainer.
+Changing its pending variants requires an explicitly accepted checkpoint/resume handoff or a
+future launcher with a supported queue-control interface; never allow overlapping writers.
+
+After an authorized checkpoint handoff, use `run_sjc_seaquest_split_queue.py --lane gpu1|gpu0`
+with explicit `--training-root`, `--result-parent`, `--artifact-parent`, and `--control-dir`.
+GPU1 resumes A then runs B/C; GPU0 waits for all five valid LSTM completions and an idle GPU,
+then runs GaWF F995/F999. The wrapper requires `handoff.json` proving old writers exited,
+reuses the hash-verified immutable original launcher, and locks each lane and result unit.
+No training parameters or result paths change. A normal checkpoint handoff preserves model,
+optimizer, replay, RNG and schedule state but resets the ALE episode/recurrent state once.
+
 ## Connections
 
 The example enables SSH ControlMaster so one authenticated connection can be reused briefly by

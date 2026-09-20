@@ -148,6 +148,10 @@ whole-sequence cuDNN fast path only when a sampled window has no internal reset,
 fall back to the reset-aware stepwise path. GaWF remains stepwise because feedback evolves at
 each timestep.
 
+DQN/DRQN TD targets clip rewards to `[-1, 1]` by default. `--no_reward_clip` retains raw
+environment rewards for an explicitly named protocol; this setting is recorded in metrics and is
+resume-validated, while checkpoints predating the flag retain the historical clipped behavior.
+
 Task-blind multi-task collection selects a task only at episode boundaries. The default
 `transition_balanced` scheduler chooses the task with the fewest collected environment steps,
 with cyclic tie-breaking; shorter tasks may therefore run more episodes. Replay remains a

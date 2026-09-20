@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "id": "rl-atari-skiing-full18-unclipped-gamma0p999-preflight-lstm-gru-gawf-s1",
+  "description": "Amarel compute-node safety tests and dry-runs for single-Skiing unclipped reward gamma .999; no local pytest.",
+  "host": "amarel",
+  "status": "cancelled",
+  "created_at": "2026-09-05T19:41:47.112242+00:00",
+  "updated_at": "2026-09-05T20:01:41.672354+00:00",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_skiing_unclipped_g0999_20260905",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61247414"
+    ],
+    "run_ids": [],
+    "process_patterns": [],
+    "collect_gpu": false
+  },
+  "paths": {
+    "log_globs": [
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_unclipped_g0999_preflight_20260905/61247414.out",
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_unclipped_g0999_preflight_20260905/61247414.err"
+    ],
+    "status_dir": "/scratch/js3269/results/artifacts/rl/atari/skiing_unclipped_g0999_preflight_20260905",
+    "result_paths": [
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_unclipped_g0999_preflight_20260905/accepted"
+    ]
+  },
+  "tracking": {
+    "expected_units": 1,
+    "auto_complete": true,
+    "validation_mode": "artifacts",
+    "result_globs": [
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_unclipped_g0999_preflight_20260905/accepted"
+    ]
+  },
+  "notes": [
+    "Explicit user instruction: do not execute pytest in local aim3_rnn. Tests execute only in a Slurm compute allocation.",
+    "Archived candidate code is extracted and tested on compute; existing snapshots are untouched. Success freezes the new code and source weights read-only.",
+    "Resources: gpu partition, 1 Ada GPU, 16 CPUs, 64G, 30 minutes.",
+    "Submission returned 61247414. The single exact-ID no-update check found no queue or accounting records and 0/1 artifacts; exact log/accepted files were absent. Awaiting user authorization for a bounded scheduler diagnostic; no smoke/formal jobs submitted.",
+    "Confirmed 61247414 was pending for GPU priority, not lost. Cancelled before execution and replaced by CPU-only no-smoke launcher validation 61247746 at explicit user request to proceed without smoke."
+  ]
+}

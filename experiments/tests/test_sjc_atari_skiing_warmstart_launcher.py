@@ -263,3 +263,18 @@ def test_history_without_checkpoint_is_refused(tmp_path: Path) -> None:
     )
     assert result.returncode == 3
     assert "without resumable checkpoint" in result.stderr
+
+
+def test_unclipped_gamma_protocol_has_separate_destination(tmp_path: Path) -> None:
+    parent = tmp_path / "single_skiing"
+    output = _dry_run(
+        tmp_path, "lstm", "--total-timesteps", "4000000", "--gamma", "0.999",
+        "--no-reward-clip", "--result-parent", str(parent), "--skip-smoke-video",
+        "--keep-replay-on-success", "--requeue-on-pause", "--run-tag", "unclipped_4m",
+    )
+    assert f"RESULT_PARENT={parent}" in output
+    assert "--total_timesteps 4000000" in output
+    assert "--gamma 0.999 --no_reward_clip" in output
+    assert "--keep_replay_on_success" in output
+    assert "--amp_dtype bfloat16" in output
+    assert "--init_weights_from" in output

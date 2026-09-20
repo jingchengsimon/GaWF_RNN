@@ -1,0 +1,1350 @@
+{
+  "schema_version": 1,
+  "id": "clutter-4h-h128-comparison-l1-ep150-rnn-lstm-gru-gawf-mamba-s5-seeds1-10",
+  "description": "h128 comparison: 4h train, 40h validation, six models at width 128, one layer, transferred best6 hyperparameters, 150 epochs without early stopping, seeds 1-10.",
+  "host": "sjc-remote",
+  "status": "completed",
+  "created_at": "2026-09-15T21:23:21.361860+00:00",
+  "updated_at": "2026-09-17T03:05:24+00:00",
+  "remote_root": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/code",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/G/anaconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "tmux",
+    "job_ids": [],
+    "run_ids": [
+      "clutter_h128_generate",
+      "clutter_h128_generate_retry",
+      "clutter_h128_smoke_gpu0",
+      "clutter_h128_smoke_gpu1",
+      "clutter_h128_benchmark",
+      "clutter_h128_benchmark_retry",
+      "clutter_h128_formal_gpu0",
+      "clutter_h128_formal_gpu1",
+      "clutter_h128_formal_gpu0_recovery_20260916"
+    ],
+    "tmux_session": "clutter_h128_formal_gpu0_recovery_20260916",
+    "process_patterns": [
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150",
+      "clutter_h128_comparison_4h_ep150"
+    ],
+    "collect_gpu": true,
+    "process_ids": [
+      1233839,
+      1233903,
+      564343,
+      1229265
+    ]
+  },
+  "paths": {
+    "log_globs": [
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/*.log"
+    ],
+    "status_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status",
+    "result_paths": [
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150"
+    ]
+  },
+  "tracking": {
+    "expected_units": 60,
+    "auto_complete": true,
+    "validation_mode": "strict",
+    "defaults": {
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": [
+      {
+        "id": "rnn-seed01",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/rnn-seed01",
+        "metrics_file": "rnn_sector_acc_h128_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed01.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed01.fail",
+        "expected": {
+          "model_type": "rnn",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "rnn-seed02",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/rnn-seed02",
+        "metrics_file": "rnn_sector_acc_h128_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed02.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed02.fail",
+        "expected": {
+          "model_type": "rnn",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "rnn-seed03",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/rnn-seed03",
+        "metrics_file": "rnn_sector_acc_h128_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed03.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed03.fail",
+        "expected": {
+          "model_type": "rnn",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "rnn-seed04",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/rnn-seed04",
+        "metrics_file": "rnn_sector_acc_h128_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed04.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed04.fail",
+        "expected": {
+          "model_type": "rnn",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "rnn-seed05",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/rnn-seed05",
+        "metrics_file": "rnn_sector_acc_h128_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed05.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed05.fail",
+        "expected": {
+          "model_type": "rnn",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "rnn-seed06",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/rnn-seed06",
+        "metrics_file": "rnn_sector_acc_h128_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed06.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed06.fail",
+        "expected": {
+          "model_type": "rnn",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "rnn-seed07",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/rnn-seed07",
+        "metrics_file": "rnn_sector_acc_h128_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed07.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed07.fail",
+        "expected": {
+          "model_type": "rnn",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "rnn-seed08",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/rnn-seed08",
+        "metrics_file": "rnn_sector_acc_h128_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed08.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed08.fail",
+        "expected": {
+          "model_type": "rnn",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "rnn-seed09",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/rnn-seed09",
+        "metrics_file": "rnn_sector_acc_h128_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed09.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed09.fail",
+        "expected": {
+          "model_type": "rnn",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "rnn-seed10",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/rnn-seed10",
+        "metrics_file": "rnn_sector_acc_h128_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed10.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/rnn-seed10.fail",
+        "expected": {
+          "model_type": "rnn",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "lstm-seed01",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/lstm-seed01",
+        "metrics_file": "lstm_sector_acc_h128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed01.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed01.fail",
+        "expected": {
+          "model_type": "lstm",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "lstm-seed02",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/lstm-seed02",
+        "metrics_file": "lstm_sector_acc_h128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed02.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed02.fail",
+        "expected": {
+          "model_type": "lstm",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "lstm-seed03",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/lstm-seed03",
+        "metrics_file": "lstm_sector_acc_h128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed03.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed03.fail",
+        "expected": {
+          "model_type": "lstm",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "lstm-seed04",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/lstm-seed04",
+        "metrics_file": "lstm_sector_acc_h128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed04.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed04.fail",
+        "expected": {
+          "model_type": "lstm",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "lstm-seed05",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/lstm-seed05",
+        "metrics_file": "lstm_sector_acc_h128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed05.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed05.fail",
+        "expected": {
+          "model_type": "lstm",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "lstm-seed06",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/lstm-seed06",
+        "metrics_file": "lstm_sector_acc_h128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed06.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed06.fail",
+        "expected": {
+          "model_type": "lstm",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "lstm-seed07",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/lstm-seed07",
+        "metrics_file": "lstm_sector_acc_h128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed07.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed07.fail",
+        "expected": {
+          "model_type": "lstm",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "lstm-seed08",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/lstm-seed08",
+        "metrics_file": "lstm_sector_acc_h128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed08.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed08.fail",
+        "expected": {
+          "model_type": "lstm",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "lstm-seed09",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/lstm-seed09",
+        "metrics_file": "lstm_sector_acc_h128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed09.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed09.fail",
+        "expected": {
+          "model_type": "lstm",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "lstm-seed10",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/lstm-seed10",
+        "metrics_file": "lstm_sector_acc_h128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed10.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/lstm-seed10.fail",
+        "expected": {
+          "model_type": "lstm",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gru-seed01",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gru-seed01",
+        "metrics_file": "gru_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed01.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed01.fail",
+        "expected": {
+          "model_type": "gru",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gru-seed02",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gru-seed02",
+        "metrics_file": "gru_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed02.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed02.fail",
+        "expected": {
+          "model_type": "gru",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gru-seed03",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gru-seed03",
+        "metrics_file": "gru_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed03.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed03.fail",
+        "expected": {
+          "model_type": "gru",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gru-seed04",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gru-seed04",
+        "metrics_file": "gru_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed04.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed04.fail",
+        "expected": {
+          "model_type": "gru",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gru-seed05",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gru-seed05",
+        "metrics_file": "gru_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed05.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed05.fail",
+        "expected": {
+          "model_type": "gru",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gru-seed06",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gru-seed06",
+        "metrics_file": "gru_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed06.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed06.fail",
+        "expected": {
+          "model_type": "gru",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gru-seed07",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gru-seed07",
+        "metrics_file": "gru_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed07.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed07.fail",
+        "expected": {
+          "model_type": "gru",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gru-seed08",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gru-seed08",
+        "metrics_file": "gru_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed08.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed08.fail",
+        "expected": {
+          "model_type": "gru",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gru-seed09",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gru-seed09",
+        "metrics_file": "gru_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed09.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed09.fail",
+        "expected": {
+          "model_type": "gru",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gru-seed10",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gru-seed10",
+        "metrics_file": "gru_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed10.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gru-seed10.fail",
+        "expected": {
+          "model_type": "gru",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gawf-seed01",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gawf-seed01",
+        "metrics_file": "gawf_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed01.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed01.fail",
+        "expected": {
+          "model_type": "gawf",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gawf-seed02",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gawf-seed02",
+        "metrics_file": "gawf_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed02.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed02.fail",
+        "expected": {
+          "model_type": "gawf",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gawf-seed03",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gawf-seed03",
+        "metrics_file": "gawf_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed03.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed03.fail",
+        "expected": {
+          "model_type": "gawf",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gawf-seed04",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gawf-seed04",
+        "metrics_file": "gawf_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed04.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed04.fail",
+        "expected": {
+          "model_type": "gawf",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gawf-seed05",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gawf-seed05",
+        "metrics_file": "gawf_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed05.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed05.fail",
+        "expected": {
+          "model_type": "gawf",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gawf-seed06",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gawf-seed06",
+        "metrics_file": "gawf_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed06.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed06.fail",
+        "expected": {
+          "model_type": "gawf",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gawf-seed07",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gawf-seed07",
+        "metrics_file": "gawf_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed07.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed07.fail",
+        "expected": {
+          "model_type": "gawf",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gawf-seed08",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gawf-seed08",
+        "metrics_file": "gawf_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed08.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed08.fail",
+        "expected": {
+          "model_type": "gawf",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gawf-seed09",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gawf-seed09",
+        "metrics_file": "gawf_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed09.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed09.fail",
+        "expected": {
+          "model_type": "gawf",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "gawf-seed10",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/gawf-seed10",
+        "metrics_file": "gawf_sector_acc_h128_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed10.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/gawf-seed10.fail",
+        "expected": {
+          "model_type": "gawf",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "mamba-seed01",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/mamba-seed01",
+        "metrics_file": "mamba_sector_acc_dmodel128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed01.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed01.fail",
+        "expected": {
+          "model_type": "mamba",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "mamba-seed02",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/mamba-seed02",
+        "metrics_file": "mamba_sector_acc_dmodel128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed02.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed02.fail",
+        "expected": {
+          "model_type": "mamba",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "mamba-seed03",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/mamba-seed03",
+        "metrics_file": "mamba_sector_acc_dmodel128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed03.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed03.fail",
+        "expected": {
+          "model_type": "mamba",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "mamba-seed04",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/mamba-seed04",
+        "metrics_file": "mamba_sector_acc_dmodel128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed04.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed04.fail",
+        "expected": {
+          "model_type": "mamba",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "mamba-seed05",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/mamba-seed05",
+        "metrics_file": "mamba_sector_acc_dmodel128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed05.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed05.fail",
+        "expected": {
+          "model_type": "mamba",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "mamba-seed06",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/mamba-seed06",
+        "metrics_file": "mamba_sector_acc_dmodel128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed06.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed06.fail",
+        "expected": {
+          "model_type": "mamba",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "mamba-seed07",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/mamba-seed07",
+        "metrics_file": "mamba_sector_acc_dmodel128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed07.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed07.fail",
+        "expected": {
+          "model_type": "mamba",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "mamba-seed08",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/mamba-seed08",
+        "metrics_file": "mamba_sector_acc_dmodel128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed08.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed08.fail",
+        "expected": {
+          "model_type": "mamba",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "mamba-seed09",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/mamba-seed09",
+        "metrics_file": "mamba_sector_acc_dmodel128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed09.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed09.fail",
+        "expected": {
+          "model_type": "mamba",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "mamba-seed10",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/mamba-seed10",
+        "metrics_file": "mamba_sector_acc_dmodel128_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed10.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/mamba-seed10.fail",
+        "expected": {
+          "model_type": "mamba",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "s5-seed01",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/s5-seed01",
+        "metrics_file": "s5_sector_acc_dmodel128_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed01.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed01.fail",
+        "expected": {
+          "model_type": "s5",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "s5-seed02",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/s5-seed02",
+        "metrics_file": "s5_sector_acc_dmodel128_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed02.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed02.fail",
+        "expected": {
+          "model_type": "s5",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "s5-seed03",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/s5-seed03",
+        "metrics_file": "s5_sector_acc_dmodel128_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed03.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed03.fail",
+        "expected": {
+          "model_type": "s5",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "s5-seed04",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/s5-seed04",
+        "metrics_file": "s5_sector_acc_dmodel128_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed04.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed04.fail",
+        "expected": {
+          "model_type": "s5",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "s5-seed05",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/s5-seed05",
+        "metrics_file": "s5_sector_acc_dmodel128_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed05.recovery.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed05.recovery.fail",
+        "expected": {
+          "model_type": "s5",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "s5-seed06",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/s5-seed06",
+        "metrics_file": "s5_sector_acc_dmodel128_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed06.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed06.fail",
+        "expected": {
+          "model_type": "s5",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "s5-seed07",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/s5-seed07",
+        "metrics_file": "s5_sector_acc_dmodel128_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed07.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed07.fail",
+        "expected": {
+          "model_type": "s5",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "s5-seed08",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/s5-seed08",
+        "metrics_file": "s5_sector_acc_dmodel128_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed08.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed08.fail",
+        "expected": {
+          "model_type": "s5",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "s5-seed09",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/s5-seed09",
+        "metrics_file": "s5_sector_acc_dmodel128_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed09.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed09.fail",
+        "expected": {
+          "model_type": "s5",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "s5-seed10",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/s5-seed10",
+        "metrics_file": "s5_sector_acc_dmodel128_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed10.done",
+        "fail_file": "/G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/status/s5-seed10.fail",
+        "expected": {
+          "model_type": "s5",
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      }
+    ]
+  },
+  "notes": [
+    "Data generation underway: exact supplied generate_movies.py, exclusive switch, train only, uint8, 4 hours at 24 fps, seed42; staged output requires validation before publication.",
+    "Source snapshot copied from SJC checkout d5ee88ea426c28dbe67c9e05134f331184e9803e, made read-only. Generator SHA256 a2c1dbf02442d89c14bbfc5b9680822d0d7d0e66311f08024c777ee1c15e411e matches local.",
+    "Training not yet launched; concurrency/resource checks and six-model smoke acceptance pending.",
+    "40h hyperparameter source: experiments/monitoring/jobs/clutter-data-scale-formal-40h-ep150-rnn-lstm-gru-gawf-mamba-s5-seed1.json",
+    "Generation succeeded after installing missing torchvision 0.18.1 with --no-deps for existing torch 2.3.1; initial failure retained. Published 345600x96x96 uint8 train NPY (3185049728 bytes), 345601-row TSV after validation; seed42/exclusive.",
+    "Full-batch six-model smoke running, batch256, 512 training windows per model, 1 epoch. Formal remains gated on acceptance.",
+    "All six full-batch single-epoch smoke units accepted: finite metrics, final checkpoint and PKL present. Concurrent 1/2/4 per-GPU probes underway.",
+    "Formal submitted: independent GPU0/GPU1 queues, one unit per GPU (two total), 30 units per lane; each completion releases the next unit on that GPU. Odd seeds GPU0, even seeds GPU1; model order rnn,lstm,gru,gawf,mamba,s5.",
+    "Concurrency probe: RNN and LSTM each failed at two simultaneous processes per A6000 with CUDA OOM (additional allocation 4.50GiB/2.25GiB). No 4-process test was launched; retain full batch256 and per-GPU concurrency1.",
+    "Ten accepted smoke/probe exact result leaves and associated exact log files cleaned after itemized inspection; validated numeric records and log hashes retained. Two failed OOM probes and logs preserved.",
+    "Runtime artifacts and all 60 exact commands: /G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/formal_commands.json. Read-only formal.py and code snapshot; canonical run_task.py trainer, 150epochs/patience0, checkpoint every5epochs, auto_resume.",
+    "Post-launch verified both tmux queues and exactly one CUDA trainer per GPU: RNN seeds01/02 reached epoch1 validation, PIDs564470/564471, observed memory40230MiB each. Data NPY/TSV published and protected 40h splits retained.",
+    "2026-09-16T20:53:38.673894+00:00 intentional GPU0 checkpoint handoff: s5-seed05 paused at completed epoch 30 via SIGINT; checkpoint SHA256 04c9adf937268732f2d7ee20c3fc8a9d5ce5f5fbc7ca57e518d709d529196086. GPU0 controller/trainer PIDs 564342/1213613 and tmux lane exited; post-check GPU0 was 142MiB at 0% utilization. GPU1 s5-seed04 controller/trainer PIDs 564343/1198723 remained alive and unchanged. The retained s5-seed05.fail marker records this intentional pause, not a training defect. Resume only through /G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/handoff_gpu0_s5-seed05_20260916.json; do not restart formal.py from task 0.",
+    "2026-09-16T21:12:22+00:00 GPU0 recovery launched in tmux clutter_h128_formal_gpu0_recovery_20260916 with controller/trainer PIDs 1233839/1233903. The verified epoch-30 checkpoint was loaded with completed_epochs=30 and next_epoch=31; s5-seed05 entered epoch31. Recovery controller SHA256 ea9d59ebeccb67739b6cde6cc697682f4697b0241cf74059b692f93964eb1102 and state path /G/MIMOlab/Codes/aim3_gawf_rnn/experiments/remote/artifacts/clutter_h128_comparison_4h_ep150/recovery_gpu0_s5seed05_epoch30_20260916.state.json. Its fixed lane is s5-seed05 then new s5-seed07 and s5-seed09, with strict validation between units. The original intentional pause marker remains retained. At launch GPU1 independently ran s5-seed06 under controller/trainer PIDs 564343/1229265.",
+    "2026-09-17T03:05:24+00:00 completion audit: s5-seed05 was not a training failure. The retained original s5-seed05.fail records the user-requested SIGINT handoff; recovery completed epochs31-150, emitted metrics/model/PKL, and passed immutable formal.validate. Its registry unit now uses s5-seed05.recovery.done/fail as the current attempt markers while preserving the original pause marker. progress verified 60/60 valid, 60 done, 0 failed; both GPUs idle. No duplicate resubmission was made. The local 60-seed visualization uses 120 structured metrics/PKL inputs with aggregate SHA256 c15e91e2820a960a16507ef4c2788ad63762be8d9465fee5ae1981046353a723."
+  ],
+  "resources": {
+    "gpus": [
+      0,
+      1
+    ],
+    "gpu_model": "NVIDIA RTX A6000 48GB",
+    "concurrent_units_per_gpu": 1,
+    "total_concurrent_units": 2,
+    "batch_size": 256,
+    "num_workers_per_unit": 2,
+    "pin_memory": true
+  }
+}

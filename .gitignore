@@ -37,8 +37,11 @@ logs_hparam/
 
 # 实验结果 artifacts
 experiments/*/artifacts/
-experiments/amarel/generated/
+**/amarel/generated/
 experiments/local/generated/
+experiments/remote/generated/
+/artifacts/
+/tmp/
 
 *.pth
 *.pkl

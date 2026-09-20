@@ -20,6 +20,12 @@ Options:
   --extend-from-skiing-2m
                        Start a fresh 2M phase from the completed cumulative-2M model.
   --total-timesteps N  Override the default 1M target for a resumable run.
+  --gamma VALUE       Discount factor (default 0.99).
+  --no-reward-clip    Preserve reward magnitudes in TD targets.
+  --result-parent PATH  Explicit absolute parent for a separate protocol.
+  --skip-smoke-video  Validate training artifacts without an evaluation video.
+  --keep-replay-on-success  Retain this run's replay after completion.
+  --requeue-on-pause   Requeue this Slurm task after a resumable interruption.
   --allow-total-timesteps-extension
                        Permit only an existing resumable run's target to increase.
   --dry-run            Validate inputs and print the resolved command without writing.
@@ -41,6 +47,12 @@ EXTEND_FROM_SKIING_2M=false
 REQUESTED_TOTAL_TIMESTEPS=""
 ALLOW_TOTAL_TIMESTEPS_EXTENSION=false
 DRY_RUN=false
+GAMMA=0.99
+REWARD_ARGS=()
+REWARD_CLIP=true
+EXPLICIT_RESULT_PARENT=""
+SKIP_SMOKE_VIDEO=false
+REQUEUE_ON_PAUSE=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -55,6 +67,12 @@ while [[ $# -gt 0 ]]; do
     --extend-from-skiing-1m) EXTEND_FROM_SKIING_1M=true; shift ;;
     --extend-from-skiing-2m) EXTEND_FROM_SKIING_2M=true; shift ;;
     --total-timesteps) REQUESTED_TOTAL_TIMESTEPS="${2:-}"; shift 2 ;;
+    --gamma) GAMMA="${2:-}"; shift 2 ;;
+    --no-reward-clip) REWARD_ARGS+=(--no_reward_clip); REWARD_CLIP=false; shift ;;
+    --result-parent) EXPLICIT_RESULT_PARENT="${2:-}"; shift 2 ;;
+    --skip-smoke-video) SKIP_SMOKE_VIDEO=true; shift ;;
+    --keep-replay-on-success) REWARD_ARGS+=(--keep_replay_on_success); shift ;;
+    --requeue-on-pause) REQUEUE_ON_PAUSE=true; shift ;;
     --allow-total-timesteps-extension) ALLOW_TOTAL_TIMESTEPS_EXTENSION=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -225,6 +243,10 @@ RUN_TAG="${RUN_TAG:-$BASE_TAG}"
 }
 
 RESULT_PARENT="$RESULTS_ROOT/data/rl/atari/5task_18action/formal_20m_4mpertask_raw_seeds"
+if [[ -n "$EXPLICIT_RESULT_PARENT" ]]; then
+  [[ "$EXPLICIT_RESULT_PARENT" == /* ]] || { echo "Result parent must be absolute" >&2; exit 2; }
+  RESULT_PARENT="$EXPLICIT_RESULT_PARENT"
+fi
 RESULT_DIR="$RESULT_PARENT/$RUN_TAG"
 STATUS_DIR="$RESULT_DIR/status"
 CHECKPOINT="$RESULT_DIR/checkpoint.pth"
@@ -268,8 +290,12 @@ COMMAND=(
   --batch_size 32 --seq_len 16 --sequences_per_batch 8
   --amp_dtype bfloat16 --allow_tf32 --cudnn_benchmark --fused_optimizer
   --seed 1 --device cuda --result_suffix "$RUN_TAG" --save_dir "$RESULT_DIR"
-  "${RESUME_ARGS[@]}"
+  --gamma "$GAMMA"
 )
+if (( ${#REWARD_ARGS[@]} > 0 )); then
+  COMMAND+=("${REWARD_ARGS[@]}")
+fi
+COMMAND+=("${RESUME_ARGS[@]}")
 
 if [[ "$DRY_RUN" == true ]]; then
   printf 'RESULT_PARENT=%q\n' "$RESULT_PARENT"
@@ -287,8 +313,16 @@ printf 'status=started phase=%s model=%s result_dir=%s timestamp=%s\n' \
   "$PHASE" "$MODEL" "$RESULT_DIR" "$(date -Is)" > "$STATUS_DIR/started"
 
 set +e
-CUDA_VISIBLE_DEVICES="$CUDA_DEVICE" DISABLE_TQDM=1 "${COMMAND[@]}"
+CUDA_VISIBLE_DEVICES="$CUDA_DEVICE" DISABLE_TQDM=1 "${COMMAND[@]}" &
+TRAIN_PID=$!
+trap 'kill -USR1 "$TRAIN_PID" 2>/dev/null || true' USR1 TERM
+wait "$TRAIN_PID"
 TRAIN_RC=$?
+while (( TRAIN_RC >= 128 )) && kill -0 "$TRAIN_PID" 2>/dev/null; do
+  wait "$TRAIN_PID"
+  TRAIN_RC=$?
+done
+trap - USR1 TERM
 set -e
 if (( TRAIN_RC != 0 )); then
   printf 'status=train_failed model=%s exit_code=%s timestamp=%s\n' \
@@ -296,19 +330,23 @@ if (( TRAIN_RC != 0 )); then
   exit "$TRAIN_RC"
 fi
 if [[ ! -f "$METRICS" ]]; then
+  [[ -s "$CHECKPOINT" ]] || { echo "Missing resumable checkpoint" >&2; exit 4; }
   printf 'status=paused checkpoint=%s timestamp=%s\n' "$CHECKPOINT" "$(date -Is)" \
     > "$STATUS_DIR/paused"
+  if [[ "$REQUEUE_ON_PAUSE" == true ]]; then
+    scontrol requeue "${SLURM_JOB_ID:?Slurm job ID required for requeue}"
+  fi
   exit 0
 fi
 
-python - "$METRICS" "$TOTAL_TIMESTEPS" "$MODEL" "$HIDDEN" <<'PY'
+python - "$METRICS" "$TOTAL_TIMESTEPS" "$MODEL" "$HIDDEN" "$GAMMA" "$REWARD_CLIP" <<'PY'
 import glob
 import json
 import math
 import os
 import sys
 
-path, total_steps, model, hidden = sys.argv[1:]
+path, total_steps, model, hidden, gamma, reward_clip = sys.argv[1:]
 with open(path, encoding="utf-8") as handle:
     metrics = json.load(handle)
 expected = {
@@ -322,6 +360,8 @@ expected = {
     "atari_env_protocol": "skiing-stall-actionfix-v1",
     "action_mapping_protocol": "single_canonical_full18",
     "stalled_truncation_bootstrap": True,
+    "gamma": float(gamma),
+    "reward_clip": reward_clip == "true",
 }
 mismatches = {
     key: (metrics.get(key), value)
@@ -341,7 +381,7 @@ if len(glob.glob(os.path.join(result_dir, "*.pth"))) != 1:
     raise RuntimeError("Expected exactly one completed model state_dict")
 PY
 
-if [[ "$PHASE" == "smoke" ]]; then
+if [[ "$PHASE" == "smoke" && "$SKIP_SMOKE_VIDEO" == false ]]; then
   VIDEO="$RESULT_DIR/smoke_skiing_${MODEL}_seed1.mp4"
   VIDEO_METADATA="$RESULT_DIR/smoke_skiing_${MODEL}_seed1.json"
   CUDA_VISIBLE_DEVICES="$CUDA_DEVICE" python -m utils.analysis.rl.atari.evaluate_dqn_video \

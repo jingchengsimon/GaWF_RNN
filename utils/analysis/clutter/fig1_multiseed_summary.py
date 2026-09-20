@@ -177,9 +177,9 @@ def _plot_shuffle_axis(
     """Plot one readout's GaWF shuffle-ablation bars (Baseline, Shuffle digit, Shuffle sector)."""
 
     conds = (
-        ("Baseline", baseline),
-        ("Shuffle\ndigit", shuffle_digit),
-        ("Shuffle\nsector", shuffle_sector),
+        ("Base", baseline),
+        ("Shuf.\ndigit", shuffle_digit),
+        ("Shuf.\nsector", shuffle_sector),
     )
     positions = np.arange(len(conds), dtype=np.float64)
     rng = np.random.default_rng(0)
@@ -228,7 +228,8 @@ def _load_validation_losses(
                 arrays.append(np.asarray(payload[key], dtype=np.float64))
         if len(arrays) != 10:
             raise FileNotFoundError(
-                f"Expected ten {key} arrays for {model} under {train_data_dir}, found {len(arrays)}."
+                f"Expected ten {key} arrays for {model} under {train_data_dir}, "
+                f"found {len(arrays)}."
             )
         lengths = {array.size for array in arrays}
         if len(lengths) != 1:
@@ -298,15 +299,14 @@ def main() -> None:
 
     with plt.rc_context(
         {
-            "font.size": 13,
-            "axes.labelsize": 16,
-            "xtick.labelsize": 13,
-            "ytick.labelsize": 13,
+            "font.size": 7,
+            "axes.labelsize": 8,
+            "xtick.labelsize": 7,
+            "ytick.labelsize": 7,
         }
     ):
-        # 3-column 2x3 was figsize (13.2, 6.9); four columns each 30% narrower keeps the same
-        # per-column ratio: width = 13.2 * (4 * 0.7) / 3 = 12.32.
-        fig, axes = plt.subplots(2, 4, figsize=(12.32, 6.9))
+        # Draw at the final ICLR text width so publication fonts remain 7--8 pt without scaling.
+        fig, axes = plt.subplots(2, 4, figsize=(5.5, 2.4))
         _plot_test_axis(
             axes[0, 0],
             test_metrics,
@@ -400,7 +400,7 @@ def main() -> None:
             tick_label.set_rotation_mode("anchor")
 
         fig.subplots_adjust(
-            left=0.075, right=0.995, bottom=0.12, top=0.81, hspace=0.40, wspace=0.24
+            left=0.085, right=0.995, bottom=0.23, top=0.76, hspace=0.42, wspace=0.38
         )
         column_centers = [
             np.mean(
@@ -411,17 +411,28 @@ def main() -> None:
             )
             for column in range(4)
         ]
-        title_y = max(axes[0, column].get_position().y1 for column in range(4)) + 0.05
+        title_y = max(axes[0, column].get_position().y1 for column in range(4)) + 0.035
         for x, title in zip(
             column_centers,
             (
                 "Test accuracy",
                 "Validation loss",
                 "Target switch recovery\n(mean ± SEM)",
-                "GaWF shuffle ablation",
+                "GaWF shuffle\nablation",
             ),
         ):
-            fig.text(x, title_y, title, ha="center", va="bottom", fontsize=15)
+            fig.text(x, title_y, title, ha="center", va="bottom", fontsize=8)
+        for label, axis in zip("ABCD", axes[0]):
+            position = axis.get_position()
+            fig.text(
+                position.x0 - 0.012,
+                title_y,
+                label,
+                ha="right",
+                va="bottom",
+                fontsize=9,
+                fontweight="bold",
+            )
         row_centers = [
             np.mean(
                 [
@@ -433,7 +444,7 @@ def main() -> None:
             for row in range(2)
         ]
         for y, label in zip(row_centers, ("Location", "Identity")):
-            fig.text(0.038, y, label, rotation=90, ha="center", va="center", fontsize=15)
+            fig.text(0.025, y, label, rotation=90, ha="center", va="center", fontsize=8)
 
         models = [model for model in MODEL_ORDER if model in test_metrics]
         handles = [Line2D([0], [0], color=MODEL_COLORS[model], linewidth=2.2) for model in models]
@@ -442,16 +453,18 @@ def main() -> None:
             [MODEL_LABELS[model] for model in models],
             frameon=False,
             loc="upper center",
-            bbox_to_anchor=(0.5, 0.992),
+            bbox_to_anchor=(0.5, 0.995),
             ncol=len(models),
-            fontsize=13,
+            fontsize=6.5,
+            handlelength=1.4,
+            columnspacing=1.0,
         )
         output_pdf = (
             args.output_pdf if args.output_pdf is not None else args.output_png.with_suffix(".pdf")
         )
         args.output_png.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(args.output_png, dpi=180, bbox_inches="tight", pad_inches=0.04)
-        fig.savefig(output_pdf, bbox_inches="tight", pad_inches=0.04)
+        fig.savefig(args.output_png, dpi=300)
+        fig.savefig(output_pdf)
         plt.close(fig)
     print(f"Saved {args.output_png}")
     print(f"Saved {output_pdf}")

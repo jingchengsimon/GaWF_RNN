@@ -8,32 +8,229 @@
   ],
   "jobs": [
     {
-      "id": "clutter-data-scale-generate-uint8-4h10h20h-seed42",
-      "description": "Generate formal 4h/10h/20h uint8 Clutter training datasets with seed 42.",
+      "id": "rl-atari-seaquest-full18-fs4-stack4-l3-ac-3m-lstm-gawf-s1-4",
+      "description": "Seaquest A/C LSTM/GaWF seeds1-4: sixteen independent 3M cells, each with isolated 25k smoke; original SJC diagnostic protocol.",
       "host": "amarel",
       "status": "queued",
       "job_ids": [
-        "61220716",
-        "61220717",
-        "61225664"
+        "61303222"
       ],
       "run_ids": [],
       "tmux_session": null,
-      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
-      "updated_at": "2026-09-04T03:51:49+00:00"
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_seaquest_ac_20260908",
+      "updated_at": null
     },
     {
-      "id": "clutter-data-scale-formal-40h-ep150-rnn-lstm-gru-gawf-mamba-s5-seed1",
-      "description": "Formal 40h/seed1 data-scale units for the six best6 Clutter models.",
+      "id": "rl-atari-skiing-full18-stall-actionfix-v1-acdef-unclipped-g0999-4m-lstm-s1",
+      "description": "Skiing LSTM seed1 independent A/C/D/E/F 4M diagnostics with 25k smoke and eight BF16 20-episode audits.",
+      "host": "amarel",
+      "status": "running",
+      "job_ids": [
+        "61287156"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_skiing_acdef_20260907",
+      "updated_at": "2026-09-07T22:07:32.101607+00:00"
+    },
+    {
+      "id": "rl-atari-skiing-full18-stall-actionfix-v1-acdef-unclipped-g0999-4m-gru-s1",
+      "description": "Skiing GRU seed1 independent A/C/D/E/F 4M diagnostics with 25k smoke and eight BF16 20-episode audits.",
+      "host": "amarel",
+      "status": "running",
+      "job_ids": [
+        "61287157"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_skiing_acdef_20260907",
+      "updated_at": "2026-09-07T22:07:32.103311+00:00"
+    },
+    {
+      "id": "rl-atari-skiing-full18-stall-actionfix-v1-acdef-unclipped-g0999-4m-gawf-s1",
+      "description": "Skiing GAWF seed1 independent A/C/D/E/F 4M diagnostics with 25k smoke and eight BF16 20-episode audits.",
+      "host": "amarel",
+      "status": "running",
+      "job_ids": [
+        "61287158"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_skiing_acdef_20260907",
+      "updated_at": "2026-09-08T01:42:55.033169+00:00"
+    },
+    {
+      "id": "clutter-jointbalanced-fixedpoints-autonomous-real-64starts-rnn-seeds1-10",
+      "description": "RNN seeds1-10: autonomous fixed points removing all feedforward terms, versus fixed real pre-switch/switch inputs.",
       "host": "amarel",
       "status": "queued",
       "job_ids": [
-        "61220165"
+        "61259602"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_fixedpoints_20260906",
+      "updated_at": "2026-09-06T14:47:12.996222+00:00"
+    },
+    {
+      "id": "clutter-data-scale-formal-4h10h20h40h-ep150-rnn-lstm-gru-gawf-mamba-s5-seed10",
+      "description": "Formal seed10 data-scale batch: four scales and six best6 models, 24 independent runs.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61238615",
+        "61238616",
+        "61238617",
+        "61238618"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_9afdede",
+      "updated_at": "2026-09-05T03:13:50+00:00"
+    },
+    {
+      "id": "clutter-data-scale-formal-4h10h20h40h-ep150-rnn-lstm-gru-gawf-mamba-s5-seed9",
+      "description": "Formal seed9 data-scale batch: four scales and six best6 models, 24 runs.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61232818",
+        "61232819",
+        "61232820",
+        "61232821"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_9afdede",
+      "updated_at": "2026-09-04T18:00:00+00:00"
+    },
+    {
+      "id": "clutter-data-scale-formal-4h10h20h40h-ep150-rnn-lstm-gru-gawf-mamba-s5-seed8",
+      "description": "Formal seed8 data-scale batch: four scales and six best6 models, 24 runs.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61232813",
+        "61232814",
+        "61232815",
+        "61232817"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_9afdede",
+      "updated_at": "2026-09-04T18:00:00+00:00"
+    },
+    {
+      "id": "clutter-data-scale-formal-4h10h20h40h-ep150-rnn-lstm-gru-gawf-mamba-s5-seed7",
+      "description": "Formal seed7 data-scale batch: four scales and six best6 models, 24 runs.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61232809",
+        "61232810",
+        "61232811",
+        "61232812"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_9afdede",
+      "updated_at": "2026-09-04T18:00:00+00:00"
+    },
+    {
+      "id": "clutter-data-scale-formal-4h10h20h40h-ep150-rnn-lstm-gru-gawf-mamba-s5-seed6",
+      "description": "Formal seed6 data-scale batch: four scales and six best6 models, 24 runs.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61232805",
+        "61232806",
+        "61232807",
+        "61232808"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_9afdede",
+      "updated_at": "2026-09-04T18:00:00+00:00"
+    },
+    {
+      "id": "clutter-data-scale-formal-4h10h20h40h-ep150-rnn-lstm-gru-gawf-mamba-s5-seed5",
+      "description": "Formal seed5 data-scale batch: four scales and six best6 models, 24 runs.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61232801",
+        "61232802",
+        "61232803",
+        "61232804"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_9afdede",
+      "updated_at": "2026-09-04T18:00:00+00:00"
+    },
+    {
+      "id": "clutter-data-scale-formal-4h10h20h40h-ep150-rnn-lstm-gru-gawf-mamba-s5-seed4",
+      "description": "Formal seed4 data-scale batch: four scales and six best6 models, 24 runs.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61232797",
+        "61232798",
+        "61232799",
+        "61232800"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_9afdede",
+      "updated_at": "2026-09-04T18:00:00+00:00"
+    },
+    {
+      "id": "clutter-data-scale-formal-4h10h20h40h-ep150-rnn-lstm-gru-gawf-mamba-s5-seed3",
+      "description": "Formal seed3 data-scale batch: four scales and six best6 models, 24 runs.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61232793",
+        "61232794",
+        "61232795",
+        "61232796"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_9afdede",
+      "updated_at": "2026-09-04T18:00:00+00:00"
+    },
+    {
+      "id": "clutter-data-scale-formal-4h10h20h40h-ep150-rnn-lstm-gru-gawf-mamba-s5-seed2",
+      "description": "Formal seed2 data-scale batch: four scales and six best6 models, 24 runs.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61232789",
+        "61232790",
+        "61232791",
+        "61232792"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_9afdede",
+      "updated_at": "2026-09-04T18:00:00+00:00"
+    },
+    {
+      "id": "clutter-data-scale-formal-4h10h20h-ep150-rnn-lstm-gru-gawf-mamba-s5-seed1",
+      "description": "Remaining formal seed1 data-scale units: 4h/10h/20h for the six best6 Clutter models.",
+      "host": "amarel",
+      "status": "recovering",
+      "job_ids": [
+        "61229875",
+        "61229876",
+        "61229877",
+        "61232788"
       ],
       "run_ids": [],
       "tmux_session": null,
       "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
-      "updated_at": "2026-09-03T21:03:30+00:00"
+      "updated_at": "2026-09-04T17:07:51+00:00"
     },
     {
       "id": "rl-atari-skiing-full18-stall-actionfix-v1-total4m-lstm-gru-gawf-s1",
@@ -92,12 +289,13 @@
         "60787710",
         "60835981",
         "60835982",
-        "60835983"
+        "60835983",
+        "61220687"
       ],
       "run_ids": [],
       "tmux_session": null,
       "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_ed1f038",
-      "updated_at": "2026-08-26T12:06:37-04:00"
+      "updated_at": "2026-09-03T18:13:41-04:00"
     },
     {
       "id": "rl-atari-multitask-5task18-l3-eps500k-lrpertask-20m-gawf-s1-2",
@@ -108,12 +306,13 @@
         "60536204",
         "60637596",
         "60686223",
-        "60835981"
+        "60835981",
+        "61220686"
       ],
       "run_ids": [],
       "tmux_session": null,
       "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_5a1594f",
-      "updated_at": "2026-08-25T11:39:12-04:00"
+      "updated_at": "2026-09-03T18:13:41-04:00"
     },
     {
       "id": "rl-atari-multitask-5task18-l3-eps500k-lrpertask-20m-lstm-gru-s1-2",
@@ -132,6 +331,45 @@
       "tmux_session": null,
       "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_sjc_resume_5c08adea",
       "updated_at": "2026-08-20T09:06:07-04:00"
+    },
+    {
+      "id": "rl-atari-multitask-pong-breakout-assault-seaquest-riverraid-c-buf500k-actors1-5-benchmark300k-gawf-s1",
+      "description": "One-allocation GaWF C five-task actor selection: actual 1/5 collectors, two 25k smokes, four 300k trials in order1,5,5,1; fixed UTD and retained per-task replay; final recommendation.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61371815"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_actorbench_20260910",
+      "updated_at": null
+    },
+    {
+      "id": "rl-atari-multitask-pong-breakout-assault-seaquest-riverraid-c-buf500k-20m-ann-rnn-gru-lstm-gawf-s1",
+      "description": "Five-task Riverraid formal 20M run: ANN/RNN/GRU/LSTM/GaWF, seeds 1-5, 25 resumable units, per-task 500K replay, max concurrency 8, GaWF first.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61617511"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn",
+      "updated_at": null
+    },
+    {
+      "id": "rl-atari-breakout-fs4-stack4-l3-lrdecay-greedy-video1ep-gawf-s9-eval20260909",
+      "description": "Breakout best final rolling100 GaWF seed9 (219.27), one greedy CUDA BF16 episode, eval seed20260909.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61355716"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_seaquest_ac_20260908",
+      "updated_at": null
     }
   ]
 }

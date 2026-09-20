@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "id": "rl-atari-skiing-full18-unclipped-gamma0p999-4m-behavior-audit20ep-bf16-lstm-gru-gawf-s1",
+  "description": "BF16 fixed-seed 20-episode greedy Q-value and behavior audit of unclipped gamma .999 final 4M Skiing models.",
+  "host": "amarel",
+  "status": "completed",
+  "created_at": "2026-09-07T14:32:23.346844+00:00",
+  "updated_at": "2026-09-07T14:42:46.987971+00:00",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_skiing_audit_20260904",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61278777",
+      "61279013"
+    ],
+    "run_ids": [],
+    "tmux_session": null,
+    "process_patterns": [
+      "utils.analysis.rl.atari.evaluate_skiing_behavior"
+    ],
+    "collect_gpu": true
+  },
+  "paths": {
+    "log_globs": [
+      "/scratch/js3269/results/artifacts/rl/atari/behavior_audit_unclipped_g0999_4m_greedy20_seed1_20260907/61278777_*.out",
+      "/scratch/js3269/results/artifacts/rl/atari/behavior_audit_unclipped_g0999_4m_greedy20_seed1_20260907/61278777_*.err",
+      "/scratch/js3269/results/artifacts/rl/atari/behavior_audit_unclipped_g0999_4m_greedy20_seed1_20260907/61279013_2.out",
+      "/scratch/js3269/results/artifacts/rl/atari/behavior_audit_unclipped_g0999_4m_greedy20_seed1_20260907/61279013_2.err"
+    ],
+    "status_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/behavior_audit_unclipped_g0999_4m_greedy20_seed1_20260907",
+    "result_paths": [
+      "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/behavior_audit_unclipped_g0999_4m_greedy20_seed1_20260907/lstm",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/behavior_audit_unclipped_g0999_4m_greedy20_seed1_20260907/gru",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/behavior_audit_unclipped_g0999_4m_greedy20_seed1_20260907/gawf"
+    ]
+  },
+  "tracking": {
+    "expected_units": 3,
+    "auto_complete": true,
+    "validation_mode": "artifacts",
+    "result_globs": [
+      "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/behavior_audit_unclipped_g0999_4m_greedy20_seed1_20260907/lstm/summary.json",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/behavior_audit_unclipped_g0999_4m_greedy20_seed1_20260907/gru/summary.json",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/behavior_audit_unclipped_g0999_4m_greedy20_seed1_20260907/gawf/summary.json"
+    ]
+  },
+  "notes": [
+    "User explicitly requested actual BF16 Q-value tie verification of new completed models. No training or video generation.",
+    "Same evaluator snapshot, BF16, eval_seed=20260904, 20 greedy episodes/model as old audit. Source final metrics/checkpoints are read-only inputs in unclipped_gamma0p999_4m_seed1/formal.",
+    "One Ada GPU, 16 CPUs,64G,2h per array unit; array 0-2%3.",
+    "Evaluator SHA256=d9d5a9559c6e6e0e31859dd5f77fb581b671cbf141a9d5d19d0b7afb27ed51cb. Existing snapshots are not modified.",
+    "Initial task 2 failed at checkpoint discovery before evaluation; tasks 0 and 1 completed. Retry 61279013_2 uses an explicit checkpoint filename and a byte-verified read-only input copy at /scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/audit_inputs_unclipped_g0999_20260907. Existing successful audit outputs are preserved.",
+    "Completion: all three summary/trace pairs fetched and SHA256 verified; retry GaWF output complete. Source metrics SHA256 match completed 4M training snapshot for all models, with gamma=.999, reward_clip=false, amp_dtype=bfloat16. Checkpoint loading reports no missing/unexpected keys. Original evaluator summary omits amp_dtype; verified snapshot forward uses CLI BF16 autocast, and every stored Q value is exactly BF16-representable. Historical failed task remains recorded.",
+    "Local evidence: results/figs/rl/atari/5task_18action/single_skiing/protocol_comparison/comparison.json; new trace root: results/data/analysis/rl/atari/skiing_q_audit_20260907/data/rl/atari/5task_18action/single_skiing/behavior_audit_unclipped_g0999_4m_greedy20_seed1_20260907."
+  ]
+}

@@ -14,6 +14,7 @@ ATARI_PILOT_ENVS = (
     "ALE/Breakout-v5",
     "ALE/Assault-v5",
     "ALE/Seaquest-v5",
+    "ALE/Riverraid-v5",
     "ALE/Skiing-v5",
     "ALE/MsPacman-v5",
     "ALE/BeamRider-v5",
@@ -555,9 +556,148 @@ def make_multitask_vector_atari_env(
     return gym.vector.SyncVectorEnv(env_fns)
 
 
+def make_fixed_task_atari_env(
+    env_id: str,
+    task_idx: int,
+    seed: int,
+    idx: int,
+    frame_stack: int = 1,
+    frame_skip: int = 1,
+    flicker_prob: float = 0.0,
+    scheduler_state: dict[str, Any] | None = None,
+    atari_env_protocol: str = "baseline",
+) -> Callable[[], object]:
+    """Return one fixed-task actor with task metadata for task-local replay.
+
+    Unlike :func:`make_multitask_atari_env`, this actor never switches games at
+    episode boundaries.  It is used only when there is exactly one actor per
+    task, so a replay partition receives a single uninterrupted actor stream.
+    """
+    if task_idx < 0:
+        raise ValueError("task_idx must be non-negative")
+
+    def thunk():
+        try:
+            import gymnasium as gym
+        except ImportError as exc:
+            raise ImportError(
+                "Atari experiments require gymnasium with Atari extras, e.g. "
+                "`pip install 'gymnasium[atari,accept-rom-license]'`."
+            ) from exc
+        _register_ale_envs(gym)
+        component_env = make_atari_env(
+            env_id=env_id,
+            seed=seed,
+            idx=idx,
+            frame_stack=frame_stack,
+            frame_skip=frame_skip,
+            flicker_prob=flicker_prob,
+            full_action_space=True,
+            atari_env_protocol=atari_env_protocol,
+        )()
+
+        class _FixedTaskActorEnv(gym.Wrapper):
+            def __init__(self, wrapped_env) -> None:
+                super().__init__(wrapped_env)
+                self._task_steps = 0
+                if scheduler_state is not None:
+                    self.load_task_scheduler_state(scheduler_state)
+
+            def _add_task_info(self, info: dict[str, Any]) -> dict[str, Any]:
+                enriched = dict(info)
+                enriched["task_id"] = task_idx
+                enriched["env_id"] = env_id
+                return enriched
+
+            def reset(self, **kwargs):
+                obs, info = self.env.reset(**kwargs)
+                return obs, self._add_task_info(info)
+
+            def step(self, action: int):
+                obs, reward, terminated, truncated, info = self.env.step(action)
+                self._task_steps += 1
+                return obs, reward, terminated, truncated, self._add_task_info(info)
+
+            def task_scheduler_state(self) -> dict[str, Any]:
+                """Return fixed actor identity for checkpoint compatibility."""
+                return {
+                    "mode": "fixed_task_actor",
+                    "task_idx": task_idx,
+                    "task_steps": self._task_steps,
+                }
+
+            def load_task_scheduler_state(self, state: dict[str, Any]) -> None:
+                if state.get("mode") != "fixed_task_actor":
+                    raise ValueError("Fixed task actor checkpoint has the wrong scheduler mode")
+                if int(state.get("task_idx", -1)) != task_idx:
+                    raise ValueError("Fixed task actor checkpoint has the wrong task index")
+                steps = int(state.get("task_steps", -1))
+                if steps < 0:
+                    raise ValueError("Fixed task actor task_steps must be non-negative")
+                self._task_steps = steps
+
+        return _FixedTaskActorEnv(component_env)
+
+    return thunk
+
+
+def make_fixed_multitask_async_vector_atari_env(
+    env_ids: tuple[str, ...],
+    seed: int,
+    frame_stack: int = 1,
+    frame_skip: int = 1,
+    flicker_prob: float = 0.0,
+    scheduler_states: tuple[dict[str, Any], ...] | None = None,
+    atari_env_protocol: str = "baseline",
+) -> Any:
+    """Create one spawn-safe asynchronous actor per fixed Atari task.
+
+    The vector slot order is exactly ``env_ids``.  This deliberately supports
+    one writer per task only; adding a second actor for a task would interleave
+    its recurrent replay trajectories and requires a different replay layout.
+    """
+    if len(env_ids) < 2:
+        raise ValueError("Fixed async multi-task collection requires at least two env_ids")
+    if len(set(env_ids)) != len(env_ids):
+        raise ValueError("env_ids must be unique")
+    if scheduler_states is not None and len(scheduler_states) != len(env_ids):
+        raise ValueError(
+            "scheduler_states must have one entry for every fixed-task actor"
+        )
+    try:
+        import gymnasium as gym
+    except ImportError as exc:
+        raise ImportError(
+            "Atari experiments require gymnasium with Atari extras, e.g. "
+            "`pip install 'gymnasium[atari,accept-rom-license]'`."
+        ) from exc
+    _register_ale_envs(gym)
+    env_fns = [
+        make_fixed_task_atari_env(
+            env_id=env_id,
+            task_idx=task_idx,
+            seed=seed,
+            idx=task_idx,
+            frame_stack=frame_stack,
+            frame_skip=frame_skip,
+            flicker_prob=flicker_prob,
+            scheduler_state=(
+                None if scheduler_states is None else scheduler_states[task_idx]
+            ),
+            atari_env_protocol=atari_env_protocol,
+        )
+        for task_idx, env_id in enumerate(env_ids)
+    ]
+    return gym.vector.AsyncVectorEnv(env_fns, context="spawn")
+
+
 def multitask_scheduler_states(vector_env: Any) -> tuple[dict[str, Any], ...]:
-    """Return exact per-slot scheduler state from a synchronous multi-task vector env."""
+    """Return exact per-slot scheduler state from sync or async vector envs."""
+    call = getattr(vector_env, "call", None)
+    if callable(call):
+        states = call("task_scheduler_state")
+        return tuple(dict(state) for state in states)
     component_envs = getattr(vector_env, "envs", None)
     if component_envs is None:
-        raise TypeError("Multi-task scheduler checkpointing requires SyncVectorEnv.envs")
+        raise TypeError("Multi-task scheduler checkpointing requires callable env state")
     return tuple(env.task_scheduler_state() for env in component_envs)

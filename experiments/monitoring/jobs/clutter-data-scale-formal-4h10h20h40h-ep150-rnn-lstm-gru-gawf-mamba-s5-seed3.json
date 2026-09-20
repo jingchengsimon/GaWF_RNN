@@ -1,0 +1,629 @@
+{
+  "schema_version": 1,
+  "id": "clutter-data-scale-formal-4h10h20h40h-ep150-rnn-lstm-gru-gawf-mamba-s5-seed3",
+  "description": "Formal seed3 data-scale batch: four scales and six best6 models, 24 runs.",
+  "host": "amarel",
+  "status": "queued",
+  "created_at": "2026-09-04T17:07:00+00:00",
+  "updated_at": "2026-09-04T18:00:00+00:00",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_9afdede",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61232793",
+      "61232794",
+      "61232795",
+      "61232796"
+    ],
+    "run_ids": [],
+    "tmux_session": null,
+    "process_patterns": [
+      "data_scale/clutter_formal_4scale_ep150/4h/rnn-seed03",
+      "data_scale/clutter_formal_4scale_ep150/4h/lstm-seed03",
+      "data_scale/clutter_formal_4scale_ep150/4h/gru-seed03",
+      "data_scale/clutter_formal_4scale_ep150/4h/gawf-seed03",
+      "data_scale/clutter_formal_4scale_ep150/4h/mamba-seed03",
+      "data_scale/clutter_formal_4scale_ep150/4h/s5-seed03",
+      "data_scale/clutter_formal_4scale_ep150/10h/rnn-seed03",
+      "data_scale/clutter_formal_4scale_ep150/10h/lstm-seed03",
+      "data_scale/clutter_formal_4scale_ep150/10h/gru-seed03",
+      "data_scale/clutter_formal_4scale_ep150/10h/gawf-seed03",
+      "data_scale/clutter_formal_4scale_ep150/10h/mamba-seed03",
+      "data_scale/clutter_formal_4scale_ep150/10h/s5-seed03",
+      "data_scale/clutter_formal_4scale_ep150/20h/rnn-seed03",
+      "data_scale/clutter_formal_4scale_ep150/20h/lstm-seed03",
+      "data_scale/clutter_formal_4scale_ep150/20h/gru-seed03",
+      "data_scale/clutter_formal_4scale_ep150/20h/gawf-seed03",
+      "data_scale/clutter_formal_4scale_ep150/20h/mamba-seed03",
+      "data_scale/clutter_formal_4scale_ep150/20h/s5-seed03",
+      "data_scale/clutter_formal_4scale_ep150/40h/rnn-seed03",
+      "data_scale/clutter_formal_4scale_ep150/40h/lstm-seed03",
+      "data_scale/clutter_formal_4scale_ep150/40h/gru-seed03",
+      "data_scale/clutter_formal_4scale_ep150/40h/gawf-seed03",
+      "data_scale/clutter_formal_4scale_ep150/40h/mamba-seed03",
+      "data_scale/clutter_formal_4scale_ep150/40h/s5-seed03"
+    ],
+    "collect_gpu": false,
+    "dependency_strategy": {
+      "type": "rolling_afterok_stride_2",
+      "campaign_seeds": [
+        2,
+        9
+      ],
+      "max_eligible_or_running_units": 48,
+      "predecessor_seed": null,
+      "mapping": "same scale and model; each successful predecessor releases one successor"
+    }
+  },
+  "paths": {
+    "log_globs": [
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/61232793_*.out",
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/61232793_*.err",
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/61232794_*.out",
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/61232794_*.err",
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/61232795_*.out",
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/61232795_*.err",
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/40h/61232796_*.out",
+      "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/40h/61232796_*.err"
+    ],
+    "result_paths": [
+      "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/4h",
+      "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/10h",
+      "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/20h",
+      "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/40h"
+    ]
+  },
+  "tracking": {
+    "expected_units": 24,
+    "auto_complete": true,
+    "validation_mode": "strict",
+    "defaults": {
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": [
+      {
+        "id": "4h-rnn-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/4h/rnn-seed03",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_2.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_2.fail",
+        "expected": {
+          "model_type": "rnn",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "4h-lstm-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/4h/lstm-seed03",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_12.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_12.fail",
+        "expected": {
+          "model_type": "lstm",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "4h-gru-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/4h/gru-seed03",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_22.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_22.fail",
+        "expected": {
+          "model_type": "gru",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "4h-gawf-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/4h/gawf-seed03",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_32.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_32.fail",
+        "expected": {
+          "model_type": "gawf",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "4h-mamba-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/4h/mamba-seed03",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_42.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_42.fail",
+        "expected": {
+          "model_type": "mamba",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "4h-s5-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/4h/s5-seed03",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_52.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/4h/status/task_52.fail",
+        "expected": {
+          "model_type": "s5",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "4h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "10h-rnn-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/10h/rnn-seed03",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_2.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_2.fail",
+        "expected": {
+          "model_type": "rnn",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "10h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "10h-lstm-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/10h/lstm-seed03",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_12.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_12.fail",
+        "expected": {
+          "model_type": "lstm",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "10h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "10h-gru-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/10h/gru-seed03",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_22.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_22.fail",
+        "expected": {
+          "model_type": "gru",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "10h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "10h-gawf-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/10h/gawf-seed03",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_32.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_32.fail",
+        "expected": {
+          "model_type": "gawf",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "10h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "10h-mamba-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/10h/mamba-seed03",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_42.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_42.fail",
+        "expected": {
+          "model_type": "mamba",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "10h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "10h-s5-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/10h/s5-seed03",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_52.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/10h/status/task_52.fail",
+        "expected": {
+          "model_type": "s5",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "10h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "20h-rnn-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/20h/rnn-seed03",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_2.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_2.fail",
+        "expected": {
+          "model_type": "rnn",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "20h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "20h-lstm-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/20h/lstm-seed03",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_12.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_12.fail",
+        "expected": {
+          "model_type": "lstm",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "20h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "20h-gru-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/20h/gru-seed03",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_22.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_22.fail",
+        "expected": {
+          "model_type": "gru",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "20h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "20h-gawf-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/20h/gawf-seed03",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_32.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_32.fail",
+        "expected": {
+          "model_type": "gawf",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "20h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "20h-mamba-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/20h/mamba-seed03",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_42.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_42.fail",
+        "expected": {
+          "model_type": "mamba",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "20h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "20h-s5-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/20h/s5-seed03",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_52.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/20h/status/task_52.fail",
+        "expected": {
+          "model_type": "s5",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "20h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "40h-rnn-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/40h/rnn-seed03",
+        "metrics_file": "rnn_sector_acc_h275_lr0.001_wd1e-05_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/40h/status/task_2.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/40h/status/task_2.fail",
+        "expected": {
+          "model_type": "rnn",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "40h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "40h-lstm-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/40h/lstm-seed03",
+        "metrics_file": "lstm_sector_acc_h80_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/40h/status/task_12.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/40h/status/task_12.fail",
+        "expected": {
+          "model_type": "lstm",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "40h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "40h-gru-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/40h/gru-seed03",
+        "metrics_file": "gru_sector_acc_h105_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/40h/status/task_22.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/40h/status/task_22.fail",
+        "expected": {
+          "model_type": "gru",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "40h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "40h-gawf-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/40h/gawf-seed03",
+        "metrics_file": "gawf_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/40h/status/task_32.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/40h/status/task_32.fail",
+        "expected": {
+          "model_type": "gawf",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "40h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "40h-mamba-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/40h/mamba-seed03",
+        "metrics_file": "mamba_sector_acc_dmodel170_lr0.001_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/40h/status/task_42.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/40h/status/task_42.fail",
+        "expected": {
+          "model_type": "mamba",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "40h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      },
+      {
+        "id": "40h-s5-seed03",
+        "result_dir": "/scratch/js3269/results/data/clutter/runs/data_scale/clutter_formal_4scale_ep150/40h/s5-seed03",
+        "metrics_file": "s5_sector_acc_dmodel256_state128_lr0.001_wd0.0_cdo0.0_rdo0.5_metrics.json",
+        "done_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/40h/status/task_52.done",
+        "fail_file": "/cache/home/js3269/projects/aim3_gawf_rnn/experiments/clutter/amarel/artifacts/clutter_data_scale_formal_4scale_ep150/40h/status/task_52.fail",
+        "expected": {
+          "model_type": "s5",
+          "seed": 3,
+          "actual_epochs": 150,
+          "patience": 0,
+          "stopped_by_patience": false,
+          "dataset_suffix": "40h-uint8",
+          "eval_dataset_suffix": "40h-uint8",
+          "use_acceleration": true,
+          "use_mmap": true,
+          "input_cast_mode": "device",
+          "frame_layout": "compact",
+          "shuffle_block_size": -1,
+          "checkpoint_interval_epochs": 5
+        }
+      }
+    ]
+  },
+  "notes": [
+    "Pinned read-only source snapshot of commit 9afdede59d09832f51a7afbf087fd430b124b1b0; writable logs/status remain in the long-lived repository.",
+    "Array mapping: 4h=61232793, 10h=61232794, 20h=61232795, 40h=61232796; task IDs 2,12,22,32,42,52, model order RNN/LSTM/GRU/GaWF/Mamba/S5.",
+    "Each unit: partition gpu, account general, one Ada Lovelace GPU, 16 CPUs, 64G, 12h, aim3_rnn, num_workers=2, pin_memory=1.",
+    "150 epochs, patience=0, fixed best6 hyperparameters, shared 40h-uint8 validation, uint8 mmap/device cast/compact/block shuffle, checkpoints every 5 epochs and auto-resume. No smoke.",
+    "All new destination leaves were absent in the consolidated preflight. Post-submission scontrol verified six tasks per array, requested resources/source root, and expected dependencies; all arrays PENDING with no compute allocation at that snapshot.",
+    "Post-submission dependency update: seed3 is one of 48 dependency-free chain roots (seed2 and seed3, four scales by six models).",
+    "The campaign is now 48 rolling per-run chains, not a whole-seed barrier: one successful run releases one later run. At most 48 seed2-9 units can be eligible or running; a failed run blocks only its corresponding chain.",
+    "Verification after rewiring: 48 base chains, 144 successor mappings; 138 remained linked and 6 were already released from completed predecessors. Running snapshot=14. Seed10 remains unsubmitted."
+  ]
+}

@@ -25,9 +25,7 @@ from torch.utils.data import DataLoader
 
 from utils.analysis.anal_helpers import build_model_from_ckpt, build_test_dataset, resolve_device
 from utils.analysis.clutter.multiseed_plotting import (
-    SEED_POINT_ALPHA,
-    SEED_POINT_COLOR,
-    SEED_POINT_SIZE,
+    add_seed_points,
 )
 from utils.analysis.clutter.fig3_gate_distribution import _gate_tensors
 from utils.analysis.clutter.fig6_encoder_sector_patterns import (
@@ -759,7 +757,7 @@ def _plot_fig8_bars(
     tick_format: str = "%.2f",
     show_legend: bool = True,
 ) -> list[dict[str, object]]:
-    """Plot seed-level gate-change bars plus unordered condition means."""
+    """Plot gate-change bars, SEM, and points from the same seed-level values."""
 
     values = report["gate_component"]
     seed_averages = values.mean(axis=1)
@@ -787,29 +785,25 @@ def _plot_fig8_bars(
             error_kw={"linewidth": 1.0, "capthick": 1.0},
             zorder=2,
         )
+        add_seed_points(
+            axis,
+            centers,
+            seed_averages[:, :, sign_idx],
+            bar_width=width,
+        )
         y_span = (
             shared_y_limits[1] - shared_y_limits[0]
             if shared_y_limits is not None
             else axis.get_ylim()[1] - axis.get_ylim()[0]
         )
         for group_idx, group in enumerate(GROUPS):
-            condition_means = values[:, :, group_idx, sign_idx].mean(axis=0)
-            jitter = np.linspace(-0.055, 0.055, condition_means.size)
-            axis.scatter(
-                np.full(condition_means.size, centers[group_idx]) + jitter,
-                condition_means,
-                s=SEED_POINT_SIZE,
-                color=SEED_POINT_COLOR,
-                alpha=SEED_POINT_ALPHA,
-                linewidths=0,
-                zorder=4,
-            )
+            seed_values = seed_averages[:, group_idx, sign_idx]
             points.append(
                 {
                     "group": group, "sign": sign, "mean": float(mean[group_idx, sign_idx]),
                     "sem": float(sem[group_idx, sign_idx]),
                     "p_value": float(p_values[group_idx, sign_idx]),
-                    "condition_means": condition_means.tolist(),
+                    "seed_values": seed_values.tolist(),
                 }
             )
             if p_values[group_idx, sign_idx] < 0.05:
@@ -911,6 +905,8 @@ def plot_fig8(args: argparse.Namespace) -> tuple[Path, Path]:
         "normalization": args.normalization,
         "reset_frames_excluded": True,
         "seed_count": 10,
+        "point_unit": "training seed",
+        "within_seed_aggregation": "equal mean across conditions",
         "layout": "Digit/Sector grouped bars",
         "families": {},
     }

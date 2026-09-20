@@ -112,7 +112,8 @@ Analysis requirements:
 - Resolve every analysis data/figure destination with
   `utils.analysis.anal_paths.output_dir(category, script_name, kind)`. Figures go directly to
   `results/figs/<CATEGORY>/`; data and the run manifest go to the parallel
-  `results/data/analysis/<CATEGORY>/<script_name>/`.
+  `results/data/analysis/<CATEGORY>/<script_name>/`. A task-specific workflow may explicitly
+  route one curated final figure to `results/save/`; its structured data still uses `output_dir`.
   migration notes; do not recreate nested `data/` or `figs/` directories there.
 - Each run writes `manifest.json` in its `anal_data` directory containing script path, commit,
   timestamp, category, both parallel roots, files written, and a flat dictionary of key numerical
@@ -124,6 +125,64 @@ Analysis requirements:
 - Print qualifying-sample progress every 200 samples.
 - Raise `RuntimeError` when no frames match; do not silently emit empty outputs.
 - Keep numeric analysis and plotting in the same `utils/analysis/` task module.
+
+### Continuous switch trajectories and PCA
+
+研究方法、八步分析顺序和当前图形的解释边界见
+[DYNAMICAL_SYSTEM_ANALYSIS_PROTOCOL.md](DYNAMICAL_SYSTEM_ANALYSIS_PROTOCOL.md)。
+本节维护实现与输出约定。
+
+`utils.analysis.clutter.continuous_switch_pca` is the fixed-point preparation workflow for
+joint-balanced CM-MNIST.  It performs inference only: start one raw movie at the canonical
+zero state, retain RNN/GaWF runtime state across 32-frame compute chunks, and never reset at a
+switch.  It stores all stream records separately from clean event-aligned windows.  The initial
+PCA uses only raw recurrent state, is centred without per-unit standardization, and is fit and
+reported independently for every model seed; digit/sector labels are retained but do not define
+the first PCA grouping.  Its chronological event holdout removes each training window that shares
+a raw frame with a held-out window and records the resulting event-index provenance.
+Variance is summarized in one figure with model-wise seed means and sample SD (`ddof=1`),
+showing both the first 20 PCs and full spectrum. `plot --variance_only` reuses saved seed PCA
+arrays. Seed coordinates and bases remain independent; numerical aggregates are saved in the
+data directory as `variance_<model>_mean_std.npz`.
+Each 3D trajectory marks its start (purple circle), switch (red X), and end (yellow square),
+with black arrows following successive states at quarter and three-quarter window positions.
+For radius 50, the exact endpoints are -50 and +49; switch 0 is the first post record.
+`plot --interactive_only` exports one `continuous_switch_pca_interactive.ipynb` from saved PCA
+arrays. Its first code cell loops over GaWF seeds 1–10; the second loops over RNN seeds 1–10.
+Each cell embeds all ten Plotly outputs. Interactive figures use only time-coloured points and
+lines with one colorbar marked at -50, 0 and +49, plus red X markers at switch 0;
+no event legend, endpoint markers or direction cones.
+The code cells reload `interactive_figures.json` from the separate numeric data directory.
+VS Code's Jupyter Notebook Renderers extension displays the saved output without a running
+kernel or external browser. The exporter uses JSON and NumPy, without a Plotly Python dependency.
+The Amarel `run_continuous_pca_preflight.sh` accepts optional fourth argument `install-deps`
+to install missing analysis/test packages in `aim3_rnn` on its allocated compute node before
+running the rollout tests and collection CLI import check. Existing packages are not explicitly
+upgraded. An inference array must depend on successful completion of this preflight.
+
+### Seed1 pre-digit PCA
+
+`utils.analysis.clutter.pre_digit_pca` reuses full-stream seed1 RNN/GaWF records. Eligible
+joint events have no other switch in -50…-1; no post-window or sector restriction is imposed.
+It selects 22 temporally spread events per pre-digit from chronological candidate lists, sharing
+the same 220 events across models. Each model fits one centered, unscaled PCA on all balanced
+pre windows and uses identical axis ranges across its ten digit panels. Switch0 is displayed as
+a red reference X, excluded from the PCA fit. The one exported notebook has exactly two code
+cells: GaWF then RNN, each looping over digits0–9. Raw event states, labels, selection provenance,
+PCA arrays and per-digit capture in the shared basis remain in the separate data leaf.
+
+### RNN fixed-point inputs
+
+`utils.analysis.clutter.rnn_fixed_points` uses the original one-layer tanh `nn.RNN` with
+frozen weights. Autonomous input removes the entire `W_ih*u + b_ih` term via a stateless
+`bias_ih=0` override and zero features; recurrent `W_hh*h + b_hh` remains. The separate
+zero-feature condition retaining `b_ih` is deliberately excluded. Real-input conditions fix
+the actual two-frame CNN features at each clean switch's preceding frame and switch frame.
+Each seed has 61 conditions, 64 shared trajectory-based initializations (half perturbed),
+2000 Adam steps, and float64 damped Newton refinement. Roots require max-absolute residual
+at most `1e-7`; RMS deduplication uses `1e-4` only within an input condition. Candidates and
+their residuals, root Jacobians/eigenspectra and perturbation linearization errors are retained.
+The numerical search is not an exhaustive count of all fixed points. No GaWF analysis is run.
 
 ### Unified GaWF variance decomposition
 
@@ -208,15 +267,31 @@ These p-values are diagnostic because rows share seeds, sectors, destinations, a
 connections; interpretation prioritizes gap/slope magnitude and never replaces seed-level
 inference with a tiny pooled p-value.
 
+`utils.analysis.clutter.appendix_sign_magnitude_figures` reads the retained reset-excluded
+Supplementary 2 and Supplementary 3 NPZ files and renders their ICLR-width vector PDFs without
+rerunning a model. Supplementary 2 uses a compact matching/other 1-by-2 layout. Supplementary 3
+uses Digit and Sector rows with TT/TR/RT/RR columns. Both retain a deterministic display-only
+subsample of connection--condition points, compute each nine-bin curve within training seed, and
+show the mean plus or minus seed-level SEM across the ten seeds.
+
+The input-gate sign summary first averages overlap-band connection rows separately within each
+Sector condition and then averages the nine condition means equally inside each training seed.
+Its all-connections level uses the same condition-first average without sign or overlap-band
+restriction. Observation-level slopes and the nine-bin display curves remain computed from their
+connection--condition rows.
+
 Formal Fig1 and Supplementary 1 target-switch recovery curves use ten training seeds. At every
 offset from `pre10` through `pre1` and `post1` through `post10`, first compute one accuracy per
 training seed, then plot the seed mean with seed-level SEM. Do not pool
 switch events across seeds as the inference unit. Fig1 groups the ten curves separately for each
 of the six models; Supplementary 1 does the same for each GaWF feedback-ablation condition.
 
-Figure 7 sign-gap inference uses the training seed as the independent unit. For each group and
-seed, first compute the paired overlap-band difference between positive- and negative-weight means;
-test the ten seed differences against zero with an exact two-sided sign-flip test. Connection-level
+Figure 7 sign-gap inference uses the training seed as the independent unit. For each group, sign,
+and seed, first average the shared-overlap-band connection rows separately within every Digit or
+Sector condition, then average the 10 Digit or 9 Sector condition means with equal weight. Compute
+the paired positive-minus-negative difference from those seed-level values and test the ten seed
+differences against zero with an exact two-sided sign-flip test. The all-connections bar uses the
+same condition-first equal average without the sign or shared-support restriction. Connection-level
 or pooled-across-seed p-values are diagnostic only and must not be shown as the Figure 7 p-value.
 The formal ten-seed workflow retains compact per-condition recurrent-gate means and seed-specific
 hidden tuned masks rather than full trial-by-connection gate caches. The retained Figure 7 does
@@ -294,9 +369,9 @@ than loading models independently.
 comparison for the fixed best6 hyperparameters, six models, and seeds 1-10. It validates the
 40h-uint8 evaluation protocol and 150 completed epochs, writes the 240 seed-level rows plus
 mean-with-SEM and JSON summaries to the canonical `G_behaviour` analysis-data leaf, then renders
-validation accuracy, training accuracy, and overfit-gap figures from the saved mean-with-SEM CSV
-into the separate flat `G_behaviour` figure root. Ten-seed outputs use an `_10seed` suffix so the
-retained historical full-grid outputs are not overwritten.
+one curated 2-by-3 validation-accuracy, training-accuracy, and overfit-gap PDF from the saved
+mean-with-SEM CSV into `results/save/`. The historical uppercase-category figure outputs remain
+retained and are not regenerated.
 When metrics are staged locally from Amarel, pass `--source-root` with the original remote result
 root so the structured outputs retain durable provenance rather than the temporary staging path.
 

@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "id": "rl-atari-skiing-full18-stall-actionfix-v1-unclipped-gamma0p999-warmstart-4m-lstm-gru-gawf-s1",
+  "description": "Single-Skiing seed1 LSTM/GRU/GaWF weights-only adaptation, full 4M env steps each, BF16, unclipped TD rewards, gamma .999; smoke explicitly waived by human.",
+  "host": "amarel",
+  "status": "completed",
+  "created_at": "2026-09-05T20:04:22.542223+00:00",
+  "updated_at": "2026-09-07T14:32:23.346844+00:00",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_skiing_unclipped_nosmoke_20260905",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61247750"
+    ],
+    "run_ids": [],
+    "process_patterns": [
+      "run_atari_skiing_unclipped_l3.sh"
+    ],
+    "collect_gpu": true
+  },
+  "paths": {
+    "log_globs": [
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_unclipped_gamma0p999_4m_seed1/formal/61247750_*.out",
+      "/scratch/js3269/results/artifacts/rl/atari/skiing_unclipped_gamma0p999_4m_seed1/formal/61247750_*.err"
+    ],
+    "status_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/unclipped_gamma0p999_4m_seed1/formal",
+    "result_paths": [
+      "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/unclipped_gamma0p999_4m_seed1/formal/atari_dqn_skiing_fs4_stack4_l3_full18_stallactionfix_v1_unclipped_g0999_4m_lstm_seed1",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/unclipped_gamma0p999_4m_seed1/formal/atari_dqn_skiing_fs4_stack4_l3_full18_stallactionfix_v1_unclipped_g0999_4m_gru_seed1",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/unclipped_gamma0p999_4m_seed1/formal/atari_dqn_skiing_fs4_stack4_l3_full18_stallactionfix_v1_unclipped_g0999_4m_gawf_seed1"
+    ]
+  },
+  "tracking": {
+    "expected_units": 3,
+    "auto_complete": true,
+    "validation_mode": "strict",
+    "defaults": {
+      "metrics_file": "metrics.json",
+      "history_file": "metrics_history.jsonl",
+      "checkpoint_glob": "*.pth",
+      "checkpoint_count": 1
+    },
+    "units": [
+      {
+        "id": "lstm-seed1",
+        "array_task_id": 0,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/unclipped_gamma0p999_4m_seed1/formal/atari_dqn_skiing_fs4_stack4_l3_full18_stallactionfix_v1_unclipped_g0999_4m_lstm_seed1",
+        "done_file": "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/unclipped_gamma0p999_4m_seed1/formal/atari_dqn_skiing_fs4_stack4_l3_full18_stallactionfix_v1_unclipped_g0999_4m_lstm_seed1/status/done",
+        "fail_file": "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/unclipped_gamma0p999_4m_seed1/formal/atari_dqn_skiing_fs4_stack4_l3_full18_stallactionfix_v1_unclipped_g0999_4m_lstm_seed1/status/fail",
+        "expected": {
+          "global_step": 4000000,
+          "model_type": "lstm",
+          "hidden_size": 373,
+          "num_layers": 3,
+          "env_id": "ALE/Skiing-v5",
+          "atari_env_protocol": "skiing-stall-actionfix-v1",
+          "action_mapping_protocol": "single_canonical_full18",
+          "gamma": 0.999,
+          "reward_clip": false,
+          "amp_dtype": "bfloat16"
+        }
+      },
+      {
+        "id": "gru-seed1",
+        "array_task_id": 1,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/unclipped_gamma0p999_4m_seed1/formal/atari_dqn_skiing_fs4_stack4_l3_full18_stallactionfix_v1_unclipped_g0999_4m_gru_seed1",
+        "done_file": "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/unclipped_gamma0p999_4m_seed1/formal/atari_dqn_skiing_fs4_stack4_l3_full18_stallactionfix_v1_unclipped_g0999_4m_gru_seed1/status/done",
+        "fail_file": "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/unclipped_gamma0p999_4m_seed1/formal/atari_dqn_skiing_fs4_stack4_l3_full18_stallactionfix_v1_unclipped_g0999_4m_gru_seed1/status/fail",
+        "expected": {
+          "global_step": 4000000,
+          "model_type": "gru",
+          "hidden_size": 458,
+          "num_layers": 3,
+          "env_id": "ALE/Skiing-v5",
+          "atari_env_protocol": "skiing-stall-actionfix-v1",
+          "action_mapping_protocol": "single_canonical_full18",
+          "gamma": 0.999,
+          "reward_clip": false,
+          "amp_dtype": "bfloat16"
+        }
+      },
+      {
+        "id": "gawf-seed1",
+        "array_task_id": 2,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/unclipped_gamma0p999_4m_seed1/formal/atari_dqn_skiing_fs4_stack4_l3_full18_stallactionfix_v1_unclipped_g0999_4m_gawf_seed1",
+        "done_file": "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/unclipped_gamma0p999_4m_seed1/formal/atari_dqn_skiing_fs4_stack4_l3_full18_stallactionfix_v1_unclipped_g0999_4m_gawf_seed1/status/done",
+        "fail_file": "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/unclipped_gamma0p999_4m_seed1/formal/atari_dqn_skiing_fs4_stack4_l3_full18_stallactionfix_v1_unclipped_g0999_4m_gawf_seed1/status/fail",
+        "expected": {
+          "global_step": 4000000,
+          "model_type": "gawf",
+          "hidden_size": 604,
+          "num_layers": 3,
+          "env_id": "ALE/Skiing-v5",
+          "atari_env_protocol": "skiing-stall-actionfix-v1",
+          "action_mapping_protocol": "single_canonical_full18",
+          "gamma": 0.999,
+          "reward_clip": false,
+          "amp_dtype": "bfloat16"
+        }
+      }
+    ]
+  },
+  "protocol": {
+    "seed": 1,
+    "total_env_steps_per_model": 4000000,
+    "gamma": 0.999,
+    "reward_clip": false,
+    "amp_dtype": "bfloat16",
+    "smoke_skipped": true,
+    "smoke_waiver": "Explicit human prompt on 2026-09-05: single-Skiing three-model test does not need smoke; submit full 4M directly.",
+    "initialization": "weights_only; fresh optimizer/replay/step/epsilon/LR schedules",
+    "source_root": "/scratch/js3269/results/data/rl/atari/5task_18action/single_skiing/initial_weights_unclipped_g0999_20260905",
+    "source_provenance": {
+      "lstm": {
+        "source_relative_path": "formal_20m_4mpertask_raw_seeds/atari_dqn_skiing_fs4_stack4_l3_full18_stallactionfix_v1_warmstart20m_1m_lstm_seed1/source/dqn_lstm_none_L3_ALE_Pong-v5__ALE_Breakout-v5__ALE_Assault-v5__ALE_Seaquest-v5__ALE_Skiing-v5.pth",
+        "sha256": "0c06301675543c5c559951d4c42e96082989ea1dbcab3057d7189c6a2b268e76",
+        "global_step": 20000000
+      },
+      "gru": {
+        "source_relative_path": "amarel_inprogress_videos_20260826/checkpoints/gru_seed1/dqn_gru_none_L3_ALE_Pong-v5__ALE_Breakout-v5__ALE_Assault-v5__ALE_Seaquest-v5__ALE_Skiing-v5.pth",
+        "sha256": "2da289146bf06e60664687ac2dd90c0e1ab9b0d3c9e3a785a12cf229f9056944",
+        "global_step": 20000000
+      },
+      "gawf": {
+        "source_relative_path": "formal_20m_4mpertask_raw_seeds/atari_dqn_skiing_fs4_stack4_l3_full18_stallactionfix_v1_warmstart19450000_1m_gawf_seed1/source/gawf_model_from_latest_checkpoint.pth",
+        "sha256": "1aa6217322270bf62382912caaecaa1f28d6c7846bb3e2ea676420ed82abfcd8",
+        "global_step": 19450000
+      }
+    },
+    "frame_skip": 4,
+    "frame_stack": 4,
+    "buffer_size": 500000,
+    "learning_rate": 0.0001,
+    "learning_rate_decay_step": 1000000,
+    "learning_rate_decay_scale": 0.1,
+    "exploration_steps": 500000,
+    "start_epsilon": 1.0,
+    "end_epsilon": 0.01,
+    "keep_replay_on_success": true
+  },
+  "resources": {
+    "partition": "gpu",
+    "constraint": "adalovelace",
+    "gpus_per_task": 1,
+    "cpus_per_task": 16,
+    "memory": "64G",
+    "walltime": "72:00:00",
+    "array_concurrency": 3,
+    "requeue": true
+  },
+  "notes": [
+    "Submitted directly with --skip-smoke; no smoke jobs and no smoke dependency. Post-submission Slurm state PENDING, array 0-2%3, Dependency=(null).",
+    "CPU preflight 61247746 passed submit-safety, reward/resume/Skiing tests and three-model dry-runs; no pytest executed in local aim3_rnn.",
+    "LSTM/GRU source step 20M, GaWF source step 19.45M exactly matches original Skiing curve initialization; does not warmstart from the completed Skiing 4M endpoint.",
+    "18-output Q head and single 18-to-9 legal-action mapping are unchanged. Continuous 450-step stall boundary and its raw-reward adjustment/bootstrap behavior remain unchanged. No reward rescaling or video audit.",
+    "Checkpoint every 50k steps; USR1 warning 600 seconds before walltime forwards to training, then requeues after resumable save.",
+    "Existing snapshots, completed training leaves, Seaquest diagnostics, MiniGrid and other retained experiments remain unchanged."
+  ],
+  "completed_at": "2026-09-07T14:32:23.346844+00:00"
+}

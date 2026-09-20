@@ -263,6 +263,7 @@ def _load_all_sector_by_seed(data_root: Path) -> dict[str, list[pd.DataFrame]]:
                             "signpos": (selected_weight[keep] > 0.0).astype(np.int64),
                             "gate": selected_gate[keep],
                             "delta_gate": selected_delta[keep],
+                            "context": sector,
                         }
                     )
                 )
@@ -319,7 +320,9 @@ def _seed_level_stats(by_seed: dict[str, list[pd.DataFrame]]) -> dict[str, objec
             sign_values = {}
             for sign, label in ((1, "positive"), (0, "negative")):
                 selected = band.loc[band["signpos"] == sign]
-                sign_values[label] = float(selected["delta_gate"].mean())
+                sign_values[label] = float(
+                    selected.groupby("context", sort=True)["delta_gate"].mean().mean()
+                )
                 collected[f"{label}_overlap_mean"].append(sign_values[label])
                 collected[f"{label}_overlap_slope"].append(
                     _slope(
@@ -330,7 +333,9 @@ def _seed_level_stats(by_seed: dict[str, list[pd.DataFrame]]) -> dict[str, objec
             collected["overlap_gap"].append(
                 sign_values["positive"] - sign_values["negative"]
             )
-            collected["overall_delta_level"].append(float(frame["delta_gate"].mean()))
+            collected["overall_delta_level"].append(
+                float(frame.groupby("context", sort=True)["delta_gate"].mean().mean())
+            )
         result[name] = {key: _mean_sem(values) for key, values in collected.items()}
     return result
 

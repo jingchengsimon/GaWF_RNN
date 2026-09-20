@@ -438,3 +438,22 @@
   均已按 finalization 回收 resumable checkpoint/replay；因此累计 4M 使用各自 2M final
   `state_dict` 再启动独立 fresh 2M phase，继续固定末端 epsilon/LR，并在分析中为该 phase
   增加 2M x-axis offset。
+
+## 2026-09-07 — Skiing unclipped reward / gamma 0.999 未消除 BF16 Q ties
+
+- **改动（Change）：** 从匹配的五任务 source weights 开始，seed1 的三个模型完成新的
+  4M single-Skiing phase，取消 reward clip、gamma=0.999，保留 BF16 forward 和既定
+  stall boundary / 18→9 single mapping。
+- **原因（Reason）：** 检验恢复 reward 幅度与延长折扣 horizon 后，Q 分辨与行为是否改善。
+- **证据（Evidence）：** 每模型以 eval_seed=20260904 起始的 20 个 greedy episodes
+  审计最终 checkpoint；trace SHA256 校验通过。旧→新 top-Q exact tie rate：LSTM
+  93.35%→100%、GRU 94.40%→100%、GaWF 99.86%→100%；新方案跨不同 legal groups
+  的最优并列率也均为 100%，并非仅同一 legal action 的 aliases 并列。全部 18 个 Q
+  相等的比例分别为 100%、83.49%、0%；median |Q| 分别为 1032、6048、1056。
+  LSTM 所有 trace steps 的 18 个 Q 均为 -1032，argmax 全程选 NOOP；GaWF 99.89%
+  steps 选 NOOP。LSTM/GRU/GaWF 的 greedy mean return 为 -8994/-30000/-15875，
+  stalled episodes 为 0/20、20/20、0/20。
+- **现状（Current）：** 新方案仍无法区分最优动作，return 改善或自然结束不能证明学会
+  有效 steering；BF16 表示下 Q 尺度扩大、绝对量化间距增大，但本次未测量量化前的
+  action gaps，不能把全部 ties 归因于单一数值原因。旧方案分段重建 optimizer/replay，
+  新方案为一个可恢复的 4M phase，故不能单独归因于 clip 或 gamma。

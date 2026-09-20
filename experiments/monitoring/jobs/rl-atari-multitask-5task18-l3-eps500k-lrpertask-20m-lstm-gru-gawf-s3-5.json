@@ -5,7 +5,7 @@
   "host": "amarel",
   "status": "queued",
   "created_at": "2026-08-13T23:56:14-04:00",
-  "updated_at": "2026-08-26T12:06:37-04:00",
+  "updated_at": "2026-09-03T18:13:41-04:00",
   "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_ed1f038",
   "environment": {
     "name": "aim3_rnn",
@@ -13,7 +13,7 @@
   },
   "scheduler": {
     "type": "slurm",
-    "job_ids": ["60561566", "60561658", "60656109", "60656112", "60686224", "60686225", "60739444", "60787710", "60835981", "60835982", "60835983"],
+    "job_ids": ["60561566", "60561658", "60656109", "60656112", "60686224", "60686225", "60739444", "60787710", "60835981", "60835982", "60835983", "61220687"],
     "run_ids": [],
     "process_patterns": [
       "atari_dqn_5task_fs4_stack4_l3_buf0p5m_eps500k_lrpertask1m_20m_gru_seed",
@@ -33,7 +33,9 @@
       "experiments/rl/atari/amarel/artifacts/atari_5task_18action_l3_formal_20m_4mpertask_rnn_seeds3_5_amarel72h/recovery_20260823_*.out",
       "experiments/rl/atari/amarel/artifacts/atari_5task_18action_l3_formal_20m_4mpertask_rnn_seeds3_5_amarel72h/recovery_20260823_*.err",
       "experiments/rl/atari/amarel/artifacts/atari_5task_18action_l3_formal_20m_4mpertask_rnn_seeds3_5_amarel72h/recovery_20260825_*.out",
-      "experiments/rl/atari/amarel/artifacts/atari_5task_18action_l3_formal_20m_4mpertask_rnn_seeds3_5_amarel72h/recovery_20260825_*.err"
+      "experiments/rl/atari/amarel/artifacts/atari_5task_18action_l3_formal_20m_4mpertask_rnn_seeds3_5_amarel72h/recovery_20260825_*.err",
+      "experiments/rl/atari/amarel/artifacts/atari_5task_18action_l3_formal_20m_4mpertask_rnn_seeds3_5_amarel72h/recovery_20260903_*.out",
+      "experiments/rl/atari/amarel/artifacts/atari_5task_18action_l3_formal_20m_4mpertask_rnn_seeds3_5_amarel72h/recovery_20260903_*.err"
     ],
     "status_dir": "experiments/rl/atari/amarel/artifacts/atari_5task_18action_l3_formal_20m_4mpertask_rnn_seeds3_5_amarel72h/status",
     "result_paths": [
@@ -133,6 +135,7 @@
     "2026-08-23: GRU seed4 task 7 in array 60686224 reached 17.770M steps, then ended at the 72-hour limit with Slurm signal 10 and no active writer. Recovery array 60787710_7 resumes its exact checkpoint and five replay partitions.",
     "2026-08-25: GRU seed3, LSTM seed5, and GaWF seed3/5 had no active writer after 72-hour exit 0:10. Recovery wrapper array 60835981 maps GRU3/LSTM5/GaWF3 to their exact leaves. Job 60836173 was later cancelled before execution; GaWF seed5 task 60835982_5 was restored to afterany:60835981_1, preserving at most six concurrent GPU tasks.",
     "2026-08-25: active GaWF seed4 is 60739444_13. Recovery task 60835983_6 depends on afternotok:60739444_13, so it starts only if the old batch-signal job times out; all new wrapper tasks use direct SIGUSR1@600 and self-requeue after checkpointing.",
+    "2026-09-03: recovery job 61220687_12 resumes GaWF seed3 from 12.392M using its existing checkpoint and five replay partitions. Submission overrides the retired snapshot partition gpu-redhat with the current gpu partition while retaining one Ada Lovelace GPU, 16 CPUs, 64G, 72 hours, and direct SIGUSR1 checkpoint/requeue.",
     "Each array task requests one Ada Lovelace GPU; array throttle is 2.",
     "Array 60561566 failed before training because the comma-delimited SEEDS_CSV value was split by Slurm --export; its failed artifact leaf remains preserved under snapshot_32008e4.",
     "The active code root is a read-only snapshot derived from commit ed1f038; only its exact artifact leaf is writable."

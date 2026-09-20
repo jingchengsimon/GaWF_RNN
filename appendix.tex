@@ -1,0 +1,246 @@
+% Include this file from main.tex with \input{appendix}.
+% The manuscript preamble must load graphicx and its usual math/citation packages.
+% Table floats are maintained separately under tables/.
+% Source values follow docs/GaWF_STATS_RECORD.md (working draft dated 2026-09-15).
+\providecommand{\dg}{\Delta g}
+
+\appendix
+
+\section*{Evaluation and statistical conventions}
+\label{app:statistical-conventions}
+
+Unless stated otherwise, all reported summaries use ten independently trained models (training seeds 1--10). We first compute each statistic within a training seed and then report the mean and seed-level standard error of the mean (SEM), \(s/\sqrt{10}\), across seeds. Error bars and recovery-curve shading denote seed-level SEM. A gray point over a bar represents one training seed. Colored points in the connection-level supplementary analyses instead represent connection--condition observations and are visually distinguished from seed-level summaries.
+
+Evaluation uses the complete retained test trajectory rather than a random frame subsample unless an analysis explicitly requires balanced condition sampling. For the standard 32-frame rollout, the dataset yields 57,568 output frames per seed. We exclude the first output frame of every recurrent window because both the hidden state and feedback are reset at that point, leaving 55,769 frames. The same exclusion is applied to every other rollout length, including the 512-frame feedback analyses. Accuracy is computed separately for the identity and location readouts as the fraction of retained frames whose per-frame argmax equals the corresponding label. Recovery curves use absolute accuracy at each switch-relative offset; they are not normalized to a preswitch baseline.
+
+All retained uncertainty intervals use seed-level SEM. We do not display significance stars. The only hypothesis test reported in this appendix is the prespecified repeated-measures interaction analysis in Section~\ref{app:recurrent-gate}. Numerical precision is fixed by quantity: accuracies, accuracy changes, generalization gaps, and variance fractions are reported to one decimal place, whereas \(\dg\), sign gaps, slopes, and \(\Delta I^{\mathrm{gate}}\) are reported to three decimal places.
+
+\section{GaWF architecture and parameterization}
+\label{app:gawf-architecture}
+
+\subsection{Model data flow}
+
+At each recurrent step, the model receives two adjacent grayscale CM-MNIST frames, producing an input tensor of shape \((B,T,2,96,96)\). A shared convolutional encoder applies \(\mathrm{Conv}_{3\times3}(2,32)\), \(2\times2\) max pooling, layer normalization, and ReLU, followed by \(\mathrm{Conv}_{3\times3}(32,64)\), \(4\times4\) max pooling, layer normalization, a \(1\times1\) projection from 64 to 32 channels, ReLU, and adaptive average pooling to a \(6\times6\) grid. The resulting \((32,6,6)\) activation is flattened in contiguous channel-major order to \(x_t\in\mathbb{R}^{1152}\).
+
+The formal CM-MNIST model contains one GaWF recurrent layer with hidden size \(H=256\). Its hidden activation is passed to separate 10-class target-identity and 9-class target-location linear readouts. The previous raw readout logits are concatenated as
+\[
+z_{t-1}=[\ell^{\mathrm{id}}_{t-1};\ell^{\mathrm{loc}}_{t-1}]\in\mathbb{R}^{19}.
+\]
+No softmax is applied. The complete feedback vector is detached before it enters the next recurrent step, so losses at time \(t\) do not backpropagate through \(z_{t-1}\) into the previous readouts. Each rollout initializes both \(h_0\) and \(z_0\) to zero. More generally, the implementation supports stacked GaWF layers: non-final layers receive the adjacent upper-layer hidden state from the preceding recurrent step, while the final layer receives the previous model output; an optional positive feedback-projection dimension enables per-layer projected feedback. The experiments reported here use the single-layer, non-projected output-feedback configuration.
+
+\subsection{Connection-specific feedback gates}
+
+For the formal configuration, feedback is first clamped elementwise to \([-10,10]\). GaWF then constructs a connection-specific gate matrix as
+\[
+M_t=(U\odot z_{t-1})V,
+\qquad
+G_t=\sigma\!\left(\frac{M_t}{\tau}\right),
+\qquad \tau=0.5,
+\]
+where broadcasting over the feedback dimension gives \(U\in\mathbb{R}^{256\times19}\) and \(V\in\mathbb{R}^{19\times(1152+256)}\). Both factors are initialized as independent standard-normal draws multiplied by \(0.01\). Splitting \(G_t\) along its source dimension gives the input-pathway gate \(G_t^x\) and recurrent-pathway gate \(G_t^h\). The recurrent update is
+\[
+a_t=(G_t^x\odot W_{ih})x_t+(G_t^h\odot W_{hh})h_{t-1}+b_{ih}+b_{hh},
+\]
+\[
+h_t=\operatorname{Dropout}_{0.5}\!\left[\operatorname{ReLU}\!\left(\operatorname{LayerNorm}\!\left(\tanh a_t\right)\right)\right].
+\]
+The input and recurrent pathways share the same source-side factor \(U\); different column blocks of \(V\) serve the two source spaces. This factorization contains \(256\times19+19\times(1152+256)=31{,}616\) parameters. Separate \(U/V\) pairs for the two pathways would contain 36,480 parameters, so sharing saves 4,864 factor parameters, or \(13.33\%\).
+
+\subsection{Parameter accounting}
+
+Parameter matching is defined over the complete trainable model, including the shared encoder, recurrent core, and both readout heads. Table~\ref{tab:formal-config} reports the selected primary width, total trainable parameter count, and formal optimizer settings of each model. For RNN, LSTM, GRU, and GaWF, the reported width denotes the recurrent hidden size \(H\). For Mamba and S5, it denotes the model dimension \(d_{\mathrm{model}}\). Mamba uses a fixed state dimension \(d_{\mathrm{state}}=16\), whereas S5 uses \(d_{\mathrm{state}}=128\). The width entries should therefore be interpreted according to each architecture rather than as a common internal state dimension. All architectures instantiate the same encoder class and use the same PyTorch initialization rules, but their parameter tensors are independently initialized. RNN, LSTM, GRU, Mamba, and S5 receive no output-feedback pathway.
+
+The Mamba baseline uses one Mamba-v1 block with convolution width 4, expansion factor 2, a residual connection, zero inter-layer dropout, and output dropout \(0.5\). The S5 baseline uses one S5 layer with a residual connection, zero inter-layer dropout, and output dropout \(0.5\). No model uses a bidirectional recurrent core.
+
+\section{Hyperparameter selection and data-scale comparison}
+\label{app:hparams}
+
+Hyperparameters were selected with seed 42 on the fixed 40-hour validation split, using at most 100 epochs and early stopping with patience 15. For GaWF, we searched \(H\in\{64,128,256,512\}\), learning rate \(\{10^{-4},5\times10^{-4},10^{-3},5\times10^{-3}\}\), and weight decay \(\{0,10^{-5},10^{-4},10^{-3}\}\); after parameter matching fixed each baseline width, RNN, LSTM, and GRU used the same learning-rate and weight-decay sets, while Mamba and S5 added \(10^{-2}\) to the learning-rate set. Every candidate received the same per-run training budget, but the recorded grids did not contain the same number of configurations per architecture: the 40-hour GaWF search evaluated 64 configurations, RNN/LSTM/GRU evaluated 16 each, and Mamba/S5 evaluated 20 each. In every case, the configuration maximizing validation target-identity accuracy was selected and then retrained with seeds 1--10 for 150 epochs without early stopping. The selected 40-hour GaWF configuration and the model-specific baseline configurations in Table~\ref{tab:formal-config} were frozen across the 4-, 10-, 20-, and 40-hour comparisons. Figure~\ref{fig:data-scale} reports training accuracy, validation accuracy, and their difference at the selected checkpoint; points and error bars are the mean and seed-level SEM over the ten formal runs.
+
+% Pending Amarel check: confirm the recorded Mamba and S5 totals by runtime instantiation.
+\input{tables/01_formal_model_configurations}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{results/figs/G_behaviour/data_scale_performance_2x3_10seed.pdf}
+\caption{Performance across training-data scales. The top row shows the target-identity readout and the bottom row shows the target-location readout. Columns report training accuracy, validation accuracy, and the train--validation accuracy gap. Points and error bars denote the mean and seed-level SEM over ten independently trained models.}
+\label{fig:data-scale}
+\end{figure*}
+
+\section{CM-MNIST generation and evaluation datasets}
+\label{app:data}
+
+\subsection{Standard train, validation, and test movies}
+
+The standard generator produces \(96\times96\) grayscale movies at 24 frames per second. Each frame contains one foreground target and a number of distractors sampled at each background-segment onset from \(\{1,2,4,8,12\}\). Every object is an unscaled \(28\times28\) MNIST image. Objects are combined by pixelwise addition followed by saturation to the range \([0,255]\), so overlapping bright pixels clip rather than wrap.
+
+The foreground speed is sampled from \(\{0,1,2,3,4,6,8\}\) pixels per frame. Its direction remains constant within a foreground segment, and its center is reflected at a boundary by clamping the image inside the frame and reversing the corresponding velocity component. Initial foreground centers are sampled uniformly from the region in which the complete \(28\times28\) image fits. A foreground switch samples a new digit identity and MNIST exemplar, a new valid center, and a new speed, while retaining the previous direction; if the previous speed was zero, the replacement direction is the positive horizontal axis. Distractors share a speed magnitude sampled from \(\{1,2,4,6,8\}\), but each distractor independently resamples a direction uniformly from \([0,2\pi)\) on every frame before applying the same boundary rule.
+
+Switch intervals are sampled from an exponential distribution with mean one second, converted to frames at 24 fps. The standard exclusive-switch protocol chooses with equal probability whether an event replaces the foreground or the complete background set. A background switch resamples the number of distractors, their digit identities and MNIST exemplars, their centers, the shared speed magnitude, and their initial directions. The switch flag is attached to the frame after the corresponding state replacement and position update, so the labeled switch frame already contains the new foreground or background objects.
+
+Every frame records the foreground digit identity, rendered center coordinates, foreground speed, distractor identities, background speed, and foreground/background switch flags. Target location is the row-major index of a \(3\times3\) grid. For rendered center \((x,y)\) in a \(96\times96\) frame, the column and row are
+\[
+c=\left\lfloor\operatorname{clip}\!\left(3x/95,0,2\right)\right\rfloor,
+\qquad
+r=\left\lfloor\operatorname{clip}\!\left(3y/95,0,2\right)\right\rfloor,
+\qquad
+s=3r+c.
+\]
+
+The formal train, validation, and test movies use the same generator and random distributions but are distinct realizations. A single NumPy random stream initialized with seed 42 generates the splits in train--validation--test order. The MNIST exemplar pools are disjoint: indices 0--39,999 for training, 40,000--49,999 for validation, and 50,000--59,999 for test. The 40-hour training movie contains 3,456,000 raw frames; validation and test each contain 57,600 raw frames, corresponding to 2,400 seconds.
+
+\subsection{Joint-balanced held-out test movie}
+
+We generated a second held-out test movie from MNIST indices 50,000--59,999 for switch-centered analyses. This movie retains the \(96\times96\), 24-fps, and 2,400-second settings but jointly replaces foreground and background objects at every scheduled event. The event schedule contains each of the 90 target-identity-by-target-location combinations exactly 27 times, for 2,430 events. Event frames are sampled uniformly without replacement from frame 2 onward and sorted, so event count is fixed and the resulting intervals are random rather than exponentially distributed.
+
+At each joint switch, the foreground and nine distractors contain the ten digit identities exactly once. Their onset centers cover all nine sectors, with one uniformly sampled sector containing a second object. Strict balance therefore applies to target identity and target location at switch onset, not to the total number of frames occupied by each condition between switches.
+
+\subsection{Inference protocols}
+
+Canonical six-model accuracy uses the standard test movie with 32-frame rollouts, whereas the main GaWF feedback-shuffle analysis uses the same movie with 512-frame rollouts. Their absolute accuracies can therefore differ because the recurrent state is reset at different frequencies, not because they use different datasets. The six-model switch-recovery analysis uses the joint-balanced test movie with 32-frame rollouts, and the supplementary feedback-removal recovery analysis uses that movie with 512-frame rollouts. Every protocol excludes the first output of each recurrent window.
+
+\section{Training, checkpoint selection, and compute}
+\label{app:training}
+
+We trained with truncated backpropagation through time over 32 recurrent steps. Each step consumes two adjacent frames, and each non-overlapping 32-step window resets hidden state and feedback. For target identity and target location, cross-entropy is averaged over batch and time; the two losses are then summed with equal weight. Optimization uses AdamW without a learning-rate scheduler. Formal runs use batch size 256, no gradient accumulation, automatic mixed precision with gradient scaling, value clipping at 1, and global gradient-norm clipping at 1. Encoder dropout is zero and recurrent-output dropout is \(0.5\).
+
+Each formal run lasts 150 epochs with patience set to zero. The training loader drops its final incomplete batch, whereas validation and test loaders retain incomplete batches. Checkpoints are written atomically every five completed epochs and interrupted runs resume from the latest valid checkpoint. Partial runs do not write final result artifacts. The reported checkpoint is selected by maximum validation target-identity accuracy. Target-location accuracy may attain its own maximum at another epoch, but it does not change the selected checkpoint; selection is therefore not based on minimum validation loss.
+
+With two input channels and 32 recurrent outputs per window, the dataset length is \(\lfloor(N_{\mathrm{raw}}-2)/32\rfloor\). An epoch contains \(\lfloor\lfloor(N_{\mathrm{raw}}-2)/32\rfloor/256\rfloor\) optimizer updates because the final incomplete batch is dropped and gradient accumulation is disabled. The only change across scales is the duration of the training movie; validation data and all other formal settings remain fixed.
+
+Each formal training job used one Ada Lovelace GPU, 16 CPU cores, and 64 GB of memory.
+
+\section{Behavioral evaluation and feedback perturbations}
+\label{app:behavior}
+
+\subsection{Test accuracy and switch-aligned recovery}
+
+GaWF achieved the highest accuracy on both task variables under the canonical 32-frame evaluation protocol (target identity, \(86.6\%\pm0.1\%\); target location, \(93.3\%\pm0.1\%\)). Mamba was the closest baseline on both readouts (target identity, \(83.1\%\pm0.2\%\); target location, \(92.6\%\pm0.1\%\)). Every reported accuracy excludes the window-initial output and is first computed within a training seed before aggregation across seeds.
+
+Switch-aligned curves use offsets from ten frames before to ten frames after a foreground switch. The first post-switch frame is denoted post1; there is no offset zero. When neighboring switches are separated by less than twice the analysis radius, frames that may be contaminated by the neighboring event are masked, with post-switch assignment taking priority over pre-switch assignment. Each offset uses all available events and may therefore have a different event count. We compute an accuracy curve within each training seed and plot the mean and SEM across seeds. The curves are interpreted qualitatively; we do not define a recovery threshold, a required number of consecutive frames, a preswitch reference level, or a scalar recovery time.
+
+\subsection{Feedback shuffling and removal}
+
+The feedback-shuffle ablation first computes the normal live feedback trajectory. Within each 512-frame recurrent window and independently for every sample, it then permutes the temporal indices of only the selected feedback segment. The unshuffled segment remains the live detached feedback produced by that rollout. Shuffling target-location feedback strongly reduced both readouts, whereas shuffling target-identity feedback had a smaller and more selective effect. Relative to the matched 512-frame baseline, location-feedback shuffling changed target-identity and target-location accuracy by \(-35.5\) and \(-31.1\) percentage points, respectively; identity-feedback shuffling changed them by \(-16.3\) and \(-2.5\) percentage points. This ablation was applied only to GaWF because the five baselines do not have output feedback.
+
+The supplementary recovery analysis uses the joint-balanced test movie and the same 512-frame reset schedule. It compares the intact model with conditions that set the identity-feedback segment, location-feedback segment, or complete feedback vector to zero. Clearing all feedback sets the GaWF pre-sigmoid modulation to zero and hence \(G=0.5\); it is not equivalent to an RNN baseline. Every window-initial output is excluded before the recovery curves are aggregated.
+
+% Replace this file with the freshly rendered reset-excluded v5 artifact before submission.
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{results/save/Supple1_jointswitch_balanced_10digit_unique_sector_covered_prepost10_fig_ablation_switch_recovery.pdf}
+\caption{Switch-aligned recovery after removing feedback components. Curves show absolute target-identity and target-location accuracy from pre10 through post10 on the joint-balanced held-out movie. Lines and shading denote the mean and seed-level SEM over ten independently trained GaWF models. The analysis uses 512-frame rollouts and excludes the first output of every recurrent window.}
+\label{fig:feedback-removal-recovery}
+\end{figure*}
+
+\section{Gate-value and effective-weight distributions}
+\label{app:gate-distributions}
+
+Gate histograms use every retained frame from each test trajectory. The input gate contributes \(256\times1152\) connection values per frame and the recurrent gate contributes \(256\times256\). Within a seed, gate values are accumulated into 400 equal-width bins on \([0,1]\). Exact medians are computed before binning. Effective-weight histograms use 500 bins on a seed-specific symmetric interval \([-\max|W|,+\max|W|]\), accumulate both the static weights \(W\) and framewise effective weights \(G\odot W\), and are reprojected to a common symmetric grid across seeds. The vertical axis is probability mass per bin.
+
+Both gates have U-shaped distributions, but the input gate is more strongly concentrated near zero. The input-gate median was \(0.009\pm0.001\), whereas the recurrent-gate median was \(0.511\pm0.009\). After reset exclusion, \(64.0\%\pm0.6\%\) of input gates were below 0.1 and \(21.2\%\pm0.6\%\) were above 0.9. The corresponding recurrent-gate fractions were \(32.0\%\pm0.8\%\) and \(34.8\%\pm0.7\%\). Multiplication by these gates increases the effective-weight mass near zero while leaving a subset of weights close to their original magnitude, consistent with feedback-dependent dynamic sparse routing.
+
+Before reset exclusion, both histograms contain a \(3.125\%\) point mass at \(G=0.5\), using the numerical criterion \(|G-0.5|<10^{-6}\). This mass is produced by the zero-feedback first frame of each 32-frame recurrent window: 1,799 of the 57,568 outputs per seed are reset frames, and zero feedback gives \(\sigma(0)=0.5\) for every connection. Outside reset frames, values within \(10^{-6}\) of 0.5 account for less than \(0.001\%\) of either gate. The point mass is therefore not a fixed block of feedback-insensitive destination units. Using \(\max_r|U_{jr}|<10^{-6}\) as the criterion, none of the 256 destination units is disconnected from feedback in any seed. The substantial middle mass remaining in the recurrent gate also means that it should not be characterized as uniformly binary.
+
+\section{Balanced task-variable variance decomposition}
+\label{app:variance-decomposition}
+
+\subsection{Balanced sampling and decomposition}
+
+All analyses in this and the following two sections use a common balanced-sampling operation unless stated otherwise. After removing the 1,799 reset outputs, each seed contains 55,769 eligible frames. We partition frames into the 90 target-identity-by-target-location cells and sample without replacement to the smallest cell count, 211 frames per cell. Each balanced draw therefore contains 18,990 frames. We use 20 fixed draws generated with selection seed 20260719; a frame is not repeated within a draw but may reappear in another draw. Draws are averaged within a training seed and are not treated as independent inference units.
+
+Let \(\mu_{sd}\) be a balanced cell mean for sector \(s\) and digit \(d\), \(\mu\) its grand mean, \(\alpha_s=\mu_{s\cdot}-\mu\), \(\beta_d=\mu_{\cdot d}-\mu\), and \(\gamma_{sd}=\mu_{sd}-\mu-\alpha_s-\beta_d\). The condition-mean decomposition reports the sums of squares of \(\alpha_s\), \(\beta_d\), and \(\gamma_{sd}\), normalized by their sum. Location, identity, and sector-by-digit interaction therefore sum to \(100\%\) and exclude trial-level residual variance. For the complementary trial-level decomposition, the same three components are multiplied within each seed by one minus the residual fraction, and the residual \(SS_{\mathrm{residual}}/SS_{\mathrm{total,trial}}\) is added as a fourth component; these four components sum to \(100\%\).
+
+\subsection{Activation and gate specialization}
+
+The shared encoder produced a location-dominated but strongly conjunctive representation, whereas GaWF hidden activation shifted toward target identity with a smaller interaction component (Figure~\ref{fig:activation-condition-variance}). At synapse level, the input gate was dominated by target location and the recurrent gate by target identity (input gate: location \(76.7\%\pm0.5\%\), identity \(16.0\%\pm0.4\%\), interaction \(7.3\%\pm0.1\%\); recurrent gate: location \(23.3\%\pm0.5\%\), identity \(71.7\%\pm0.5\%\), interaction \(5.0\%\pm0.1\%\)). These results indicate a complementary assignment of task variables to the input and recurrent pathways.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{results/save/iclr_figs/Appendix_fig2_activation_anova_1x2_6model_10seed.pdf}
+\caption{Condition-mean variance decomposition of input and hidden activations across the six models. Each panel reports the target-location, target-identity, and sector-by-digit interaction fractions, normalized to sum to \(100\%\) within each model and representation. Bars and error bars denote the mean and seed-level SEM over ten independently trained models; each gray point represents one training seed. Trial-level residual variance is excluded from this decomposition.}
+\label{fig:activation-condition-variance}
+\end{figure*}
+
+For comparison with unit-level LSTM and GRU gates, we project each GaWF gate to its destination unit by taking the arithmetic mean over all incoming synaptic gates. Conventional gates also reflect both task variables, but their dominant fractions are less pronounced. This comparison does not isolate connection-level granularity from the use of output-derived feedback.
+
+The trial-level decomposition makes explicit how much framewise variation is not captured by balanced condition means. For the four core GaWF objects, the location / identity / interaction / residual fractions were \(51.1/10.6/4.9/33.5\%\) for the input gate, \(15.0/46.3/3.2/35.5\%\) for the recurrent gate, \(7.3/1.0/6.0/85.7\%\) for encoder activation, and \(18.1/30.3/9.3/42.3\%\) for hidden activation. These quantities use a different denominator from the condition-mean fractions above and should not be substituted for them.
+
+Under the 512-frame feedback-shuffle protocol, encoder activation was identical across intact and shuffled conditions, as expected because the perturbation occurs after encoding. Hidden-activation residual variance increased from \(38.4\%\pm0.3\%\) at baseline to \(64.0\%\pm0.8\%\) after identity-feedback shuffling and \(81.8\%\pm0.4\%\) after location-feedback shuffling, while the unnormalized between-condition variance decreased from \(2.994\pm0.084\) to \(1.330\pm0.064\) and \(0.464\pm0.013\), respectively. Changes in normalized task-variable fractions under shuffling therefore accompany a loss of total condition-structured signal rather than a pure redistribution among factors.
+
+\section{Spatial organization of the input gate}
+\label{app:input-gate}
+
+Encoder activation and input-gate modulation were both dominated by target location. We therefore tested whether location feedback preferentially opened input connections from spatially aligned encoder positions, as expected for a selective-attention mechanism \citep{desimone1995neural}. The encoder output is reshaped directly from the contiguous flattening order to \((32,6,6)\). Each cell of the \(3\times3\) target-location grid maps to a strictly non-overlapping \(2\times2\) block within every encoder channel. A location therefore has 128 matching sources (32 channels times four grid positions) and 1,024 other sources. The analysis does not use a receptive-field overlap threshold, and the historical 441-of-1,152 mask is not part of the formal protocol.
+
+Using the balanced frames defined in Section~\ref{app:variance-decomposition}, we first compute each synapse's mean gate for every sector condition. For a connection \(ij\),
+\[
+\dg_{ij}(s)=\bar g_{ij}(s)-\frac{1}{9}\sum_{s'=1}^{9}\bar g_{ij}(s'),
+\]
+so \(\dg\) is measured relative to the same connection's mean across sector conditions. Spatial maps reshape the source axis to \((32,6,6)\) and then average over destination units and channels. Sign/magnitude analyses use nine \(|W|\)-quantile bins. Within each seed and source group, positive and negative connections are restricted to their shared \(|W|\) support before separate OLS fits of \(\dg\) on \(|W|\); fitted slopes are then summarized across training seeds.
+
+Matching sources received a strong increase in modulation for both weight signs, whereas other sources were weakly suppressed (Table~\ref{tab:input-gate-sign}). The small matching sign gap indicates similar mean modulation relative to each sign's within-connection baseline. Magnitude dependence was not identical: positive-weight matching modulation approached zero as \(|W|\) increased, whereas the negative-weight slope remained close to zero. The result is sign-insensitive in its mean spatial selection but not in every aspect of its magnitude dependence.
+
+\input{tables/14_input_gate_sign}
+
+The corresponding within-seed slopes were \(-0.043\pm0.006\) for positive matching connections and \(+0.007\pm0.003\) for negative matching connections. For other sources, the slopes were \(+0.005\pm0.001\) and \(-0.001\pm{<}0.001\), respectively.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{results/save/iclr_figs/Supple2_input_gate_sign_vs_mag_sector_delta_zoom_10seed_9sector.pdf}
+\caption{Input-gate modulation as a function of static weight magnitude. Positive- and negative-weight connections are shown separately for location-matching and other encoder sources. Faint points are a display-only subsample of pooled connection--condition observations; curves show nine-bin means and seed-level SEM across ten training seeds. Seed-level gap and slope summaries are reported in the text.}
+\label{fig:input-gate-magnitude-supp}
+\end{figure*}
+
+\section{Tuned ensembles, recurrent-gate modulation, and recurrent current}
+\label{app:recurrent-gate}
+
+\subsection{Defining condition-specific tuned ensembles}
+
+Tuned/remainder masks are defined from validation-split hidden activations and then applied to an independent test split for gate and current analyses. For each hidden unit, we use 1,000 stratified permutations: sector labels are shuffled within digit strata to test location tuning, and digit labels are shuffled within sector strata to test identity tuning. Benjamini--Hochberg correction is applied separately to each factor's unitwise \(p\)-values, with \(q\leq0.05\) defining a passed factor. A unit is marked interaction-dominant when its interaction variance exceeds both marginal-factor variances. The eligible pool for a task variable consists of units that pass that factor and are not interaction-dominant.
+
+For each digit or sector condition, \(T\) contains the top \(\lceil0.1|E|\rceil\) units in the corresponding eligible pool \(E\), ranked by standardized marginal tuning; \(R\) contains the remaining hidden units. Across seeds 1--10, \(|T|=[25,24,24,24,24,24,24,24,23,25]\). The sets are condition-specific and may overlap. Across the 45 digit pairs, normalized overlap \(|T_a\cap T_b|/\sqrt{|T_a||T_b|}\) was \(12.1\%\pm0.2\%\), compared with a conditional independent-set baseline of \(10.2\%\pm{<}0.1\%\). Recurrent groups use the source-to-destination order \(T\!\to\!T\), \(T\!\to\!R\), \(R\!\to\!T\), and \(R\!\to\!R\). Self-connections are retained.
+
+\subsection{Recurrent-gate localization and sign dependence}
+
+For digit conditions, all-connections recurrent modulation was most negative within \(T\!\to\!T\) (\(T\!\to\!T=-0.310\pm0.008\), \(T\!\to\!R=-0.094\pm0.005\), \(R\!\to\!T=-0.005\pm0.002\), and \(R\!\to\!R=+0.014\pm0.001\)). Sector-conditioned modulation was weaker and less localized (\(T\!\to\!T=-0.095\pm0.003\), \(T\!\to\!R=-0.079\pm0.003\), \(R\!\to\!T=+0.012\pm0.001\), and \(R\!\to\!R=+0.008\pm{<}0.001\)). These results localize identity-dependent recurrent modulation primarily within the digit-tuned ensemble.
+
+Within each group, sign-specific means are computed over the shared positive/negative \(|W|\) support. Digit-conditioned \(T\!\to\!T\) connections of both signs closed relative to their own condition means, but negative-weight connections closed more strongly, producing a positive sign gap of \(+0.110\pm0.006\) (Table~\ref{tab:recurrent-sign-gap}). Positive-weight modulation approached zero with increasing magnitude, whereas negative-weight modulation was nearly flat (within-seed slopes \(+0.129\pm0.016\) and \(-0.021\pm0.014\)). The sign-gap pattern varied across recurrent groups and between task variables, supported by the prespecified repeated-measures group-by-variable analysis of seed-level sign gaps (\(F(3,27)=479.466\), \(p=1.62\times10^{-23}\)).
+
+\input{tables/15_recurrent_sign_gap}
+
+The third gate bar used in the combined figure is an all-connections mean: within each seed it averages every nonzero connection--condition row in the group. It is therefore equivalent to weighting positive- and negative-sign means by their actual row counts, not to averaging the two signs equally. The displayed sign-specific bars use a shared-\(|W|\) subset, so the all-connections bar cannot be reconstructed from those two displayed bars.
+
+% Before submission, update the current combined Figure 7 legend from ``Balanced'' to ``All connections''.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{results/save/iclr_figs/Supple3_rec_gate_sign_vs_mag_digit_sector_delta_2x4_10seed.pdf}
+\caption{Recurrent-gate modulation as a function of static recurrent-weight magnitude. The first row shows digit conditions and the second row shows sector conditions; columns show \(T\!\to\!T\), \(T\!\to\!R\), \(R\!\to\!T\), and \(R\!\to\!R\). Faint points are a display-only subsample of pooled connection--condition observations; curves show nine-bin means and seed-level SEM across ten training seeds. Slopes are fitted separately within each training seed over its shared positive/negative \(|W|\) support and summarized across seeds in the text.}
+\label{fig:recurrent-gate-magnitude-supp}
+\end{figure*}
+
+\subsection{Gate-dependent recurrent current}
+
+For condition \(c\), the recurrent current of a connection group is
+\[
+I_{\mathcal G}(c)=\sum_{(i,j)\in\mathcal G}\left\langle g_{ij}(t)W_{ij}h_j(t-1)\right\rangle_{t\in c},
+\]
+and its condition-centered value is \(\Delta I_{\mathcal G}(c)=I_{\mathcal G}(c)-\operatorname{mean}_{c'}I_{\mathcal G}(c')\). We isolate the instantaneous gate-dependent term as
+\[
+\Delta I^{\mathrm{gate}}_{\mathcal G}(c)=\sum_{(i,j)\in\mathcal G}\left\langle\left(g_{ij}(t)-\bar g_{ij}\right)W_{ij}h_j(t-1)\right\rangle_{t\in c},
+\]
+where \(\bar g_{ij}\) is the same connection's equally weighted mean across all ten digit conditions or all nine sector conditions. The observed hidden activity \(h_j(t-1)\) is retained, so this is an instantaneous decomposition rather than a counterfactual rollout with frozen gates.
+
+We use two normalizations for different questions. Per-destination-unit current divides each signed sum by the number of destination units, so the positive- and negative-weight contributions are additive. The connection-normalized analysis divides each sign by its own number of nonzero connections and computes the total as
+\[
+\Delta I^{\mathrm{gate}}_{\mathrm{all}}=
+\frac{N_+\Delta I^{\mathrm{gate}}_+ + N_-\Delta I^{\mathrm{gate}}_-}{N_++N_-}.
+\]
+The all-connections value is therefore a connection-count-weighted mean and is not the sum or equal-sign average of the two sign-specific means.
+
+Within digit-conditioned \(T\!\to\!T\), closing positive-weight connections reduced positive recurrent input, while the stronger closure of negative-weight connections reduced negative recurrent input (Table~\ref{tab:recurrent-current}). The latter effect was larger, giving a positive all-connections change (\(W>0\), \(-0.013\pm0.001\); \(W<0\), \(+0.056\pm0.003\); all connections, \(+0.025\pm0.001\)). The corresponding location-conditioned all-connections change was smaller (\(+0.002\pm{<}0.001\)). This supports functional disinhibition within digit-tuned ensembles. GaWF is not constrained by Dale's law, so ``disinhibition'' describes the reduction of negative recurrent contribution at connection level and does not identify inhibitory cell classes or a biological interneuron circuit.
+
+\input{tables/16_recurrent_current}
+
+The recurrent-current panels retained in the manuscript use the connection-normalized statistics in Table~\ref{tab:recurrent-current}. Earlier standalone per-destination-unit current figures are not treated as separate supplementary figures.

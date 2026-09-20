@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "id": "rl-atari-breakout-fs4-stack4-l3-lrdecay-greedy-video1ep-gawf-s9-eval20260909",
+  "description": "Breakout best final rolling100 GaWF seed9 (219.27), one greedy CUDA BF16 episode, eval seed20260909.",
+  "host": "amarel",
+  "status": "queued",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_seaquest_ac_20260908",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61355716"
+    ],
+    "run_ids": []
+  },
+  "paths": {
+    "log_globs": [
+      "/scratch/js3269/results/figs/rl/atari/breakout_4action/fs4_stack4_l3_10seed_lrdecay/videos/seed9_eval20260909/slurm_61355716.out",
+      "/scratch/js3269/results/figs/rl/atari/breakout_4action/fs4_stack4_l3_10seed_lrdecay/videos/seed9_eval20260909/slurm_61355716.err"
+    ],
+    "result_paths": [
+      "/scratch/js3269/results/figs/rl/atari/breakout_4action/fs4_stack4_l3_10seed_lrdecay/videos/seed9_eval20260909"
+    ]
+  },
+  "tracking": {
+    "expected_units": 1,
+    "auto_complete": true,
+    "validation_mode": "artifacts",
+    "units": [
+      {
+        "id": "gawf_seed9_episode",
+        "result_dir": "/scratch/js3269/results/figs/rl/atari/breakout_4action/fs4_stack4_l3_10seed_lrdecay/videos/seed9_eval20260909",
+        "done_file": "/scratch/js3269/results/figs/rl/atari/breakout_4action/fs4_stack4_l3_10seed_lrdecay/videos/seed9_eval20260909/done",
+        "required_files": [
+          "metadata.json",
+          "breakout_gawf_l3_seed9_episode.mp4",
+          "SHA256SUMS"
+        ]
+      }
+    ]
+  },
+  "resources": {
+    "partition": "gpu",
+    "constraint": "adalovelace",
+    "gpus_per_task": 1,
+    "cpus_per_task": 8,
+    "memory": "16G",
+    "walltime": "00:30:00"
+  },
+  "notes": [
+    "User requested one episode from best snapshot; selected highest final training rolling100 among ten GaWF seeds, not best greedy evaluation.",
+    "Inference only; existing immutable snapshot evaluator reused, no training or local pytest."
+  ],
+  "source_checkpoint": "/scratch/js3269/results/train_data/fs4_stack4_l3_10seed_lrdecay/atari_dqn_breakout_fs4_stack4_l3_10seed_lrdecay_gawf_seed9/dqn_gawf_qvalues_L3_ALE_Breakout-v5.pth"
+}

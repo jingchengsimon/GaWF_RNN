@@ -119,6 +119,10 @@ is missing, copy `.agents/local.example.md` and fill it in. Do not guess remote 
 执行这类工作提交 Amarel job。只有源数据无法安全获取到本地或确实需要远端专用计算时，才按
 远端 runbook 申请计算节点。
 
+训练默认遵循所属 protocol 的 smoke gate；人类 prompt 明确要求跳过 smoke 时允许跳过，
+并在 launcher 参数与实验 manifest 中记录该授权。跳过 smoke 不豁免 SSH 复用、提交脚本
+安全检查、精确输出路径检查或 checkpoint/recovery 约束。
+
 - Before remote diagnostics, tests, training, or result inspection, read the remote runbook and
   local configuration. Use the `aim3_rnn` environment; never use the remote default Python.
 - Treat every Amarel login node as control-plane only. A `submit_*.sh` launcher may perform

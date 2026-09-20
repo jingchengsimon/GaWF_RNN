@@ -5,7 +5,7 @@
   "host": "amarel",
   "status": "queued",
   "created_at": "2026-08-13T00:26:47-04:00",
-  "updated_at": "2026-08-25T11:39:12-04:00",
+  "updated_at": "2026-09-03T18:13:41-04:00",
   "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_5a1594f",
   "environment": {
     "name": "aim3_rnn",
@@ -13,7 +13,7 @@
   },
   "scheduler": {
     "type": "slurm",
-    "job_ids": ["60536204", "60637596", "60686223", "60835981"],
+    "job_ids": ["60536204", "60637596", "60686223", "60835981", "61220686"],
     "run_ids": [],
     "process_patterns": [
       "atari_dqn_5task_fs4_stack4_l3_buf0p5m_eps500k_lrpertask1m_20m_gawf_seed"
@@ -26,6 +26,8 @@
       "experiments/rl/atari/amarel/artifacts/atari_5task_18action_l3_formal_20m_4mpertask_gawf_amarel72h/formal/*.err",
       "experiments/rl/atari/amarel/artifacts/atari_5task_18action_l3_formal_20m_4mpertask_gawf_amarel72h/recovery_20260820_*.out",
       "experiments/rl/atari/amarel/artifacts/atari_5task_18action_l3_formal_20m_4mpertask_gawf_amarel72h/recovery_20260820_*.err",
+      "experiments/rl/atari/amarel/artifacts/atari_5task_18action_l3_formal_20m_4mpertask_gawf_amarel72h/recovery_20260903_*.out",
+      "experiments/rl/atari/amarel/artifacts/atari_5task_18action_l3_formal_20m_4mpertask_gawf_amarel72h/recovery_20260903_*.err",
       "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_ed1f038/experiments/rl/atari/amarel/artifacts/atari_5task_18action_l3_formal_20m_4mpertask_rnn_seeds3_5_amarel72h/recovery_20260825_*.out",
       "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_ed1f038/experiments/rl/atari/amarel/artifacts/atari_5task_18action_l3_formal_20m_4mpertask_rnn_seeds3_5_amarel72h/recovery_20260825_*.err"
     ],
@@ -75,6 +77,7 @@
     "Array 8-9 with SEED_COUNT=2 maps to GaWF seeds 1-2; each array task requests one Ada Lovelace GPU.",
     "2026-08-20: recovery array 60686223 resumes GaWF seeds 1-2 (tasks 8-9) in round 1; it is one of six concurrent recovery units.",
     "2026-08-25: both units reached 72-hour exit 0:10 with no active writer, resumable checkpoint, and five replay partitions. Shared recovery array 60835981 maps slots 2-3 to their exact leaves under this snapshot while retaining the direct-SIGUSR1 automatic requeue behavior.",
+    "2026-09-03: recovery job 61220686_9 resumes GaWF seed2 from 19.226M using its existing checkpoint and five replay partitions. Submission overrides the retired snapshot partition gpu-redhat with the current gpu partition while retaining one Ada Lovelace GPU, 16 CPUs, 64G, 72 hours, and direct SIGUSR1 checkpoint/requeue.",
     "The code root is a read-only snapshot of commit 5a1594f563bb6dcde8b4bfe0da4da4473614a9b4; only its exact artifact leaf is writable."
   ]
 }

@@ -1,0 +1,645 @@
+{
+  "schema_version": 1,
+  "id": "rl-atari-seaquest-full18-fs4-stack4-l3-ac-3m-lstm-gawf-s1-4",
+  "description": "Seaquest A/C LSTM/GaWF seeds1-4: sixteen independent 3M cells, each with isolated 25k smoke; original SJC diagnostic protocol.",
+  "host": "amarel",
+  "status": "queued",
+  "created_at": "2026-09-08T15:09:41.561249+00:00",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshot_seaquest_ac_20260908",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61303222"
+    ],
+    "run_ids": [],
+    "process_patterns": [
+      "seaquest_ac_diagnostic"
+    ],
+    "collect_gpu": true
+  },
+  "paths": {
+    "log_globs": [
+      "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/slurm_61303222_*.out",
+      "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/slurm_61303222_*.err",
+      "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/*/formal.log"
+    ],
+    "result_paths": [
+      "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/lstm_a_seed1",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/lstm_a_seed2",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/lstm_a_seed3",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/lstm_a_seed4",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/lstm_c_seed1",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/lstm_c_seed2",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/lstm_c_seed3",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/lstm_c_seed4",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/gawf_a_seed1",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/gawf_a_seed2",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/gawf_a_seed3",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/gawf_a_seed4",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/gawf_c_seed1",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/gawf_c_seed2",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/gawf_c_seed3",
+      "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/gawf_c_seed4"
+    ],
+    "status_dir": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908"
+  },
+  "tracking": {
+    "expected_units": 16,
+    "auto_complete": true,
+    "validation_mode": "strict",
+    "defaults": {
+      "metrics_file": "metrics.json",
+      "history_file": "metrics_history.jsonl",
+      "checkpoint_glob": "dqn_*.pth",
+      "checkpoint_count": 1
+    },
+    "units": [
+      {
+        "id": "lstm_a_seed1",
+        "array_task_id": 0,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/lstm_a_seed1",
+        "done_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/lstm_a_seed1/done",
+        "fail_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/lstm_a_seed1/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "lstm",
+          "hidden_size": 373,
+          "num_layers": 3,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 1000000,
+          "exploration_steps": 300000,
+          "epsilon": 0.01,
+          "gamma": 0.99,
+          "reward_clip": true,
+          "amp_dtype": "bfloat16"
+        },
+        "protocol": {
+          "seed": 1,
+          "variant": "a"
+        }
+      },
+      {
+        "id": "lstm_a_seed2",
+        "array_task_id": 1,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/lstm_a_seed2",
+        "done_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/lstm_a_seed2/done",
+        "fail_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/lstm_a_seed2/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "lstm",
+          "hidden_size": 373,
+          "num_layers": 3,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 1000000,
+          "exploration_steps": 300000,
+          "epsilon": 0.01,
+          "gamma": 0.99,
+          "reward_clip": true,
+          "amp_dtype": "bfloat16"
+        },
+        "protocol": {
+          "seed": 2,
+          "variant": "a"
+        }
+      },
+      {
+        "id": "lstm_a_seed3",
+        "array_task_id": 2,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/lstm_a_seed3",
+        "done_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/lstm_a_seed3/done",
+        "fail_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/lstm_a_seed3/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "lstm",
+          "hidden_size": 373,
+          "num_layers": 3,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 1000000,
+          "exploration_steps": 300000,
+          "epsilon": 0.01,
+          "gamma": 0.99,
+          "reward_clip": true,
+          "amp_dtype": "bfloat16"
+        },
+        "protocol": {
+          "seed": 3,
+          "variant": "a"
+        }
+      },
+      {
+        "id": "lstm_a_seed4",
+        "array_task_id": 3,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/lstm_a_seed4",
+        "done_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/lstm_a_seed4/done",
+        "fail_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/lstm_a_seed4/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "lstm",
+          "hidden_size": 373,
+          "num_layers": 3,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 1000000,
+          "exploration_steps": 300000,
+          "epsilon": 0.01,
+          "gamma": 0.99,
+          "reward_clip": true,
+          "amp_dtype": "bfloat16"
+        },
+        "protocol": {
+          "seed": 4,
+          "variant": "a"
+        }
+      },
+      {
+        "id": "lstm_c_seed1",
+        "array_task_id": 4,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/lstm_c_seed1",
+        "done_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/lstm_c_seed1/done",
+        "fail_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/lstm_c_seed1/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "lstm",
+          "hidden_size": 373,
+          "num_layers": 3,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 2000000,
+          "exploration_steps": 1000000,
+          "epsilon": 0.05,
+          "gamma": 0.99,
+          "reward_clip": true,
+          "amp_dtype": "bfloat16"
+        },
+        "protocol": {
+          "seed": 1,
+          "variant": "c"
+        }
+      },
+      {
+        "id": "lstm_c_seed2",
+        "array_task_id": 5,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/lstm_c_seed2",
+        "done_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/lstm_c_seed2/done",
+        "fail_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/lstm_c_seed2/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "lstm",
+          "hidden_size": 373,
+          "num_layers": 3,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 2000000,
+          "exploration_steps": 1000000,
+          "epsilon": 0.05,
+          "gamma": 0.99,
+          "reward_clip": true,
+          "amp_dtype": "bfloat16"
+        },
+        "protocol": {
+          "seed": 2,
+          "variant": "c"
+        }
+      },
+      {
+        "id": "lstm_c_seed3",
+        "array_task_id": 6,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/lstm_c_seed3",
+        "done_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/lstm_c_seed3/done",
+        "fail_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/lstm_c_seed3/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "lstm",
+          "hidden_size": 373,
+          "num_layers": 3,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 2000000,
+          "exploration_steps": 1000000,
+          "epsilon": 0.05,
+          "gamma": 0.99,
+          "reward_clip": true,
+          "amp_dtype": "bfloat16"
+        },
+        "protocol": {
+          "seed": 3,
+          "variant": "c"
+        }
+      },
+      {
+        "id": "lstm_c_seed4",
+        "array_task_id": 7,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/lstm_c_seed4",
+        "done_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/lstm_c_seed4/done",
+        "fail_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/lstm_c_seed4/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "lstm",
+          "hidden_size": 373,
+          "num_layers": 3,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 2000000,
+          "exploration_steps": 1000000,
+          "epsilon": 0.05,
+          "gamma": 0.99,
+          "reward_clip": true,
+          "amp_dtype": "bfloat16"
+        },
+        "protocol": {
+          "seed": 4,
+          "variant": "c"
+        }
+      },
+      {
+        "id": "gawf_a_seed1",
+        "array_task_id": 8,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/gawf_a_seed1",
+        "done_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/gawf_a_seed1/done",
+        "fail_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/gawf_a_seed1/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "gawf",
+          "hidden_size": 605,
+          "num_layers": 3,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 1000000,
+          "exploration_steps": 300000,
+          "epsilon": 0.01,
+          "gamma": 0.99,
+          "reward_clip": true,
+          "amp_dtype": "bfloat16"
+        },
+        "protocol": {
+          "seed": 1,
+          "variant": "a"
+        }
+      },
+      {
+        "id": "gawf_a_seed2",
+        "array_task_id": 9,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/gawf_a_seed2",
+        "done_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/gawf_a_seed2/done",
+        "fail_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/gawf_a_seed2/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "gawf",
+          "hidden_size": 605,
+          "num_layers": 3,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 1000000,
+          "exploration_steps": 300000,
+          "epsilon": 0.01,
+          "gamma": 0.99,
+          "reward_clip": true,
+          "amp_dtype": "bfloat16"
+        },
+        "protocol": {
+          "seed": 2,
+          "variant": "a"
+        }
+      },
+      {
+        "id": "gawf_a_seed3",
+        "array_task_id": 10,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/gawf_a_seed3",
+        "done_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/gawf_a_seed3/done",
+        "fail_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/gawf_a_seed3/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "gawf",
+          "hidden_size": 605,
+          "num_layers": 3,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 1000000,
+          "exploration_steps": 300000,
+          "epsilon": 0.01,
+          "gamma": 0.99,
+          "reward_clip": true,
+          "amp_dtype": "bfloat16"
+        },
+        "protocol": {
+          "seed": 3,
+          "variant": "a"
+        }
+      },
+      {
+        "id": "gawf_a_seed4",
+        "array_task_id": 11,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/gawf_a_seed4",
+        "done_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/gawf_a_seed4/done",
+        "fail_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/gawf_a_seed4/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "gawf",
+          "hidden_size": 605,
+          "num_layers": 3,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 1000000,
+          "exploration_steps": 300000,
+          "epsilon": 0.01,
+          "gamma": 0.99,
+          "reward_clip": true,
+          "amp_dtype": "bfloat16"
+        },
+        "protocol": {
+          "seed": 4,
+          "variant": "a"
+        }
+      },
+      {
+        "id": "gawf_c_seed1",
+        "array_task_id": 12,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/gawf_c_seed1",
+        "done_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/gawf_c_seed1/done",
+        "fail_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/gawf_c_seed1/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "gawf",
+          "hidden_size": 605,
+          "num_layers": 3,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 2000000,
+          "exploration_steps": 1000000,
+          "epsilon": 0.05,
+          "gamma": 0.99,
+          "reward_clip": true,
+          "amp_dtype": "bfloat16"
+        },
+        "protocol": {
+          "seed": 1,
+          "variant": "c"
+        }
+      },
+      {
+        "id": "gawf_c_seed2",
+        "array_task_id": 13,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/gawf_c_seed2",
+        "done_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/gawf_c_seed2/done",
+        "fail_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/gawf_c_seed2/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "gawf",
+          "hidden_size": 605,
+          "num_layers": 3,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 2000000,
+          "exploration_steps": 1000000,
+          "epsilon": 0.05,
+          "gamma": 0.99,
+          "reward_clip": true,
+          "amp_dtype": "bfloat16"
+        },
+        "protocol": {
+          "seed": 2,
+          "variant": "c"
+        }
+      },
+      {
+        "id": "gawf_c_seed3",
+        "array_task_id": 14,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/gawf_c_seed3",
+        "done_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/gawf_c_seed3/done",
+        "fail_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/gawf_c_seed3/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "gawf",
+          "hidden_size": 605,
+          "num_layers": 3,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 2000000,
+          "exploration_steps": 1000000,
+          "epsilon": 0.05,
+          "gamma": 0.99,
+          "reward_clip": true,
+          "amp_dtype": "bfloat16"
+        },
+        "protocol": {
+          "seed": 3,
+          "variant": "c"
+        }
+      },
+      {
+        "id": "gawf_c_seed4",
+        "array_task_id": 15,
+        "result_dir": "/scratch/js3269/results/data/rl/atari/5task_18action/seaquest_diagnostics/ac_3m_seeds1_4_20260908/formal/gawf_c_seed4",
+        "done_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/gawf_c_seed4/done",
+        "fail_file": "/scratch/js3269/results/artifacts/rl/atari/seaquest_ac_3m_seeds1_4_20260908/gawf_c_seed4/fail",
+        "expected": {
+          "global_step": 3000000,
+          "model_type": "gawf",
+          "hidden_size": 605,
+          "num_layers": 3,
+          "env_id": "ALE/Seaquest-v5",
+          "action_space_mode": "full18",
+          "num_actions": 18,
+          "frame_skip": 4,
+          "frame_stack": 4,
+          "atari_env_protocol": "baseline",
+          "buffer_size": 1000000,
+          "seq_len": 16,
+          "learning_rate": 0.0001,
+          "effective_learning_rate": 1e-05,
+          "learning_rate_decay_step": 2000000,
+          "exploration_steps": 1000000,
+          "epsilon": 0.05,
+          "gamma": 0.99,
+          "reward_clip": true,
+          "amp_dtype": "bfloat16"
+        },
+        "protocol": {
+          "seed": 4,
+          "variant": "c"
+        }
+      }
+    ]
+  },
+  "protocol": {
+    "seeds": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "variants": {
+      "a": {
+        "end_epsilon": 0.01,
+        "exploration_steps": 300000,
+        "learning_rate_decay_step": 1000000,
+        "gamma": 0.99
+      },
+      "c": {
+        "end_epsilon": 0.05,
+        "exploration_steps": 1000000,
+        "learning_rate_decay_step": 2000000,
+        "gamma": 0.99
+      }
+    },
+    "smoke_steps": 25000,
+    "formal_steps": 3000000,
+    "initialization": "fresh random initialization for smoke and formal; no weights-only warmstart",
+    "buffer_size": 1000000,
+    "seq_len": 16,
+    "sequences_per_batch": 8,
+    "batch_size": 32,
+    "train_frequency": 4,
+    "amp_dtype": "bfloat16",
+    "reward_clip": true,
+    "keep_replay_on_success": true,
+    "smoke_outputs_retained": true,
+    "source_experiment_ids": [
+      "rl-atari-seaquest-full18-fs4-stack4-l3-abcfgamma-3m-lstm-s2",
+      "rl-atari-seaquest-full18-fs4-stack4-l3-abcfgamma-3m-gawf-s2"
+    ]
+  },
+  "resources": {
+    "partition": "gpu",
+    "gpus_per_task": 1,
+    "constraint": "adalovelace",
+    "cpus_per_task": 16,
+    "memory": "64G",
+    "walltime": "72:00:00",
+    "array_concurrency": 16,
+    "requeue": true
+  },
+  "notes": [
+    "Indices 0-3 LSTM A,4-7 LSTM C,8-11 GaWF A,12-15 GaWF C; seeds1-4 in each block. No dependencies between units.",
+    "CPU preflight 61303166 passed tests and campaign quota gate (450 GiB x1.2). User quota before submission: used468.53 GiB, soft1024 GiB, headroom555.47 GiB.",
+    "Existing SJC seed2 results and all Skiing snapshots/results remain untouched. New result parents and read-only code snapshot.",
+    "No local pytest; per-unit smoke gates formal; existing trained/evaluation results are not overwritten. Signal forwards to training for replay flush and checkpoint before requeue."
+  ]
+}

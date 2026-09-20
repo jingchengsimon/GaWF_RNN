@@ -1,0 +1,19 @@
+% Table 14: input-gate modulation by source group and weight sign.
+\begin{table*}[t]
+\caption{Input-gate modulation by spatial source group and weight sign. Values are seed-level means over ten training seeds, rounded to five decimal places. Within each seed and source group, positive- and negative-weight connections are restricted to their common absolute-weight range (shared-\(|W|\) support) before computing sign-specific means and gaps. Gaps are computed before rounding. The Balanced row averages all nonzero connections using their actual positive/negative connection counts and is not the sum of the sign-specific rows.}
+\label{tab:input-gate-sign}
+\begin{center}
+\small
+\setlength{\tabcolsep}{8pt}
+\begin{tabular}{lrr}
+\multicolumn{1}{c}{\bf Metric} &
+\multicolumn{1}{c}{\bf Matching sources} &
+\multicolumn{1}{c}{\bf Other sources}
+\\ \hline \\
+\(W>0\) & \(0.27565\) & \(-0.03446\) \\
+\(W<0\) & \(0.28915\) & \(-0.03614\) \\
+Sign gap & \(-0.01350\) & \(0.00169\) \\
+Balanced & \(0.28251\) & \(-0.03531\) \\
+\end{tabular}
+\end{center}
+\end{table*}
