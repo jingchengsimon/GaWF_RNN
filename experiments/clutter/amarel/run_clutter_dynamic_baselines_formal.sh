@@ -62,6 +62,18 @@ if ! amarel_require_source_commit "$ROOT" "$SOURCE_COMMIT" "$SOURCE_COMMIT_STAMP
     "$TASK_ID" "$MODEL" "$SEED" "$(date -Is)" > "$FAIL_FILE"
   exit 1
 fi
+
+# Chained submissions release this array through afterok:<preflight aggregate>; re-verify on the
+# compute side that the gate actually passed for this exact source commit.
+SUMMARY="${AIM3_DYNAMIC_BASELINE_PREFLIGHT_SUMMARY:?AIM3_DYNAMIC_BASELINE_PREFLIGHT_SUMMARY is required}"
+if [[ ! -s "$SUMMARY" ]] \
+  || ! grep -Fq '"status": "passed"' "$SUMMARY" \
+  || ! grep -Fq "\"source_commit\": \"$SOURCE_COMMIT\"" "$SUMMARY"; then
+  printf 'status=failed task=%s model=%s seed=%s timestamp=%s\n' \
+    "$TASK_ID" "$MODEL" "$SEED" "$(date -Is)" > "$FAIL_FILE"
+  printf 'Preflight summary gate failed: %s\n' "$SUMMARY" >&2
+  exit 1
+fi
 CONDA_SH="${AIM3_CONDA_SH:-/home/js3269/enter/etc/profile.d/conda.sh}"
 set +u
 source "$CONDA_SH"

@@ -63,3 +63,19 @@ def test_compute_runners_are_valid_bash() -> None:
             check=False,
         )
         assert completed.returncode == 0, f"{name}: {completed.stderr}"
+
+
+def test_formal_submitter_supports_the_preflight_dependency_chain() -> None:
+    """The whole preflight -> aggregate -> formal chain must be expressible with afterok."""
+    text = (AMAREL_DIR / "submit_clutter_dynamic_baselines_formal.sh").read_text(encoding="utf-8")
+    assert "--afterok-preflight-aggregate" in text
+    assert '--dependency="afterok:$AFTEROK_PREFLIGHT"' in text
+    assert "AIM3_DYNAMIC_BASELINE_PREFLIGHT_SUMMARY" in text
+
+
+def test_formal_runner_rechecks_the_preflight_gate_on_the_compute_node() -> None:
+    """A chained array must re-verify the preflight summary for its own source commit."""
+    text = (AMAREL_DIR / "run_clutter_dynamic_baselines_formal.sh").read_text(encoding="utf-8")
+    assert "AIM3_DYNAMIC_BASELINE_PREFLIGHT_SUMMARY" in text
+    assert '"status": "passed"' in text
+    assert '\\"source_commit\\": \\"$SOURCE_COMMIT\\"' in text
