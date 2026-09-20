@@ -2,39 +2,45 @@
   "schema_version": 1,
   "id": "clutter-cm-mnist-feedback-controls-ep150-gawfadd-rnnfb-grufb-lstmfb-seeds1-10",
   "description": "CM-MNIST non-multiplicative feedback controls: parameter-matched GaWF-additive, RNN-FB, GRU-FB, and LSTM-FB; 150 epochs, seeds 1-10, reset-excluded test accuracy and feedback-shuffle evaluation.",
-  "host": "sjc-remote",
+  "host": "amarel",
   "status": "running",
-  "remote_root": "/G/MIMOlab/Codes/aim3_gawf_rnn",
+  "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260920/feedback_controls_amarel_571b260",
   "environment": {
     "name": "aim3_rnn",
-    "conda_init": "/G/anaconda3/etc/profile.d/conda.sh"
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
   },
   "scheduler": {
-    "type": "tmux",
-    "job_ids": [],
-    "run_ids": [
-      "sjc_clutter_feedback_controls_v1"
+    "type": "slurm",
+    "job_ids": [
+      "61717737",
+      "61717738",
+      "61717739"
     ],
-    "tmux_session": "sjc_clutter_feedback_controls_v1"
+    "run_ids": [],
+    "tmux_session": null
   },
   "paths": {
     "log_globs": [
-      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/run_20260920_002422.log",
-      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/clutter_feedback_controls_ep150_v1/*.log"
+      "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/61717737.preflight.out",
+      "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/61717738_*.out",
+      "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/61717739.aggregate.out"
     ],
-    "status_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/artifacts/clutter_feedback_controls_ep150_v1",
+    "status_dir": "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/status",
     "result_paths": [
-      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/feedback_controls/clutter_feedback_controls_ep150_v1/*"
+      "/scratch/js3269/results/data/clutter/runs/feedback_controls/clutter_feedback_controls_ep150_v1/*",
+      "/scratch/js3269/results/data/analysis/feedback_controls_reset_excluded_test_10seed_v1/*",
+      "/scratch/js3269/results/data/analysis/feedback_controls_shuffle_resetexcluded_10seed_v1/*",
+      "/scratch/js3269/results/data/analysis/feedback_controls_formal_10seed_v1/*"
     ]
   },
   "tracking": {
     "expected_units": 40,
     "auto_complete": true,
     "result_globs": [
-      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/feedback_controls/clutter_feedback_controls_ep150_v1/*"
+      "/scratch/js3269/results/data/clutter/runs/feedback_controls/clutter_feedback_controls_ep150_v1/*/*_metrics.json"
     ],
-    "done_glob": null,
-    "fail_glob": null,
+    "done_glob": "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/status/task_*.done",
+    "fail_glob": "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/status/task_*.fail",
     "defaults": {
       "expected": {},
       "checkpoint_glob": "*_model.pth",
@@ -43,9 +49,13 @@
     "units": []
   },
   "notes": [
-    "Source commit 8a4dc5c0ad9d914e3905014f9b8a94837dceac27; protocol_checks.json and sanity_seed1_200steps.json passed before formal launch.",
-    "After each training unit the same runner produces one reset-excluded test JSON and one sequence-512 reset-excluded feedback-shuffle result; final summary is mean plus SEM over ten seeds."
+    "Amarel is the single reference implementation for this experiment (user instruction 2026-09-20); progress, ETA and completion are reported from this entry only.",
+    "Amarel chain: preflight 61717737 (COMPLETED, 49s) -> training array 61717738 (0-39%40, --time=12:00:00, --requeue) -> aggregate 61717739 (afterok:61717738_*, gpu partition, 01:00:00).",
+    "40 units = {gawf_additive, rnn_fb, gru_fb, lstm_fb} x seeds 1-10, 150 epochs each; source commit 571b260cd274c2633c55fcef7bdda0b9bcec9de0 in execution snapshot feedback_controls_amarel_571b260; AIM3_NUM_WORKERS=2 and AIM3_PIN_MEMORY=1 on the CUDA compute nodes.",
+    "Measured per-unit cost is about 5h55m-5h57m (142.96-144.50 s/epoch over 150 epochs) against the 12h time limit.",
+    "Superseded, not deleted: the earlier sjc-remote attempt (tmux session and scheduler run id sjc_clutter_feedback_controls_v1, remote root /G/MIMOlab/Codes/aim3_gawf_rnn) stopped at epoch 40/150 on 2026-09-20 about 02:24 EDT, was paused by the user, and is no longer needed; its partial outputs are not part of the reported results and the Amarel array above replaces it.",
+    "Result leaves: one *_metrics.json, one *_model.pth and one *_train_state.pth per unit; each completed unit also writes one reset-excluded test JSON and one sequence-512 reset-excluded feedback-shuffle result, and the aggregate writes mean plus SEM over ten seeds."
   ],
   "created_at": "2026-09-20T04:24:50+00:00",
-  "updated_at": "2026-09-20T04:24:50+00:00"
+  "updated_at": "2026-09-20T17:36:38+00:00"
 }
