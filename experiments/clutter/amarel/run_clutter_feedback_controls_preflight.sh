@@ -13,6 +13,8 @@
 set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/execution_snapshot_identity.sh"
 ROOT="${AIM3_ROOT:?AIM3_ROOT is required}"
 STATUS_DIR="${AIM3_STATUS_DIR:?AIM3_STATUS_DIR is required}"
 PREFLIGHT_DIR="${AIM3_PREFLIGHT_DIR:?AIM3_PREFLIGHT_DIR is required}"
@@ -29,9 +31,7 @@ on_error() {
 trap on_error ERR
 
 cd "$ROOT"
-[[ "$(git rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || {
-  echo "Source commit changed after submission" >&2; exit 1;
-}
+assert_execution_snapshot_commit "$ROOT" "$SOURCE_COMMIT"
 
 CONDA_SH="${AIM3_CONDA_SH:-/home/js3269/enter/etc/profile.d/conda.sh}"
 set +u

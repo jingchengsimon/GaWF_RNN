@@ -1,4 +1,5 @@
 import re
+import subprocess
 from pathlib import Path
 
 
@@ -105,6 +106,30 @@ def test_agent_constraints_require_the_amarel_safety_gate() -> None:
     assert command in agents
     assert "Login-node safety boundary" in runbook
     assert command in runbook
+
+
+def test_feedback_control_snapshot_check_does_not_require_git(tmp_path: Path) -> None:
+    """Compute runners can verify a detached worktree when git is absent from PATH."""
+
+    commit = "a" * 40
+    snapshot = tmp_path / "snapshot"
+    git_dir = tmp_path / "git-metadata"
+    snapshot.mkdir()
+    git_dir.mkdir()
+    (snapshot / ".git").write_text(f"gitdir: {git_dir}\n", encoding="utf-8")
+    (git_dir / "HEAD").write_text(f"{commit}\n", encoding="utf-8")
+    helper = ROOT / "experiments/clutter/amarel/execution_snapshot_identity.sh"
+    command = 'source "$1"; assert_execution_snapshot_commit "$2" "$3"'
+
+    completed = subprocess.run(
+        ["/bin/bash", "-c", command, "snapshot-check", str(helper), str(snapshot), commit],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={"PATH": ""},
+    )
+
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_per_task_pilot_submitter_supports_normalized_sparse_array_tasks() -> None:

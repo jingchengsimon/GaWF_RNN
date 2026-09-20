@@ -17,6 +17,8 @@ export DISABLE_TQDM=1
 export AIM3_NUM_WORKERS="${AIM3_NUM_WORKERS:-2}"
 export AIM3_PIN_MEMORY="${AIM3_PIN_MEMORY:-1}"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/execution_snapshot_identity.sh"
 ROOT="${AIM3_ROOT:?AIM3_ROOT is required}"
 RESULTS="${AIM3_RESULTS_PATH:?AIM3_RESULTS_PATH is required}"
 DATA_DIR="${AIM3_CLUTTER_DATA_DIR:?AIM3_CLUTTER_DATA_DIR is required}"
@@ -59,9 +61,7 @@ printf 'status=running task=%s model=%s seed=%s timestamp=%s\n' \
   "$TASK_ID" "$MODEL" "$SEED" "$(date -Is)" > "$RUNNING_FILE"
 
 cd "$ROOT"
-[[ "$(git rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || {
-  echo "Source commit changed after submission" >&2; exit 1;
-}
+assert_execution_snapshot_commit "$ROOT" "$SOURCE_COMMIT"
 CONDA_SH="${AIM3_CONDA_SH:-/home/js3269/enter/etc/profile.d/conda.sh}"
 set +u
 source "$CONDA_SH"

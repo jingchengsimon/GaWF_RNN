@@ -13,6 +13,8 @@
 set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/execution_snapshot_identity.sh"
 ROOT="${AIM3_ROOT:?AIM3_ROOT is required}"
 RESULTS="${AIM3_RESULTS_PATH:?AIM3_RESULTS_PATH is required}"
 PREREQ="${AIM3_PREREQ_ROOT:?AIM3_PREREQ_ROOT is required}"
@@ -40,9 +42,7 @@ trap on_error ERR
 [[ ! -e "$SUMMARY_ROOT/final" ]] || { echo "Refusing to overwrite final summary" >&2; exit 1; }
 
 cd "$ROOT"
-[[ "$(git rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || {
-  echo "Source commit changed after submission" >&2; exit 1;
-}
+assert_execution_snapshot_commit "$ROOT" "$SOURCE_COMMIT"
 CONDA_SH="${AIM3_CONDA_SH:-/home/js3269/enter/etc/profile.d/conda.sh}"
 set +u
 source "$CONDA_SH"
