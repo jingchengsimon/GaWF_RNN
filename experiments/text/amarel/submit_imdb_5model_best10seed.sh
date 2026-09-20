@@ -12,7 +12,7 @@ elif [[ "$#" -ne 0 ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$ROOT"
 
 RUN_TAG="imdb_5model_best10seed"
@@ -24,6 +24,7 @@ RESULTS_DIR="${AIM3_RESULTS_PATH:-/scratch/${USER}/results}"
 ARRAY_SPEC="0-49%10"
 
 echo "run_tag=$RUN_TAG"
+echo "root=$ROOT"
 echo "models=lstm,rnn,gru,gawf,gawf_logits"
 echo "seeds=1-10"
 echo "array=$ARRAY_SPEC"
