@@ -94,3 +94,43 @@ existing sequence-512 reset-excluded feedback-shuffle protocol. Outputs are isol
 `results/data/clutter/runs/feedback_controls/clutter_feedback_controls_ep150_v1/` and
 `results/data/analysis/feedback_controls_*_v1/`. The final CSV, JSON, and Markdown tables report
 mean and SEM across ten seeds and are not copied into any paper source.
+
+The Amarel replica uses
+`experiments/clutter/amarel/submit_clutter_feedback_controls_formal.sh`. The login-node submitter
+performs only bounded path/hash checks and submits a GPU preflight, a dependent `0-39` training
+array, and a dependent aggregate job. The aggregate consumes a small immutable prerequisite leaf
+containing the previously validated original-model test CSV and ten GaWF shuffle JSON files;
+`SHA256SUMS` must validate before submission. Amarel writes the same relative result hierarchy
+under its independent `AIM3_RESULTS_PATH`, so it never shares a writer with the SJC campaign.
+
+## Dynamic/input-conditioned open-loop baselines
+
+The reviewer comparison adds `mlstm`, `hyperlstm`, and `brims` without changing the CNN encoder,
+task heads, loss, or training loop. All three are open-loop. Parameter matching follows the
+historical complete-model procedure against the 586,067-parameter GaWF `H=256` model:
+
+| Model | Architecture | Core parameters | Full parameters | Absolute target difference |
+|---|---|---:|---:|---:|
+| `mlstm` | `H=65` | 395,915 | 585,265 | 802 |
+| `hyperlstm` | `H=70`, `hyper_H=10`, `n_z=4` | 396,572 | 586,017 | 50 |
+| `brims` | `H=84`, blocks `6 3`, top-k `4 2` | 386,532 | 576,243 | 9,824 |
+
+HyperLSTM's ratio `hyper_H/H=0.143` remains close to the paper configuration `128/1000=0.128`.
+For BRIMs, `H` must be divisible by both 6 and 3; `H=84` is the closest candidate when only
+`nhid` is scaled and attention/module structure is frozen. No auxiliary projection or attention
+width was changed to pad the parameter count. Its official-core attention dimensions are input
+attention `(heads=4, d_k=64, d_v=4H/n_blocks)` and within-layer communication
+`(heads=4, d_k=32, d_v=32)`, with attention dropout `0.1`. Reproduce the deterministic search with:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 conda run -n aim3_rnn python -B \
+  -m experiments.clutter.dynamic_weight_param_match
+```
+
+The mLSTM recurrence follows Krause et al. (2017), arXiv:1609.07959, Equations (17)--(21), and is
+not the 2024 xLSTM matrix-memory model. HyperLSTM vendors only the required MIT-licensed labml
+files at commit `33ab02281c2b928e6b32792909cc79cbdcfe1d6a`; equation deviations are recorded in
+`third_party/labml_nn/UPSTREAM.md`. BRIMs is a clean-room implementation from Mittal et al.
+(2020), arXiv:2006.16981. The official repository was inspected at commit
+`f8af67e863ea751b45b70cc7a7b91fb277beb329`, but its absent license prevents source vendoring;
+see `third_party/brims/PROVENANCE.md`.
