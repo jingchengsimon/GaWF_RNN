@@ -1,6 +1,6 @@
-"""Run inference-time feedback-component ablations for a frozen GaWF checkpoint.
+"""Run inference-time feedback-component ablations for a frozen feedback checkpoint.
 
-This script evaluates a trained single-layer GaWF model on the same test frames under
+This script evaluates a trained single-layer GaWF or feedback-control model under
 different feedback lesions. At each time step, it computes char/sector logits, builds the
 next feedback vector, then applies the requested lesion to the digit slice ``[0:10]`` and/or
 sector slice ``[10:19]`` before the next gate computation.
@@ -9,8 +9,8 @@ Two lesion families, both applied only to the recurrent feedback vector (never t
 input) at inference time on a frozen model:
 
 Zero (clear) lesions -- set the target slice(s) of the next feedback vector to 0 at every
-step. ``clear_digit`` zeros ``[0:10]``, ``clear_sector`` zeros ``[10:19]``, ``clear_all``
-zeros the whole vector (GaWF gates then become sigmoid(0)=0.5; this is not an RNN baseline).
+step. ``clear_digit`` zeros ``[0:10]``, ``clear_sector`` zeros ``[10:19]``, and ``clear_all``
+zeros the whole vector (for GaWF, gates then become sigmoid(0)=0.5).
 Zeroing removes information but also changes the injected signal's magnitude, so on its own it
 conflates "this component carries task information" with "this component's values are large".
 
@@ -64,11 +64,31 @@ DEFAULT_CONDITIONS = ["baseline", "clear_digit", "clear_sector", "clear_all"]
 DIGIT_SLICE = slice(0, 10)
 
 
+def _initial_feedback_state(model, batch_size: int, seq: torch.Tensor, device: torch.device):
+    """Create the recurrent state for either legacy GaWF or a feedback control."""
+    if hasattr(model, "feedback_initial_state"):
+        return model.feedback_initial_state(batch_size, device, seq.dtype)
+    return torch.zeros(
+        batch_size,
+        int(model.rnn.hidden_size),
+        device=device,
+        dtype=seq.dtype,
+    )
+
+
+def _feedback_step(model, x_t: torch.Tensor, state, feedback: torch.Tensor):
+    """Run one feedback-conditioned step without changing the legacy GaWF path."""
+    if hasattr(model, "feedback_step"):
+        return model.feedback_step(x_t, state, feedback)
+    hidden = model.middle_gawf(x_t, state, feedback.clamp(-10, 10).unsqueeze(2))
+    return hidden, hidden
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Inference-time GaWF feedback-component ablation on the test split."
+        description="Inference-time feedback-component ablation on the Clutter test split."
     )
-    parser.add_argument("--ckpt", type=str, required=True, help="Path to GaWF *_model.pth.")
+    parser.add_argument("--ckpt", type=str, required=True, help="Path to feedback *_model.pth.")
     parser.add_argument(
         "--conditions",
         nargs="+",
@@ -196,20 +216,18 @@ def _run_baseline_feedback_schedule(
 ) -> torch.Tensor:
     """Return the unablated next-feedback schedule with shape (B, T, 10+num_pos)."""
     batch_size, frame_num, _ = seq.shape
-    hidden_size = int(model.rnn.hidden_size)
     feedback_dim = int(model.feedback_dim)
-    h = torch.zeros(batch_size, hidden_size, device=device, dtype=seq.dtype)
+    state = _initial_feedback_state(model, batch_size, seq, device)
     fb = torch.zeros(batch_size, feedback_dim, device=device, dtype=seq.dtype)
     schedule = torch.empty(batch_size, frame_num, feedback_dim, device=device, dtype=seq.dtype)
 
     with torch.no_grad():
         for t in range(frame_num):
             x_t = seq[:, t, :]
-            gated = model.middle_gawf(x_t, h, fb.clamp(-10, 10).unsqueeze(2))
-            char_t, pos_t = model.classifier(gated)
+            hidden, state = _feedback_step(model, x_t, state, fb)
+            char_t, pos_t = model.classifier(hidden)
             fb = model._compute_feedback(char_t, pos_t)
             schedule[:, t, :] = fb
-            h = gated
     expected = 10 + num_pos
     if schedule.shape[-1] != expected:
         raise RuntimeError(f"Expected feedback_dim={expected}, got {schedule.shape[-1]}.")
@@ -261,9 +279,8 @@ def _rollout_condition(
         base_schedule = _run_baseline_feedback_schedule(model, seq, num_pos=num_pos, device=device)
         shuffled_schedule = _shuffled_schedule_slice(base_schedule, condition, rng, num_pos)
 
-    hidden_size = int(model.rnn.hidden_size)
     feedback_dim = int(model.feedback_dim)
-    h = torch.zeros(batch_size, hidden_size, device=device, dtype=seq.dtype)
+    state = _initial_feedback_state(model, batch_size, seq, device)
     fb = torch.zeros(batch_size, feedback_dim, device=device, dtype=seq.dtype)
     pred_char = torch.empty(batch_size, frame_num, device=device, dtype=torch.int64)
     pred_sector = torch.empty(batch_size, frame_num, device=device, dtype=torch.int64)
@@ -271,8 +288,8 @@ def _rollout_condition(
     with torch.no_grad():
         for t in range(frame_num):
             x_t = seq[:, t, :]
-            gated = model.middle_gawf(x_t, h, fb.clamp(-10, 10).unsqueeze(2))
-            char_t, pos_t = model.classifier(gated)
+            hidden, state = _feedback_step(model, x_t, state, fb)
+            char_t, pos_t = model.classifier(hidden)
             pred_char[:, t] = char_t.argmax(dim=1)
             pred_sector[:, t] = pos_t.argmax(dim=1)
 
@@ -287,7 +304,6 @@ def _rollout_condition(
                 else:  # shuffle_all
                     fb_next[:, 0 : 10 + num_pos] = shuffled_schedule[:, t, 0 : 10 + num_pos]
             fb = fb_next
-            h = gated
 
     return (
         pred_char.detach().cpu().numpy().astype(np.int64, copy=False),
@@ -508,8 +524,9 @@ def main() -> None:
 
     print(f"Loading model from: {args.ckpt}")
     model = build_model_from_ckpt(args.ckpt, num_pos=num_pos, device=device)
-    if not hasattr(model, "middle_gawf") or not hasattr(model, "_compute_feedback"):
-        raise RuntimeError("feedback_ablation.py requires a GaWF checkpoint.")
+    has_feedback_step = hasattr(model, "feedback_step") or hasattr(model, "middle_gawf")
+    if not has_feedback_step or not hasattr(model, "_compute_feedback"):
+        raise RuntimeError("feedback_ablation.py requires a closed-loop feedback checkpoint.")
     if getattr(model, "proj_out", None) is not None:
         raise RuntimeError("Feedback slice ablation expects legacy direct 19-d feedback.")
     if int(model.feedback_dim) != 10 + num_pos:
@@ -608,8 +625,8 @@ def main() -> None:
         "pre_K": int(args.pre_K),
         "switch_offsets": offset_values.astype(int).tolist(),
         "clear_all_note": (
-            "clear_all sets the recurrent feedback vector to zero at every step after "
-            "readout, so GaWF gates are sigmoid(0)=0.5; it is not an RNN baseline."
+            "clear_all sets the recurrent feedback vector to zero at every step after readout; "
+            "for GaWF, gates are sigmoid(0)=0.5."
         ),
         "exclude_window_initial_frame": bool(args.exclude_window_initial_frame),
         "conditions": {},

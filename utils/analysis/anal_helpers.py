@@ -16,11 +16,15 @@ import torch
 from utils.training.train_scripts.clutter import MC_RNN_Dataset
 from utils.training.clutter.clutter_task_models import (
     GaWFRNNConv,
+    GaWFAdditiveConv,
     GRUConv,
+    GRUFeedbackConv,
     LSTMConv,
+    LSTMFeedbackConv,
     MambaConv,
     MultiLayerGaWFRNNConv,
     RNNConv,
+    RNNFeedbackConv,
     S5Conv,
 )
 from utils.training.clutter.clutter_train_helpers import PathHelper, create_datasets
@@ -145,6 +149,10 @@ _HPARAM_MODEL_TO_KEY: Dict[str, str] = {
     "GRU": "gru",
     "MAMBA": "mamba",
     "S5": "s5",
+    "GaWFAdditive": "gawf_additive",
+    "RNNFB": "rnn_fb",
+    "GRUFB": "gru_fb",
+    "LSTMFB": "lstm_fb",
 }
 
 
@@ -219,6 +227,10 @@ def build_model_from_ckpt(
         "gru": GRUConv,
         "mamba": MambaConv,
         "s5": S5Conv,
+        "gawf_additive": GaWFAdditiveConv,
+        "rnn_fb": RNNFeedbackConv,
+        "gru_fb": GRUFeedbackConv,
+        "lstm_fb": LSTMFeedbackConv,
     }
     model_cls = model_class_map[model_key]
     model_kwargs = {}

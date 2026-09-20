@@ -20,7 +20,9 @@ from utils.analysis.anal_helpers import build_model_from_ckpt, build_test_datase
 from utils.training.clutter.clutter_train_acceleration import run_forward_with_feedback
 
 
-MODELS = ("gawf", "rnn", "lstm", "gru", "mamba", "s5")
+ORIGINAL_MODELS = ("gawf", "rnn", "lstm", "gru", "mamba", "s5")
+FEEDBACK_CONTROL_MODELS = ("gawf_additive", "rnn_fb", "gru_fb", "lstm_fb")
+MODELS = ORIGINAL_MODELS + FEEDBACK_CONTROL_MODELS
 RESULT_NAME = "reset_excluded_test_accuracy.json"
 
 
@@ -44,6 +46,13 @@ def parse_args() -> argparse.Namespace:
     aggregate = commands.add_parser("aggregate")
     aggregate.add_argument("--data_root", required=True, type=Path)
     aggregate.add_argument("--output_csv", required=True, type=Path)
+    aggregate.add_argument(
+        "--models",
+        nargs="+",
+        choices=MODELS,
+        default=list(ORIGINAL_MODELS),
+        help="Models to aggregate; default preserves the original six-model output.",
+    )
     return parser.parse_args()
 
 
@@ -123,7 +132,7 @@ def aggregate(args: argparse.Namespace) -> Path:
     """Write the exact 60-row reset-excluded Figure 1 accuracy CSV."""
 
     rows: list[dict[str, object]] = []
-    for model in MODELS:
+    for model in args.models:
         for seed in range(1, 11):
             path = args.data_root / f"{model}-seed{seed:02d}" / RESULT_NAME
             if not path.is_file():

@@ -360,7 +360,15 @@ def parse_hparams_from_filename(filename):
     hparams = {}
     
     # 提取 model_type
-    if filename.startswith('rnn_'):
+    if filename.startswith('rnn_fb_'):
+        hparams['model_type'] = 'RNNFB'
+    elif filename.startswith('lstm_fb_'):
+        hparams['model_type'] = 'LSTMFB'
+    elif filename.startswith('gru_fb_'):
+        hparams['model_type'] = 'GRUFB'
+    elif filename.startswith('gawf_additive_'):
+        hparams['model_type'] = 'GaWFAdditive'
+    elif filename.startswith('rnn_'):
         hparams['model_type'] = 'RNN'
     elif filename.startswith('lstm_'):
         hparams['model_type'] = 'LSTM'

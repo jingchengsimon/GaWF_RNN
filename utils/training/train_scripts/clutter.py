@@ -44,11 +44,15 @@ from utils.training.clutter.clutter_train_engine import (
 
 from utils.training.clutter.clutter_task_models import (
     GaWFRNNConv,
+    GaWFAdditiveConv,
     GRUConv,
+    GRUFeedbackConv,
     LSTMConv,
+    LSTMFeedbackConv,
     MambaConv,
     MultiLayerGaWFRNNConv,
     RNNConv,
+    RNNFeedbackConv,
     S5Conv,
 )
 
@@ -871,6 +875,10 @@ if __name__ == "__main__":
         GaWFRNNConv,
         MambaConv,
         S5Conv,
+        GaWFAdditiveConv,
+        RNNFeedbackConv,
+        GRUFeedbackConv,
+        LSTMFeedbackConv,
     )
 
     model_types = args.model_types
@@ -998,6 +1006,11 @@ if __name__ == "__main__":
             model_kwargs["feedback_dim"] = feedback_dim
             if num_layers > 1:
                 model_kwargs["num_layers"] = num_layers
+        elif model_type in ("gawf_additive", "rnn_fb", "gru_fb", "lstm_fb"):
+            if num_layers != 1:
+                raise ValueError(f"{model_type} supports only --num_layers 1")
+            if args.nofb:
+                raise ValueError(f"{model_type} is a feedback control and does not support --nofb")
         elif model_type in ("rnn", "gru", "lstm"):
             model_kwargs["num_layers"] = num_layers
         mdl = ModelClass(
@@ -1204,7 +1217,16 @@ if __name__ == "__main__":
         if train_lr != lr:
             metric_summary["requested_lr"] = lr
             metric_summary["effective_lr"] = train_lr
-        if model_type in ("rnn", "gru", "lstm", "gawf"):
+        if model_type in (
+            "rnn",
+            "gru",
+            "lstm",
+            "gawf",
+            "gawf_additive",
+            "rnn_fb",
+            "gru_fb",
+            "lstm_fb",
+        ):
             metric_summary["num_layers"] = int(num_layers)
         metric_summary["core_param_count"] = int(sum(p.numel() for p in mdl.core.parameters()))
         metric_summary["total_param_count"] = int(sum(p.numel() for p in mdl.parameters()))
@@ -1229,6 +1251,14 @@ if __name__ == "__main__":
                 metric_summary["layer_feedback_dims"] = [
                     int(dim) for dim in getattr(mdl, "layer_feedback_dims", [])
                 ]
+        elif model_type in ("gawf_additive", "rnn_fb", "gru_fb", "lstm_fb"):
+            metric_summary["feedback_dim"] = int(mdl.feedback_dim)
+            metric_summary["feedback_source"] = "detached_char_sector_logits"
+            metric_summary["feedback_pathway"] = (
+                "additive_linear" if model_type == "gawf_additive" else "input_concatenation"
+            )
+            if model_type == "gawf_additive":
+                metric_summary["initial_recurrent_weight_scale"] = 0.5
         if gawf_diag_path is not None:
             metric_summary["gawf_diag_path"] = gawf_diag_path
             metric_summary["gawf_diag_every"] = args.gawf_diag_every

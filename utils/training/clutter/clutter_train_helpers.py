@@ -775,6 +775,10 @@ def get_model_classes(
     gawf_rnn_conv_class,
     mamba_conv_class=None,
     s5_conv_class=None,
+    gawf_additive_conv_class=None,
+    rnn_feedback_conv_class=None,
+    gru_feedback_conv_class=None,
+    lstm_feedback_conv_class=None,
 ):
     """Return mapping from model type name to model class.
 
@@ -798,6 +802,17 @@ def get_model_classes(
     if s5_conv_class is not None:
         model_classes["ssm"] = s5_conv_class
         model_classes["s5"] = s5_conv_class
+    optional_feedback_classes = {
+        "gawf_additive": gawf_additive_conv_class,
+        "rnn_fb": rnn_feedback_conv_class,
+        "gru_fb": gru_feedback_conv_class,
+        "lstm_fb": lstm_feedback_conv_class,
+    }
+    model_classes.update({
+        name: model_class
+        for name, model_class in optional_feedback_classes.items()
+        if model_class
+    })
     return model_classes
 
 
@@ -817,6 +832,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "mamba",
             "ssm",
             "s5",
+            "gawf_additive",
+            "rnn_fb",
+            "gru_fb",
+            "lstm_fb",
         ],
         help='Model types to train (default: ["rnn"])',
     )

@@ -70,3 +70,27 @@ The script writes seed-level CSV/NPZ and a manifest below
 `results/save/Fig2_clutter_4h_h128_multiseed_2x4.pdf`. Its Location/Identity rows show best
 validation accuracy, validation-accuracy and validation-loss trajectories, and the
 train-validation gap. Every point and SEM sample is one independent training seed.
+
+## Non-multiplicative feedback controls
+
+The reviewer-control campaign adds four isolated single-layer model types without changing the
+original six model configurations:
+
+| Model | Width | Full trainable parameters | LR | Weight decay |
+|---|---:|---:|---:|---:|
+| `gawf_additive` | 271 | 585,401 | 0.005 | 0.001 |
+| `rnn_fb` | 272 | 586,867 | 0.001 | 0.00001 |
+| `gru_fb` | 103 | 584,562 | 0.005 | 0.001 |
+| `lstm_fb` | 79 | 585,406 | 0.001 | 0.001 |
+
+The parameter-matching target is the complete GaWF `H=256` Clutter model with 586,067 trainable
+parameters. All controls use the same detached previous-step 19-D raw-logit feedback and the
+same model-family hyperparameters as the corresponding formal baseline; there is no tuning.
+
+On SJC, `experiments/remote/run_sjc_clutter_feedback_controls.sh` runs a mandatory seed-1,
+200-step sanity gate and then distributes four models times ten seeds across GPUs 0 and 1. Each
+unit trains for 150 epochs with `patience=0`, evaluates reset-excluded test accuracy, and runs the
+existing sequence-512 reset-excluded feedback-shuffle protocol. Outputs are isolated below
+`results/data/clutter/runs/feedback_controls/clutter_feedback_controls_ep150_v1/` and
+`results/data/analysis/feedback_controls_*_v1/`. The final CSV, JSON, and Markdown tables report
+mean and SEM across ten seeds and are not copied into any paper source.

@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ..recurrent_cores.additive_feedback import (
+    AdditiveFeedbackRNNCore,
+    ConcatenatedFeedbackCellCore,
+)
 from ..recurrent_cores.gawf import GaWFCore
 from ..recurrent_cores.rnn import (
     GRUCore,
@@ -558,6 +564,215 @@ class GaWFRNNConv(ClutterSequenceModel):
 
         self.prev_feedback = fb.detach().to(dtype=torch.float32)
         return char_out, pos_out
+
+
+class FeedbackControlConv(GaWFRNNConv):
+    """Shared closed-loop wrapper for non-multiplicative output-feedback controls."""
+
+    is_gawf_model = False
+    is_gawf_multi_model = False
+    is_feedback_control_model = True
+
+    def __init__(
+        self,
+        num_classes: int,
+        num_pos: int,
+        *,
+        hidden_size: int,
+        core_class: type[nn.Module],
+        core_kwargs: dict[str, object] | None = None,
+        kernel_size: int = 3,
+        device: str = "cuda",
+        input_channels: int = 2,
+        cnn_dropout: float = 0.0,
+        rnn_dropout: float = 0.5,
+        max_chars: int = 15,
+        predict_all_chars: bool = False,
+    ) -> None:
+        if predict_all_chars:
+            raise ValueError("Feedback controls require char and sector prediction heads.")
+        ClutterSequenceModel.__init__(
+            self,
+            num_classes,
+            num_pos,
+            hidden_size,
+            kernel_size=kernel_size,
+            device=device,
+            input_channels=input_channels,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
+            max_chars=max_chars,
+            predict_all_chars=False,
+        )
+        self.output_feedback_dim = self.num_classes + self.num_pos
+        self.core = core_class(
+            input_size=self.encoder_flatten_size,
+            hidden_size=hidden_size,
+            feedback_dim=self.output_feedback_dim,
+            dropout=rnn_dropout,
+            **(core_kwargs or {}),
+        )
+        if int(self.core.feedback_dim) != self.output_feedback_dim:
+            raise ValueError(
+                "Feedback control core dimension must equal the concatenated head logits: "
+                f"expected {self.output_feedback_dim}, got {self.core.feedback_dim}."
+            )
+        self.proj_out = None
+        self.register_buffer("prev_feedback", None, persistent=False)
+        self.to(self.device)
+
+    @property
+    def feedback_dim(self) -> int:
+        return self.output_feedback_dim
+
+    @property
+    def rnn(self) -> nn.Module:
+        if hasattr(self.core, "rnn"):
+            return self.core.rnn
+        return self.core.cell
+
+    @property
+    def LNormRNN(self) -> nn.LayerNorm:
+        return self.core.norm
+
+    def feedback_initial_state(
+        self,
+        batch_size: int,
+        device: torch.device | str,
+        dtype: torch.dtype,
+    ) -> Any:
+        """Return the recurrent state used by feedback-ablation rollouts."""
+        return self.core.initial_state(batch_size, device, dtype)
+
+    def feedback_step(
+        self,
+        x_t: torch.Tensor,
+        state: Any,
+        feedback: torch.Tensor,
+    ) -> tuple[torch.Tensor, Any]:
+        """Advance one recurrent step for feedback-ablation rollouts."""
+        return self.core.step(x_t, state, feedback)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        use_feedback: bool = True,
+        reset_feedback: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        encoded = self.encode_frames(x)
+        batch_size, frame_num = encoded.shape[:2]
+        if not use_feedback:
+            self.prev_feedback = None
+            hidden, _state = self.core.forward_no_feedback(encoded)
+            return self.classifier(hidden)
+
+        if reset_feedback or self.prev_feedback is None:
+            feedback = torch.zeros(
+                batch_size,
+                self.feedback_dim,
+                device=encoded.device,
+                dtype=torch.float32,
+            )
+        else:
+            feedback = self.prev_feedback.to(device=encoded.device, dtype=torch.float32)
+
+        state = self.core.initial_state(batch_size, encoded.device, encoded.dtype)
+        char_outputs: list[torch.Tensor] = []
+        pos_outputs: list[torch.Tensor] = []
+        for t in range(frame_num):
+            hidden, state = self.core.step(encoded[:, t, :], state, feedback)
+            char_t, pos_t = self.classifier(hidden)
+            with torch.no_grad():
+                feedback = self._compute_feedback(char_t, pos_t)
+            char_outputs.append(char_t)
+            pos_outputs.append(pos_t)
+
+        self.prev_feedback = feedback.detach().to(dtype=torch.float32)
+        return torch.stack(char_outputs, dim=1), torch.stack(pos_outputs, dim=1)
+
+
+class GaWFAdditiveConv(FeedbackControlConv):
+    """GaWF control with additive output feedback and no multiplicative gate."""
+
+    def __init__(
+        self,
+        num_classes: int,
+        num_pos: int,
+        kernel_size: int = 3,
+        device: str = "cuda",
+        input_channels: int = 2,
+        cnn_dropout: float = 0.0,
+        rnn_dropout: float = 0.5,
+        hidden_size: int = 271,
+        max_chars: int = 15,
+        predict_all_chars: bool = False,
+    ) -> None:
+        super().__init__(
+            num_classes,
+            num_pos,
+            hidden_size=hidden_size,
+            core_class=AdditiveFeedbackRNNCore,
+            core_kwargs={"initial_weight_scale": 0.5},
+            kernel_size=kernel_size,
+            device=device,
+            input_channels=input_channels,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
+            max_chars=max_chars,
+            predict_all_chars=predict_all_chars,
+        )
+
+
+class ConcatenatedFeedbackConv(FeedbackControlConv):
+    """Shared wrapper for RNN/GRU/LSTM controls receiving concatenated feedback."""
+
+    cell_type = "rnn"
+
+    def __init__(
+        self,
+        num_classes: int,
+        num_pos: int,
+        kernel_size: int = 3,
+        device: str = "cuda",
+        input_channels: int = 2,
+        cnn_dropout: float = 0.0,
+        rnn_dropout: float = 0.5,
+        hidden_size: int = 256,
+        max_chars: int = 15,
+        predict_all_chars: bool = False,
+    ) -> None:
+        super().__init__(
+            num_classes,
+            num_pos,
+            hidden_size=hidden_size,
+            core_class=ConcatenatedFeedbackCellCore,
+            core_kwargs={"cell_type": self.cell_type},
+            kernel_size=kernel_size,
+            device=device,
+            input_channels=input_channels,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
+            max_chars=max_chars,
+            predict_all_chars=predict_all_chars,
+        )
+
+
+class RNNFeedbackConv(ConcatenatedFeedbackConv):
+    """Vanilla RNN control with previous detached logits concatenated to each input."""
+
+    cell_type = "rnn"
+
+
+class GRUFeedbackConv(ConcatenatedFeedbackConv):
+    """GRU control with previous detached logits concatenated to each input."""
+
+    cell_type = "gru"
+
+
+class LSTMFeedbackConv(ConcatenatedFeedbackConv):
+    """LSTM control with previous detached logits concatenated to each input."""
+
+    cell_type = "lstm"
 
 
 class MultiLayerGaWFRNNConv(ClutterSequenceModel):

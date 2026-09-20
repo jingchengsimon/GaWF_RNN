@@ -58,6 +58,8 @@ The arrows are one-way:
 
 - `RNNCore`, `GRUCore`, and `LSTMCore`, including unified `num_layers` handling.
 - `GaWFCore`, with single- and multi-layer paths behind one public model type.
+- `AdditiveFeedbackRNNCore` and `ConcatenatedFeedbackCellCore`, used only by the
+  non-multiplicative Clutter feedback controls.
 - `MambaCore` and `S5Core` sequence models.
 
 GaWF uses feedback-conditioned input/hidden transforms. For feedback vector `fb`:
@@ -100,6 +102,15 @@ channels or 6x6 spatial structure.
 `ClutterCharPosHead`. Public wrappers include `RNNConv`, `GRUConv`, `LSTMConv`, `GaWFRNNConv`,
 `MambaConv`, and `S5Conv`. Historical multi-layer class/checkpoint names remain readable, while
 new runs use `gawf --num_layers N`.
+
+The separate feedback-control model types are `gawf_additive`, `rnn_fb`, `gru_fb`, and
+`lstm_fb`. They reuse `GaWFRNNConv._compute_feedback`: the previous frame's detached raw digit
+and sector logits are concatenated into a 19-dimensional vector, with an all-zero vector at the
+first frame of every independent rollout. `gawf_additive` adds `Linear(19, hidden_size)` to the
+RNN preactivation and initializes its input/recurrent weights at `0.5W`, matching GaWF's
+zero-feedback `sigmoid(0)=0.5` effective weight. The other three controls concatenate feedback
+to every cell input and therefore use per-frame `RNNCell`, `GRUCell`, or `LSTMCell` execution.
+These model types are single-layer controls and do not alter the original open-loop paths.
 
 `clutter_train_helpers.py` owns CLI construction, paths, dataset creation, logging, model
 registration, seeding, and saved summaries. `clutter_train_acceleration.py` owns loaders, AMP,

@@ -27,6 +27,8 @@ Architecture and workflow rules live in `ARCHITECTURE.md` and `DEVELOPMENT_WORKF
 - Private helpers: one leading underscore.
 - Common loop indices: `sidx` sample, `t` time, `b` batch, `d` digit/component, `c` channel.
 - Public model keys use lowercase: `ann`, `rnn`, `gru`, `lstm`, `gawf`, `mamba`, `s5`.
+  Clutter's isolated reviewer controls additionally use `gawf_additive`, `rnn_fb`, `gru_fb`,
+  and `lstm_fb`; these names must not alias or replace the original model keys.
 
 Do not introduce a second name for an existing public argument or model. Historical aliases may
 remain parsable for compatibility but must not appear in new result names.
