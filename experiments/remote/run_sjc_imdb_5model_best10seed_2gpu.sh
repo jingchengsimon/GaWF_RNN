@@ -6,6 +6,8 @@ export PYTHONDONTWRITEBYTECODE=1
 export DISABLE_TQDM=1
 export AIM3_NUM_WORKERS="${AIM3_NUM_WORKERS:-12}"
 export AIM3_PIN_MEMORY="${AIM3_PIN_MEMORY:-1}"
+# SJC's MKL activation hook reads this variable before assigning its final value.
+export MKL_INTERFACE_LAYER="${MKL_INTERFACE_LAYER:-}"
 
 DRY_RUN=0
 if [[ "${1:-}" == "--dry-run" ]]; then
