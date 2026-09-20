@@ -3,7 +3,7 @@
   "id": "clutter-cm-mnist-dynamic-weight-preflight-2ep-lstm-mlstm-hyperlstm-brims-s1-retry-gitfree-v3",
   "description": "Third attempt at the CM-MNIST two-epoch sanity gate: LSTM, mLSTM, HyperLSTM, and BRIMs at seed 1, with a compute-node-safe (git-free) source guard.",
   "host": "amarel",
-  "status": "queued",
+  "status": "cancelled",
   "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_1f8795e",
   "environment": {
     "name": "aim3_rnn",
@@ -49,8 +49,9 @@
     "Compute-node source guard is git-free: experiments/remote/amarel_source_guard.sh resolves the checked-out commit from git metadata with shell builtins and falls back to the submit-time stamp status/source_commit.txt; every run script writes its own .fail marker when the guard fails.",
     "Superseded attempt 61717748 (artifact root dynamic_weight_baselines_2epoch_seed1_v2_gitpath) was released on 2026-09-20 18:57:26 EDT and failed all four tasks within 0-4 s on gpu034 with 'Git executable unavailable: /usr/bin/git', because the retry hard-coded the login-node git path.",
     "Stale never-runnable preaggregate 61717749 (DependencyNeverSatisfied after 61717748 failed) was cancelled on 2026-09-20 19:28 EDT.",
+    "Cancelled on 2026-09-20 19:33 EDT before either job started, so the whole campaign could be resubmitted from one commit as an automatic chain; superseded by clutter-cm-mnist-dynamic-weight-preflight-2ep-lstm-mlstm-hyperlstm-brims-s1-retry-gitfree-v4.",
     "AIM3_ARTIFACT_ROOT is pinned to .../dynamic_weight_baselines_2epoch_seed1_v3 because the v1 and v2_gitpath artifact roots already exist; the preflight result tag dynamic_weight_baselines_2epoch_seed1_v1 had never been created."
   ],
   "created_at": "2026-09-20T23:28:53+00:00",
-  "updated_at": "2026-09-20T23:28:53+00:00"
+  "updated_at": "2026-09-20T23:34:02+00:00"
 }

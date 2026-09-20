@@ -8,18 +8,32 @@
   ],
   "jobs": [
     {
-      "id": "clutter-cm-mnist-dynamic-weight-preflight-2ep-lstm-mlstm-hyperlstm-brims-s1-retry-gitfree-v3",
-      "description": "Third attempt at the CM-MNIST two-epoch sanity gate: LSTM, mLSTM, HyperLSTM, and BRIMs at seed 1, with a compute-node-safe (git-free) source guard.",
+      "id": "clutter-cm-mnist-dynamic-weight-preflight-2ep-lstm-mlstm-hyperlstm-brims-s1-retry-gitfree-v4",
+      "description": "Fourth attempt at the CM-MNIST two-epoch sanity gate, submitted from the same commit as the formal array so the preflight summary releases it automatically.",
       "host": "amarel",
       "status": "queued",
       "job_ids": [
-        "61723314",
-        "61723315"
+        "61723339",
+        "61723340"
       ],
       "run_ids": [],
       "tmux_session": null,
-      "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_1f8795e",
-      "updated_at": "2026-09-20T23:28:53+00:00"
+      "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_f7dfdb9",
+      "updated_at": "2026-09-20T23:34:02+00:00"
+    },
+    {
+      "id": "clutter-cm-mnist-dynamic-weight-baselines-ep150-mlstm-hyperlstm-brims-seeds1-10",
+      "description": "CM-MNIST open-loop dynamic/input-conditioned baselines: parameter-matched mLSTM, HyperLSTM, and clean-room BRIMs; 150 epochs, seeds 1-10, reset-excluded test accuracy, and mean plus SEM aggregation.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61723341",
+        "61723342"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_f7dfdb9",
+      "updated_at": "2026-09-20T23:34:02+00:00"
     },
     {
       "id": "clutter-cm-mnist-feedback-controls-ep150-gawfadd-rnnfb-grufb-lstmfb-seeds1-10",

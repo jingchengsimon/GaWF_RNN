@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "id": "clutter-cm-mnist-dynamic-weight-preflight-2ep-lstm-mlstm-hyperlstm-brims-s1-retry-gitfree-v4",
+  "description": "Fourth attempt at the CM-MNIST two-epoch sanity gate, submitted from the same commit as the formal array so the preflight summary releases it automatically.",
+  "host": "amarel",
+  "status": "queued",
+  "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_f7dfdb9",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61723339",
+      "61723340"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "/scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v4_chain/61723339_*.out",
+      "/scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v4_chain/61723340.aggregate.out"
+    ],
+    "status_dir": "/scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v4_chain/status",
+    "result_paths": [
+      "/scratch/js3269/results/data/clutter/runs/preflight/dynamic_weight_baselines_2epoch_seed1_v1/*",
+      "/scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v4_chain/summary.json"
+    ]
+  },
+  "tracking": {
+    "expected_units": 4,
+    "auto_complete": true,
+    "result_globs": [
+      "/scratch/js3269/results/data/clutter/runs/preflight/dynamic_weight_baselines_2epoch_seed1_v1/*/*_metrics.json"
+    ],
+    "done_glob": "/scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v4_chain/status/task_*.done",
+    "fail_glob": "/scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v4_chain/status/task_*.fail",
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "Source commit f7dfdb9a5eabf64650d462d68211518bf7072e18 in pinned worktree dynamic_baselines_f7dfdb9; preflight array 61723339 (0-3%4) and aggregate 61723340 are the head of the automatic chain that also queues formal array 61723341 and formal aggregate 61723342.",
+    "The aggregate writes /scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v4_chain/summary.json, which the formal array re-verifies on the compute node (status passed plus matching source commit) after afterok releases it.",
+    "Replaces the cancelled 61723314/61723315 pair (worktree 1f8795e) so every stage of the campaign runs from the same commit as the chain-aware formal submitter."
+  ],
+  "created_at": "2026-09-20T23:34:02+00:00",
+  "updated_at": "2026-09-20T23:34:02+00:00"
+}
