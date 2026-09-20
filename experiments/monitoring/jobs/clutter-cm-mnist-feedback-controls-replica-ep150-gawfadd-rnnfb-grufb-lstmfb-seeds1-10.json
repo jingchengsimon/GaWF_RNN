@@ -4,7 +4,7 @@
   "description": "Independent Amarel replica of the CM-MNIST non-multiplicative feedback controls: GaWF-additive, RNN-FB, GRU-FB, and LSTM-FB; 150 epochs, seeds 1-10, reset-excluded test and feedback-shuffle evaluation.",
   "host": "amarel",
   "status": "queued",
-  "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260920/feedback_controls_amarel_70af873",
+  "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260920/feedback_controls_amarel_571b260",
   "environment": {
     "name": "aim3_rnn",
     "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
@@ -12,19 +12,19 @@
   "scheduler": {
     "type": "slurm",
     "job_ids": [
-      "61717611",
-      "61717612",
-      "61717613"
+      "61717737",
+      "61717738",
+      "61717739"
     ],
     "run_ids": [],
     "tmux_session": null
   },
   "paths": {
     "log_globs": [
-      "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry1/*.out",
-      "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry1/*.err"
+      "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/*.out",
+      "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/*.err"
     ],
-    "status_dir": "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry1/status",
+    "status_dir": "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/status",
     "result_paths": [
       "/scratch/js3269/results/data/clutter/runs/feedback_controls/clutter_feedback_controls_ep150_v1/*"
     ]
@@ -35,8 +35,8 @@
     "result_globs": [
       "/scratch/js3269/results/data/clutter/runs/feedback_controls/clutter_feedback_controls_ep150_v1/*"
     ],
-    "done_glob": "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry1/status/task_*.done",
-    "fail_glob": "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry1/status/task_*.fail",
+    "done_glob": "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/status/task_*.done",
+    "fail_glob": "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/status/task_*.fail",
     "defaults": {
       "expected": {},
       "checkpoint_glob": "*_model.pth",
@@ -45,10 +45,11 @@
     "units": []
   },
   "notes": [
-    "Source snapshot 70af873067f3e7fa0107ca030114faac3f19415b; retry preflight 61717611 gates array 61717612 (0-39%40), followed by aggregate 61717613.",
-    "Each array unit requests one Ada Lovelace GPU, 16 CPUs, 64G, and 12 hours; preflight requests the same hardware for 30 minutes. ArrayTaskThrottle was changed live from 6 to 40 by explicit user request.",
-    "Original preflight 61717218 failed because git was unavailable on compute node gpu046; blocked jobs 61717219 and 61717220 were cancelled, and their artifact root was preserved."
+    "Source snapshot 571b260cd274c2633c55fcef7bdda0b9bcec9de0; retry2 preflight 61717737 gates array 61717738 (0-39%40), followed by aggregate 61717739.",
+    "Each array unit requests one Ada Lovelace GPU, 16 CPUs, 64G, and 12 hours; preflight requests the same hardware for 30 minutes.",
+    "Original preflight 61717218 failed because git was unavailable on compute node gpu046; blocked jobs 61717219 and 61717220 were cancelled, and their artifact root was preserved.",
+    "Retry1 preflight 61717611 failed because the Slurm-spooled runner resolved its helper from the spool directory; blocked jobs 61717612 and 61717613 were cancelled, and retry1 artifacts were preserved."
   ],
   "created_at": "2026-09-20T04:41:28+00:00",
-  "updated_at": "2026-09-20T05:34:21+00:00"
+  "updated_at": "2026-09-20T05:52:10+00:00"
 }

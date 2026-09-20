@@ -13,14 +13,14 @@
       "host": "amarel",
       "status": "queued",
       "job_ids": [
-        "61717611",
-        "61717612",
-        "61717613"
+        "61717737",
+        "61717738",
+        "61717739"
       ],
       "run_ids": [],
       "tmux_session": null,
-      "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260920/feedback_controls_amarel_70af873",
-      "updated_at": "2026-09-20T05:34:21+00:00"
+      "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260920/feedback_controls_amarel_571b260",
+      "updated_at": "2026-09-20T05:52:10+00:00"
     },
     {
       "id": "clutter-cm-mnist-feedback-controls-ep150-gawfadd-rnnfb-grufb-lstmfb-seeds1-10",
