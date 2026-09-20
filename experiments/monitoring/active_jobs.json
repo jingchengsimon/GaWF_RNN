@@ -8,6 +8,32 @@
   ],
   "jobs": [
     {
+      "id": "clutter-cm-mnist-dynamic-weight-baselines-ep150-mlstm-hyperlstm-brims-seeds1-10",
+      "description": "CM-MNIST open-loop dynamic/input-conditioned baselines: parameter-matched mLSTM, HyperLSTM, and clean-room BRIMs; 150 epochs, seeds 1-10, reset-excluded test accuracy, and mean plus SEM aggregation.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61717688"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_95df271",
+      "updated_at": "2026-09-20T05:36:30+00:00"
+    },
+    {
+      "id": "clutter-cm-mnist-dynamic-weight-preflight-2ep-lstm-mlstm-hyperlstm-brims-s1",
+      "description": "CM-MNIST two-epoch sanity gate for LSTM, mLSTM, HyperLSTM, and BRIMs at seed 1; verifies finite decreasing loss and wall-clock per epoch.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61717444"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_95df271",
+      "updated_at": "2026-09-20T04:55:35+00:00"
+    },
+    {
       "id": "clutter-cm-mnist-feedback-controls-ep150-gawfadd-rnnfb-grufb-lstmfb-seeds1-10",
       "description": "CM-MNIST non-multiplicative feedback controls: parameter-matched GaWF-additive, RNN-FB, GRU-FB, and LSTM-FB; 150 epochs, seeds 1-10, reset-excluded test accuracy and feedback-shuffle evaluation.",
       "host": "sjc-remote",

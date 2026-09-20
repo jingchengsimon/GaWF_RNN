@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "id": "clutter-cm-mnist-dynamic-weight-preflight-2ep-lstm-mlstm-hyperlstm-brims-s1",
+  "description": "CM-MNIST two-epoch sanity gate for LSTM, mLSTM, HyperLSTM, and BRIMs at seed 1; verifies finite decreasing loss and wall-clock per epoch.",
+  "host": "amarel",
+  "status": "queued",
+  "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_95df271",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61717444"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "/scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v1/*.out"
+    ],
+    "status_dir": "/scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v1/status",
+    "result_paths": [
+      "/scratch/js3269/results/data/clutter/runs/preflight/dynamic_weight_baselines_2epoch_seed1_v1/*"
+    ]
+  },
+  "tracking": {
+    "expected_units": 4,
+    "auto_complete": true,
+    "result_globs": [
+      "/scratch/js3269/results/data/clutter/runs/preflight/dynamic_weight_baselines_2epoch_seed1_v1/*"
+    ],
+    "done_glob": "task_*.done",
+    "fail_glob": "task_*.fail",
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "Source commit 95df271c971ac5222425d8cb49980c0d27f08bcd; dependent aggregate job 61717445 writes /scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v1/summary.json."
+  ],
+  "created_at": "2026-09-20T04:55:35+00:00",
+  "updated_at": "2026-09-20T04:55:35+00:00"
+}

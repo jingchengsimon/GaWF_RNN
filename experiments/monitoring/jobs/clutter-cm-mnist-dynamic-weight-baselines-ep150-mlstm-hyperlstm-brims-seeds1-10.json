@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "id": "clutter-cm-mnist-dynamic-weight-baselines-ep150-mlstm-hyperlstm-brims-seeds1-10",
+  "description": "CM-MNIST open-loop dynamic/input-conditioned baselines: parameter-matched mLSTM, HyperLSTM, and clean-room BRIMs; 150 epochs, seeds 1-10, reset-excluded test accuracy, and mean plus SEM aggregation.",
+  "host": "amarel",
+  "status": "queued",
+  "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_95df271",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61717688"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "/scratch/js3269/results/artifacts/clutter_dynamic_weight_baselines_ep150_v1/*.out"
+    ],
+    "status_dir": "/scratch/js3269/results/artifacts/clutter_dynamic_weight_baselines_ep150_v1/status",
+    "result_paths": [
+      "/scratch/js3269/results/data/clutter/runs/dynamic_weight_baselines/clutter_dynamic_weight_baselines_ep150_v1/*"
+    ]
+  },
+  "tracking": {
+    "expected_units": 30,
+    "auto_complete": true,
+    "result_globs": [
+      "/scratch/js3269/results/data/clutter/runs/dynamic_weight_baselines/clutter_dynamic_weight_baselines_ep150_v1/*"
+    ],
+    "done_glob": "task_*.done",
+    "fail_glob": "task_*.fail",
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "Source commit 95df271c971ac5222425d8cb49980c0d27f08bcd; array 0-29%30 depends afterok on preflight aggregate 61717445; dependent formal aggregate job 61717689 writes /scratch/js3269/results/data/analysis/dynamic_weight_baselines_formal_10seed_v1."
+  ],
+  "created_at": "2026-09-20T05:36:30+00:00",
+  "updated_at": "2026-09-20T05:36:30+00:00"
+}
