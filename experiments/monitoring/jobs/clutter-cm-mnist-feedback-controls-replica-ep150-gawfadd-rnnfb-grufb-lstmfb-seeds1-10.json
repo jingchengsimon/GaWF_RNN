@@ -45,10 +45,10 @@
     "units": []
   },
   "notes": [
-    "Source snapshot 70af873067f3e7fa0107ca030114faac3f19415b; retry preflight 61717611 gates array 61717612 (0-39%6), followed by aggregate 61717613.",
-    "Each array unit requests one Ada Lovelace GPU, 16 CPUs, 64G, and 12 hours; preflight requests the same hardware for 30 minutes.",
+    "Source snapshot 70af873067f3e7fa0107ca030114faac3f19415b; retry preflight 61717611 gates array 61717612 (0-39%40), followed by aggregate 61717613.",
+    "Each array unit requests one Ada Lovelace GPU, 16 CPUs, 64G, and 12 hours; preflight requests the same hardware for 30 minutes. ArrayTaskThrottle was changed live from 6 to 40 by explicit user request.",
     "Original preflight 61717218 failed because git was unavailable on compute node gpu046; blocked jobs 61717219 and 61717220 were cancelled, and their artifact root was preserved."
   ],
   "created_at": "2026-09-20T04:41:28+00:00",
-  "updated_at": "2026-09-20T05:17:08+00:00"
+  "updated_at": "2026-09-20T05:34:21+00:00"
 }
