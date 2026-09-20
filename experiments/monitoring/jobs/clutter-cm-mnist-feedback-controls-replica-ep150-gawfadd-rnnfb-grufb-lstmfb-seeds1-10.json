@@ -3,7 +3,7 @@
   "id": "clutter-cm-mnist-feedback-controls-replica-ep150-gawfadd-rnnfb-grufb-lstmfb-seeds1-10",
   "description": "Independent Amarel replica of the CM-MNIST non-multiplicative feedback controls: GaWF-additive, RNN-FB, GRU-FB, and LSTM-FB; 150 epochs, seeds 1-10, reset-excluded test and feedback-shuffle evaluation.",
   "host": "amarel",
-  "status": "queued",
+  "status": "running",
   "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260920/feedback_controls_amarel_571b260",
   "environment": {
     "name": "aim3_rnn",
@@ -51,5 +51,5 @@
     "Retry1 preflight 61717611 failed because the Slurm-spooled runner resolved its helper from the spool directory; blocked jobs 61717612 and 61717613 were cancelled, and retry1 artifacts were preserved."
   ],
   "created_at": "2026-09-20T04:41:28+00:00",
-  "updated_at": "2026-09-20T05:52:10+00:00"
+  "updated_at": "2026-09-20T05:54:24+00:00"
 }
