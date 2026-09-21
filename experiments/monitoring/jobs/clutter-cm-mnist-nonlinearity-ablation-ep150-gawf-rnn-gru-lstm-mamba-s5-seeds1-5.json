@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-gawf-rnn-gru-lstm-mamba-s5-seeds1-5",
+  "description": "CM-MNIST nonlinearity-placement ablations on the RNN-aligned GaWF core: batch 1 removes the outer LayerNorm+ReLU+dropout wrap for six models, batch 2 removes the nn.RNN activation for GaWF and RNN; seeds 1-5, 150 epochs, 40 units.",
+  "host": "amarel",
+  "status": "queued",
+  "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260921/nonlinearity_ablation_a23169e",
+  "source_commit": "5b8ce33b689d1d47c339617229e85d1d0ea43a88",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61735045"
+    ],
+    "run_ids": [],
+    "tmux_session": null,
+    "dependency_strategy": {
+      "type": "single_array_no_gate",
+      "array_tasks": "0-39",
+      "throttle": "none (full 40-way concurrency)"
+    }
+  },
+  "paths": {
+    "log_globs": [
+      "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260921/nonlinearity_ablation_a23169e/experiments/clutter/amarel/artifacts/clutter_nonlinearity_ablation_v1/61735045_*.out",
+      "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260921/nonlinearity_ablation_a23169e/experiments/clutter/amarel/artifacts/clutter_nonlinearity_ablation_v1/61735045_*.err"
+    ],
+    "status_dir": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260921/nonlinearity_ablation_a23169e/experiments/clutter/amarel/artifacts/clutter_nonlinearity_ablation_v1/status",
+    "result_paths": [
+      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/*",
+      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_inner_activation_40h_ep150_v1/*",
+      "/scratch/js3269/results/data/analysis/clutter_ablation_reset_excluded_test_10seed_v1/*"
+    ],
+    "data_path": "/scratch/js3269/stimuli"
+  },
+  "tracking": {
+    "expected_units": 40,
+    "auto_complete": true,
+    "result_globs": [
+      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/*/*_metrics.json",
+      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_inner_activation_40h_ep150_v1/*/*_metrics.json"
+    ],
+    "done_glob": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260921/nonlinearity_ablation_a23169e/experiments/clutter/amarel/artifacts/clutter_nonlinearity_ablation_v1/status/task_*.done",
+    "fail_glob": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260921/nonlinearity_ablation_a23169e/experiments/clutter/amarel/artifacts/clutter_nonlinearity_ablation_v1/status/task_*.fail",
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "Human authorization 2026-09-21: submit the forty-unit array on Amarel with seeds 1-5, full 40-way concurrency, and no preflight job and no aggregate job. The waiver is recorded in the launcher artifact status directory as smoke_waiver.txt and is verified by the compute-node launcher before training.",
+    "Task map: 0-29 batch 1 (gawf_nowrap, rnn_nowrap, gru_nowrap, lstm_nowrap, mamba_nowrap, s5_nowrap x seeds 1-5, five tasks per model in that order) and 30-39 batch 2 (gawf_notanh, rnn_notanh x seeds 1-5).",
+    "Batch 1 removes the outer LayerNorm -> ReLU -> dropout wrap from each sequence core (gawf: the gated recurrence now returns tanh(preactivation); rnn/lstm/gru: the nn.RNN/nn.LSTM/nn.GRU output is returned unwrapped; mamba/s5: the trailing norm/relu/output-dropout is removed). Batch 2 keeps the wrap and removes the in-recurrence activation (GaWF and vanilla RNN only).",
+    "Hyperparameters are the completed best6 values with no rebalancing: gawf h256 lr0.005 wd0.001, rnn h275 lr0.001 wd1e-5, lstm h80 lr0.001 wd0.001, gru h105 lr0.005 wd0.001, mamba d_model170 lr0.001 wd0.001, s5 d_model256 state128 lr0.001 wd0.0; AdamW, 150 epochs, patience 0, cnn_dropout 0.0, rnn_dropout 0.5 (inert for the batch-1 no-wrap variants), 40h-uint8 mmap with device cast, compact layout, shuffle_block_size -1, checkpoint every 5 epochs with auto-resume. Removing the wrap costs each model exactly 2H parameters (measured deltas: gawf 512, rnn 550, lstm 160, gru 210, s5 512; mamba 340 expected on the compute host).",
+    "Each unit writes its reset-excluded test accuracy through utils.analysis.clutter.fig1_reset_excluded_test_accuracy collect into data/analysis/clutter_ablation_reset_excluded_test_10seed_v1/<model>-seedNN. No feedback-shuffle ablation is produced by this campaign, so these variants will not populate the feedback-control 2x4 panel D.",
+    "The GaWF core was rewritten before this campaign: gawf.GaWFCore is now nn.RNN with only the input/hidden weights modulated element-wise by the feedback gate, the state convention is the raw activation(preactivation), and the LayerNorm+ReLU+dropout wrap applies to the readout outside the recurrence. The previous arithmetic is frozen as gawf_legacy.GaWFCoreLegacy (model type gawf_legacy) and unit tests assert (a) the gated core reproduces nn.RNN for a unit gate and (b) the new core equals the legacy core with the wrap disabled, bitwise.",
+    "Local repository note: the macOS clone's object store was missing four blobs (with one garbage pack lacking its .idx), so no local commit could be created and a GitHub refetch aborted mid-transfer. The execution snapshot was therefore created on Amarel as a detached worktree of a23169e with the changed files committed there, and that commit was pushed to origin (a23169e..5b8ce33 on branch codex/clutter-dynamic-baselines-amarel). The four missing objects were then restored into the local store from the Amarel clone, and the local branch now tracks 5b8ce33.",
+    "Resource revision 2026-09-21: the pending array's wall limit was raised from 12h to 24h with scontrol update because the completed 40h/150-epoch GaWF baseline took 9h22m and the RNN-aligned gated step runs eagerly (no compiled feedback subgraph); the launcher #SBATCH --time was updated to 24:00:00 in the same turn.",
+    "Priority 2026-09-21: to give this array the GPU pool, the dynamic-baselines array 61726137 was requeued (27 running elements killed at their last 5-epoch checkpoint) and held together with its aggregate 61726138, and the feedback-control resume array 61731757 and its aggregate 61731758 were held. All four are pending with Reason=JobHeldUser and can be resumed later with scontrol release; both campaigns use --checkpoint_interval_epochs 5 --auto_resume, so they continue from their last checkpoint.",
+    "Result leaves must not be reused: both batch result leaves and the test leaf were required to be absent at submission time."
+  ],
+  "created_at": "2026-09-21T16:40:00+00:00",
+  "updated_at": "2026-09-21T16:40:00+00:00"
+}

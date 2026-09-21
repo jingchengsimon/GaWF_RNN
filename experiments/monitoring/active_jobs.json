@@ -8,6 +8,19 @@
   ],
   "jobs": [
     {
+      "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-gawf-rnn-gru-lstm-mamba-s5-seeds1-5",
+      "description": "CM-MNIST nonlinearity-placement ablations on the RNN-aligned GaWF core: batch 1 removes the outer LayerNorm+ReLU+dropout wrap for six models, batch 2 removes the nn.RNN activation for GaWF and RNN; seeds 1-5, 150 epochs, 40 units.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61735045"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260921/nonlinearity_ablation_a23169e",
+      "updated_at": "2026-09-21T16:40:00+00:00"
+    },
+    {
       "id": "clutter-cm-mnist-dynamic-weight-preflight-2ep-lstm-mlstm-hyperlstm-brims-s1-retry-gitfree-v5",
       "description": "Fifth attempt at the CM-MNIST two-epoch sanity gate: head of the automatic chain that also queues the thirty formal units at full (30-way) concurrency.",
       "host": "amarel",
