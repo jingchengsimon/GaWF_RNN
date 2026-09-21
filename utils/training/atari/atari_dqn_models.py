@@ -20,7 +20,7 @@ from typing import Literal
 import torch
 import torch.nn as nn
 
-from ..recurrent_cores.gawf_legacy import GaWFCoreLegacy
+from ..recurrent_cores.gawf import GaWFCore
 from ..recurrent_cores.rnn import GRUCore, LSTMCore, RNNCore
 
 AtariDQNModelType = Literal["ann", "rnn", "gru", "lstm", "gawf", "s5", "mamba"]
@@ -157,7 +157,7 @@ class AtariQNetwork(nn.Module):
             top_feedback_dim = max(
                 1, self.feedback_dim_for_mode(self.feedback_mode, self.num_actions)
             )
-            self.core = GaWFCoreLegacy(
+            self.core = GaWFCore(
                 input_size=conv_out,
                 hidden_size=self.hidden_size,
                 feedback_dim=top_feedback_dim,
@@ -342,14 +342,15 @@ class AtariQNetwork(nn.Module):
             if self.feedback_mode == "none":
                 stepped = self.core.step_no_feedback(x_t, recurrent)
                 if self.num_layers == 1:
-                    return stepped, stepped
+                    # Aligned GaWF: raw state carried, wrapped value read by the head.
+                    return self.core.project_readout(stepped), stepped
                 features, next_recurrent = stepped
                 return features, next_recurrent
             if feedback is None:
                 raise ValueError("GaWF qvalues feedback mode requires feedback")
             if self.num_layers == 1:
-                features = self.core.step(x_t, recurrent, feedback)
-                return features, features
+                state = self.core.step(x_t, recurrent, feedback)
+                return self.core.project_readout(state), state
             if not isinstance(recurrent, list):
                 raise TypeError("multi-layer GaWF state must be a list")
             feedbacks = [part.detach() for part in recurrent[1:]] + [feedback]

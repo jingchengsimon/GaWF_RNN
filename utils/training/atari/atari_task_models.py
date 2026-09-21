@@ -17,7 +17,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
 
-from ..recurrent_cores.gawf_legacy import GaWFCoreLegacy
+from ..recurrent_cores.gawf import GaWFCore
 from ..recurrent_cores.rnn import LSTMCore
 
 AtariModelType = Literal["lstm", "gawf"]
@@ -129,7 +129,7 @@ class AtariActorCritic(nn.Module):
             top_feedback_dim = max(
                 1, self.feedback_dim_for_mode(self.feedback_mode, self.num_actions)
             )
-            self.core = GaWFCoreLegacy(
+            self.core = GaWFCore(
                 input_size=self.recurrent_input_size,
                 hidden_size=self.hidden_size,
                 feedback_dim=top_feedback_dim,
@@ -301,13 +301,14 @@ class AtariActorCritic(nn.Module):
         if self.feedback_mode == "none":
             stepped = self.core.step_no_feedback(x_t, recurrent)
             if self.num_layers == 1:
-                return stepped, stepped
+                # Aligned GaWF: the state is the raw activation, the head reads the wrapped value.
+                return self.core.project_readout(stepped), stepped
             return stepped
         if feedback is None:
             raise ValueError("GaWF output feedback mode requires feedback")
         if self.num_layers == 1:
-            features = self.core.step(x_t, recurrent, feedback)
-            return features, features
+            state = self.core.step(x_t, recurrent, feedback)
+            return self.core.project_readout(state), state
         if not isinstance(recurrent, list):
             raise TypeError("multi-layer GaWF recurrent state must be a list")
         feedbacks = [part.detach() for part in recurrent[1:]] + [feedback]

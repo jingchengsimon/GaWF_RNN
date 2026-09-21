@@ -953,6 +953,7 @@ class MultiLayerGaWFRNNConv(ClutterSequenceModel):
         predict_all_chars=False,
         feedback_dim=None,
         num_layers=2,
+        gawf_core="rnn_aligned",
     ) -> None:
         if predict_all_chars:
             raise ValueError(
@@ -987,9 +988,11 @@ class MultiLayerGaWFRNNConv(ClutterSequenceModel):
             else [hidden_size] * (self.num_layers - 1) + [self.output_feedback_dim]
         )
         self.top_feedback_dim = self.layer_feedback_dims[-1]
-        # Historical multi-layer semantics are frozen in the legacy core; the RNN-aligned core is
-        # single-layer only until the multi-layer alignment lands.
-        self.core = GaWFCoreLegacy(
+        if gawf_core not in ("rnn_aligned", "legacy"):
+            raise ValueError(f"Unsupported gawf_core: {gawf_core!r}")
+        self.gawf_core = str(gawf_core)
+        core_class = GaWFCore if self.gawf_core == "rnn_aligned" else GaWFCoreLegacy
+        self.core = core_class(
             input_size=self.encoder_flatten_size,
             hidden_size=hidden_size,
             feedback_dim=self.layer_feedback_dims[-1],

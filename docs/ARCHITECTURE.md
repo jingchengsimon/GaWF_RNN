@@ -57,7 +57,12 @@ The arrows are one-way:
 `utils/training/recurrent_cores/` provides:
 
 - `RNNCore`, `GRUCore`, and `LSTMCore`, including unified `num_layers` handling.
-- `GaWFCore`, with single- and multi-layer paths behind one public model type.
+- `GaWFCore`, with single- and multi-layer paths behind one public model type. It is
+  `nn.RNN` plus an element-wise gate on the input and hidden weight matrices, so the recurrence,
+  both biases, the in-recurrence activation (`rnn_activation`: built-in `tanh` or `relu`) and the
+  state convention are the built-in ones; `rnn_activation="identity"` is the single non-built-in
+  branch and yields a linear recurrence. `gawf_legacy.GaWFCoreLegacy` freezes the arithmetic used
+  before the alignment and is reachable as the `gawf_legacy` model type.
 - `AdditiveFeedbackRNNCore` and `ConcatenatedFeedbackCellCore`, used only by the
   non-multiplicative Clutter feedback controls.
 - `MambaCore` and `S5Core` sequence models.
@@ -74,10 +79,26 @@ V: (fb_dim, input_size + hidden_size)
 gate = sigmoid(U @ (fb * V) / 0.5)
 ```
 
+The gate multiplies every element of `W_ih` and `W_hh`, so one GaWF step is exactly one `nn.RNN`
+step with modulated weights:
+
+```text
+pre_t   = (gate_ih * W_ih) x_t + (gate_hh * W_hh) h_{t-1} + b_ih + b_hh
+h_t     = activation(pre_t)                       # the state that is fed back
+readout = dropout(ReLU(LayerNorm(h_t)))           # external wrap, read by the task heads
+```
+
+With a unit gate this reproduces `nn.RNN` exactly (up to floating-point reduction order). The wrap
+is applied to the readout only; it is never part of the recurrence, and dropout therefore never
+touches the state. The pre-alignment implementation fed the wrapped value back into the loop and
+is retained only as `gawf_legacy`.
+
 For one layer, omitted Clutter `--dz` retains output-sized legacy feedback; explicit `--dz > 0`
 uses a projector. For multiple layers, direct feedback uses the detached adjacent upper hidden
 state at non-final layers and the detached previous task output at the final layer. Projected
-mode gives each layer its own U/V pair and projector dimension.
+mode gives each layer its own U/V pair and projector dimension. Multi-layer GaWF stacks built-in
+`nn.RNN` layers, applies the external wrap between layers (each layer's readout is the next
+layer's input), and carries each layer's raw `activation(preactivation)` as that layer's state.
 
 `prev_feedback` is detached runtime state, registered as a non-persistent buffer in Clutter.
 Resume and best-validation loading filter legacy copies, reset the runtime cache, and use
@@ -125,6 +146,11 @@ RNN preactivation and initializes its input/recurrent weights at `0.5W`, matchin
 zero-feedback `sigmoid(0)=0.5` effective weight. The other three controls concatenate feedback
 to every cell input and therefore use per-frame `RNNCell`, `GRUCell`, or `LSTMCell` execution.
 These model types are single-layer controls and do not alter the original open-loop paths.
+All four controls follow the same aligned readout contract as GaWF: the state that is fed back is
+the raw activation and the wrap is applied to the readout only. Because the additive projection
+and the concatenated input block are algebraically interchangeable, the two RNN controls differ
+after this alignment only by that parameterization, by the additive bias and by the `0.5W`
+initialization.
 
 `clutter_train_helpers.py` owns CLI construction, paths, dataset creation, logging, model
 registration, seeding, and saved summaries. `clutter_train_acceleration.py` owns loaders, AMP,

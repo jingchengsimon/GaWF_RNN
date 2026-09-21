@@ -10,7 +10,14 @@ import torch.nn.functional as F
 
 
 class AdditiveFeedbackRNNCore(nn.Module):
-    """GaWF-shaped RNN core with additive, rather than multiplicative, feedback."""
+    """GaWF-shaped RNN core with additive, rather than multiplicative, feedback.
+
+    Follows the RNN-aligned GaWF contract: the recurrent state that is carried and fed back is the
+    raw activation ``tanh(preactivation)``, and the external ``LayerNorm -> ReLU -> dropout`` wrap
+    is applied to the readout only. ``step`` therefore returns ``(readout, next_state)`` exactly
+    like :class:`ConcatenatedFeedbackCellCore`, so the two feedback controls differ only in how the
+    feedback vector enters the preactivation.
+    """
 
     def __init__(
         self,
@@ -55,7 +62,7 @@ class AdditiveFeedbackRNNCore(nn.Module):
         state: torch.Tensor,
         feedback: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Advance one timestep and return both the readout and next recurrent state."""
+        """Advance one timestep and return the wrapped readout and the raw next state."""
         fb = feedback.to(device=x_t.device, dtype=x_t.dtype).clamp(-10, 10)
         preactivation = F.linear(x_t, self.rnn.weight_ih_l0, self.rnn.bias_ih_l0)
         preactivation = preactivation + F.linear(
@@ -65,9 +72,9 @@ class AdditiveFeedbackRNNCore(nn.Module):
         )
         preactivation = preactivation + self.feedback_linear(fb)
         hidden = torch.tanh(preactivation)
-        hidden = F.relu(self.norm(hidden))
-        hidden = F.dropout(hidden, p=self.dropout, training=self.training)
-        return hidden, hidden
+        readout = torch.relu(self.norm(hidden))
+        readout = F.dropout(readout, p=self.dropout, training=self.training)
+        return readout, hidden
 
     def forward_no_feedback(self, x: torch.Tensor):
         """Run the same recurrence while omitting the additive feedback pathway."""
@@ -85,9 +92,10 @@ class AdditiveFeedbackRNNCore(nn.Module):
                 self.rnn.weight_hh_l0,
                 self.rnn.bias_hh_l0,
             )
-            state = F.relu(self.norm(torch.tanh(preactivation)))
-            state = F.dropout(state, p=self.dropout, training=self.training)
-            output = state
+            raw_state = torch.tanh(preactivation)
+            output = F.relu(self.norm(raw_state))
+            output = F.dropout(output, p=self.dropout, training=self.training)
+            state = raw_state
             outputs.append(output)
         return torch.stack(outputs, dim=1), state
 

@@ -457,3 +457,33 @@
   有效 steering；BF16 表示下 Q 尺度扩大、绝对量化间距增大，但本次未测量量化前的
   action gaps，不能把全部 ties 归因于单一数值原因。旧方案分段重建 optimizer/replay，
   新方案为一个可恢复的 4M phase，故不能单独归因于 clip 或 gamma。
+
+## 2026-09-21 — GaWF 核心语义修正为 `nn.RNN` + 逐元素门控
+
+- **改动（Change）：** `GaWFCore` 改为严格对齐 `nn.RNN`：递推、两个 bias、recurrence 内激活
+  （`rnn_activation`，默认 `tanh`，可选 `relu`；`identity` 为唯一的非内置分支）与 state 约定
+  全部沿用内置实现，只把 `W_ih`、`W_hh` 换成逐元素门控版本 `gate_ih⊙W_ih`、`gate_hh⊙W_hh`；
+  回灌状态为 `activation(preactivation)`，外层 `LayerNorm→ReLU→dropout` 只作用于读出；多层
+  GaWF 按 `nn.RNN` 方式逐层堆叠、层间施加该 wrap；`gawf_additive` 以及 Atari A2C/DQN、
+  MiniGrid PPO 的 GaWF 包装层同步切换。旧实现冻结为 `gawf_legacy.GaWFCoreLegacy`
+  （模型类型 `gawf_legacy`）。
+- **原因（Reason）：** 旧实现把 `LayerNorm→ReLU→dropout` 放在循环内部并把 wrap 后的值回灌，
+  因此并非"`nn.RNN` 加上门控"：同一组权重下其回灌状态与 `tanh(preactivation)` 最大相差
+  0.80，且 train 模式下 dropout 直接作用于回灌状态，使递推本身随机化。这类实现偏离会
+  让 GaWF 与 RNN/LSTM/GRU 基线的对照混入"LN 位置"这一额外变量。
+- **证据（Evidence）：** 门饱和到 1 时，逐层门控核心与 `nn.RNN`（多层为逐层 `nn.RNN` +
+  层间 wrap）逐步输出一致：单层 max|Δ|=5.96e-08、多层 max|Δ|=1.86e-07（float32 归约顺序）；
+  门控关掉时 `step_no_feedback` 轨迹与 `nn.RNN` **逐位相同**（Δ=0.00e+00），
+  `forward_no_feedback` 与 `relu(LN(nn.RNN 输出))` 也逐位相同；新核心与旧核心在
+  `output_wrap="none"` 时逐位相同（Δ=0.00e+00），而单步回灌状态相差 0.93。
+- **已完成结果的语义归属：** 所有以旧实现训练的 GaWF 均属 legacy 语义，包括 Clutter best6
+  十 seeds（Fig1–Fig7、Supple1–3 及全部派生分析）、Atari GaWF A2C/DQN、MiniGrid GaWF，
+  以及 feedback-control 里的 `gawf_additive`。分析侧已按"历史 `gawf_*` stem 走 legacy 核心、
+  `gawf_rnncore_*` stem 走新核心"隔离，旧图件仍可复现；需要按新语义重跑时使用新 commit
+  与新结果叶子。同时新增非线性位置消融类型（`*_nowrap`、`gawf_notanh`、`rnn_notanh`）与
+  40-unit Amarel 数组（job 61735045）在新核心上开跑。
+- **附带测量（feedback controls，10 seeds，validation accuracy @ identity-selected
+  checkpoint）：** 旧语义下 `gawf_additive` vs `rnn_fb` 的 identity 差 +0.982±0.207 pt
+  （paired t=+4.74），location 差 −0.379±0.117 pt（paired t=−3.24）；即二者虽只差一个
+  trainable bias 与参数化写法，旧语义下仍是可分辨的两个系统，这正说明"状态归一化位置"
+  不是可忽略的实现细节。

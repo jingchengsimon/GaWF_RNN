@@ -18,7 +18,7 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 
 from .minigrid_models import MINIGRID_VOCAB
-from ..recurrent_cores.gawf_legacy import GaWFCoreLegacy
+from ..recurrent_cores.gawf import GaWFCore
 from ..recurrent_cores.paper_lstm import PaperLSTMCore
 from ..recurrent_cores.rnn import GRUCore, LSTMCore, RNNCore
 
@@ -132,7 +132,7 @@ class PaperMiniGridActorCritic(nn.Module):
             core_class = {"rnn": RNNCore, "gru": GRUCore}[model_type]
             self.core = core_class(encoder_out, self.hidden_size, dropout=core_dropout)
         elif model_type == "gawf":
-            self.core = GaWFCoreLegacy(
+            self.core = GaWFCore(
                 input_size=encoder_out,
                 hidden_size=self.hidden_size,
                 feedback_dim=self.num_actions,
@@ -303,7 +303,8 @@ class PaperMiniGridActorCritic(nn.Module):
                 if isinstance(recurrent, tuple):
                     features, recurrent = recurrent
                 else:
-                    features = recurrent
+                    # Aligned single-layer GaWF: carry the raw state, read the wrapped value.
+                    features, recurrent = self.core.project_readout(recurrent), recurrent
                 logits = self.policy(features)
                 logits_steps.append(logits)
                 value_steps.append(self.value(features).squeeze(-1))

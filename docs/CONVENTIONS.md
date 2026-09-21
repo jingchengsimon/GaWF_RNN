@@ -31,6 +31,13 @@ Architecture and workflow rules live in `ARCHITECTURE.md` and `DEVELOPMENT_WORKF
   Clutter's isolated reviewer controls additionally use `gawf_additive`, `rnn_fb`, `gru_fb`,
   `lstm_fb`, `mlstm`, `hyperlstm`, and `brims`; these names must not alias or replace the original
   model keys. The latter three are open-loop baselines.
+- `gawf` is the RNN-aligned core (`nn.RNN` plus the element-wise gate). `gawf_legacy` is the
+  frozen pre-alignment core and must be used only to reproduce artifacts trained before the
+  alignment, never for new comparisons against `rnn`/`lstm`/`gru`.
+- The nonlinearity-placement ablations use `gawf_nowrap`, `rnn_nowrap`, `gru_nowrap`,
+  `lstm_nowrap`, `mamba_nowrap`, `s5_nowrap` (outer `LayerNorm -> ReLU -> dropout` wrap removed)
+  and `gawf_notanh`, `rnn_notanh` (in-recurrence activation removed). These names are derived from
+  the aligned core, so they must be re-derived if the core semantics ever change again.
 
 Do not introduce a second name for an existing public argument or model. Historical aliases may
 remain parsable for compatibility but must not appear in new result names.
@@ -246,6 +253,9 @@ Standard recurrent Clutter form:
 - Multi-layer recurrent runs add `_L{layers}`.
 - Explicit/projected GaWF feedback adds `_dz{dimension}`.
 - Legacy single-layer GaWF may omit `_dz` and infer task-output feedback.
+- RNN-aligned GaWF writes the `gawf_rnncore_` stem token in addition to the model key, so
+  historical `gawf_*` checkpoints (pre-alignment, in-loop wrap) stay unambiguous. Analysis code
+  loads the legacy core for `gawf_*` stems and the aligned core only for `gawf_rnncore_*`.
 - Historical `gawf_multi_` and unified `_do{dropout}` names remain readable but are not emitted.
 
 Mamba/S5 use model-native width fields:
