@@ -238,6 +238,10 @@ which is exactly what happened to `61717444` (`git: command not found`) and `617
 - Every `run_*.sh` launcher writes its own fail marker before leaving a failed guard. An `exit`
   reached through a `|| { ...; }` list does not trigger the `ERR` trap, so the marker must be
   written explicitly or the unit leaves no failure evidence.
+- `sbatch` copies the batch script to `/var/lib/slurm/slurmd/job<id>/slurm_script` and executes that
+  copy, so `${BASH_SOURCE[0]}` never points into the checkout. Resolve helper files from the
+  exported `AIM3_ROOT` (for example `$ROOT/experiments/remote/amarel_source_guard.sh`) and fail
+  with an explicit marker when the helper is missing.
 - Prefer an immutable execution snapshot or a pinned worktree for the campaign so source identity
   does not depend on a mutable checkout.
 

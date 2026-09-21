@@ -49,8 +49,15 @@ on_error() {
 trap on_error ERR
 
 cd "$ROOT"
+AMAREL_SOURCE_GUARD="$ROOT/experiments/remote/amarel_source_guard.sh"
+if [[ ! -s "$AMAREL_SOURCE_GUARD" ]]; then
+  printf 'status=failed task=%s model=%s seed=%s timestamp=%s\n' \
+    "$TASK_ID" "$MODEL" "$SEED" "$(date -Is)" > "$FAIL_FILE"
+  printf 'Missing compute-node source guard: %s\n' "$AMAREL_SOURCE_GUARD" >&2
+  exit 1
+fi
 # shellcheck source=../../remote/amarel_source_guard.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../remote" && pwd)/amarel_source_guard.sh"
+source "$AMAREL_SOURCE_GUARD"
 if ! amarel_require_source_commit "$ROOT" "$SOURCE_COMMIT" "$SOURCE_COMMIT_STAMP"; then
   printf 'status=failed task=%s model=%s seed=%s timestamp=%s\n' \
     "$TASK_ID" "$MODEL" "$SEED" "$(date -Is)" > "$FAIL_FILE"

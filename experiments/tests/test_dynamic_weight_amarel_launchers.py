@@ -46,6 +46,14 @@ def test_compute_runners_write_a_fail_marker_when_the_guard_fails() -> None:
         assert "fail" in block.lower(), name
 
 
+def test_compute_runners_resolve_helpers_from_the_submitted_root() -> None:
+    """sbatch executes a copy under /var/lib/slurm/slurmd, so BASH_SOURCE leaves the checkout."""
+    for name in RUNNERS:
+        text = (AMAREL_DIR / name).read_text(encoding="utf-8")
+        assert "BASH_SOURCE" not in text, name
+        assert 'AMAREL_SOURCE_GUARD="$ROOT/experiments/remote/amarel_source_guard.sh"' in text, name
+
+
 def test_submitters_stamp_the_submitted_commit() -> None:
     """The run-side fallback needs the submit-time commit stamp to exist."""
     for name in STAMPING_SUBMITTERS:
