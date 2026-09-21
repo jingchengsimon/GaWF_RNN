@@ -138,7 +138,9 @@ def _gawf_chunk(
     for index in range(encoded.shape[1]):
         feedback_before.append(feedback)
         state = model.core.step(encoded[:, index], state, feedback)
-        char_logits, sector_logits = model.classifier(state)
+        # The state carried into the next step is the raw recurrence value; the classifier reads the
+        # externally wrapped readout. ``project_readout`` is the identity for the historical core.
+        char_logits, sector_logits = model.classifier(model.core.project_readout(state))
         feedback = model._compute_feedback(char_logits, sector_logits).to(torch.float32)
         hidden.append(state)
         char_steps.append(char_logits)

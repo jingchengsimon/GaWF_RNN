@@ -48,6 +48,7 @@ class MambaCore(nn.Module):
         residual: bool = True,
         batch_first: bool = True,
         bidirectional: bool = False,
+        output_wrap: str = "ln_relu_dropout",
         **kwargs,
     ) -> None:
         super().__init__()
@@ -55,6 +56,8 @@ class MambaCore(nn.Module):
             raise ValueError("MambaCore does not support bidirectional=True")
         if num_layers < 1:
             raise ValueError("num_layers must be >= 1")
+        if output_wrap not in ("ln_relu_dropout", "none"):
+            raise ValueError(f"Unsupported output_wrap: {output_wrap!r}")
         self.input_size = int(input_size)
         self.hidden_size = int(d_model)
         self.output_size = int(d_model)
@@ -63,6 +66,7 @@ class MambaCore(nn.Module):
         self.batch_first = bool(batch_first)
         self.residual = bool(residual)
         self.output_dropout = float(dropout if output_dropout is None else output_dropout)
+        self.output_wrap = str(output_wrap)
 
         self.input_proj = (
             nn.Linear(self.input_size, self.d_model)
@@ -82,7 +86,7 @@ class MambaCore(nn.Module):
             ]
         )
         self.layer_dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
-        self.norm = nn.LayerNorm(self.d_model)
+        self.norm = nn.LayerNorm(self.d_model) if self.output_wrap == "ln_relu_dropout" else None
 
     def forward(self, x: torch.Tensor, state=None):
         if not self.batch_first:
@@ -99,9 +103,10 @@ class MambaCore(nn.Module):
             if layer_idx < self.num_layers - 1:
                 x = self.layer_dropout(x)
 
-        x = self.norm(x)
-        x = F.relu(x)
-        x = F.dropout(x, p=self.output_dropout, training=self.training)
+        if self.norm is not None:
+            x = self.norm(x)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.output_dropout, training=self.training)
         h_n = torch.stack(layer_finals, dim=0)
         if not self.batch_first:
             x = x.transpose(0, 1)

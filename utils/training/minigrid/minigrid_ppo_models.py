@@ -21,7 +21,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
 
-from ..recurrent_cores.gawf import GaWFCore
+from ..recurrent_cores.gawf_legacy import GaWFCoreLegacy
 from ..recurrent_cores.rnn import GRUCore, LSTMCore, RNNCore
 
 MiniGridPPOModelType = Literal["rnn", "gru", "lstm", "gawf", "s5", "mamba"]
@@ -66,7 +66,7 @@ class MiniGridActorCritic(nn.Module):
         if model_type == "gawf":
             # No output feedback in this first version: feedback_dim is a dummy 1
             # and we use the no-feedback recurrence path (still gated internally).
-            self.core = GaWFCore(
+            self.core = GaWFCoreLegacy(
                 input_size=enc_out,
                 hidden_size=self.hidden_size,
                 feedback_dim=1,

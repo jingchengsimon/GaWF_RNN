@@ -45,19 +45,48 @@ from utils.training.clutter.clutter_train_engine import (
 from utils.training.clutter.clutter_task_models import (
     BRIMsConv,
     GaWFRNNConv,
+    GaWFNoTanhConv,
+    GaWFNoWrapConv,
+    GaWFLegacyConv,
     GaWFAdditiveConv,
     GRUConv,
     GRUFeedbackConv,
+    GRUNoWrapConv,
     LSTMConv,
     LSTMFeedbackConv,
+    LSTMNoWrapConv,
     HyperLSTMConv,
     MambaConv,
+    MambaNoWrapConv,
     MultiLayerGaWFRNNConv,
     RNNConv,
     RNNFeedbackConv,
+    RNNNoTanhConv,
+    RNNNoWrapConv,
     S5Conv,
+    S5NoWrapConv,
     MLSTMConv,
 )
+
+# Nonlinearity-placement ablation types reuse the width grids, state sizes, and model kwargs of
+# their base type; only the sequence core's activation/wrap mode differs.
+CORE_MODE_MODEL_TYPES: dict[str, str] = {
+    "gawf_nowrap": "gawf",
+    "gawf_notanh": "gawf",
+    "gawf_legacy": "gawf",
+    "rnn_nowrap": "rnn",
+    "rnn_notanh": "rnn",
+    "gru_nowrap": "gru",
+    "lstm_nowrap": "lstm",
+    "mamba_nowrap": "mamba",
+    "s5_nowrap": "s5",
+}
+
+
+def dispatch_model_type(model_type: str) -> str:
+    """Return the base model type that owns widths, state sizes, and model kwargs."""
+
+    return CORE_MODE_MODEL_TYPES.get(model_type, model_type)
 
 
 torch.set_num_threads(4)
@@ -904,6 +933,15 @@ if __name__ == "__main__":
         MLSTMConv,
         HyperLSTMConv,
         BRIMsConv,
+        GaWFNoWrapConv,
+        RNNNoWrapConv,
+        GRUNoWrapConv,
+        LSTMNoWrapConv,
+        MambaNoWrapConv,
+        S5NoWrapConv,
+        GaWFNoTanhConv,
+        RNNNoTanhConv,
+        GaWFLegacyConv,
     )
 
     model_types = args.model_types
@@ -922,7 +960,8 @@ if __name__ == "__main__":
     # Build hyperparameter combinations with model-specific width/state names.
     experiment_configs = []
     for model_type in model_types:
-        if model_type == "mamba":
+        dispatch_type = dispatch_model_type(model_type)
+        if dispatch_type == "mamba":
             for mamba_d_model, lr, weight_decay, cnn_dropout in product(
                 mamba_d_models, lrs, wds, cnn_dropout_grid
             ):
@@ -938,7 +977,7 @@ if __name__ == "__main__":
                         "cnn_dropout": cnn_dropout,
                     }
                 )
-        elif model_type in ("ssm", "s5"):
+        elif dispatch_type in ("ssm", "s5"):
             for s5_d_model, s5_state_size, lr, weight_decay, cnn_dropout in product(
                 s5_d_models, s5_state_sizes, lrs, wds, cnn_dropout_grid
             ):
@@ -1043,16 +1082,17 @@ if __name__ == "__main__":
             if model_type == "gawf" and num_layers > 1
             else model_classes[model_type]
         )
+        dispatch_type = dispatch_model_type(model_type)
         model_kwargs = {}
         width_kwarg = "hidden_size"
-        if model_type == "mamba":
+        if dispatch_type == "mamba":
             width_kwarg = "mamba_d_model"
-        elif model_type in ("ssm", "s5"):
+        elif dispatch_type in ("ssm", "s5"):
             width_kwarg = "s5_d_model"
             model_kwargs["s5_state_size"] = state_size
             model_kwargs["s5_num_layers"] = args.s5_num_layers
             model_kwargs["s5_dropout"] = args.s5_dropout
-        elif model_type == "gawf":
+        elif dispatch_type == "gawf":
             model_kwargs["feedback_dim"] = feedback_dim
             if num_layers > 1:
                 model_kwargs["num_layers"] = num_layers
@@ -1061,7 +1101,7 @@ if __name__ == "__main__":
                 raise ValueError(f"{model_type} supports only --num_layers 1")
             if args.nofb:
                 raise ValueError(f"{model_type} is a feedback control and does not support --nofb")
-        elif model_type in ("rnn", "gru", "lstm"):
+        elif dispatch_type in ("rnn", "gru", "lstm"):
             model_kwargs["num_layers"] = num_layers
         elif model_type in ("mlstm", "hyperlstm", "brims"):
             if num_layers != 1:
@@ -1109,11 +1149,11 @@ if __name__ == "__main__":
         )
 
         width_desc = f"{width_label}={model_width}"
-        if model_type in ("ssm", "s5"):
+        if dispatch_type in ("ssm", "s5"):
             width_desc = f"s5_d_model={model_width}, s5_state_size={state_size}"
-        elif model_type == "gawf" and feedback_dim is not None:
+        elif dispatch_type == "gawf" and feedback_dim is not None:
             width_desc = f"{width_desc}, dz={feedback_dim}"
-        elif model_type == "gawf" and num_layers > 1:
+        elif dispatch_type == "gawf" and num_layers > 1:
             if getattr(mdl, "use_feedback_projector", False):
                 feedback_desc = f"dz={mdl.feedback_dim}"
             else:
@@ -1180,8 +1220,13 @@ if __name__ == "__main__":
             and getattr(mdl, "use_feedback_projector", False)
         ):
             dz_suffix = f"_dz{mdl.feedback_dim}"
+        # Provenance: the RNN-aligned GaWF core writes a distinct stem token so historical
+        # in-loop-wrap checkpoints (plain ``gawf_*`` stems) stay unambiguous.
+        stem_model = model_type
+        if dispatch_type == "gawf" and getattr(mdl, "gawf_core", None) == "rnn_aligned":
+            stem_model = "gawf_rnncore"
         results_stem = (
-            f"{model_type}_{mode_suffix}{acc_suffix}{width_suffix}"
+            f"{stem_model}_{mode_suffix}{acc_suffix}{width_suffix}"
             f"{layer_suffix}{hp_suffix}{dz_suffix}{fb_path_suffix}"
         )
         results_path = os.path.join(results_dir, results_stem)
@@ -1347,6 +1392,10 @@ if __name__ == "__main__":
             args.checkpoint_interval_epochs
         )
         metric_summary["resumed_from"] = resume_from
+        core_module = getattr(mdl, "core", None)
+        metric_summary["core_rnn_activation"] = getattr(core_module, "rnn_activation", None)
+        metric_summary["core_output_wrap"] = getattr(core_module, "output_wrap", None)
+        metric_summary["gawf_core_semantics"] = getattr(mdl, "gawf_core", None)
         if train_lr != lr:
             metric_summary["requested_lr"] = lr
             metric_summary["effective_lr"] = train_lr

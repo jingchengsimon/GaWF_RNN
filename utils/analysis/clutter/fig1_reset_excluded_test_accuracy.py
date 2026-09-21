@@ -23,7 +23,24 @@ from utils.training.clutter.clutter_train_acceleration import run_forward_with_f
 ORIGINAL_MODELS = ("gawf", "rnn", "lstm", "gru", "mamba", "s5")
 FEEDBACK_CONTROL_MODELS = ("gawf_additive", "rnn_fb", "gru_fb", "lstm_fb")
 DYNAMIC_WEIGHT_MODELS = ("mlstm", "hyperlstm", "brims")
-MODELS = ORIGINAL_MODELS + FEEDBACK_CONTROL_MODELS + DYNAMIC_WEIGHT_MODELS
+NONLINEARITY_ABLATION_MODELS = (
+    "gawf_nowrap",
+    "rnn_nowrap",
+    "gru_nowrap",
+    "lstm_nowrap",
+    "mamba_nowrap",
+    "s5_nowrap",
+    "gawf_notanh",
+    "rnn_notanh",
+    "gawf_rnncore",
+    "gawf_legacy",
+)
+MODELS = (
+    ORIGINAL_MODELS
+    + FEEDBACK_CONTROL_MODELS
+    + DYNAMIC_WEIGHT_MODELS
+    + NONLINEARITY_ABLATION_MODELS
+)
 RESULT_NAME = "reset_excluded_test_accuracy.json"
 
 

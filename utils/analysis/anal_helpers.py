@@ -18,16 +18,24 @@ from utils.training.clutter.clutter_task_models import (
     BRIMsConv,
     GaWFRNNConv,
     GaWFAdditiveConv,
+    GaWFNoTanhConv,
+    GaWFNoWrapConv,
     GRUConv,
     GRUFeedbackConv,
+    GRUNoWrapConv,
     LSTMConv,
     LSTMFeedbackConv,
+    LSTMNoWrapConv,
     HyperLSTMConv,
     MambaConv,
+    MambaNoWrapConv,
     MultiLayerGaWFRNNConv,
     RNNConv,
     RNNFeedbackConv,
+    RNNNoTanhConv,
+    RNNNoWrapConv,
     S5Conv,
+    S5NoWrapConv,
     MLSTMConv,
 )
 from utils.training.clutter.clutter_train_helpers import PathHelper, create_datasets
@@ -159,6 +167,16 @@ _HPARAM_MODEL_TO_KEY: Dict[str, str] = {
     "MLSTM": "mlstm",
     "HyperLSTM": "hyperlstm",
     "BRIMs": "brims",
+    "GaWFNoWrap": "gawf_nowrap",
+    "GaWFNoTanh": "gawf_notanh",
+    "GaWFRNNCore": "gawf_rnncore",
+    "GaWFLegacy": "gawf_legacy",
+    "RNNNoWrap": "rnn_nowrap",
+    "RNNNoTanh": "rnn_notanh",
+    "GRUNoWrap": "gru_nowrap",
+    "LSTMNoWrap": "lstm_nowrap",
+    "MambaNoWrap": "mamba_nowrap",
+    "S5NoWrap": "s5_nowrap",
 }
 
 
@@ -240,10 +258,26 @@ def build_model_from_ckpt(
         "mlstm": MLSTMConv,
         "hyperlstm": HyperLSTMConv,
         "brims": BRIMsConv,
+        "gawf_nowrap": GaWFNoWrapConv,
+        "rnn_nowrap": RNNNoWrapConv,
+        "gru_nowrap": GRUNoWrapConv,
+        "lstm_nowrap": LSTMNoWrapConv,
+        "mamba_nowrap": MambaNoWrapConv,
+        "s5_nowrap": S5NoWrapConv,
+        "gawf_notanh": GaWFNoTanhConv,
+        "rnn_notanh": RNNNoTanhConv,
+        "gawf_rnncore": GaWFRNNConv,
+        "gawf_legacy": GaWFRNNConv,
     }
     model_cls = model_class_map[model_key]
     model_kwargs = {}
-    if model_key in ("gawf", "gawf_multi"):
+    # Historical ``gawf_*`` checkpoints predate the RNN alignment and must keep loading through the
+    # frozen legacy core; only explicitly marked stems use the RNN-aligned core.
+    if model_key in ("gawf", "gawf_legacy", "gawf_rnncore"):
+        model_kwargs["gawf_core"] = (
+            "rnn_aligned" if model_key == "gawf_rnncore" else "legacy"
+        )
+    if model_key in ("gawf", "gawf_multi", "gawf_legacy", "gawf_rnncore"):
         parsed_feedback_dim = hparams.get("feedback_dim")
         if parsed_feedback_dim is not None:
             model_kwargs["feedback_dim"] = int(parsed_feedback_dim)

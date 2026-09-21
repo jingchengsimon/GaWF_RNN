@@ -3,7 +3,7 @@
   "id": "clutter-cm-mnist-feedback-controls-ep150-gawfadd-rnnfb-grufb-lstmfb-seeds1-10",
   "description": "CM-MNIST non-multiplicative feedback controls: parameter-matched GaWF-additive, RNN-FB, GRU-FB, and LSTM-FB; 150 epochs, seeds 1-10, reset-excluded test accuracy and feedback-shuffle evaluation.",
   "host": "amarel",
-  "status": "running",
+  "status": "recovering",
   "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260920/feedback_controls_amarel_571b260",
   "environment": {
     "name": "aim3_rnn",
@@ -14,6 +14,10 @@
     "job_ids": [
       "61717737",
       "61717738",
+      "61731757",
+      "61731758"
+    ],
+    "canceled_job_ids": [
       "61717739"
     ],
     "run_ids": [],
@@ -23,7 +27,8 @@
     "log_globs": [
       "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/61717737.preflight.out",
       "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/61717738_*.out",
-      "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/61717739.aggregate.out"
+      "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/61731757_*.out",
+      "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/61731758.aggregate.out"
     ],
     "status_dir": "/scratch/js3269/results/artifacts/clutter_feedback_controls_ep150_v1_amarel_retry2/status",
     "result_paths": [
@@ -54,8 +59,12 @@
     "40 units = {gawf_additive, rnn_fb, gru_fb, lstm_fb} x seeds 1-10, 150 epochs each; source commit 571b260cd274c2633c55fcef7bdda0b9bcec9de0 in execution snapshot feedback_controls_amarel_571b260; AIM3_NUM_WORKERS=2 and AIM3_PIN_MEMORY=1 on the CUDA compute nodes.",
     "Measured per-unit cost is about 5h55m-5h57m (142.96-144.50 s/epoch over 150 epochs) against the 12h time limit.",
     "Superseded, not deleted: the earlier sjc-remote attempt (tmux session and scheduler run id sjc_clutter_feedback_controls_v1, remote root /G/MIMOlab/Codes/aim3_gawf_rnn) stopped at epoch 40/150 on 2026-09-20 about 02:24 EDT, was paused by the user, and is no longer needed; its partial outputs are not part of the reported results and the Amarel array above replaces it.",
-    "Result leaves: one *_metrics.json, one *_model.pth and one *_train_state.pth per unit; each completed unit also writes one reset-excluded test JSON and one sequence-512 reset-excluded feedback-shuffle result, and the aggregate writes mean plus SEM over ten seeds."
+    "Result leaves: one *_metrics.json, one *_model.pth and one *_train_state.pth per unit; each completed unit also writes one reset-excluded test JSON and one sequence-512 reset-excluded feedback-shuffle result, and the aggregate writes mean plus SEM over ten seeds.",
+    "2026-09-21 recovery: array 61717738 finished with 38/40 COMPLETED and two TIMEOUT elements, 61717738_38 (lstm_fb-seed09) and 61717738_39 (lstm_fb-seed10), killed by the 12:00:00 wall-clock limit at 06:34:14 and 06:36:14 EDT after reaching epoch 141/150 and 144/150 at about 298-304 s per epoch (roughly twice the ~143 s/epoch measured baseline). No task_*.fail marker was written, and both units left a resumable *_train_state.pth, so they are paused rather than failed.",
+    "The original aggregate 61717739 used --dependency=afterok:61717738 on the whole array, so the two TIMEOUT elements made the dependency permanently unsatisfiable and Slurm reported DependencyNeverSatisfied; the job never started and wrote no aggregate log. It was cancelled at 2026-09-21 09:05 EDT because it could never run.",
+    "Replacement chain submitted at 2026-09-21 09:06 EDT from the unchanged snapshot feedback_controls_amarel_571b260 (commit 571b260cd274c2633c55fcef7bdda0b9bcec9de0) with the reviewed run scripts and their declared #SBATCH resources: resume array 61731757 (--array=38-39, --auto_resume resumes from the last 5-epoch checkpoint) -> aggregate 61731758 (afterok:61731757). Exports were AIM3_ROOT/ AIM3_RESULTS_PATH=/scratch/js3269/results/ AIM3_CLUTTER_DATA_DIR=/scratch/js3269/stimuli/ AIM3_STATUS_DIR/ AIM3_PREREQ_ROOT=/scratch/js3269/results/data/analysis/feedback_controls_prerequisites_v1/ AIM3_SOURCE_COMMIT/AIM3_NUM_WORKERS=2/AIM3_PIN_MEMORY=1. Remaining work is roughly eleven epochs per unit plus its reset-excluded test and feedback-shuffle ablation.",
+    "Warning for future chains: an afterok dependency on a whole training array converts any single TIMEOUT or FAILED element into a permanently blocked aggregate job. Prefer depending on a specific completed element set or re-submitting the aggregate after the array reaches its final state."
   ],
   "created_at": "2026-09-20T04:24:50+00:00",
-  "updated_at": "2026-09-20T17:36:38+00:00"
+  "updated_at": "2026-09-21T13:06:33+00:00"
 }

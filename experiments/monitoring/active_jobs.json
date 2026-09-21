@@ -39,16 +39,17 @@
       "id": "clutter-cm-mnist-feedback-controls-ep150-gawfadd-rnnfb-grufb-lstmfb-seeds1-10",
       "description": "CM-MNIST non-multiplicative feedback controls: parameter-matched GaWF-additive, RNN-FB, GRU-FB, and LSTM-FB; 150 epochs, seeds 1-10, reset-excluded test accuracy and feedback-shuffle evaluation.",
       "host": "amarel",
-      "status": "running",
+      "status": "recovering",
       "job_ids": [
         "61717737",
         "61717738",
-        "61717739"
+        "61731757",
+        "61731758"
       ],
       "run_ids": [],
       "tmux_session": null,
       "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260920/feedback_controls_amarel_571b260",
-      "updated_at": "2026-09-20T17:36:38+00:00"
+      "updated_at": "2026-09-21T13:06:33+00:00"
     },
     {
       "id": "rl-atari-seaquest-full18-fs4-stack4-l3-ac-3m-lstm-gawf-s1-4",

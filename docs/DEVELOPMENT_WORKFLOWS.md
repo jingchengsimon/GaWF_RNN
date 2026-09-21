@@ -375,6 +375,20 @@ retained and are not regenerated.
 When metrics are staged locally from Amarel, pass `--source-root` with the original remote result
 root so the structured outputs retain durable provenance rather than the temporary staging path.
 
+`utils.analysis.clutter.fig1b_feedback_controls_behavior_2x4` renders the CM-MNIST ten-model
+behaviour comparison into `results/data/analysis/G_behaviour/fig1b_feedback_controls_behavior_2x4`
+and the curated `results/save/cmmnist_feedback_controls_behavior_2x4.pdf`/`.png`. Rows are the
+Location (sector) and Identity (character) readouts; columns are reset-excluded test accuracy,
+validation loss, target-switch recovery, and the feedback-shuffle ablation. The four campaign
+feedback controls are drawn solid with filled markers, and the six retained best-six Clutter models
+(GaWF strict, RNN, LSTM, GRU, Mamba, S5) are drawn dashed with open markers and hatched bars; a
+control reuses the palette of the baseline it ablates. Columns A-C cover all ten models, while
+column D can only cover models that have a feedback-shuffle export under
+`--reference-shuffle-root` (currently the four controls plus strict GaWF): the five open-loop
+baselines were never run with that protocol, so their slots are labelled `not run`. Add a model to
+column D only by producing its reset-excluded shuffle export first, never by mixing another
+protocol.
+
 ### Remote-data-first result visualisation
 
 - For updates to an already completed experiment whose structured ten-seed results are retained on

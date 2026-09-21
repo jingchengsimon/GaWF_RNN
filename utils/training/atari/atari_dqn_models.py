@@ -20,7 +20,7 @@ from typing import Literal
 import torch
 import torch.nn as nn
 
-from ..recurrent_cores.gawf import GaWFCore
+from ..recurrent_cores.gawf_legacy import GaWFCoreLegacy
 from ..recurrent_cores.rnn import GRUCore, LSTMCore, RNNCore
 
 AtariDQNModelType = Literal["ann", "rnn", "gru", "lstm", "gawf", "s5", "mamba"]
@@ -157,7 +157,7 @@ class AtariQNetwork(nn.Module):
             top_feedback_dim = max(
                 1, self.feedback_dim_for_mode(self.feedback_mode, self.num_actions)
             )
-            self.core = GaWFCore(
+            self.core = GaWFCoreLegacy(
                 input_size=conv_out,
                 hidden_size=self.hidden_size,
                 feedback_dim=top_feedback_dim,

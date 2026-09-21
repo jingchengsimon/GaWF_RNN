@@ -782,6 +782,15 @@ def get_model_classes(
     mlstm_conv_class=None,
     hyper_lstm_conv_class=None,
     brims_conv_class=None,
+    gawf_nowrap_conv_class=None,
+    rnn_nowrap_conv_class=None,
+    gru_nowrap_conv_class=None,
+    lstm_nowrap_conv_class=None,
+    mamba_nowrap_conv_class=None,
+    s5_nowrap_conv_class=None,
+    gawf_notanh_conv_class=None,
+    rnn_notanh_conv_class=None,
+    gawf_legacy_conv_class=None,
 ):
     """Return mapping from model type name to model class.
 
@@ -828,6 +837,24 @@ def get_model_classes(
             if model_class
         }
     )
+    optional_core_mode_classes = {
+        "gawf_nowrap": gawf_nowrap_conv_class,
+        "rnn_nowrap": rnn_nowrap_conv_class,
+        "gru_nowrap": gru_nowrap_conv_class,
+        "lstm_nowrap": lstm_nowrap_conv_class,
+        "mamba_nowrap": mamba_nowrap_conv_class,
+        "s5_nowrap": s5_nowrap_conv_class,
+        "gawf_notanh": gawf_notanh_conv_class,
+        "rnn_notanh": rnn_notanh_conv_class,
+        "gawf_legacy": gawf_legacy_conv_class,
+    }
+    model_classes.update(
+        {
+            name: model_class
+            for name, model_class in optional_core_mode_classes.items()
+            if model_class
+        }
+    )
     return model_classes
 
 
@@ -854,6 +881,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "mlstm",
             "hyperlstm",
             "brims",
+            "gawf_nowrap",
+            "rnn_nowrap",
+            "gru_nowrap",
+            "lstm_nowrap",
+            "mamba_nowrap",
+            "s5_nowrap",
+            "gawf_notanh",
+            "rnn_notanh",
+            "gawf_legacy",
         ],
         help='Model types to train (default: ["rnn"])',
     )

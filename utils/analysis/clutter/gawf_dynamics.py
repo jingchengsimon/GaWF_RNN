@@ -221,6 +221,12 @@ def gawf_jacobian_objects(
 
     if getattr(model.core, "num_layers", 1) != 1:
         raise RuntimeError("Dynamics analysis currently supports single-layer GaWF only")
+    if getattr(model, "gawf_core", "legacy") != "legacy":
+        raise RuntimeError(
+            "The dynamics Jacobian implements the historical in-loop-wrap GaWF map "
+            "(hidden_next = relu(LN(tanh(preactivation)))). Pass gawf_core='legacy' to analyze the "
+            "checkpoints this analysis was derived for; the RNN-aligned core needs a new derivation."
+        )
     input_size = encoded_t.shape[-1]
     hidden_size = hidden_prev.shape[-1]
     feedback = feedback_prev.to(dtype=torch.float32)

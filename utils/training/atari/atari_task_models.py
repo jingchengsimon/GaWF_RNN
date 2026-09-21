@@ -17,7 +17,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
 
-from ..recurrent_cores.gawf import GaWFCore
+from ..recurrent_cores.gawf_legacy import GaWFCoreLegacy
 from ..recurrent_cores.rnn import LSTMCore
 
 AtariModelType = Literal["lstm", "gawf"]
@@ -129,7 +129,7 @@ class AtariActorCritic(nn.Module):
             top_feedback_dim = max(
                 1, self.feedback_dim_for_mode(self.feedback_mode, self.num_actions)
             )
-            self.core = GaWFCore(
+            self.core = GaWFCoreLegacy(
                 input_size=self.recurrent_input_size,
                 hidden_size=self.hidden_size,
                 feedback_dim=top_feedback_dim,

@@ -2,18 +2,25 @@
 
 The layout follows the retained best-six 2x4 summary: one row per readout (Location = sector,
 Identity = character) and four columns with the same roles — test performance, validation dynamics,
-target-switch recovery, and the feedback-shuffle ablation. Five series are drawn: the four
-parameter-matched feedback controls plus the strict (multiplicative) GaWF reference evaluated under
-the same feedback-control protocol. The reference Figure 1 family is never modified.
+target-switch recovery, and the feedback-shuffle ablation. Ten series are drawn: the four
+parameter-matched feedback controls from this campaign plus the six retained best-six Clutter models
+(GaWF, RNN, LSTM, GRU, Mamba, S5) re-evaluated on the identical feedback-control protocol. Each
+control keeps the palette of the baseline it ablates, so a colour marks one architecture family and
+the retained models are additionally drawn dashed with open markers and hatched bars.
+
+Column coverage differs by construction: the five open-loop baselines were never run with the
+feedback-shuffle ablation, so column D carries only the four controls plus strict GaWF and marks the
+remaining slots as not run. The reference Figure 1 family is never modified.
 
 Inputs
 - ``--curves-root``: feedback-control ``shuffle`` export (switch-aligned baseline/shuffle curves).
 - ``--units-root``: feedback-control reset-excluded test accuracy export per unit.
 - ``--histories-root``: feedback-control per-unit ``*.pkl`` training histories.
-- ``--reference-test-csv``: strict GaWF reset-excluded test accuracy (ten seeds).
-- ``--reference-histories-root``: strict GaWF validation-loss histories.
-- ``--reference-shuffle-root``: strict GaWF shuffle export on the identical feedback-control
-  protocol (same split, K=10, pre_K=10, offset 0 excluded).
+- ``--reference-test-csv``: reset-excluded test accuracy of the six retained Clutter models.
+- ``--reference-histories-root``: retained-model validation-loss histories.
+- ``--reference-shuffle-root``: retained-model shuffle export where it exists (strict GaWF only);
+  conditions use the same split, K=10, pre_K=10, offset 0 excluded.
+- ``--baseline-recovery-root``: retained-model reset-excluded target-switch recovery export.
 
 Outputs
 - ``results/data/analysis/G_behaviour/<script>/``: NPZ bundle, CSV summary, ``key_results.json``.
@@ -28,6 +35,7 @@ import csv
 import json
 import pickle
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -55,15 +63,29 @@ from utils.analysis.clutter.fig1b_feedback_controls_target_switch import (  # no
     build_curves,
     load_units,
 )
+from utils.analysis.clutter.clutter_multiseed_summary import (  # noqa: E402
+    load_recovery_curves,
+)
+from utils.analysis.clutter.fg_switch_offset_acc import (  # noqa: E402
+    MODEL_COLORS as BASELINE_COLORS,
+    MODEL_LABELS as BASELINE_LABELS,
+    MODEL_MARKERS as BASELINE_MARKERS,
+    MODEL_ORDER as BASELINE_ORDER,
+)
 
 SCRIPT_NAME = Path(__file__).stem
 
 ROW_KEYS = ("sector", "char")
 ROW_LABELS = {"sector": "Location", "char": "Identity"}
-REFERENCE_MODEL = "gawf_strict"
-LABELS = {**MODEL_LABELS, REFERENCE_MODEL: "GaWF (strict)"}
-COLORS = {**MODEL_COLORS, REFERENCE_MODEL: "#333333"}
-MARKERS = {**MODEL_MARKERS, REFERENCE_MODEL: "X"}
+BASELINE_MODELS: tuple[str, ...] = tuple(BASELINE_ORDER)
+REFERENCE_MODEL = "gawf"
+LABELS = {**MODEL_LABELS, **BASELINE_LABELS, REFERENCE_MODEL: "GaWF (strict)"}
+COLORS = {**MODEL_COLORS, **BASELINE_COLORS}
+MARKERS = {**MODEL_MARKERS, **BASELINE_MARKERS}
+LINESTYLE = {
+    model: ("--" if model in BASELINE_MODELS else "-")
+    for model in (*MODEL_ORDER, *BASELINE_MODELS)
+}
 HISTORY_TRACK = {"sector": "val_loss_pos", "char": "val_loss_char"}
 ABLATION_CONDITIONS = ("baseline", "shuffle_digit", "shuffle_sector")
 ABLATION_LABELS = ("Baseline", "Shuffle\ndigit", "Shuffle\nsector")
@@ -96,6 +118,13 @@ DEFAULT_REFERENCE_SHUFFLE_ROOT = (
     / "analysis"
     / "supple1_feedback_shuffle_recovery_resetexcluded_10seed_v1"
 )
+DEFAULT_BASELINE_RECOVERY_ROOT = (
+    PROJECT_ROOT
+    / "results"
+    / "data"
+    / "analysis"
+    / "fig1_target_switch_recovery_resetexcluded_6model_10seed_v4"
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -111,6 +140,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--reference-shuffle-root", type=Path, default=DEFAULT_REFERENCE_SHUFFLE_ROOT
+    )
+    parser.add_argument(
+        "--baseline-recovery-root",
+        type=Path,
+        default=DEFAULT_BASELINE_RECOVERY_ROOT,
+        help="Reset-excluded retained-model target-switch recovery export (one npz per seed).",
     )
     parser.add_argument("--without_reference", action="store_true")
     parser.add_argument(
@@ -169,47 +204,71 @@ def load_loss_histories(root: Path) -> dict[str, dict[str, dict[int, np.ndarray]
     return histories
 
 
-def load_reference_gawf(
-    test_csv: Path, histories_root: Path, shuffle_root: Path
-) -> dict[str, Any]:
-    """Load the retained strict-GaWF reference under the feedback-control protocol."""
+def _load_test_rows(
+    test_csv: Path, model: str, expected_seeds: int = 10
+) -> tuple[list[int], dict[str, np.ndarray]]:
+    """Read one retained model's reset-excluded test rows."""
 
     with test_csv.open(newline="", encoding="utf-8") as stream:
-        rows = [row for row in csv.DictReader(stream) if row.get("model") == "gawf"]
-    if len(rows) != 10:
-        raise RuntimeError(f"Expected ten strict-GaWF test rows in {test_csv}, got {len(rows)}")
+        rows = [row for row in csv.DictReader(stream) if row.get("model") == model]
+    if len(rows) != expected_seeds:
+        raise RuntimeError(
+            f"Expected {expected_seeds} {model} test rows in {test_csv}, got {len(rows)}"
+        )
     rows.sort(key=lambda row: int(row["seed"]))
     seeds = [int(row["seed"]) for row in rows]
     test = {
         row_key: np.asarray([float(row[f"{row_key}_acc"]) for row in rows], dtype=np.float64)
         for row_key in ROW_KEYS
     }
+    return seeds, test
+
+
+def _load_reference_histories(
+    histories_root: Path, model: str, seeds: Sequence[int]
+) -> dict[str, dict[int, np.ndarray]]:
+    """Load one retained model's per-epoch validation-loss tracks for the given seeds."""
 
     histories: dict[str, dict[int, np.ndarray]] = {row_key: {} for row_key in ROW_KEYS}
-    curves: dict[str, dict[str, list[np.ndarray]]] = {
-        condition: {row_key: [] for row_key in ROW_KEYS}
-        for condition in CONDITION_ORDER
-    }
-    offsets: np.ndarray | None = None
     for seed in seeds:
-        history_dir = histories_root / f"gawf-seed{seed:02d}"
+        history_dir = histories_root / f"{model}-seed{seed:02d}"
         pickles = sorted(history_dir.glob("*.pkl"))
         if len(pickles) != 1:
-            raise RuntimeError(f"Expected exactly one strict-GaWF history in {history_dir}")
+            raise RuntimeError(f"Expected exactly one {model} history in {history_dir}")
         with pickles[0].open("rb") as stream:
             payload = pickle.load(stream)
         for row_key, track in HISTORY_TRACK.items():
-            histories[row_key][seed] = np.asarray(payload[track], dtype=np.float64)
+            values = payload.get(track)
+            if values is None:
+                raise RuntimeError(f"{pickles[0]} has no {track} track")
+            histories[row_key][seed] = np.asarray(values, dtype=np.float64)
+    return histories
 
-        shuffle_path = shuffle_root / f"gawf-seed{seed:02d}" / "ablation_metrics.json"
-        shuffle = json.loads(shuffle_path.read_text(encoding="utf-8"))
+
+def _load_shuffle_curves(
+    shuffle_root: Path, model: str, seeds: Sequence[int]
+) -> tuple[np.ndarray, dict[str, dict[str, list[np.ndarray]]]] | None:
+    """Load one model's switch-aligned shuffle export, or ``None`` when it was never run."""
+
+    paths = [shuffle_root / f"{model}-seed{seed:02d}" / "ablation_metrics.json" for seed in seeds]
+    if not any(path.is_file() for path in paths):
+        return None
+    if not all(path.is_file() for path in paths):
+        raise RuntimeError(f"Incomplete shuffle export for {model} under {shuffle_root}")
+
+    offsets: np.ndarray | None = None
+    curves: dict[str, dict[str, list[np.ndarray]]] = {
+        condition: {row_key: [] for row_key in ROW_KEYS} for condition in CONDITION_ORDER
+    }
+    for path in paths:
+        shuffle = json.loads(path.read_text(encoding="utf-8"))
         if shuffle.get("exclude_window_initial_frame") is not True:
-            raise RuntimeError(f"Strict-GaWF shuffle export includes the reset frame: {shuffle_path}")
+            raise RuntimeError(f"{model} shuffle export includes the reset frame: {path}")
         current = np.asarray(shuffle["switch_offsets"], dtype=np.int64)
         if offsets is None:
             offsets = current
         elif not np.array_equal(offsets, current):
-            raise RuntimeError(f"Strict-GaWF offset grid differs from previous seeds: {shuffle_path}")
+            raise RuntimeError(f"{model} offset grid differs from previous seeds: {path}")
         for condition in CONDITION_ORDER:
             for row_key in ROW_KEYS:
                 curves[condition][row_key].append(
@@ -218,26 +277,95 @@ def load_reference_gawf(
                         dtype=np.float64,
                     )
                 )
+    if offsets is None:
+        raise RuntimeError(f"No usable offset grid for {model} under {shuffle_root}")
+    return offsets, curves
 
-    recovery = {
-        row_key: _mean_sem(curves["baseline"][row_key]) for row_key in ROW_KEYS
-    }
-    ablation = {
-        condition: {
-            row_key: np.asarray(
-                [float(np.mean(series)) for series in curves[condition][row_key]], dtype=np.float64
+
+def load_baseline_models(
+    test_csv: Path,
+    histories_root: Path,
+    shuffle_root: Path,
+    recovery_root: Path | None = None,
+    models: Sequence[str] = BASELINE_MODELS,
+    expected_offsets: np.ndarray | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Load every retained reference model on the feedback-control evaluation protocol.
+
+    Recovery curves come from the reset-excluded six-model export when it covers the model, and fall
+    back to the shuffle export's baseline condition otherwise. The feedback-shuffle ablation is only
+    loaded for models that actually have that export; ``ablation`` is ``None`` for the open-loop
+    baselines that never ran it.
+    """
+
+    recovery_offsets: np.ndarray | None = None
+    recovery_curves: dict[str, dict[str, np.ndarray]] = {}
+    if recovery_root is not None and recovery_root.is_dir():
+        recovery_offsets, recovery_curves = load_recovery_curves(recovery_root)
+
+    payload: dict[str, dict[str, Any]] = {}
+    for model in models:
+        seeds, test = _load_test_rows(test_csv, model)
+        histories = _load_reference_histories(histories_root, model, seeds)
+        shuffle = None if shuffle_root is None else _load_shuffle_curves(shuffle_root, model, seeds)
+
+        # Prefer the model's own shuffle export so a series already drawn from it keeps its exact
+        # numbers; the canonical six-model recovery export only fills in models that lack one.
+        if shuffle is not None:
+            grid = shuffle[0]
+            recovery = {row_key: _mean_sem(shuffle[1]["baseline"][row_key]) for row_key in ROW_KEYS}
+        elif model in recovery_curves:
+            if recovery_offsets is None:
+                raise RuntimeError(f"Missing recovery offset grid for {model}")
+            grid = recovery_offsets
+            recovery = {
+                row_key: _mean_sem(list(np.asarray(recovery_curves[model][row_key])))
+                for row_key in ROW_KEYS
+            }
+        else:
+            raise RuntimeError(
+                f"No recovery export for {model}: pass --baseline-recovery-root or a shuffle export"
             )
-            for row_key in ROW_KEYS
+        if expected_offsets is not None and not np.array_equal(
+            np.asarray(grid, dtype=np.int64), np.asarray(expected_offsets, dtype=np.int64)
+        ):
+            raise RuntimeError(
+                f"{model} recovery offsets do not match the feedback-control offset grid"
+            )
+
+        ablation = None
+        if shuffle is not None:
+            ablation = {
+                condition: {
+                    row_key: np.asarray(shuffle[1][condition][row_key], dtype=np.float64).mean(
+                        axis=1
+                    )
+                    for row_key in ROW_KEYS
+                }
+                for condition in ABLATION_CONDITIONS
+            }
+        payload[model] = {
+            "seeds": seeds,
+            "test": test,
+            "histories": histories,
+            "recovery": recovery,
+            "ablation": ablation,
         }
-        for condition in ABLATION_CONDITIONS
-    }
-    return {
-        "seeds": seeds,
-        "test": test,
-        "histories": histories,
-        "recovery": recovery,
-        "ablation": ablation,
-    }
+    return payload
+
+
+def load_reference_gawf(
+    test_csv: Path, histories_root: Path, shuffle_root: Path
+) -> dict[str, Any]:
+    """Load the retained strict-GaWF reference under the feedback-control protocol."""
+
+    return load_baseline_models(
+        test_csv,
+        histories_root,
+        shuffle_root,
+        recovery_root=None,
+        models=(REFERENCE_MODEL,),
+    )[REFERENCE_MODEL]
 
 
 def build_panels(
@@ -248,7 +376,13 @@ def build_panels(
 ) -> dict[str, Any]:
     """Assemble one unified panel payload for every drawn series."""
 
-    models = [*MODEL_ORDER] + ([REFERENCE_MODEL] if reference else [])
+    if reference is None:
+        baseline_models: dict[str, dict[str, Any]] = {}
+    elif "test" in reference:
+        baseline_models = {REFERENCE_MODEL: reference}
+    else:
+        baseline_models = {model: payload for model, payload in reference.items()}
+    models = [*MODEL_ORDER, *baseline_models]
     panels: dict[str, Any] = {
         "models": models,
         "test": {},
@@ -283,12 +417,13 @@ def build_panels(
             for condition in ABLATION_CONDITIONS
         }
         panels["seeds"][model] = payload["n_seeds"]
-    if reference is not None:
-        panels["test"][REFERENCE_MODEL] = reference["test"]
-        panels["histories"][REFERENCE_MODEL] = reference["histories"]
-        panels["recovery"][REFERENCE_MODEL] = reference["recovery"]
-        panels["ablation"][REFERENCE_MODEL] = reference["ablation"]
-        panels["seeds"][REFERENCE_MODEL] = len(reference["seeds"])
+    for model, payload in baseline_models.items():
+        panels["test"][model] = payload["test"]
+        panels["histories"][model] = payload["histories"]
+        panels["recovery"][model] = payload["recovery"]
+        panels["seeds"][model] = len(payload["seeds"])
+        if payload.get("ablation") is not None:
+            panels["ablation"][model] = payload["ablation"]
     return panels
 
 
@@ -305,6 +440,7 @@ def _bar_with_seeds(
         samples = np.asarray(values[model], dtype=np.float64)
         mean = samples.mean()
         sem = samples.std(ddof=1) / np.sqrt(samples.size) if samples.size > 1 else 0.0
+        is_baseline = model in BASELINE_MODELS
         axis.bar(
             index,
             mean,
@@ -312,8 +448,8 @@ def _bar_with_seeds(
             color=COLORS[model],
             alpha=0.9,
             zorder=2,
-            hatch="//" if model == REFERENCE_MODEL else None,
-            edgecolor="white" if model == REFERENCE_MODEL else None,
+            hatch="//" if is_baseline else None,
+            edgecolor="white" if is_baseline else None,
         )
         axis.errorbar(index, mean, yerr=sem, color="#333333", capsize=2.6, linewidth=0.9, zorder=4)
         jitter = np.linspace(-0.16, 0.16, samples.size)
@@ -321,9 +457,9 @@ def _bar_with_seeds(
     axis.set_xticks(np.arange(len(models)))
     axis.set_xticklabels(
         [LABELS[model] for model in models],
-        rotation=20 if show_xticks else 0,
+        rotation=32 if show_xticks else 0,
         ha="right" if show_xticks else "center",
-        fontsize=7.5 if show_xticks else 8,
+        fontsize=6.8 if show_xticks else 8,
     )
     if not show_xticks:
         axis.set_xticklabels([])
@@ -363,13 +499,18 @@ def _plot_histories(
             epochs,
             mean,
             color=COLORS[model],
-            linewidth=1.6,
-            linestyle="--" if model == REFERENCE_MODEL else "-",
+            linewidth=1.2 if model in BASELINE_MODELS else 1.7,
+            linestyle=LINESTYLE[model],
             zorder=3,
         )
         if np.any(sem > 0):
             axis.fill_between(
-                epochs, mean - sem, mean + sem, color=COLORS[model], alpha=0.18, zorder=2
+                epochs,
+                mean - sem,
+                mean + sem,
+                color=COLORS[model],
+                alpha=0.12 if model in BASELINE_MODELS else 0.20,
+                zorder=2,
             )
     axis.set_xlim(1, longest)
     axis.set_xlabel("Epoch" if show_xlabel else "", fontsize=9)
@@ -397,14 +538,21 @@ def _plot_recovery(
             mean,
             color=COLORS[model],
             marker=MARKERS[model],
-            markersize=3.0,
-            linewidth=1.4,
-            linestyle="--" if model == REFERENCE_MODEL else "-",
+            markersize=2.8 if model in BASELINE_MODELS else 3.4,
+            linewidth=1.1 if model in BASELINE_MODELS else 1.5,
+            linestyle=LINESTYLE[model],
+            markerfacecolor="white" if model in BASELINE_MODELS else COLORS[model],
+            markeredgewidth=0.9,
             zorder=3,
         )
         if np.any(sem > 0):
             axis.fill_between(
-                offsets, mean - sem, mean + sem, color=COLORS[model], alpha=0.18, zorder=2
+                offsets,
+                mean - sem,
+                mean + sem,
+                color=COLORS[model],
+                alpha=0.10 if model in BASELINE_MODELS else 0.18,
+                zorder=2,
             )
     axis.axvline(0, color="#D55E00", linestyle="--", linewidth=1.1, zorder=1)
     axis.set_xticks([-10, 1, 4, 10])
@@ -428,11 +576,19 @@ def _plot_ablation(
     *,
     show_xticks: bool,
 ) -> None:
-    """Draw the baseline, shuffled-digit, and shuffled-sector bars per series."""
+    """Draw the baseline, shuffled-digit, and shuffled-sector bars per series.
+
+    Models without a feedback-shuffle export keep their slot and are labelled as not run so the
+    column stays aligned with the other three panels.
+    """
 
     width = 0.8 / (len(models) + 2) * 3.0 if len(models) > 4 else 0.26
     overall: list[float] = []
+    unrun: list[int] = []
     for model_index, model in enumerate(models):
+        if model not in ablation:
+            unrun.append(model_index)
+            continue
         for condition_index, condition in enumerate(ABLATION_CONDITIONS):
             samples = np.asarray(ablation[model][condition][row_key], dtype=np.float64)
             mean = samples.mean()
@@ -450,13 +606,25 @@ def _plot_ablation(
             )
             axis.errorbar(x, mean, yerr=sem, color="#333333", capsize=1.8, linewidth=0.8, zorder=4)
     span = max(overall) - min(overall)
-    axis.set_ylim(min(overall) - 0.45 * span, max(overall) + 0.15 * span)
+    bottom = min(overall) - 0.45 * span
+    axis.set_ylim(bottom, max(overall) + 0.15 * span)
+    for model_index in unrun:
+        axis.text(
+            model_index,
+            bottom + 0.06 * span,
+            "not\nrun",
+            ha="center",
+            va="bottom",
+            fontsize=6.0,
+            color="#8A8A8A",
+            zorder=5,
+        )
     axis.set_xticks(np.arange(len(models)))
     axis.set_xticklabels(
         [LABELS[model] for model in models],
-        rotation=20 if show_xticks else 0,
+        rotation=32 if show_xticks else 0,
         ha="right" if show_xticks else "center",
-        fontsize=7.5 if show_xticks else 8,
+        fontsize=6.8 if show_xticks else 8,
     )
     if not show_xticks:
         axis.set_xticklabels([])
@@ -485,7 +653,7 @@ def render_figure(
             "ytick.labelsize": 8,
         }
     ):
-        figure, axes = plt.subplots(2, 4, figsize=(11.8, 6.2))
+        figure, axes = plt.subplots(2, 4, figsize=(15.0, 7.0))
         for row, row_key in enumerate(ROW_KEYS):
             _bar_with_seeds(
                 axes[row][0],
@@ -525,7 +693,7 @@ def render_figure(
             axis.set_title(title, pad=12, fontweight="semibold")
 
         figure.subplots_adjust(
-            left=0.062, right=0.99, bottom=0.215, top=0.845, hspace=0.36, wspace=0.30
+            left=0.055, right=0.992, bottom=0.215, top=0.795, hspace=0.40, wspace=0.33
         )
         row_centers = [
             float(np.mean([axis.get_position().y0 + axis.get_position().height / 2 for axis in row]))
@@ -533,28 +701,35 @@ def render_figure(
         ]
         for row_key, center in zip(ROW_KEYS, row_centers):
             figure.text(0.012, center, ROW_LABELS[row_key], rotation=90, va="center", fontsize=10)
-        handles = [
-            Line2D(
-                [0],
-                [0],
-                color=COLORS[model],
-                linewidth=2.5,
-                marker=MARKERS[model],
-                markersize=4,
-                linestyle="--" if model == REFERENCE_MODEL else "-",
+        control_models = [model for model in models if model not in BASELINE_MODELS]
+        baseline_models = [model for model in models if model in BASELINE_MODELS]
+        for group, anchor in ((control_models, 0.997), (baseline_models, 0.958)):
+            if not group:
+                continue
+            group_handles = [
+                Line2D(
+                    [0],
+                    [0],
+                    color=COLORS[model],
+                    linewidth=1.8 if model in BASELINE_MODELS else 2.5,
+                    marker=MARKERS[model],
+                    markersize=4,
+                    linestyle=LINESTYLE[model],
+                    markerfacecolor="white" if model in BASELINE_MODELS else COLORS[model],
+                )
+                for model in group
+            ]
+            figure.legend(
+                group_handles,
+                [LABELS[model] for model in group],
+                loc="upper center",
+                bbox_to_anchor=(0.5, anchor),
+                ncol=len(group),
+                frameon=False,
+                handlelength=2.0,
+                columnspacing=1.4,
+                fontsize=8,
             )
-            for model in models
-        ]
-        figure.legend(
-            handles,
-            [LABELS[model] for model in models],
-            loc="upper center",
-            bbox_to_anchor=(0.5, 0.995),
-            ncol=len(models),
-            frameon=False,
-            handlelength=2.0,
-            columnspacing=1.4,
-        )
         ablation_handles = [Line2D([0], [0], color=tint, linewidth=7.0) for tint in ABLATION_TINTS]
         figure.legend(
             ablation_handles,
@@ -566,18 +741,37 @@ def render_figure(
             fontsize=7.5,
             handlelength=1.4,
         )
-        counts = ", ".join(f"{LABELS[model]} n={panels['seeds'][model]}" for model in models)
+        seed_counts = sorted({panels["seeds"][model] for model in models})
+        seed_text = " and ".join(str(count) for count in seed_counts)
+        missing = [model for model in models if model not in panels["ablation"]]
+        caption_lines = [
+            "CM-MNIST behaviour comparison, ten models, 150 epochs,"
+            f" {seed_text} seeds per model. A: reset-excluded test accuracy;"
+            " B: validation loss on the 40h split.",
+            "C: joint-switch-balanced 10-digit test, reset at every foreground switch, offset 0"
+            " excluded; D: sequence-512 reset-excluded shuffle conditions.",
+            "Column C sources: the four controls and strict GaWF come from this campaign's"
+            " shuffle export; RNN, LSTM, GRU, Mamba and S5 come from their canonical reset-excluded"
+            " recovery export, whose switch-window definition differs slightly.",
+            "Solid with filled markers: the four feedback-control models of this campaign. Dashed"
+            " with open markers and hatched bars: the six retained best-six Clutter models,"
+            " including strict GaWF, which is not a result of this campaign's Amarel array.",
+        ]
+        if missing:
+            caption_lines.append(
+                "Column D covers only"
+                f" {', '.join(LABELS[model] for model in models if model in panels['ablation'])};"
+                f" {', '.join(LABELS[model] for model in missing)} were never run with the"
+                " feedback-shuffle protocol and are marked not run."
+            )
         figure.text(
             0.5,
-            0.008,
-            "CM-MNIST feedback controls, 150 epochs, seeds 1-10; A: reset-excluded test accuracy; B:"
-            " validation loss on the 40h split;\nC: joint-switch-balanced 10-digit test, reset at"
-            " every foreground switch, offset 0 excluded; D: sequence-512 reset-excluded shuffle"
-            f" conditions ({counts}).\nGaWF (strict) is the retained multiplicative-feedback model on"
-            " the identical evaluation protocol; it is not a result of this campaign's Amarel array.",
+            0.004,
+            "\n".join(caption_lines),
             ha="center",
             va="bottom",
-            fontsize=6.6,
+            fontsize=6.4,
+            linespacing=1.5,
         )
         output_png.parent.mkdir(parents=True, exist_ok=True)
         output_pdf.parent.mkdir(parents=True, exist_ok=True)
@@ -601,6 +795,7 @@ def write_structured_outputs(
     rows: list[dict[str, Any]] = []
     for row_key in ROW_KEYS:
         for model in models:
+            ablation_available = model in panels["ablation"]
             arrays[f"{row_key}__{model}__n_seeds"] = np.asarray(
                 [panels["seeds"][model]], dtype=np.int64
             )
@@ -615,15 +810,21 @@ def write_structured_outputs(
             mean, sem = panels["recovery"][model][row_key]
             arrays[f"{row_key}__{model}__recovery_mean"] = np.asarray(mean, dtype=np.float32)
             arrays[f"{row_key}__{model}__recovery_sem"] = np.asarray(sem, dtype=np.float32)
+            arrays[f"{row_key}__{model}__ablation_available"] = np.asarray(
+                [int(ablation_available)], dtype=np.int64
+            )
             for condition in ABLATION_CONDITIONS:
-                arrays[f"{row_key}__{model}__{condition}__acc"] = np.asarray(
-                    panels["ablation"][model][condition][row_key], dtype=np.float32
+                arrays[f"{row_key}__{model}__{condition}__acc"] = (
+                    np.asarray(panels["ablation"][model][condition][row_key], dtype=np.float32)
+                    if ablation_available
+                    else np.full((1,), np.nan, dtype=np.float32)
                 )
             test_values = np.asarray(panels["test"][model][row_key], dtype=np.float64)
             row: dict[str, Any] = {
                 "readout": row_key,
                 "model": model,
                 "n_seeds": panels["seeds"][model],
+                "ablation_available": int(ablation_available),
                 "test_acc_mean": float(test_values.mean()),
                 "test_acc_sem": float(test_values.std(ddof=1) / np.sqrt(test_values.size))
                 if test_values.size > 1
@@ -638,11 +839,19 @@ def write_structured_outputs(
                 ),
             }
             for condition in ABLATION_CONDITIONS:
-                values = np.asarray(panels["ablation"][model][condition][row_key], dtype=np.float64)
-                row[f"{condition}_acc_mean"] = float(values.mean())
-                row[f"{condition}_acc_sem"] = (
-                    float(values.std(ddof=1) / np.sqrt(values.size)) if values.size > 1 else 0.0
-                )
+                if ablation_available:
+                    values = np.asarray(
+                        panels["ablation"][model][condition][row_key], dtype=np.float64
+                    )
+                    row[f"{condition}_acc_mean"] = float(values.mean())
+                    row[f"{condition}_acc_sem"] = (
+                        float(values.std(ddof=1) / np.sqrt(values.size))
+                        if values.size > 1
+                        else 0.0
+                    )
+                else:
+                    row[f"{condition}_acc_mean"] = float("nan")
+                    row[f"{condition}_acc_sem"] = float("nan")
             rows.append(row)
     npz_path = data_dir / "feedback_controls_behavior_2x4.npz"
     np.savez_compressed(npz_path, **arrays)
@@ -655,7 +864,7 @@ def write_structured_outputs(
         f"{row['readout']}.{row['model']}.{key}": float(value)
         for row in rows
         for key, value in row.items()
-        if isinstance(value, (int, float))
+        if isinstance(value, (int, float)) and not (isinstance(value, float) and np.isnan(value))
     }
     key_path = data_dir / "key_results.json"
     key_path.write_text(json.dumps(key_results, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -669,14 +878,16 @@ def main() -> None:
     grouped = load_units(args.units_root, args.curves_root)
     curves = build_curves(grouped)
     histories = load_loss_histories(args.histories_root)
-    reference = None
+    baseline_models: dict[str, dict[str, Any]] = {}
     if not args.without_reference:
-        reference = load_reference_gawf(
+        baseline_models = load_baseline_models(
             args.reference_test_csv,
             args.reference_histories_root,
             args.reference_shuffle_root,
+            recovery_root=args.baseline_recovery_root,
+            expected_offsets=np.asarray(curves["offsets"], dtype=np.int64),
         )
-    panels = build_panels(curves, grouped, histories, reference)
+    panels = build_panels(curves, grouped, histories, baseline_models or None)
     data_dir = Path(output_dir(CATEGORY, SCRIPT_NAME, "data"))
     fig_dir = Path(output_dir(CATEGORY, SCRIPT_NAME, "figs"))
     written = write_structured_outputs(panels, np.asarray(curves["offsets"]), data_dir)
@@ -691,9 +902,15 @@ def main() -> None:
             values = np.asarray(panels["test"][model][row_key], dtype=np.float64)
             mean, _ = panels["recovery"][model][row_key]
             post = np.asarray(curves["offsets"]) >= 1
-            baseline = np.asarray(panels["ablation"][model]["baseline"][row_key], dtype=np.float64)
-            shuffled = np.asarray(panels["ablation"][model]["shuffle_all"][row_key], dtype=np.float64) if "shuffle_all" in panels["ablation"][model] else None
-            extra = "" if shuffled is None else f" shuffle-all delta {baseline.mean() - shuffled.mean():+.2f}"
+            extra = " shuffle-ablation not run"
+            if model in panels["ablation"]:
+                baseline = np.asarray(
+                    panels["ablation"][model]["baseline"][row_key], dtype=np.float64
+                )
+                shuffled = np.asarray(
+                    panels["ablation"][model]["shuffle_digit"][row_key], dtype=np.float64
+                )
+                extra = f" shuffle-digit delta {baseline.mean() - shuffled.mean():+.2f}"
             print(
                 f"  {LABELS[model]:>14} n={panels['seeds'][model]:>2}"
                 f" test {values.mean():.2f}"

@@ -374,6 +374,26 @@ def parse_hparams_from_filename(filename):
         hparams['model_type'] = 'GRUFB'
     elif filename.startswith('gawf_additive_'):
         hparams['model_type'] = 'GaWFAdditive'
+    elif filename.startswith('gawf_nowrap_'):
+        hparams['model_type'] = 'GaWFNoWrap'
+    elif filename.startswith('gawf_notanh_'):
+        hparams['model_type'] = 'GaWFNoTanh'
+    elif filename.startswith('gawf_rnncore_'):
+        hparams['model_type'] = 'GaWFRNNCore'
+    elif filename.startswith('gawf_legacy_'):
+        hparams['model_type'] = 'GaWFLegacy'
+    elif filename.startswith('rnn_nowrap_'):
+        hparams['model_type'] = 'RNNNoWrap'
+    elif filename.startswith('rnn_notanh_'):
+        hparams['model_type'] = 'RNNNoTanh'
+    elif filename.startswith('lstm_nowrap_'):
+        hparams['model_type'] = 'LSTMNoWrap'
+    elif filename.startswith('gru_nowrap_'):
+        hparams['model_type'] = 'GRUNoWrap'
+    elif filename.startswith('mamba_nowrap_'):
+        hparams['model_type'] = 'MambaNoWrap'
+    elif filename.startswith('s5_nowrap_'):
+        hparams['model_type'] = 'S5NoWrap'
     elif filename.startswith('rnn_'):
         hparams['model_type'] = 'RNN'
     elif filename.startswith('lstm_'):

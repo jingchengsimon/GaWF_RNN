@@ -13,6 +13,7 @@ from ..recurrent_cores.additive_feedback import (
     ConcatenatedFeedbackCellCore,
 )
 from ..recurrent_cores.gawf import GaWFCore
+from ..recurrent_cores.gawf_legacy import GaWFCoreLegacy
 from ..recurrent_cores.brims import BRIMsCore
 from ..recurrent_cores.hyper_lstm import HyperLSTMCore
 from ..recurrent_cores.mlstm import MLSTMCore
@@ -189,6 +190,8 @@ class RNNConv(ClutterSequenceModel):
         max_chars=15,
         predict_all_chars=False,
         num_layers=1,
+        output_wrap="ln_relu_dropout",
+        rnn_activation="tanh",
     ) -> None:
         super().__init__(
             num_classes,
@@ -208,6 +211,8 @@ class RNNConv(ClutterSequenceModel):
             hidden_size,
             dropout=rnn_dropout,
             num_layers=self.num_layers,
+            output_wrap=output_wrap,
+            rnn_activation=rnn_activation,
         )
         self.to(self.device)
 
@@ -236,6 +241,7 @@ class GRUConv(RNNConv):
         max_chars=15,
         predict_all_chars=False,
         num_layers=1,
+        output_wrap="ln_relu_dropout",
     ) -> None:
         ClutterSequenceModel.__init__(
             self,
@@ -256,6 +262,7 @@ class GRUConv(RNNConv):
             hidden_size,
             dropout=rnn_dropout,
             num_layers=self.num_layers,
+            output_wrap=output_wrap,
         )
         self.to(self.device)
 
@@ -276,6 +283,7 @@ class LSTMConv(RNNConv):
         max_chars=15,
         predict_all_chars=False,
         num_layers=1,
+        output_wrap="ln_relu_dropout",
     ) -> None:
         ClutterSequenceModel.__init__(
             self,
@@ -296,6 +304,7 @@ class LSTMConv(RNNConv):
             hidden_size,
             dropout=rnn_dropout,
             num_layers=self.num_layers,
+            output_wrap=output_wrap,
         )
         self.to(self.device)
 
@@ -457,6 +466,7 @@ class MambaConv(ClutterSequenceModel):
         mamba_expand=2,
         mamba_block_type="mamba",
         mamba_residual=True,
+        output_wrap="ln_relu_dropout",
     ) -> None:
         super().__init__(
             num_classes,
@@ -484,6 +494,7 @@ class MambaConv(ClutterSequenceModel):
             expand=mamba_expand,
             block_type=mamba_block_type,
             residual=mamba_residual,
+            output_wrap=output_wrap,
         )
         self.to(self.device)
 
@@ -517,6 +528,7 @@ class S5Conv(ClutterSequenceModel):
         s5_dropout=0.0,
         s5_state_size=S5_DEFAULT_STATE_SIZE,
         s5_residual=True,
+        output_wrap="ln_relu_dropout",
     ) -> None:
         super().__init__(
             num_classes,
@@ -542,6 +554,7 @@ class S5Conv(ClutterSequenceModel):
             dropout=s5_dropout,
             output_dropout=rnn_dropout,
             residual=s5_residual,
+            output_wrap=output_wrap,
         )
         self.to(self.device)
 
@@ -573,6 +586,9 @@ class GaWFRNNConv(ClutterSequenceModel):
         max_chars=15,
         predict_all_chars=False,
         feedback_dim=None,
+        output_wrap="ln_relu_dropout",
+        rnn_activation="tanh",
+        gawf_core="rnn_aligned",
     ) -> None:
         super().__init__(
             num_classes,
@@ -590,11 +606,17 @@ class GaWFRNNConv(ClutterSequenceModel):
         requested_feedback_dim = (
             self.output_feedback_dim if feedback_dim is None else int(feedback_dim)
         )
-        self.core = GaWFCore(
+        if gawf_core not in ("rnn_aligned", "legacy"):
+            raise ValueError(f"Unsupported gawf_core: {gawf_core!r}")
+        self.gawf_core = str(gawf_core)
+        core_class = GaWFCore if self.gawf_core == "rnn_aligned" else GaWFCoreLegacy
+        self.core = core_class(
             input_size=self.encoder_flatten_size,
             hidden_size=hidden_size,
             feedback_dim=requested_feedback_dim,
             dropout=rnn_dropout,
+            output_wrap=output_wrap,
+            rnn_activation=rnn_activation,
         )
         self.proj_out = (
             nn.Linear(self.output_feedback_dim, requested_feedback_dim)
@@ -690,7 +712,7 @@ class GaWFRNNConv(ClutterSequenceModel):
         h = self.core.initial_state(batch_size, encoded.device, encoded.dtype)
         for t in range(frame_num):
             h = self.core.step(encoded[:, t, :], h, fb)
-            char_t, pos_t = self.classifier(h)
+            char_t, pos_t = self.classifier(self.core.project_readout(h))
             if self.proj_out is None:
                 with torch.no_grad():
                     fb = self._compute_feedback(char_t, pos_t)
@@ -965,7 +987,9 @@ class MultiLayerGaWFRNNConv(ClutterSequenceModel):
             else [hidden_size] * (self.num_layers - 1) + [self.output_feedback_dim]
         )
         self.top_feedback_dim = self.layer_feedback_dims[-1]
-        self.core = GaWFCore(
+        # Historical multi-layer semantics are frozen in the legacy core; the RNN-aligned core is
+        # single-layer only until the multi-layer alignment lands.
+        self.core = GaWFCoreLegacy(
             input_size=self.encoder_flatten_size,
             hidden_size=hidden_size,
             feedback_dim=self.layer_feedback_dims[-1],
@@ -1081,3 +1105,88 @@ class MultiLayerGaWFRNNConv(ClutterSequenceModel):
 
         self.prev_feedback = fb_top.detach().to(dtype=torch.float32)
         return char_out, pos_out
+
+
+# --- Nonlinearity-placement ablation variants -----------------------------------------------
+#
+# These wrappers keep the shared encoder and heads and only change where nonlinearities sit:
+#   *_nowrap  removes the outer LayerNorm -> ReLU -> dropout wrap from the sequence core.
+#   *notanh   keeps the outer wrap and removes the activation inside the recurrence, so the
+#             vanilla-RNN recurrence becomes linear.
+# The default model types are untouched, and every variant only sets a non-default core mode.
+
+
+class RNNNoWrapConv(RNNConv):
+    """Vanilla RNN with the outer LayerNorm, ReLU, and dropout wrap removed."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("output_wrap", "none")
+        super().__init__(*args, **kwargs)
+
+
+class GRUNoWrapConv(GRUConv):
+    """GRU with the outer LayerNorm, ReLU, and dropout wrap removed."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("output_wrap", "none")
+        super().__init__(*args, **kwargs)
+
+
+class LSTMNoWrapConv(LSTMConv):
+    """LSTM with the outer LayerNorm, ReLU, and dropout wrap removed."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("output_wrap", "none")
+        super().__init__(*args, **kwargs)
+
+
+class MambaNoWrapConv(MambaConv):
+    """Mamba with the outer LayerNorm, ReLU, and dropout wrap removed."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("output_wrap", "none")
+        super().__init__(*args, **kwargs)
+
+
+class S5NoWrapConv(S5Conv):
+    """S5 with the outer LayerNorm, ReLU, and dropout wrap removed."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("output_wrap", "none")
+        super().__init__(*args, **kwargs)
+
+
+class GaWFNoWrapConv(GaWFRNNConv):
+    """GaWF with the outer LayerNorm, ReLU, and dropout wrap removed."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("output_wrap", "none")
+        super().__init__(*args, **kwargs)
+
+
+class GaWFNoTanhConv(GaWFRNNConv):
+    """GaWF that keeps the outer wrap and removes the tanh activation inside the recurrence."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("rnn_activation", "identity")
+        super().__init__(*args, **kwargs)
+
+
+class RNNNoTanhConv(RNNConv):
+    """Vanilla RNN with the built-in activation removed, leaving a linear recurrence."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("rnn_activation", "identity")
+        super().__init__(*args, **kwargs)
+
+
+class GaWFLegacyConv(GaWFRNNConv):
+    """Historical GaWF: the wrapped value was fed back into the recurrence.
+
+    This type exists only to reproduce artifacts trained before the RNN alignment; it must not be
+    used for new comparisons against ``rnn``/``lstm``/``gru``.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("gawf_core", "legacy")
+        super().__init__(*args, **kwargs)
