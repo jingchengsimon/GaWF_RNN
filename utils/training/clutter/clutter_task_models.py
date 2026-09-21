@@ -864,13 +864,14 @@ class GaWFAdditiveConv(FeedbackControlConv):
         hidden_size: int = 271,
         max_chars: int = 15,
         predict_all_chars: bool = False,
+        state_semantics: str = "aligned",
     ) -> None:
         super().__init__(
             num_classes,
             num_pos,
             hidden_size=hidden_size,
             core_class=AdditiveFeedbackRNNCore,
-            core_kwargs={"initial_weight_scale": 0.5},
+            core_kwargs={"initial_weight_scale": 0.5, "state_semantics": state_semantics},
             kernel_size=kernel_size,
             device=device,
             input_channels=input_channels,

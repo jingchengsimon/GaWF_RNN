@@ -148,3 +148,27 @@ def test_additive_and_concatenated_controls_share_one_function() -> None:
 
     assert torch.allclose(additive_state, concat_state, atol=1e-6)
     assert torch.allclose(additive_readout, concat_readout, atol=1e-6)
+
+
+def test_additive_legacy_semantics_remain_available_for_old_checkpoints() -> None:
+    """The additive core can still reproduce the pre-alignment in-loop-wrap behavior."""
+
+    torch.manual_seed(0)
+    legacy = AdditiveFeedbackRNNCore(
+        5, 4, 3, dropout=0.0, state_semantics="legacy"
+    ).eval()
+    aligned = AdditiveFeedbackRNNCore(
+        5, 4, 3, dropout=0.0, state_semantics="aligned"
+    ).eval()
+    with torch.no_grad():
+        aligned.load_state_dict(legacy.state_dict())
+    x = torch.randn(2, 5)
+    state = torch.randn(2, 4)
+    feedback = torch.randn(2, 3)
+    with torch.no_grad():
+        legacy_readout, legacy_state = legacy.step(x, state, feedback)
+        aligned_readout, aligned_state = aligned.step(x, state, feedback)
+
+    assert torch.allclose(legacy_readout, aligned_readout, atol=1e-6)
+    assert torch.equal(legacy_state, legacy_readout)
+    assert not torch.allclose(aligned_state, aligned_readout, atol=1e-6)

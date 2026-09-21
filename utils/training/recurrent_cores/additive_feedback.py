@@ -26,6 +26,7 @@ class AdditiveFeedbackRNNCore(nn.Module):
         feedback_dim: int,
         dropout: float = 0.0,
         initial_weight_scale: float = 0.5,
+        state_semantics: str = "aligned",
     ) -> None:
         super().__init__()
         self.input_size = int(input_size)
@@ -34,6 +35,9 @@ class AdditiveFeedbackRNNCore(nn.Module):
         self.feedback_dim = int(feedback_dim)
         self.dropout = float(dropout)
         self.initial_weight_scale = float(initial_weight_scale)
+        if state_semantics not in ("aligned", "legacy"):
+            raise ValueError(f"Unsupported state_semantics: {state_semantics!r}")
+        self.state_semantics = str(state_semantics)
         self.rnn = nn.RNN(
             input_size=self.input_size,
             hidden_size=self.hidden_size,
@@ -74,6 +78,9 @@ class AdditiveFeedbackRNNCore(nn.Module):
         hidden = torch.tanh(preactivation)
         readout = torch.relu(self.norm(hidden))
         readout = F.dropout(readout, p=self.dropout, training=self.training)
+        if self.state_semantics == "legacy":
+            # Pre-alignment behavior: the wrapped value itself was carried and fed back.
+            return readout, readout
         return readout, hidden
 
     def forward_no_feedback(self, x: torch.Tensor):
@@ -95,7 +102,7 @@ class AdditiveFeedbackRNNCore(nn.Module):
             raw_state = torch.tanh(preactivation)
             output = F.relu(self.norm(raw_state))
             output = F.dropout(output, p=self.dropout, training=self.training)
-            state = raw_state
+            state = output if self.state_semantics == "legacy" else raw_state
             outputs.append(output)
         return torch.stack(outputs, dim=1), state
 

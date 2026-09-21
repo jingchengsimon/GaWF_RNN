@@ -277,6 +277,10 @@ def build_model_from_ckpt(
         model_kwargs["gawf_core"] = (
             "rnn_aligned" if model_key == "gawf_rnncore" else "legacy"
         )
+    if model_key == "gawf_additive":
+        # Completed feedback-control units were trained with the in-loop-wrap additive core; new
+        # aligned additive runs must introduce a distinct stem token before relaxation here.
+        model_kwargs["state_semantics"] = "legacy"
     if model_key in ("gawf", "gawf_multi", "gawf_legacy", "gawf_rnncore"):
         parsed_feedback_dim = hparams.get("feedback_dim")
         if parsed_feedback_dim is not None:
