@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "id": "clutter-cm-mnist-dynamic-weight-preflight-2ep-lstm-mlstm-hyperlstm-brims-s1-retry-gitfree-v5",
+  "description": "Fifth attempt at the CM-MNIST two-epoch sanity gate: head of the automatic chain that also queues the thirty formal units at full (30-way) concurrency.",
+  "host": "amarel",
+  "status": "queued",
+  "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_3ee4c2d",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61726135",
+      "61726136"
+    ],
+    "run_ids": [],
+    "tmux_session": null
+  },
+  "paths": {
+    "log_globs": [
+      "/scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v5/61726135_*.out",
+      "/scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v5/61726136.aggregate.out"
+    ],
+    "status_dir": "/scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v5/status",
+    "result_paths": [
+      "/scratch/js3269/results/data/clutter/runs/preflight/dynamic_weight_baselines_2epoch_seed1_v1/*",
+      "/scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v5/summary.json"
+    ]
+  },
+  "tracking": {
+    "expected_units": 4,
+    "auto_complete": true,
+    "result_globs": [
+      "/scratch/js3269/results/data/clutter/runs/preflight/dynamic_weight_baselines_2epoch_seed1_v1/*/*_metrics.json"
+    ],
+    "done_glob": "/scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v5/status/task_*.done",
+    "fail_glob": "/scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v5/status/task_*.fail",
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "Source commit 3ee4c2dc5af5f3caa4522971d305b97c6de40da6 in pinned worktree dynamic_baselines_3ee4c2d; preflight array 61726135 (0-3%4) and aggregate 61726136 head the chain preflight -> preaggregate -> formal array 61726137 (0-29%30) -> formal aggregate 61726138.",
+    "Fixes carried by this commit: the compute-node guard is resolved from AIM3_ROOT instead of ${BASH_SOURCE[0]} (sbatch executes a copy under /var/lib/slurm/slurmd), and a failed Conda initialization writes its own fail marker because a failed `source` bypasses the ERR trap.",
+    "Failures that motivated this version: 61717748 (hard-coded /usr/bin/git) and 61723339 (BASH_SOURCE-based guard path); both left 0/4 valid units and no task fail markers."
+  ],
+  "created_at": "2026-09-21T02:32:30+00:00",
+  "updated_at": "2026-09-21T02:32:30+00:00"
+}

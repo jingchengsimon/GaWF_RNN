@@ -4,7 +4,7 @@
   "description": "CM-MNIST open-loop dynamic/input-conditioned baselines: parameter-matched mLSTM, HyperLSTM, and clean-room BRIMs; 150 epochs, seeds 1-10, reset-excluded test accuracy, and mean plus SEM aggregation.",
   "host": "amarel",
   "status": "queued",
-  "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_f7dfdb9",
+  "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_3ee4c2d",
   "environment": {
     "name": "aim3_rnn",
     "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
@@ -12,18 +12,18 @@
   "scheduler": {
     "type": "slurm",
     "job_ids": [
-      "61723341",
-      "61723342"
+      "61726137",
+      "61726138"
     ],
     "run_ids": [],
     "tmux_session": null
   },
   "paths": {
     "log_globs": [
-      "/scratch/js3269/results/artifacts/clutter_dynamic_weight_baselines_ep150_v2_chain/61723341_*.out",
-      "/scratch/js3269/results/artifacts/clutter_dynamic_weight_baselines_ep150_v2_chain/61723342.aggregate.out"
+      "/scratch/js3269/results/artifacts/clutter_dynamic_weight_baselines_ep150_v3_chain/61726137_*.out",
+      "/scratch/js3269/results/artifacts/clutter_dynamic_weight_baselines_ep150_v3_chain/61726138.aggregate.out"
     ],
-    "status_dir": "/scratch/js3269/results/artifacts/clutter_dynamic_weight_baselines_ep150_v2_chain/status",
+    "status_dir": "/scratch/js3269/results/artifacts/clutter_dynamic_weight_baselines_ep150_v3_chain/status",
     "result_paths": [
       "/scratch/js3269/results/data/clutter/runs/dynamic_weight_baselines/clutter_dynamic_weight_baselines_ep150_v1/*"
     ]
@@ -34,8 +34,8 @@
     "result_globs": [
       "/scratch/js3269/results/data/clutter/runs/dynamic_weight_baselines/clutter_dynamic_weight_baselines_ep150_v1/*/*_metrics.json"
     ],
-    "done_glob": "/scratch/js3269/results/artifacts/clutter_dynamic_weight_baselines_ep150_v2_chain/status/task_*.done",
-    "fail_glob": "/scratch/js3269/results/artifacts/clutter_dynamic_weight_baselines_ep150_v2_chain/status/task_*.fail",
+    "done_glob": "/scratch/js3269/results/artifacts/clutter_dynamic_weight_baselines_ep150_v3_chain/status/task_*.done",
+    "fail_glob": "/scratch/js3269/results/artifacts/clutter_dynamic_weight_baselines_ep150_v3_chain/status/task_*.fail",
     "defaults": {
       "expected": {},
       "checkpoint_glob": "*_model.pth",
@@ -45,10 +45,12 @@
   },
   "notes": [
     "Original attempt 61717688 (commit 95df271c971ac5222425d8cb49980c0d27f08bcd) was cancelled on 2026-09-20 01:52:11 while the preflight chain was repaired; its artifact root clutter_dynamic_weight_baselines_ep150_v1 still holds only an empty status directory and the result roots were never created.",
-    "Resubmitted on 2026-09-20 19:34 EDT as the automatic chain preflight 61723339 -> preaggregate 61723340 -> formal array 61723341 (0-29%6, afterok:61723340) -> formal aggregate 61723342 (afterok:61723341), all from worktree dynamic_baselines_f7dfdb9 at commit f7dfdb9a5eabf64650d462d68211518bf7072e18; artifact root is the fresh clutter_dynamic_weight_baselines_ep150_v2_chain.",
+    "The 2026-09-20 19:34 EDT chain (preflight 61723339 -> preaggregate 61723340 -> formal array 61723341 0-29%6 -> aggregate 61723342) never ran: the preflight failed in 0-3 s because the run scripts resolved the guard via BASH_SOURCE, which sbatch rewrites into /var/lib/slurm/slurmd; the dependent jobs were cancelled on 2026-09-20 22:31 EDT.",
+    "Resubmitted on 2026-09-20 22:32 EDT as the automatic chain preflight 61726135 -> preaggregate 61726136 -> formal array 61726137 (0-29%30, afterok:61726136) -> formal aggregate 61726138 (afterok:61726137), all from worktree dynamic_baselines_3ee4c2d at commit 3ee4c2dc5af5f3caa4522971d305b97c6de40da6; artifact root is the fresh clutter_dynamic_weight_baselines_ep150_v3_chain.",
+    "The formal array runs at full 30-way concurrency (--max-concurrent 30) by user request, matching the original 0-29%30 submission.",
     "Chained mode is declared with --afterok-preflight-aggregate <preaggregate job id>; the array cannot pre-verify the summary, so each formal unit re-verifies $AIM3_DYNAMIC_BASELINE_PREFLIGHT_SUMMARY (status passed plus matching source commit) on the compute node and writes task_*.fail instead of training if the gate is missing.",
     "Formal aggregate writes /scratch/js3269/results/data/analysis/dynamic_weight_baselines_formal_10seed_v1 (mean plus SEM over ten seeds) and each unit writes its reset-excluded test JSON under dynamic_weight_baselines_reset_excluded_test_10seed_v1."
   ],
   "created_at": "2026-09-20T05:36:30+00:00",
-  "updated_at": "2026-09-20T23:34:02+00:00"
+  "updated_at": "2026-09-21T02:32:30+00:00"
 }

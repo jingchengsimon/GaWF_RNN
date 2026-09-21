@@ -3,7 +3,7 @@
   "id": "clutter-cm-mnist-dynamic-weight-preflight-2ep-lstm-mlstm-hyperlstm-brims-s1-retry-gitfree-v4",
   "description": "Fourth attempt at the CM-MNIST two-epoch sanity gate, submitted from the same commit as the formal array so the preflight summary releases it automatically.",
   "host": "amarel",
-  "status": "queued",
+  "status": "failed",
   "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_f7dfdb9",
   "environment": {
     "name": "aim3_rnn",
@@ -47,8 +47,10 @@
   "notes": [
     "Source commit f7dfdb9a5eabf64650d462d68211518bf7072e18 in pinned worktree dynamic_baselines_f7dfdb9; preflight array 61723339 (0-3%4) and aggregate 61723340 are the head of the automatic chain that also queues formal array 61723341 and formal aggregate 61723342.",
     "The aggregate writes /scratch/js3269/results/artifacts/dynamic_weight_baselines_2epoch_seed1_v4_chain/summary.json, which the formal array re-verifies on the compute node (status passed plus matching source commit) after afterok releases it.",
-    "Replaces the cancelled 61723314/61723315 pair (worktree 1f8795e) so every stage of the campaign runs from the same commit as the chain-aware formal submitter."
+    "Replaces the cancelled 61723314/61723315 pair (worktree 1f8795e) so every stage of the campaign runs from the same commit as the chain-aware formal submitter.",
+    "Failed: released on 2026-09-20 22:02:20 EDT; all four tasks exited 1 within 0-3 s on the compute nodes because the run scripts resolved amarel_source_guard.sh through ${BASH_SOURCE[0]}, which sbatch rewrites to /var/lib/slurm/slurmd/job<id>/slurm_script. The never-satisfied preaggregate 61723340 and the dependent formal array 61723341 plus aggregate 61723342 were cancelled on 2026-09-20 22:31 EDT without running.",
+    "Fixed by commit e31e7ca (resolve the guard from AIM3_ROOT) and 3ee4c2d (mark a failed Conda initialization); superseded by clutter-cm-mnist-dynamic-weight-preflight-2ep-lstm-mlstm-hyperlstm-brims-s1-retry-gitfree-v5."
   ],
   "created_at": "2026-09-20T23:34:02+00:00",
-  "updated_at": "2026-09-20T23:34:02+00:00"
+  "updated_at": "2026-09-21T02:32:30+00:00"
 }
