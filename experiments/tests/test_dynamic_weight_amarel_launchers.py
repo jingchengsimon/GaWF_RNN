@@ -54,6 +54,14 @@ def test_compute_runners_resolve_helpers_from_the_submitted_root() -> None:
         assert 'AMAREL_SOURCE_GUARD="$ROOT/experiments/remote/amarel_source_guard.sh"' in text, name
 
 
+def test_compute_runners_mark_a_failed_conda_initialization() -> None:
+    """A failed `source` bypasses the ERR trap, so Conda initialization is guarded explicitly."""
+    for name in RUNNERS:
+        text = (AMAREL_DIR / name).read_text(encoding="utf-8")
+        assert 'source "$CONDA_SH" || {' in text, name
+        assert "Cannot initialize Conda from" in text, name
+
+
 def test_submitters_stamp_the_submitted_commit() -> None:
     """The run-side fallback needs the submit-time commit stamp to exist."""
     for name in STAMPING_SUBMITTERS:

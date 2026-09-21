@@ -237,7 +237,8 @@ which is exactly what happened to `61717444` (`git: command not found`) and `617
   is never a failure condition.
 - Every `run_*.sh` launcher writes its own fail marker before leaving a failed guard. An `exit`
   reached through a `|| { ...; }` list does not trigger the `ERR` trap, so the marker must be
-  written explicitly or the unit leaves no failure evidence.
+  written explicitly or the unit leaves no failure evidence. A failed `source` (for example a wrong
+  Conda initialization path) also bypasses the `ERR` trap and must be handled explicitly.
 - `sbatch` copies the batch script to `/var/lib/slurm/slurmd/job<id>/slurm_script` and executes that
   copy, so `${BASH_SOURCE[0]}` never points into the checkout. Resolve helper files from the
   exported `AIM3_ROOT` (for example `$ROOT/experiments/remote/amarel_source_guard.sh`) and fail

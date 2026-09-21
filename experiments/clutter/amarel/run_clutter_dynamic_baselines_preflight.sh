@@ -65,7 +65,12 @@ if ! amarel_require_source_commit "$ROOT" "$SOURCE_COMMIT" "$SOURCE_COMMIT_STAMP
 fi
 CONDA_SH="${AIM3_CONDA_SH:-/home/js3269/enter/etc/profile.d/conda.sh}"
 set +u
-source "$CONDA_SH"
+source "$CONDA_SH" || {
+  printf 'status=failed task=%s model=%s seed=%s timestamp=%s\n' \
+    "$TASK_ID" "$MODEL" "$SEED" "$(date -Is)" > "$FAIL_FILE"
+  printf 'Cannot initialize Conda from %s\n' "$CONDA_SH" >&2
+  exit 1
+}
 conda activate "${AIM3_CONDA_ENV:-aim3_rnn}"
 set -u
 
