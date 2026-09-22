@@ -10,16 +10,16 @@
     {
       "id": "clutter-cm-mnist-rnn-inloop-notanh-ep150-seeds1-10",
       "description": "GaWF-aligned RNN behavioral control: identity inner activation and the LayerNorm/ReLU/dropout output fed back as the next recurrent state, ten seeds.",
-      "host": "amarel",
-      "status": "queued",
-      "job_ids": [
-        "61760273",
-        "61760274"
+      "host": "dsw-8095",
+      "status": "running",
+      "job_ids": [],
+      "run_ids": [
+        "rnn_inloop_notanh_dsw8095_v1",
+        "formal-coordinator-pid-1396959"
       ],
-      "run_ids": [],
       "tmux_session": null,
-      "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/rnn_inloop_notanh_bbade07",
-      "updated_at": "2026-09-22T18:23:22+00:00"
+      "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
+      "updated_at": "2026-09-22T21:14:03+00:00"
     },
     {
       "id": "clutter-cm-mnist-gawf-wrap-placement-short24ep-abc-sjc-v2",

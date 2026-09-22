@@ -2,51 +2,55 @@
   "schema_version": 1,
   "id": "clutter-cm-mnist-rnn-inloop-notanh-ep150-seeds1-10",
   "description": "GaWF-aligned RNN behavioral control: identity inner activation and the LayerNorm/ReLU/dropout output fed back as the next recurrent state, ten seeds.",
-  "host": "amarel",
-  "status": "queued",
-  "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/rnn_inloop_notanh_bbade07",
-  "source_commit": "bbade07af52ed79243e0287341a2bf68462a3117",
+  "host": "dsw-8095",
+  "status": "running",
+  "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
+  "source_commit": "988ee1b0f2727189479a56e494556651b589e1ca",
   "environment": {
-    "name": "aim3_rnn",
-    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+    "name": "/mnt/workspace/sjc/envs/aim3_gawf_rnn_bbade07",
+    "conda_init": "/mnt/workspace/sjc/miniconda3/etc/profile.d/conda.sh"
   },
   "scheduler": {
-    "type": "slurm",
-    "job_ids": [
-      "61760273",
-      "61760274"
+    "type": "none",
+    "job_ids": [],
+    "run_ids": [
+      "rnn_inloop_notanh_dsw8095_v1",
+      "formal-coordinator-pid-1396959"
     ],
-    "run_ids": [],
     "tmux_session": null,
+    "process_patterns": [
+      "clutter_rnn_inloop_notanh_40h_ep150_v1"
+    ],
+    "collect_gpu": true,
     "dependency_strategy": {
       "type": "smoke_then_array",
-      "smoke_job_id": "61760273",
-      "formal_job_id": "61760274",
-      "dependency": "afterok:61760273",
-      "array_tasks": "0-9%10",
-      "task_map": "task i -> rnn_inloop_notanh seed i+1"
+      "smoke": "DSW GPU3 seed1, two epochs, passed",
+      "formal": "two serial lanes on GPUs4-5",
+      "task_map": "GPU4 runs seeds 1,3,5,7,9; GPU5 runs seeds 2,4,6,8,10",
+      "amarel_handoff": "61760273 and 61760274 cancelled after DSW formal seeds1-2 entered epoch 1"
     }
   },
   "paths": {
     "log_globs": [
-      "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/rnn_inloop_notanh_bbade07/experiments/clutter/amarel/artifacts/clutter_rnn_inloop_notanh_v1/*.out",
-      "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/rnn_inloop_notanh_bbade07/experiments/clutter/amarel/artifacts/clutter_rnn_inloop_notanh_v1/*.err"
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/rnn_inloop_notanh_dsw8095_v1/logs/formal_seed*.out",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/rnn_inloop_notanh_dsw8095_v1/logs/formal_seed*.err",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/rnn_inloop_notanh_dsw8095_v1/logs/formal_coordinator.*"
     ],
-    "status_dir": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/rnn_inloop_notanh_bbade07/experiments/clutter/amarel/artifacts/clutter_rnn_inloop_notanh_v1/status/formal",
+    "status_dir": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/rnn_inloop_notanh_dsw8095_v1/status/formal",
     "result_paths": [
-      "/scratch/js3269/results/data/clutter/runs/clutter_rnn_inloop_notanh_40h_ep150_v1/*",
-      "/scratch/js3269/results/data/analysis/clutter_ablation_reset_excluded_test_rnn_inloop_notanh_10seed_v1/*"
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results_dsw8095/data/clutter/runs/clutter_rnn_inloop_notanh_40h_ep150_v1/*",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results_dsw8095/data/analysis/clutter_ablation_reset_excluded_test_rnn_inloop_notanh_10seed_v1/*"
     ],
-    "data_path": "/scratch/js3269/stimuli"
+    "data_path": "/mnt/workspace/sjc/aim3_gawf_rnn_data/stimuli"
   },
   "tracking": {
     "expected_units": 10,
     "auto_complete": true,
     "result_globs": [
-      "/scratch/js3269/results/data/clutter/runs/clutter_rnn_inloop_notanh_40h_ep150_v1/*/*_metrics.json"
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results_dsw8095/data/clutter/runs/clutter_rnn_inloop_notanh_40h_ep150_v1/*/*_metrics.json"
     ],
-    "done_glob": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/rnn_inloop_notanh_bbade07/experiments/clutter/amarel/artifacts/clutter_rnn_inloop_notanh_v1/status/formal/task_*.done",
-    "fail_glob": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/rnn_inloop_notanh_bbade07/experiments/clutter/amarel/artifacts/clutter_rnn_inloop_notanh_v1/status/formal/task_*.fail",
+    "done_glob": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/rnn_inloop_notanh_dsw8095_v1/status/formal/task_*.done",
+    "fail_glob": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/rnn_inloop_notanh_dsw8095_v1/status/formal/task_*.fail",
     "defaults": {
       "expected": {},
       "checkpoint_glob": "*_model.pth",
@@ -58,10 +62,13 @@
     "Formal hyperparameters reuse the old RNN setting exactly: hidden_size=275, lr=0.001, weight_decay=1e-5, cnn_dropout=0.0, rnn_dropout=0.5, AdamW, 150 epochs, patience=0, seeds 1-10.",
     "Core equation: pre_t=W_ih x_t+b_ih+W_hh h_(t-1)+b_hh; h_t=dropout(ReLU(LayerNorm(pre_t))). h_t is both the layer output and the next recurrent state; there is no inner tanh.",
     "The model key and checkpoint stem are rnn_inloop_notanh, intentionally distinct from the cancelled out-of-loop rnn_notanh control.",
-    "A two-epoch seed-1 smoke at /scratch/js3269/results/data/clutter/runs/preflight/clutter_rnn_inloop_notanh_40h_2epoch_seed1_v1 gates the formal array through afterok:61760273.",
+    "A two-epoch seed-1 smoke on DSW 8095 GPU3 completed in about 6 minutes 21 seconds and emitted exactly one model, metrics JSON, and history pickle. Its observed GPU-memory peak was 41,550 MiB of 46,068 MiB.",
     "Each formal unit also exports reset-excluded 32-frame behavioral test accuracy after training; no activation, net-current, ANOVA, or other downstream analysis is scheduled.",
-    "Submission gate passed locally: bash -n, launcher --dry-run, pytest experiments/tests/test_amarel_submit_safety.py and experiments/tests/test_clutter_nonlinearity_variants.py (24 passed). Remote inputs, 44T free scratch, absent target leaves, commit identity and requested Slurm resources were verified before submission."
+    "Submission gate passed locally: bash -n, launcher --dry-run, pytest experiments/tests/test_amarel_submit_safety.py and experiments/tests/test_clutter_nonlinearity_variants.py (24 passed).",
+    "DSW 8095 preflight matched source stamp 988ee1b, all six 40h data-file byte sizes, the cloned torch 2.4.1+cu121 environment, model import, absent result targets, and initially idle GPUs3-5. The node-local /mnt/workspace filesystem had about 58.8 GB free before launch.",
+    "GPU3 acquired a new external approximately 11.1 GB process after the smoke ended, so formal uses only GPUs4-5. Each formal writer used about 39.0 GB at epoch-1 startup; no occupied external GPU was used or stopped.",
+    "After formal seeds1-2 entered epoch 1 on DSW, pending Amarel smoke 61760273 and dependent array 61760274 were cancelled. The separate no-wrap array 61753234 remained 30/30 pending."
   ],
   "created_at": "2026-09-22T18:23:22+00:00",
-  "updated_at": "2026-09-22T18:23:22+00:00"
+  "updated_at": "2026-09-22T21:14:03+00:00"
 }
