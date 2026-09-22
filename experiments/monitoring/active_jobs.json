@@ -46,7 +46,7 @@
       ],
       "tmux_session": null,
       "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
-      "updated_at": "2026-09-22T20:39:35+00:00"
+      "updated_at": "2026-09-22T20:46:20+00:00"
     },
     {
       "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-seeds6-10-gawf-rnn-gru-lstm-mamba-s5",
