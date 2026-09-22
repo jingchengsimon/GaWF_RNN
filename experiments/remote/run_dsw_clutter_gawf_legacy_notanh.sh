@@ -10,7 +10,7 @@ ENV_ROOT="${AIM3_ENV_ROOT:-/mnt/workspace/sjc/envs/aim3_gawf_rnn_bbade07}"
 DATA_DIR="${AIM3_CLUTTER_DATA_DIR:-/mnt/workspace/sjc/aim3_gawf_rnn_data/stimuli}"
 RESULTS="${AIM3_RESULTS_PATH:-/mnt/workspace/sjc/aim3_gawf_rnn_results}"
 RUN_ROOT="${AIM3_RUN_ROOT:-/mnt/workspace/sjc/aim3_gawf_rnn_runs/gawf_legacy_notanh_10seed_v1}"
-SESSION="${AIM3_TMUX_SESSION:-aim3_gawf_legacy_notanh_10seed_v1}"
+RUN_ID="${AIM3_RUN_ID:-aim3_gawf_legacy_notanh_10seed_v1}"
 SOURCE_COMMIT="988ee1b0f2727189479a56e494556651b589e1ca"
 LEAF="clutter_ablate_legacy_notanh_40h_ep150_dsw5000_v1"
 GPU_MAP=(0 0 1 1 2 3 4 5 6 7)
@@ -98,22 +98,35 @@ run_all() {
 
 launch() {
   validate
-  command -v tmux >/dev/null || { echo "tmux is required" >&2; exit 1; }
-  if tmux has-session -t "$SESSION" 2>/dev/null; then
-    echo "Session already exists: $SESSION" >&2
-    exit 1
+  command -v setsid >/dev/null || { echo "setsid is required" >&2; exit 1; }
+  if [[ -s "$RUN_ROOT/coordinator.pid" ]]; then
+    local existing_pid
+    existing_pid="$(<"$RUN_ROOT/coordinator.pid")"
+    if kill -0 "$existing_pid" 2>/dev/null; then
+      echo "Coordinator already exists: $existing_pid" >&2
+      exit 1
+    fi
   fi
   mkdir -p "$RUN_ROOT"
-  tmux new-session -d -s "$SESSION" \
-    "AIM3_ROOT='$ROOT' AIM3_ENV_ROOT='$ENV_ROOT' AIM3_CLUTTER_DATA_DIR='$DATA_DIR' AIM3_RESULTS_PATH='$RESULTS' AIM3_RUN_ROOT='$RUN_ROOT' AIM3_TMUX_SESSION='$SESSION' bash '$ROOT/experiments/remote/run_dsw_clutter_gawf_legacy_notanh.sh' run"
+  nohup setsid env \
+    AIM3_ROOT="$ROOT" AIM3_ENV_ROOT="$ENV_ROOT" AIM3_CLUTTER_DATA_DIR="$DATA_DIR" \
+    AIM3_RESULTS_PATH="$RESULTS" AIM3_RUN_ROOT="$RUN_ROOT" AIM3_RUN_ID="$RUN_ID" \
+    bash "$ROOT/experiments/remote/run_dsw_clutter_gawf_legacy_notanh.sh" run \
+    > "$RUN_ROOT/coordinator.log" 2>&1 < /dev/null &
+  printf '%s\n' "$!" > "$RUN_ROOT/coordinator.pid"
   sleep 3
-  tmux has-session -t "$SESSION"
+  kill -0 "$(<"$RUN_ROOT/coordinator.pid")"
   "$0" status
 }
 
 status() {
-  echo "session=$SESSION"
-  tmux has-session -t "$SESSION" 2>/dev/null && echo "session_state=running" || echo "session_state=absent"
+  echo "run_id=$RUN_ID"
+  if [[ -s "$RUN_ROOT/coordinator.pid" ]] \
+    && kill -0 "$(<"$RUN_ROOT/coordinator.pid")" 2>/dev/null; then
+    echo "coordinator_state=running"
+  else
+    echo "coordinator_state=absent"
+  fi
   if [[ -d "$RUN_ROOT/status" ]]; then
     find "$RUN_ROOT/status" -maxdepth 1 -type f -name 'seed*.status' -print0 \
       | sort -z | xargs -0 -r cat
