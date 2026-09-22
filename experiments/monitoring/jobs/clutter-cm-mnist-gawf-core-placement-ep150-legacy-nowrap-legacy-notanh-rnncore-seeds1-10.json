@@ -1,52 +1,51 @@
 {
   "schema_version": 1,
   "id": "clutter-cm-mnist-gawf-core-placement-ep150-legacy-nowrap-legacy-notanh-rnncore-seeds1-10",
-  "description": "Retained original-GaWF no-tanh campaign, ten seeds. The no-wrap duplicate and RNN-aligned GaWF cells were cancelled by later design decisions.",
-  "host": "amarel",
-  "status": "queued",
-  "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/gawf_core_variants_20260922",
-  "source_commit": "5b8ce33b689d1d47c339617229e85d1d0ea43a88 (snapshot copy of the 20260922 seed6to10 snapshot) with the new GaWF-placement model types in utils/training/clutter/clutter_task_models.py, their registration in utils/training/clutter/clutter_train_helpers.py and utils/training/train_scripts/clutter.py, and the analysis-side stem mapping in utils/analysis/{model_train_single_result,anal_helpers}.py",
+  "description": "Original-GaWF no-tanh campaign, ten seeds, migrated from the pending Amarel array to the DSW 5000 node.",
+  "host": "dsw-5000",
+  "status": "running",
+  "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
+  "source_commit": "988ee1b0f2727189479a56e494556651b589e1ca",
   "environment": {
-    "name": "aim3_rnn",
-    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+    "name": "/mnt/workspace/sjc/envs/aim3_gawf_rnn_bbade07",
+    "conda_init": "/mnt/workspace/sjc/miniconda3/etc/profile.d/conda.sh"
   },
   "scheduler": {
-    "type": "slurm",
-    "job_ids": [
-      "61754570"
+    "type": "none",
+    "job_ids": [],
+    "run_ids": [
+      "aim3_gawf_legacy_notanh_10seed_v1",
+      "coordinator-pid-1634033"
     ],
-    "run_ids": [],
     "tmux_session": null,
+    "process_patterns": [
+      "clutter_ablate_legacy_notanh_40h_ep150_dsw5000_v1"
+    ],
+    "collect_gpu": true,
     "dependency_strategy": {
-      "type": "single_array_no_gate",
-      "array_tasks": "10-19 retained; 0-9 and 20-29 cancelled",
-      "throttle": "none",
-      "task_map": "task i -> model i//10, seed i%10+1",
-      "cancelled_tasks": "0-9 gawf_legacy_nowrap and 20-29 gawf_rnncore cancelled by explicit user instruction"
+      "type": "direct_formal_launch",
+      "smoke": "waived by explicit human instruction",
+      "task_map": "seeds 1-2 -> GPU0; seeds 3-4 -> GPU1; seeds 5-10 -> GPUs2-7",
+      "amarel_handoff": "61754570_10-19 cancelled after all ten DSW writers entered epoch 1"
     }
   },
   "paths": {
     "log_globs": [
-      "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/gawf_core_variants_20260922/experiments/clutter/amarel/artifacts/clutter_gawf_core_variants_v1/61754570_*.out",
-      "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/gawf_core_variants_20260922/experiments/clutter/amarel/artifacts/clutter_gawf_core_variants_v1/61754570_*.err"
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/gawf_legacy_notanh_10seed_v1/logs/seed*.log",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/gawf_legacy_notanh_10seed_v1/coordinator.log"
     ],
-    "status_dir": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/gawf_core_variants_20260922/experiments/clutter/amarel/artifacts/clutter_gawf_core_variants_v1/status",
+    "status_dir": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/gawf_legacy_notanh_10seed_v1/status",
     "result_paths": [
-      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_legacy_nowrap_40h_ep150_v1/*",
-      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_legacy_notanh_40h_ep150_v1/*",
-      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_rnncore_40h_ep150_v1/*",
-      "/scratch/js3269/results/data/analysis/clutter_ablation_reset_excluded_test_legacy_rnncore_v1/*"
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/clutter/runs/clutter_ablate_legacy_notanh_40h_ep150_dsw5000_v1/*"
     ],
-    "data_path": "/scratch/js3269/stimuli"
+    "data_path": "/mnt/workspace/sjc/aim3_gawf_rnn_data/stimuli"
   },
   "tracking": {
     "expected_units": 10,
     "auto_complete": true,
     "result_globs": [
-      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_legacy_notanh_40h_ep150_v1/*/*_metrics.json"
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/clutter/runs/clutter_ablate_legacy_notanh_40h_ep150_dsw5000_v1/*/*_metrics.json"
     ],
-    "done_glob": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/gawf_core_variants_20260922/experiments/clutter/amarel/artifacts/clutter_gawf_core_variants_v1/status/task_*.done",
-    "fail_glob": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/gawf_core_variants_20260922/experiments/clutter/amarel/artifacts/clutter_gawf_core_variants_v1/status/task_*.fail",
     "defaults": {
       "expected": {},
       "checkpoint_glob": "*_model.pth",
@@ -64,8 +63,12 @@
     "Two earlier attempts were replaced: 61754448 died with a NameError because the training entry did not import the new model classes; 61754486 imported them but the array was still launched without resource directives (the SBATCH header of the run script is inert when the submit script execs it through bash), so every element ran with default memory and was OOM-killed (exit 137) after epoch 1. The submit script now emits partition/account/gres/constraint/cpus/mem/time/requeue/array directives into the generated sbatch, verified with scontrol on 61754570.",
     "2026-09-22 human decision: the legacy no-wrap cell is computationally identical to the aligned no-wrap cell (bitwise core equivalence test), so array elements 0-9 were cancelled with scancel.",
     "2026-09-22 corrected design decision: original GaWF is the intended definition, so pending array elements 20-29 (gawf_rnncore seeds 1-10) were cancelled with scancel. Only elements 10-19 (gawf_legacy_notanh seeds 1-10) remain active; no output was deleted.",
-    "2026-09-22 18:30 UTC prioritization: user-level scontrol top was denied by Amarel. Target job 61754570 remains Nice=0 and priority 27; the competing no-wrap array 61753234 was set to Nice=10000/priority 1. The new RNN smoke remained priority 6, so original-GaWF no-tanh is now highest among the related behavior campaigns."
+    "2026-09-22 18:30 UTC prioritization: user-level scontrol top was denied by Amarel. Target job 61754570 remained Nice=0; the competing no-wrap array 61753234 was set to Nice=10000 and remains queued.",
+    "2026-09-22 20:37 UTC DSW launch: all ten gawf_legacy_notanh writers entered epoch 1 under coordinator PID 1634033. Writer PIDs are 1634039, 1634042, 1634045, 1634048, 1634051, 1634054, 1634057, 1634060, 1634063, and 1634066.",
+    "The cloned environment uses torch 2.4.1+cu121, numpy 2.2.6, pandas 2.2.3, and tqdm 4.67.1. The six 40h data files were promoted only after matching the Amarel source byte sizes (33,081,344,507 bytes total).",
+    "Measured startup memory was about 48.3 GB per new writer. GPUs0-1 host two writers each; GPUs2-3 host one each; GPUs4-7 host one each alongside pre-existing approximately 13.9 GB processes. No pre-existing process was stopped.",
+    "After the ten DSW writers were verified, pending duplicate Amarel elements 61754570_10-19 were cancelled. The separate no-wrap array 61753234_0-29 was explicitly preserved. Launcher commit: b906699."
   ],
   "created_at": "2026-09-22T14:45:00+00:00",
-  "updated_at": "2026-09-22T18:30:25+00:00"
+  "updated_at": "2026-09-22T20:39:35+00:00"
 }

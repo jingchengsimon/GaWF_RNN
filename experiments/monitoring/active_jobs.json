@@ -36,16 +36,17 @@
     },
     {
       "id": "clutter-cm-mnist-gawf-core-placement-ep150-legacy-nowrap-legacy-notanh-rnncore-seeds1-10",
-      "description": "Retained original-GaWF no-tanh campaign, ten seeds. The no-wrap duplicate and RNN-aligned GaWF cells were cancelled by later design decisions.",
-      "host": "amarel",
-      "status": "queued",
-      "job_ids": [
-        "61754570"
+      "description": "Original-GaWF no-tanh campaign, ten seeds, migrated from the pending Amarel array to the DSW 5000 node.",
+      "host": "dsw-5000",
+      "status": "running",
+      "job_ids": [],
+      "run_ids": [
+        "aim3_gawf_legacy_notanh_10seed_v1",
+        "coordinator-pid-1634033"
       ],
-      "run_ids": [],
       "tmux_session": null,
-      "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/gawf_core_variants_20260922",
-      "updated_at": "2026-09-22T18:30:25+00:00"
+      "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
+      "updated_at": "2026-09-22T20:39:35+00:00"
     },
     {
       "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-seeds6-10-gawf-rnn-gru-lstm-mamba-s5",
