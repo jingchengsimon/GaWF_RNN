@@ -487,3 +487,17 @@
   （paired t=+4.74），location 差 −0.379±0.117 pt（paired t=−3.24）；即二者虽只差一个
   trainable bias 与参数化写法，旧语义下仍是可分辨的两个系统，这正说明"状态归一化位置"
   不是可忽略的实现细节。
+
+## 2026-09-22 — 恢复 original GaWF 定义并改为 RNN 向 GaWF 对齐
+
+- **定义更正（Correction）：** original GaWF 的 recurrent activity 明确定义为
+  `dropout(ReLU(LayerNorm(tanh(preactivation))))`；该值既是 layer output，也是下一时刻的
+  recurrence input。09-21 的 RNN-aligned `GaWFCore` 保留作实现历史与 provenance，但不再作为
+  本轮行为对比需要补跑的“新 GaWF”。
+- **对照改动（Control）：** 新增独立类型 `rnn_inloop_notanh`，沿用旧 RNN 的 width=275、
+  lr=0.001、weight_decay=1e-5、cnn_dropout=0、rnn_dropout=0.5，但取消内层默认 `tanh`，并令
+  `dropout(ReLU(LayerNorm(preactivation)))` 同时作为 output 与下一时刻 recurrent state。
+  这与现有 `rnn_notanh` 不同：后者只在整段线性 recurrence 输出之后施加 wrap。
+- **队列修订（Queue）：** 取消待运行的 `gawf_rnncore` seeds 1–10、RNN-aligned
+  `gawf_notanh` seeds 6–10，以及 out-of-loop `rnn_notanh` seeds 6–10；保留 original GaWF 的
+  `gawf_legacy_notanh` seeds 1–10 和其他 baseline 的 no-wrap 扩展。

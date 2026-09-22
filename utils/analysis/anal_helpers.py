@@ -18,6 +18,8 @@ from utils.training.clutter.clutter_task_models import (
     BRIMsConv,
     GaWFRNNConv,
     GaWFAdditiveConv,
+    GaWFLegacyNoTanhConv,
+    GaWFLegacyNoWrapConv,
     GaWFNoTanhConv,
     GaWFNoWrapConv,
     GRUConv,
@@ -32,6 +34,7 @@ from utils.training.clutter.clutter_task_models import (
     MultiLayerGaWFRNNConv,
     RNNConv,
     RNNFeedbackConv,
+    RNNInLoopNoTanhConv,
     RNNNoTanhConv,
     RNNNoWrapConv,
     S5Conv,
@@ -171,8 +174,11 @@ _HPARAM_MODEL_TO_KEY: Dict[str, str] = {
     "GaWFNoTanh": "gawf_notanh",
     "GaWFRNNCore": "gawf_rnncore",
     "GaWFLegacy": "gawf_legacy",
+    "GaWFLegacyNoWrap": "gawf_legacy_nowrap",
+    "GaWFLegacyNoTanh": "gawf_legacy_notanh",
     "RNNNoWrap": "rnn_nowrap",
     "RNNNoTanh": "rnn_notanh",
+    "RNNInLoopNoTanh": "rnn_inloop_notanh",
     "GRUNoWrap": "gru_nowrap",
     "LSTMNoWrap": "lstm_nowrap",
     "MambaNoWrap": "mamba_nowrap",
@@ -266,14 +272,23 @@ def build_model_from_ckpt(
         "s5_nowrap": S5NoWrapConv,
         "gawf_notanh": GaWFNoTanhConv,
         "rnn_notanh": RNNNoTanhConv,
+        "rnn_inloop_notanh": RNNInLoopNoTanhConv,
         "gawf_rnncore": GaWFRNNConv,
         "gawf_legacy": GaWFRNNConv,
+        "gawf_legacy_nowrap": GaWFLegacyNoWrapConv,
+        "gawf_legacy_notanh": GaWFLegacyNoTanhConv,
     }
     model_cls = model_class_map[model_key]
     model_kwargs = {}
     # Historical ``gawf_*`` checkpoints predate the RNN alignment and must keep loading through the
     # frozen legacy core; only explicitly marked stems use the RNN-aligned core.
-    if model_key in ("gawf", "gawf_legacy", "gawf_rnncore"):
+    if model_key in (
+        "gawf",
+        "gawf_legacy",
+        "gawf_rnncore",
+        "gawf_legacy_nowrap",
+        "gawf_legacy_notanh",
+    ):
         model_kwargs["gawf_core"] = (
             "rnn_aligned" if model_key == "gawf_rnncore" else "legacy"
         )
@@ -281,17 +296,24 @@ def build_model_from_ckpt(
         # Completed feedback-control units were trained with the in-loop-wrap additive core; new
         # aligned additive runs must introduce a distinct stem token before relaxation here.
         model_kwargs["state_semantics"] = "legacy"
-    if model_key in ("gawf", "gawf_multi", "gawf_legacy", "gawf_rnncore"):
+    if model_key in (
+        "gawf",
+        "gawf_multi",
+        "gawf_legacy",
+        "gawf_rnncore",
+        "gawf_legacy_nowrap",
+        "gawf_legacy_notanh",
+    ):
         parsed_feedback_dim = hparams.get("feedback_dim")
         if parsed_feedback_dim is not None:
             model_kwargs["feedback_dim"] = int(parsed_feedback_dim)
         if model_key == "gawf_multi":
             model_kwargs["num_layers"] = num_layers
-    elif model_key in ("rnn", "lstm", "gru"):
+    elif model_key in ("rnn", "rnn_inloop_notanh", "lstm", "gru"):
         model_kwargs["num_layers"] = num_layers
-    elif model_key == "mamba":
+    elif model_key in ("mamba", "mamba_nowrap"):
         model_kwargs["mamba_d_model"] = int(hparams.get("d_model", 170))
-    elif model_key == "s5":
+    elif model_key in ("s5", "s5_nowrap"):
         model_kwargs["s5_d_model"] = int(hparams.get("d_model", 256))
         model_kwargs["s5_state_size"] = int(hparams.get("state_size", 128))
     elif model_key == "hyperlstm":
@@ -308,7 +330,11 @@ def build_model_from_ckpt(
         input_channels=chan_num,
         cnn_dropout=cnn_dropout,
         rnn_dropout=rnn_dropout,
-        **({} if model_key in ("mamba", "s5") else {"hidden_size": hidden_size}),
+        **(
+            {}
+            if model_key in ("mamba", "s5", "mamba_nowrap", "s5_nowrap")
+            else {"hidden_size": hidden_size}
+        ),
         max_chars=15,
         predict_all_chars=(num_pos == 0),
         **model_kwargs,

@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "id": "clutter-cm-mnist-gawf-core-placement-ep150-legacy-nowrap-legacy-notanh-rnncore-seeds1-10",
+  "description": "GaWF core-placement campaign, reduced to the two cells that are not already covered: the legacy-GaWF no-tanh ablation and the unmodified RNN-aligned GaWF, ten seeds each. The legacy no-wrap cell (array elements 0-9) was cancelled because it is bitwise identical to the aligned no-wrap cell.",
+  "host": "amarel",
+  "status": "queued",
+  "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/gawf_core_variants_20260922",
+  "source_commit": "5b8ce33b689d1d47c339617229e85d1d0ea43a88 (snapshot copy of the 20260922 seed6to10 snapshot) with the new GaWF-placement model types in utils/training/clutter/clutter_task_models.py, their registration in utils/training/clutter/clutter_train_helpers.py and utils/training/train_scripts/clutter.py, and the analysis-side stem mapping in utils/analysis/{model_train_single_result,anal_helpers}.py",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61754570"
+    ],
+    "run_ids": [],
+    "tmux_session": null,
+    "dependency_strategy": {
+      "type": "single_array_no_gate",
+      "array_tasks": "10-29 (elements 0-9 cancelled)",
+      "throttle": "none (full 30-way concurrency)",
+      "task_map": "task i -> model i//10, seed i%10+1",
+      "cancelled_tasks": "0-9 (gawf_legacy_nowrap) cancelled by explicit user instruction"
+    }
+  },
+  "paths": {
+    "log_globs": [
+      "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/gawf_core_variants_20260922/experiments/clutter/amarel/artifacts/clutter_gawf_core_variants_v1/61754570_*.out",
+      "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/gawf_core_variants_20260922/experiments/clutter/amarel/artifacts/clutter_gawf_core_variants_v1/61754570_*.err"
+    ],
+    "status_dir": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/gawf_core_variants_20260922/experiments/clutter/amarel/artifacts/clutter_gawf_core_variants_v1/status",
+    "result_paths": [
+      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_legacy_nowrap_40h_ep150_v1/*",
+      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_legacy_notanh_40h_ep150_v1/*",
+      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_rnncore_40h_ep150_v1/*",
+      "/scratch/js3269/results/data/analysis/clutter_ablation_reset_excluded_test_legacy_rnncore_v1/*"
+    ],
+    "data_path": "/scratch/js3269/stimuli"
+  },
+  "tracking": {
+    "expected_units": 20,
+    "auto_complete": true,
+    "result_globs": [
+      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_legacy_nowrap_40h_ep150_v1/*/*_metrics.json",
+      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_legacy_notanh_40h_ep150_v1/*/*_metrics.json",
+      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_rnncore_40h_ep150_v1/*/*_metrics.json"
+    ],
+    "done_glob": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/gawf_core_variants_20260922/experiments/clutter/amarel/artifacts/clutter_gawf_core_variants_v1/status/task_*.done",
+    "fail_glob": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/gawf_core_variants_20260922/experiments/clutter/amarel/artifacts/clutter_gawf_core_variants_v1/status/task_*.fail",
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "Task map: 0-9 gawf_legacy_nowrap (legacy core, output_wrap=none), 10-19 gawf_legacy_notanh (legacy core, rnn_activation=identity), 20-29 gawf_rnncore (RNN-aligned core, wrap and tanh enabled), seeds 1-10.",
+    "New model types GaWFLegacyNoWrapConv/GaWFLegacyNoTanhConv wrap the already-supported switches of GaWFCoreLegacy (output_wrap in {ln_relu_dropout, none}; rnn_activation identity), so no core arithmetic changed; gawf_rnncore trains the existing GaWFRNNConv class under an explicitly marked type name so historical 'gawf' checkpoints stay legacy-readable.",
+    "Local pre-submission gate: bash -n, submit --dry-run, pytest -q experiments/tests/test_amarel_submit_safety.py, and a CPU round-trip that rebuilt each new type through build_model_from_ckpt with zero missing/unexpected keys (legacy+none, legacy+identity, aligned+wrap).",
+    "Wall limit 24h: legacy GaWF is an eager gated step (the 40h/150-epoch baseline took 9h22m), so 12h carried a real timeout risk.",
+    "Per-unit metrics record core_output_wrap, core_rnn_activation and gawf_core_semantics; use them to audit that each unit really trained the intended core/placement before analysing.",
+    "The rerun warning from the seeds6-10 campaign applies: submit or analyse from a consistent snapshot, never by syncing single files into an older checkout.",
+    "Two earlier attempts were replaced: 61754448 died with a NameError because the training entry did not import the new model classes; 61754486 imported them but the array was still launched without resource directives (the SBATCH header of the run script is inert when the submit script execs it through bash), so every element ran with default memory and was OOM-killed (exit 137) after epoch 1. The submit script now emits partition/account/gres/constraint/cpus/mem/time/requeue/array directives into the generated sbatch, verified with scontrol on 61754570.",
+    "2026-09-22 human decision: the legacy no-wrap cell is computationally identical to the aligned no-wrap cell (bitwise core equivalence test), so array elements 0-9 (gawf_legacy_nowrap x seeds 1-10) were cancelled with scancel; the surviving elements 10-29 are gawf_legacy_notanh and gawf_rnncore, ten seeds each."
+  ],
+  "created_at": "2026-09-22T14:45:00+00:00",
+  "updated_at": "2026-09-22T16:02:00+00:00"
+}

@@ -57,12 +57,16 @@ The arrows are one-way:
 `utils/training/recurrent_cores/` provides:
 
 - `RNNCore`, `GRUCore`, and `LSTMCore`, including unified `num_layers` handling.
-- `GaWFCore`, with single- and multi-layer paths behind one public model type. It is
+- `GaWFCore`, the later RNN-aligned experimental branch with single- and multi-layer paths. It is
   `nn.RNN` plus an element-wise gate on the input and hidden weight matrices, so the recurrence,
   both biases, the in-recurrence activation (`rnn_activation`: built-in `tanh` or `relu`) and the
   state convention are the built-in ones; `rnn_activation="identity"` is the single non-built-in
-  branch and yields a linear recurrence. `gawf_legacy.GaWFCoreLegacy` freezes the arithmetic used
-  before the alignment and is reachable as the `gawf_legacy` model type.
+  branch and yields a linear recurrence. `gawf_legacy.GaWFCoreLegacy` freezes the original GaWF
+  definition, in which the wrapped activity is the recurrent state, and is reachable as the
+  `gawf_legacy` model type.
+- `RNNCore` additionally supports `wrap_recurrent_state=True` for matched controls. The
+  `rnn_inloop_notanh` control uses identity inner activation and feeds
+  `dropout(ReLU(LayerNorm(preactivation)))` into the next time step.
 - `AdditiveFeedbackRNNCore` and `ConcatenatedFeedbackCellCore`, used only by the
   non-multiplicative Clutter feedback controls.
 - `MambaCore` and `S5Core` sequence models.
@@ -79,19 +83,24 @@ V: (fb_dim, input_size + hidden_size)
 gate = sigmoid(U @ (fb * V) / 0.5)
 ```
 
-The gate multiplies every element of `W_ih` and `W_hh`, so one GaWF step is exactly one `nn.RNN`
-step with modulated weights:
+The gate multiplies every element of `W_ih` and `W_hh`. The original GaWF definition used by the
+completed Clutter results is:
 
 ```text
-pre_t   = (gate_ih * W_ih) x_t + (gate_hh * W_hh) h_{t-1} + b_ih + b_hh
-h_t     = activation(pre_t)                       # the state that is fed back
-readout = dropout(ReLU(LayerNorm(h_t)))           # external wrap, read by the task heads
+pre_t = (gate_ih * W_ih) x_t + (gate_hh * W_hh) h_{t-1} + b_ih + b_hh
+h_t   = dropout(ReLU(LayerNorm(activation(pre_t))))  # readout and next recurrent state
 ```
 
-With a unit gate this reproduces `nn.RNN` exactly (up to floating-point reduction order). The wrap
-is applied to the readout only; it is never part of the recurrence, and dropout therefore never
-touches the state. The pre-alignment implementation fed the wrapped value back into the loop and
-is retained only as `gawf_legacy`.
+The later RNN-aligned branch instead carries only `activation(pre_t)` and applies the wrap to the
+readout. It remains available for provenance as `GaWFCore`/`gawf_rnncore`, but its planned formal
+rerun was cancelled after the original in-loop activity was reconfirmed as the intended GaWF
+definition. The matched `rnn_inloop_notanh` behavioral control removes both the feedback gate and
+the inner `tanh`, while retaining the in-loop wrap:
+
+```text
+pre_t = W_ih x_t + W_hh h_{t-1} + b_ih + b_hh
+h_t   = dropout(ReLU(LayerNorm(pre_t)))             # readout and next recurrent state
+```
 
 For one layer, omitted Clutter `--dz` retains output-sized legacy feedback; explicit `--dz > 0`
 uses a projector. For multiple layers, direct feedback uses the detached adjacent upper hidden

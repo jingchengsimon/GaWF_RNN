@@ -48,6 +48,8 @@ from utils.training.clutter.clutter_task_models import (
     GaWFNoTanhConv,
     GaWFNoWrapConv,
     GaWFLegacyConv,
+    GaWFLegacyNoTanhConv,
+    GaWFLegacyNoWrapConv,
     GaWFAdditiveConv,
     GRUConv,
     GRUFeedbackConv,
@@ -61,6 +63,7 @@ from utils.training.clutter.clutter_task_models import (
     MultiLayerGaWFRNNConv,
     RNNConv,
     RNNFeedbackConv,
+    RNNInLoopNoTanhConv,
     RNNNoTanhConv,
     RNNNoWrapConv,
     S5Conv,
@@ -74,8 +77,12 @@ CORE_MODE_MODEL_TYPES: dict[str, str] = {
     "gawf_nowrap": "gawf",
     "gawf_notanh": "gawf",
     "gawf_legacy": "gawf",
+    "gawf_legacy_nowrap": "gawf",
+    "gawf_legacy_notanh": "gawf",
+    "gawf_rnncore": "gawf",
     "rnn_nowrap": "rnn",
     "rnn_notanh": "rnn",
+    "rnn_inloop_notanh": "rnn",
     "gru_nowrap": "gru",
     "lstm_nowrap": "lstm",
     "mamba_nowrap": "mamba",
@@ -942,6 +949,10 @@ if __name__ == "__main__":
         GaWFNoTanhConv,
         RNNNoTanhConv,
         GaWFLegacyConv,
+        GaWFLegacyNoWrapConv,
+        GaWFLegacyNoTanhConv,
+        GaWFRNNConv,
+        RNNInLoopNoTanhConv,
     )
 
     model_types = args.model_types
@@ -1395,6 +1406,9 @@ if __name__ == "__main__":
         core_module = getattr(mdl, "core", None)
         metric_summary["core_rnn_activation"] = getattr(core_module, "rnn_activation", None)
         metric_summary["core_output_wrap"] = getattr(core_module, "output_wrap", None)
+        metric_summary["core_wrap_recurrent_state"] = bool(
+            getattr(core_module, "wrap_recurrent_state", False)
+        )
         metric_summary["gawf_core_semantics"] = getattr(mdl, "gawf_core", None)
         if train_lr != lr:
             metric_summary["requested_lr"] = lr

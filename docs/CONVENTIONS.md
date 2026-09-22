@@ -31,13 +31,16 @@ Architecture and workflow rules live in `ARCHITECTURE.md` and `DEVELOPMENT_WORKF
   Clutter's isolated reviewer controls additionally use `gawf_additive`, `rnn_fb`, `gru_fb`,
   `lstm_fb`, `mlstm`, `hyperlstm`, and `brims`; these names must not alias or replace the original
   model keys. The latter three are open-loop baselines.
-- `gawf` is the RNN-aligned core (`nn.RNN` plus the element-wise gate). `gawf_legacy` is the
-  frozen pre-alignment core and must be used only to reproduce artifacts trained before the
-  alignment, never for new comparisons against `rnn`/`lstm`/`gru`.
+- `gawf` is the later RNN-aligned core (`nn.RNN` plus the element-wise gate). `gawf_legacy` is the
+  frozen original GaWF definition whose wrapped activity is also its recurrent state; use that key
+  for original-definition analyses and ablations.
 - The nonlinearity-placement ablations use `gawf_nowrap`, `rnn_nowrap`, `gru_nowrap`,
   `lstm_nowrap`, `mamba_nowrap`, `s5_nowrap` (outer `LayerNorm -> ReLU -> dropout` wrap removed)
   and `gawf_notanh`, `rnn_notanh` (in-recurrence activation removed). These names are derived from
   the aligned core, so they must be re-derived if the core semantics ever change again.
+- `rnn_inloop_notanh` is the matched original-GaWF control:
+  `h_t = dropout(ReLU(LayerNorm(W_ih x_t + W_hh h_{t-1} + b_ih + b_hh)))`. It differs from
+  `rnn_notanh`, whose wrap remains outside the recurrence.
 
 Do not introduce a second name for an existing public argument or model. Historical aliases may
 remain parsable for compatibility but must not appear in new result names.
@@ -256,6 +259,8 @@ Standard recurrent Clutter form:
 - RNN-aligned GaWF writes the `gawf_rnncore_` stem token in addition to the model key, so
   historical `gawf_*` checkpoints (pre-alignment, in-loop wrap) stay unambiguous. Analysis code
   loads the legacy core for `gawf_*` stems and the aligned core only for `gawf_rnncore_*`.
+- The matched in-loop RNN writes the distinct `rnn_inloop_notanh_` stem; never relabel it as
+  `rnn_notanh_`, because the latter carries the unwrapped linear state between time steps.
 - Historical `gawf_multi_` and unified `_do{dropout}` names remain readable but are not emitted.
 
 Mamba/S5 use model-native width fields:

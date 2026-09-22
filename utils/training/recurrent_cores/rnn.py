@@ -17,8 +17,9 @@ class TorchRecurrentCore(nn.Module):
     ``output_wrap="none"`` removes that wrap so the core returns the raw built-in output.
     ``rnn_activation`` only applies to the vanilla :class:`torch.nn.RNN` core and selects the
     activation applied inside the recurrence: the built-in ``tanh`` (default), the built-in
-    ``relu``, or ``identity``, which removes the activation entirely and yields a linear
-    first-order recurrence.
+    ``relu``, or ``identity``, which removes that inner activation. When
+    ``wrap_recurrent_state=True``, the configured LayerNorm/ReLU/dropout wrap is applied at every
+    step and its result is both the layer output and the next recurrent state.
     """
 
     def __init__(
@@ -31,6 +32,7 @@ class TorchRecurrentCore(nn.Module):
         batch_first: bool = True,
         output_wrap: str = "ln_relu_dropout",
         rnn_activation: str = "tanh",
+        wrap_recurrent_state: bool = False,
     ) -> None:
         super().__init__()
         if num_layers < 1:
@@ -46,6 +48,17 @@ class TorchRecurrentCore(nn.Module):
                 )
             if num_layers != 1:
                 raise ValueError("rnn_activation variants require num_layers == 1")
+        if wrap_recurrent_state:
+            if rnn_class is not nn.RNN:
+                raise ValueError("wrap_recurrent_state is supported only for the vanilla RNN core")
+            if num_layers != 1:
+                raise ValueError("wrap_recurrent_state requires num_layers == 1")
+            if not batch_first:
+                raise ValueError("wrap_recurrent_state requires batch_first=True")
+            if output_wrap != "ln_relu_dropout":
+                raise ValueError(
+                    "wrap_recurrent_state requires output_wrap='ln_relu_dropout'"
+                )
         self.input_size = int(input_size)
         self.hidden_size = int(hidden_size)
         self.output_size = int(hidden_size)
@@ -55,6 +68,7 @@ class TorchRecurrentCore(nn.Module):
         self.uses_tuple_state = rnn_class is nn.LSTM
         self.output_wrap = str(output_wrap)
         self.rnn_activation = str(rnn_activation)
+        self.wrap_recurrent_state = bool(wrap_recurrent_state)
         self.identity_recurrence = self.rnn_activation == "identity"
         wrap_enabled = self.output_wrap == "ln_relu_dropout"
         if self.num_layers == 1:
@@ -119,8 +133,44 @@ class TorchRecurrentCore(nn.Module):
         stacked = torch.stack(outputs, dim=1)
         return self._wrap_sequence(stacked, self.norm), hidden.unsqueeze(0)
 
+    def _forward_wrapped_recurrence(
+        self, x: torch.Tensor, state: torch.Tensor | None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Run a one-layer RNN whose wrapped output is also its next recurrent state."""
+
+        batch_size, frame_num = x.shape[:2]
+        if state is None:
+            hidden = torch.zeros(
+                batch_size, self.hidden_size, device=x.device, dtype=x.dtype
+            )
+        else:
+            hidden = state[0] if state.ndim == 3 and state.shape[0] == 1 else state
+            if hidden.shape != (batch_size, self.hidden_size):
+                raise ValueError(
+                    "Expected one-layer RNN state shaped "
+                    f"(1, {batch_size}, {self.hidden_size}) or "
+                    f"({batch_size}, {self.hidden_size}), got {tuple(state.shape)}"
+                )
+
+        outputs = []
+        for step in range(frame_num):
+            preactivation = F.linear(
+                x[:, step, :], self.rnn.weight_ih_l0, self.rnn.bias_ih_l0
+            ) + F.linear(hidden, self.rnn.weight_hh_l0, self.rnn.bias_hh_l0)
+            if self.rnn_activation == "tanh":
+                inner = torch.tanh(preactivation)
+            elif self.rnn_activation == "relu":
+                inner = F.relu(preactivation)
+            else:
+                inner = preactivation
+            hidden = self._wrap_sequence(inner, self.norm)
+            outputs.append(hidden)
+        return torch.stack(outputs, dim=1), hidden.unsqueeze(0)
+
     def forward(self, x: torch.Tensor, state=None):
         """Run the recurrent core over an encoded sequence shaped ``(B, T, F)``."""
+        if self.wrap_recurrent_state:
+            return self._forward_wrapped_recurrence(x, state)
         if self.identity_recurrence:
             return self._forward_identity_recurrence(x, state)
         if self.num_layers == 1:

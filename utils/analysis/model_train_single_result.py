@@ -382,10 +382,16 @@ def parse_hparams_from_filename(filename):
         hparams['model_type'] = 'GaWFRNNCore'
     elif filename.startswith('gawf_legacy_'):
         hparams['model_type'] = 'GaWFLegacy'
+        if filename.startswith('gawf_legacy_nowrap_'):
+            hparams['model_type'] = 'GaWFLegacyNoWrap'
+        elif filename.startswith('gawf_legacy_notanh_'):
+            hparams['model_type'] = 'GaWFLegacyNoTanh'
     elif filename.startswith('rnn_nowrap_'):
         hparams['model_type'] = 'RNNNoWrap'
     elif filename.startswith('rnn_notanh_'):
         hparams['model_type'] = 'RNNNoTanh'
+    elif filename.startswith('rnn_inloop_notanh_'):
+        hparams['model_type'] = 'RNNInLoopNoTanh'
     elif filename.startswith('lstm_nowrap_'):
         hparams['model_type'] = 'LSTMNoWrap'
     elif filename.startswith('gru_nowrap_'):

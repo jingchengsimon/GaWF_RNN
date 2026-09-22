@@ -791,6 +791,10 @@ def get_model_classes(
     gawf_notanh_conv_class=None,
     rnn_notanh_conv_class=None,
     gawf_legacy_conv_class=None,
+    gawf_legacy_nowrap_conv_class=None,
+    gawf_legacy_notanh_conv_class=None,
+    gawf_rnncore_conv_class=None,
+    rnn_inloop_notanh_conv_class=None,
 ):
     """Return mapping from model type name to model class.
 
@@ -847,6 +851,10 @@ def get_model_classes(
         "gawf_notanh": gawf_notanh_conv_class,
         "rnn_notanh": rnn_notanh_conv_class,
         "gawf_legacy": gawf_legacy_conv_class,
+        "gawf_legacy_nowrap": gawf_legacy_nowrap_conv_class,
+        "gawf_legacy_notanh": gawf_legacy_notanh_conv_class,
+        "gawf_rnncore": gawf_rnncore_conv_class,
+        "rnn_inloop_notanh": rnn_inloop_notanh_conv_class,
     }
     model_classes.update(
         {
@@ -890,6 +898,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "gawf_notanh",
             "rnn_notanh",
             "gawf_legacy",
+            "gawf_legacy_nowrap",
+            "gawf_legacy_notanh",
+            "gawf_rnncore",
+            "rnn_inloop_notanh",
         ],
         help='Model types to train (default: ["rnn"])',
     )

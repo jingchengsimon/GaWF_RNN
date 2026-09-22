@@ -1,9 +1,10 @@
 """Historical GaWF recurrent core with the in-loop LayerNorm, ReLU, and dropout wrap.
 
-This module freezes the pre-2026-09 GaWF implementation, whose recurrent state was the wrapped
-value ``dropout(ReLU(LN(tanh(preactivation))))``. It is retained so every artifact trained with
-that semantics stays reproducible; new training uses the RNN-aligned :class:`GaWFCore` in
-``utils.training.recurrent_cores.gawf``. Do not change the arithmetic here.
+This module freezes the original GaWF definition, whose recurrent activity is the wrapped value
+``dropout(ReLU(LN(tanh(preactivation))))``. It remains the canonical implementation for analyses
+and ablations tied to that definition. The separate :class:`GaWFCore` in
+``utils.training.recurrent_cores.gawf`` preserves the later RNN-aligned branch. Do not change the
+arithmetic here.
 """
 
 from __future__ import annotations

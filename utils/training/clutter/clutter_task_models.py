@@ -192,6 +192,7 @@ class RNNConv(ClutterSequenceModel):
         num_layers=1,
         output_wrap="ln_relu_dropout",
         rnn_activation="tanh",
+        wrap_recurrent_state=False,
     ) -> None:
         super().__init__(
             num_classes,
@@ -213,6 +214,7 @@ class RNNConv(ClutterSequenceModel):
             num_layers=self.num_layers,
             output_wrap=output_wrap,
             rnn_activation=rnn_activation,
+            wrap_recurrent_state=wrap_recurrent_state,
         )
         self.to(self.device)
 
@@ -1184,13 +1186,34 @@ class RNNNoTanhConv(RNNConv):
         super().__init__(*args, **kwargs)
 
 
-class GaWFLegacyConv(GaWFRNNConv):
-    """Historical GaWF: the wrapped value was fed back into the recurrence.
+class RNNInLoopNoTanhConv(RNNConv):
+    """RNN matched to legacy GaWF: no tanh and the wrapped value is the recurrent state."""
 
-    This type exists only to reproduce artifacts trained before the RNN alignment; it must not be
-    used for new comparisons against ``rnn``/``lstm``/``gru``.
-    """
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("rnn_activation", "identity")
+        kwargs.setdefault("wrap_recurrent_state", True)
+        super().__init__(*args, **kwargs)
+
+
+class GaWFLegacyConv(GaWFRNNConv):
+    """Original GaWF definition: the wrapped activity is fed back into the recurrence."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         kwargs.setdefault("gawf_core", "legacy")
+        super().__init__(*args, **kwargs)
+
+
+class GaWFLegacyNoWrapConv(GaWFLegacyConv):
+    """Legacy GaWF with the in-loop LayerNorm, ReLU, and dropout wrap removed."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("output_wrap", "none")
+        super().__init__(*args, **kwargs)
+
+
+class GaWFLegacyNoTanhConv(GaWFLegacyConv):
+    """Legacy GaWF with the in-loop activation removed; the outer wrap stays enabled."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("rnn_activation", "identity")
         super().__init__(*args, **kwargs)

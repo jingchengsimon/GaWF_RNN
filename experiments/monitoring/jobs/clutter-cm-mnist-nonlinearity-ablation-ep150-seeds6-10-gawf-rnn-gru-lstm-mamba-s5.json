@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-seeds6-10-gawf-rnn-gru-lstm-mamba-s5",
+  "description": "Seed 6-10 extension of the six CM-MNIST no-wrap behavioral controls. The aligned-GaWF and out-of-loop RNN no-tanh cells were cancelled.",
+  "host": "amarel",
+  "status": "queued",
+  "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/nonlinearity_ablation_seed6to10_20260922",
+  "source_commit": "copy of snapshot 20260921/nonlinearity_ablation_a23169e with the analysis-side build_model_from_ckpt fix and the seed-offset launcher overlaid; recorded in <snapshot>/experiments/clutter/amarel/artifacts/clutter_nonlinearity_ablation_v1/status/source_commit.txt",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": ["61753234"],
+    "run_ids": [],
+    "tmux_session": null,
+    "dependency_strategy": {
+      "type": "single_array_no_gate",
+      "array_tasks": "0-29 retained; 30-39 cancelled",
+      "throttle": "none",
+      "seed_offset_env": "AIM3_SEED_OFFSET=5 (task i -> model i//5, seed i%5+6)",
+      "cancelled_tasks": "30-34 gawf_notanh and 35-39 rnn_notanh cancelled by explicit user instruction"
+    }
+  },
+  "paths": {
+    "log_globs": [
+      "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/nonlinearity_ablation_seed6to10_20260922/experiments/clutter/amarel/artifacts/clutter_nonlinearity_ablation_v1/61753234_*.out",
+      "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/nonlinearity_ablation_seed6to10_20260922/experiments/clutter/amarel/artifacts/clutter_nonlinearity_ablation_v1/61753234_*.err"
+    ],
+    "status_dir": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/nonlinearity_ablation_seed6to10_20260922/experiments/clutter/amarel/artifacts/clutter_nonlinearity_ablation_v1/status",
+    "result_paths": [
+      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_seed6to10_v1/*",
+      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_inner_activation_40h_ep150_seed6to10_v1/*",
+      "/scratch/js3269/results/data/analysis/clutter_ablation_reset_excluded_test_seed6to10_v1/*"
+    ],
+    "data_path": "/scratch/js3269/stimuli"
+  },
+  "tracking": {
+    "expected_units": 30,
+    "auto_complete": true,
+    "result_globs": [
+      "/scratch/js3269/results/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_seed6to10_v1/*/*_metrics.json"
+    ],
+    "done_glob": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/nonlinearity_ablation_seed6to10_20260922/experiments/clutter/amarel/artifacts/clutter_nonlinearity_ablation_v1/status/task_*.done",
+    "fail_glob": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/nonlinearity_ablation_seed6to10_20260922/experiments/clutter/amarel/artifacts/clutter_nonlinearity_ablation_v1/status/task_*.fail",
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "Submitted from the seed6to10 snapshot via <snapshot>/experiments/clutter/amarel/generated/sbatch_ablation_seed6to10_20260922.sh; AIM3_ROOT, AIM3_RESULTS_PATH, AIM3_CLUTTER_DATA_DIR and the seed6to10 leaf overrides are exported inside that sbatch.",
+    "Task map (AIM3_SEED_OFFSET=5): 0-4 gawf_nowrap, 5-9 rnn_nowrap, 10-14 gru_nowrap, 15-19 lstm_nowrap, 20-24 mamba_nowrap, 25-29 s5_nowrap, 30-34 gawf_notanh, 35-39 rnn_notanh, seeds 6-10 each.",
+    "Wall limit is 24h for every element because the two gawf variants need ~10.8h; the earlier 12h choice was reverted for backfill speed only.",
+    "First submission 61746720_[0-39] failed instantly (one-second FAILED elements) because that hand-written sbatch did not pass AIM3_ROOT; it produced no result leaf and is superseded by 61753234.",
+    "Result leaves must not be reused and are distinct from the seeds1-5 leaves.",
+    "Status-dir caveat (2026-09-22): this snapshot was copied from the seeds1-5 snapshot, so status/ still contains that campaign's 15 .done, 1 .fail (mamba_nowrap seed1) and 40 .running markers (timestamps 2026-09-21). Do NOT read seeds6-10 progress from status/: use the scheduler plus the seed6to10 result leaves, or wait until the new array overwrites the same marker names as its elements run.",
+    "2026-09-22 corrected design decision: pending elements 30-34 (RNN-aligned gawf_notanh seeds 6-10) and 35-39 (out-of-loop rnn_notanh seeds 6-10) were cancelled with scancel. Elements 0-29, the six no-wrap controls, remain active; no output was deleted."
+  ],
+  "created_at": "2026-09-22T04:40:00+00:00",
+  "updated_at": "2026-09-22T17:15:00+00:00"
+}

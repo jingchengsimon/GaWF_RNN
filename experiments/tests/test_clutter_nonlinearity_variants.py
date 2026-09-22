@@ -17,6 +17,7 @@ from utils.training.clutter.clutter_task_models import (
     LSTMConv,
     LSTMNoWrapConv,
     RNNConv,
+    RNNInLoopNoTanhConv,
     RNNNoTanhConv,
     RNNNoWrapConv,
 )
@@ -203,7 +204,66 @@ def test_default_rnn_core_keeps_the_ln_relu_dropout_wrap() -> None:
     assert torch.allclose(wrapped, expected, atol=1e-6)
 
 
-@pytest.mark.parametrize("variant_class", (GaWFNoWrapConv, RNNNoWrapConv, GaWFNoTanhConv, RNNNoTanhConv))
+def test_rnn_inloop_notanh_uses_wrapped_value_as_next_state() -> None:
+    torch.manual_seed(0)
+    core = RNNCore(
+        6,
+        4,
+        dropout=0.0,
+        rnn_activation="identity",
+        wrap_recurrent_state=True,
+    ).eval()
+    x = torch.randn(2, 5, 6)
+
+    expected_state = torch.zeros(2, 4)
+    expected_outputs = []
+    with torch.no_grad():
+        for step in range(x.shape[1]):
+            preactivation = F.linear(
+                x[:, step], core.rnn.weight_ih_l0, core.rnn.bias_ih_l0
+            ) + F.linear(
+                expected_state, core.rnn.weight_hh_l0, core.rnn.bias_hh_l0
+            )
+            expected_state = F.relu(core.norm(preactivation))
+            expected_outputs.append(expected_state)
+        actual, final_state = core(x)
+
+    expected = torch.stack(expected_outputs, dim=1)
+    assert torch.allclose(actual, expected, atol=1e-6)
+    assert torch.allclose(final_state[0], expected[:, -1], atol=1e-6)
+    assert core.rnn_activation == "identity"
+    assert core.wrap_recurrent_state is True
+
+
+def test_rnn_inloop_notanh_differs_from_out_of_loop_notanh() -> None:
+    torch.manual_seed(0)
+    inloop = RNNCore(
+        6,
+        4,
+        dropout=0.0,
+        rnn_activation="identity",
+        wrap_recurrent_state=True,
+    ).eval()
+    out_of_loop = RNNCore(6, 4, dropout=0.0, rnn_activation="identity").eval()
+    with torch.no_grad():
+        out_of_loop.load_state_dict(inloop.state_dict())
+        x = torch.randn(2, 5, 6)
+        inloop_output, _ = inloop(x)
+        out_of_loop_output, _ = out_of_loop(x)
+
+    assert not torch.allclose(inloop_output, out_of_loop_output, atol=1e-4)
+
+
+@pytest.mark.parametrize(
+    "variant_class",
+    (
+        GaWFNoWrapConv,
+        RNNNoWrapConv,
+        GaWFNoTanhConv,
+        RNNNoTanhConv,
+        RNNInLoopNoTanhConv,
+    ),
+)
 def test_variant_wrappers_run_on_cpu(variant_class) -> None:
     torch.manual_seed(0)
     model = variant_class(
