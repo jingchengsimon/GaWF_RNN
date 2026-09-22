@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "id": "clutter-cm-mnist-gawf-wrap-placement-short24ep-abc-sjc-v2",
+  "description": "Short three-cell probe of where the legacy GaWF wrap acts: A = legacy core with the in-loop wrap as the recurrent state (gawf_legacy), B = RNN-aligned core with the wrap on the readout only (gawf_rnncore), D = no wrap at all (gawf_nowrap); two seeds per cell, 24 epochs, run on sjc-remote to compare validation-loss trajectories at equal budget.",
+  "host": "sjc-remote",
+  "status": "running",
+  "remote_root": "/G/MIMOlab/Codes/aim3_gawf_rnn",
+  "source_commit": "8a4dc5c plus the current working-tree utils/ tree (new GaWF placement model types, registration, dispatch map, analysis-side stem mapping); the legacy no-wrap cell is provably identical to the aligned no-wrap cell (experiments/tests/test_clutter_nonlinearity_variants.py::test_rnn_aligned_gawf_equals_legacy_gawf_once_the_wrap_is_disabled), which is why the design has three cells rather than four.",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/G/anaconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "tmux",
+    "job_ids": [],
+    "run_ids": ["gawf3cell24"],
+    "tmux_session": "gawf3cell24",
+    "process_patterns": [
+      "clutter_ablate_gawf_cells_short24ep_sjc_v2",
+      "run_task.py clutter --model_types gawf_legacy",
+      "run_task.py clutter --model_types gawf_rnncore",
+      "run_task.py clutter --model_types gawf_nowrap"
+    ],
+    "collect_gpu": true,
+    "dependency_strategy": {
+      "type": "one_run_per_gpu_sequential",
+      "array_tasks": "none",
+      "throttle": "1 run per GPU (each run holds ~31 GB of the 48 GB A6000)"
+    }
+  },
+  "paths": {
+    "log_globs": [
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/clutter_ablate_gawf_cells_short24ep_sjc_v2/logs/*.log"
+    ],
+    "status_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/clutter_ablate_gawf_cells_short24ep_sjc_v2/logs",
+    "result_paths": [
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data/clutter/runs/clutter_ablate_gawf_cells_short24ep_sjc_v2/*"
+    ],
+    "data_path": "/G/MIMOlab/Codes/aim3_gawf_rnn/source/clutter/stimuli"
+  },
+  "tracking": {
+    "expected_units": 6,
+    "auto_complete": false,
+    "result_globs": [
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data/clutter/runs/clutter_ablate_gawf_cells_short24ep_sjc_v2/*/*_metrics.json"
+    ],
+    "done_glob": "",
+    "fail_glob": "",
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": [
+      {
+        "id": "A-seed01",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data/clutter/runs/clutter_ablate_gawf_cells_short24ep_sjc_v2/A-seed01",
+        "metrics_file": "gawf_legacy_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "expected": {
+          "model_type": "gawf_legacy",
+          "actual_epochs": 24,
+          "patience": 0,
+          "core_rnn_activation": "tanh",
+          "core_output_wrap": "ln_relu_dropout",
+          "gawf_core_semantics": "legacy"
+        }
+      },
+      {
+        "id": "A-seed02",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data/clutter/runs/clutter_ablate_gawf_cells_short24ep_sjc_v2/A-seed02",
+        "metrics_file": "gawf_legacy_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "expected": {
+          "model_type": "gawf_legacy",
+          "actual_epochs": 24,
+          "patience": 0,
+          "core_rnn_activation": "tanh",
+          "core_output_wrap": "ln_relu_dropout",
+          "gawf_core_semantics": "legacy"
+        }
+      },
+      {
+        "id": "B-seed01",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data/clutter/runs/clutter_ablate_gawf_cells_short24ep_sjc_v2/B-seed01",
+        "metrics_file": "gawf_rnncore_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "expected": {
+          "model_type": "gawf_rnncore",
+          "actual_epochs": 24,
+          "patience": 0,
+          "core_rnn_activation": "tanh",
+          "core_output_wrap": "ln_relu_dropout",
+          "gawf_core_semantics": "rnn_aligned"
+        }
+      },
+      {
+        "id": "B-seed02",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data/clutter/runs/clutter_ablate_gawf_cells_short24ep_sjc_v2/B-seed02",
+        "metrics_file": "gawf_rnncore_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "expected": {
+          "model_type": "gawf_rnncore",
+          "actual_epochs": 24,
+          "patience": 0,
+          "core_rnn_activation": "tanh",
+          "core_output_wrap": "ln_relu_dropout",
+          "gawf_core_semantics": "rnn_aligned"
+        }
+      },
+      {
+        "id": "D-seed01",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data/clutter/runs/clutter_ablate_gawf_cells_short24ep_sjc_v2/D-seed01",
+        "metrics_file": "gawf_rnncore_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "expected": {
+          "model_type": "gawf_nowrap",
+          "actual_epochs": 24,
+          "patience": 0,
+          "core_rnn_activation": "tanh",
+          "core_output_wrap": "none",
+          "gawf_core_semantics": "rnn_aligned"
+        }
+      },
+      {
+        "id": "D-seed02",
+        "result_dir": "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/clutter/runs/data/clutter/runs/clutter_ablate_gawf_cells_short24ep_sjc_v2/D-seed02",
+        "metrics_file": "gawf_rnncore_sector_acc_h256_lr0.005_wd0.001_cdo0.0_rdo0.5_metrics.json",
+        "expected": {
+          "model_type": "gawf_nowrap",
+          "actual_epochs": 24,
+          "patience": 0,
+          "core_rnn_activation": "tanh",
+          "core_output_wrap": "none",
+          "gawf_core_semantics": "rnn_aligned"
+        }
+      }
+    ]
+  },
+  "notes": [
+    "Cells: A (gawf_legacy, seeds 1-2), B (gawf_rnncore, seeds 1-2), D (gawf_nowrap, seeds 1-2); every cell trains at the identical budget (40h-uint8, seq 32, 24 epochs, patience 0, h256/lr0.005/wd0.001, 5-epoch checkpoints).",
+    "Interpretation is pre-registered: A vs B isolates where the wrap sits (both have it), B vs D isolates whether the wrap exists at all (both keep the raw state). A much flatter validation loss than D with the wrap present in B would support the placement hypothesis; B tracking D would support the presence hypothesis.",
+    "A 4-seed x 150-epoch pilot (leaf clutter_ablate_rnncore_sjc_v1) and an aborted 40-epoch attempt (clutter_ablate_gawf_cells_short40ep_sjc_v1) were cancelled by explicit user instruction to keep the probe short; their partial outputs are left untouched and are not analysis inputs.",
+    "Only validation-loss trajectories are comparable at this budget; test-accuracy-based conclusions require the full 150-epoch runs (gawf_rnncore seeds 1-10 are queued on Amarel as part of 61754570_[20-29]).",
+    "Audit 2026-09-22 12:30 EDT: the driver passed a result suffix that already contained data/clutter/runs, while the trainer prepends that hierarchy. The actual result root therefore has the duplicated prefix recorded in paths/result_paths and every unit result_dir; logs and status remain in the outer non-duplicated leaf. No outputs were moved or renamed.",
+    "Execution-source audit: remote HEAD 8a4dc5c0ad9d914e3905014f9b8a94837dceac27 with all relevant source mtimes before the 11:57:24 EDT process start. SHA-256: driver 5088188cfeb65d6c044836a29ea1bfd347c19e728b3ed91a1d3cd1b6aa2de457; clutter_task_models.py 1dc082dac91adf5a9726a27d40e13a64b2c80cae51db18e2ade9e1c47e8f53a8; clutter_train_helpers.py 438328e0e201fa53badbc0cf0d56c1358169be84bd2afbbef5fda9b402b13d32; train_scripts/clutter.py 79b46c3828544405128ac4f8aa88e80d4e958ec4f5e2b57bafe4899b620fa360; gawf.py a5bb43b049ac35405fbb43bc6dda1c5ab0f11b3f045b49fe825fdb17d1ece598; gawf_legacy.py 0d68a25b3ebf737f25609d4ad943dedec246b3380501710f46f96589fe3b7043."
+  ],
+  "created_at": "2026-09-22T16:00:00+00:00",
+  "updated_at": "2026-09-22T16:33:54+00:00"
+}

@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "id": "clutter-cm-mnist-nonlinearity-ablation-behavior-recovery-jointswitch10digit-seeds1-5",
+  "description": "Behaviour analysis for the seeds1-5 ablation checkpoints: fill the ten missing reset-excluded test-accuracy collects (mamba_nowrap, s5_nowrap) and run the target-switch recovery inference for every finished unit.",
+  "host": "amarel",
+  "status": "cancelled",
+  "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/nonlinearity_ablation_seed6to10_20260922",
+  "source_commit": "same snapshot as the seeds6-10 training array, with the full utils tree synced so anal_helpers and clutter_task_models are consistent (BRIMsConv present)",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61753555"
+    ],
+    "run_ids": [],
+    "tmux_session": null,
+    "dependency_strategy": {
+      "type": "single_job_model_seed_loop",
+      "array_tasks": "none",
+      "throttle": "sequential loop over 8 models x seeds 1-5"
+    }
+  },
+  "paths": {
+    "log_globs": [
+      "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/nonlinearity_ablation_seed6to10_20260922/experiments/clutter/amarel/artifacts/clutter_ablation_behavior_v1/recovery_61753555.out",
+      "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/nonlinearity_ablation_seed6to10_20260922/experiments/clutter/amarel/artifacts/clutter_ablation_behavior_v1/recovery_61753555.err"
+    ],
+    "status_dir": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/nonlinearity_ablation_seed6to10_20260922/experiments/clutter/amarel/artifacts/clutter_ablation_behavior_v1",
+    "result_paths": [
+      "/scratch/js3269/results/data/analysis/clutter_ablation_reset_excluded_test_10seed_v1/*",
+      "/scratch/js3269/results/data/analysis/ablation_behavior_recovery_jointswitch10digit_v1/*"
+    ],
+    "data_path": "/scratch/js3269/stimuli"
+  },
+  "tracking": {
+    "expected_units": 16,
+    "auto_complete": false,
+    "result_globs": [
+      "/scratch/js3269/results/data/analysis/ablation_behavior_recovery_jointswitch10digit_v1/*/fg_switch_offset_acc_*.npz"
+    ],
+    "done_glob": "",
+    "fail_glob": "",
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": null,
+      "checkpoint_count": null
+    },
+    "units": []
+  },
+  "notes": [
+    "Launched by experiments/clutter/amarel/submit_clutter_ablation_behavior.sh (compute-node launcher experiments/clutter/amarel/run_clutter_ablation_behavior.sh); the launcher runs the recovery inference for every unit whose final checkpoint exists, and fills the reset-excluded test-accuracy collect only when its JSON is missing.",
+    "Superseded attempt 61746551 was submitted from the long-lived repository /cache/home/js3269/projects/aim3_gawf_rnn, where a single-file sync of utils/analysis/anal_helpers.py left an inconsistent tree (ImportError on BRIMsConv); the loop swallowed the per-unit failures, so it reported COMPLETED with zero npz outputs. Attempt 61753233 was cancelled for the same reason.",
+    "Do not submit behaviour analysis from the long-lived repository while it is older than the working copy; use this snapshot, or sync the whole repository first.",
+    "Local rendering reads the collected JSON plus the recovery npz and the per-unit training histories; no analysis is executed on the Amarel login node.",
+    "2026-09-22: cancelled (scancel 61753555) because the identical collect+recovery work was already completed on sjc-remote for seeds1-5 (mirror at /G/MIMOlab/Codes/aim3_gawf_rnn/results/data/ablation_mirror_s1to5, 40/40 collect + 40/40 recovery + 40/40 meta) and the figures render from that data; cancelling frees queue position for the seeds6-10 and GaWF core-placement arrays."
+  ],
+  "created_at": "2026-09-22T04:40:00+00:00",
+  "updated_at": "2026-09-22T16:50:00+00:00"
+}

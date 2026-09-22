@@ -8,6 +8,59 @@
   ],
   "jobs": [
     {
+      "id": "clutter-cm-mnist-rnn-inloop-notanh-ep150-seeds1-10",
+      "description": "GaWF-aligned RNN behavioral control: identity inner activation and the LayerNorm/ReLU/dropout output fed back as the next recurrent state, ten seeds.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61760273",
+        "61760274"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/rnn_inloop_notanh_bbade07",
+      "updated_at": "2026-09-22T18:23:22+00:00"
+    },
+    {
+      "id": "clutter-cm-mnist-gawf-wrap-placement-short24ep-abc-sjc-v2",
+      "description": "Short three-cell probe of where the legacy GaWF wrap acts: A = legacy core with the in-loop wrap as the recurrent state (gawf_legacy), B = RNN-aligned core with the wrap on the readout only (gawf_rnncore), D = no wrap at all (gawf_nowrap); two seeds per cell, 24 epochs, run on sjc-remote to compare validation-loss trajectories at equal budget.",
+      "host": "sjc-remote",
+      "status": "running",
+      "job_ids": [],
+      "run_ids": [
+        "gawf3cell24"
+      ],
+      "tmux_session": "gawf3cell24",
+      "remote_root": "/G/MIMOlab/Codes/aim3_gawf_rnn",
+      "updated_at": "2026-09-22T16:33:54+00:00"
+    },
+    {
+      "id": "clutter-cm-mnist-gawf-core-placement-ep150-legacy-nowrap-legacy-notanh-rnncore-seeds1-10",
+      "description": "Retained original-GaWF no-tanh campaign, ten seeds. The no-wrap duplicate and RNN-aligned GaWF cells were cancelled by later design decisions.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61754570"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/gawf_core_variants_20260922",
+      "updated_at": "2026-09-22T18:23:22+00:00"
+    },
+    {
+      "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-seeds6-10-gawf-rnn-gru-lstm-mamba-s5",
+      "description": "Seed 6-10 extension of the six CM-MNIST no-wrap behavioral controls. The aligned-GaWF and out-of-loop RNN no-tanh cells were cancelled.",
+      "host": "amarel",
+      "status": "queued",
+      "job_ids": [
+        "61753234"
+      ],
+      "run_ids": [],
+      "tmux_session": null,
+      "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/nonlinearity_ablation_seed6to10_20260922",
+      "updated_at": "2026-09-22T17:15:00+00:00"
+    },
+    {
       "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-gawf-rnn-gru-lstm-mamba-s5-seeds1-5",
       "description": "CM-MNIST nonlinearity-placement ablations on the RNN-aligned GaWF core: batch 1 removes the outer LayerNorm+ReLU+dropout wrap for six models, batch 2 removes the nn.RNN activation for GaWF and RNN; seeds 1-5, 150 epochs, 40 units.",
       "host": "amarel",
