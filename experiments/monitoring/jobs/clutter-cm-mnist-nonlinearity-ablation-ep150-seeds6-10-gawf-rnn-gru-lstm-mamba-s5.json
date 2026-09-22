@@ -58,8 +58,9 @@
     "First submission 61746720_[0-39] failed instantly (one-second FAILED elements) because that hand-written sbatch did not pass AIM3_ROOT; it produced no result leaf and is superseded by 61753234.",
     "Result leaves must not be reused and are distinct from the seeds1-5 leaves.",
     "Status-dir caveat (2026-09-22): this snapshot was copied from the seeds1-5 snapshot, so status/ still contains that campaign's 15 .done, 1 .fail (mamba_nowrap seed1) and 40 .running markers (timestamps 2026-09-21). Do NOT read seeds6-10 progress from status/: use the scheduler plus the seed6to10 result leaves, or wait until the new array overwrites the same marker names as its elements run.",
-    "2026-09-22 corrected design decision: pending elements 30-34 (RNN-aligned gawf_notanh seeds 6-10) and 35-39 (out-of-loop rnn_notanh seeds 6-10) were cancelled with scancel. Elements 0-29, the six no-wrap controls, remain active; no output was deleted."
+    "2026-09-22 corrected design decision: pending elements 30-34 (RNN-aligned gawf_notanh seeds 6-10) and 35-39 (out-of-loop rnn_notanh seeds 6-10) were cancelled with scancel. Elements 0-29, the six no-wrap controls, remain active; no output was deleted.",
+    "2026-09-22 18:30 UTC prioritization: Slurm Nice was raised from 0 to 10000 for the retained no-wrap array 61753234, lowering its priority from 33 to 1 so original-GaWF no-tanh job 61754570 runs first. The training protocol and outputs were not changed."
   ],
   "created_at": "2026-09-22T04:40:00+00:00",
-  "updated_at": "2026-09-22T17:15:00+00:00"
+  "updated_at": "2026-09-22T18:30:25+00:00"
 }

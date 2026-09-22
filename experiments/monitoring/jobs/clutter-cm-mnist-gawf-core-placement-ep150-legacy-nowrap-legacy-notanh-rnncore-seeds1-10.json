@@ -63,8 +63,9 @@
     "The rerun warning from the seeds6-10 campaign applies: submit or analyse from a consistent snapshot, never by syncing single files into an older checkout.",
     "Two earlier attempts were replaced: 61754448 died with a NameError because the training entry did not import the new model classes; 61754486 imported them but the array was still launched without resource directives (the SBATCH header of the run script is inert when the submit script execs it through bash), so every element ran with default memory and was OOM-killed (exit 137) after epoch 1. The submit script now emits partition/account/gres/constraint/cpus/mem/time/requeue/array directives into the generated sbatch, verified with scontrol on 61754570.",
     "2026-09-22 human decision: the legacy no-wrap cell is computationally identical to the aligned no-wrap cell (bitwise core equivalence test), so array elements 0-9 were cancelled with scancel.",
-    "2026-09-22 corrected design decision: original GaWF is the intended definition, so pending array elements 20-29 (gawf_rnncore seeds 1-10) were cancelled with scancel. Only elements 10-19 (gawf_legacy_notanh seeds 1-10) remain active; no output was deleted."
+    "2026-09-22 corrected design decision: original GaWF is the intended definition, so pending array elements 20-29 (gawf_rnncore seeds 1-10) were cancelled with scancel. Only elements 10-19 (gawf_legacy_notanh seeds 1-10) remain active; no output was deleted.",
+    "2026-09-22 18:30 UTC prioritization: user-level scontrol top was denied by Amarel. Target job 61754570 remains Nice=0 and priority 27; the competing no-wrap array 61753234 was set to Nice=10000/priority 1. The new RNN smoke remained priority 6, so original-GaWF no-tanh is now highest among the related behavior campaigns."
   ],
   "created_at": "2026-09-22T14:45:00+00:00",
-  "updated_at": "2026-09-22T18:23:22+00:00"
+  "updated_at": "2026-09-22T18:30:25+00:00"
 }
