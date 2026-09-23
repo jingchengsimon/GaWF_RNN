@@ -161,6 +161,14 @@ and the concatenated input block are algebraically interchangeable, the two RNN 
 after this alignment only by that parameterization, by the additive bias and by the `0.5W`
 initialization.
 
+The corrected additive-feedback controls are `rnn_fb_add`, `gru_fb_add`, and `lstm_fb_add`.
+They use the native no-wrap RNN-tanh, GRU, or LSTM output/state semantics and add one independent
+affine source `W_fb f_(t-1) + b_fb` to the cell preactivation (all three GRU gates or all four
+LSTM gates). `W_fb` and trainable `b_fb` use the same PyTorch uniform initialization bound as the
+cell parameters and remain in the same optimizer parameter group. Disabling feedback omits the
+entire affine source, including `b_fb`; the zero feedback vector on the first closed-loop step
+still retains the learned source bias.
+
 `clutter_train_helpers.py` owns CLI construction, paths, dataset creation, logging, model
 registration, seeding, and saved summaries. `clutter_train_acceleration.py` owns loaders, AMP,
 gradient accumulation, and `TrainStepper`. `clutter_train_engine.py` owns the epoch/batch loop.

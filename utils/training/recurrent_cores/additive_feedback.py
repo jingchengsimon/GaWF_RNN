@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Literal
 
 import torch
@@ -182,4 +183,111 @@ class ConcatenatedFeedbackCellCore(nn.Module):
         for t in range(frame_num):
             output, state = self.step(x[:, t, :], state, feedback)
             outputs.append(output)
+        return torch.stack(outputs, dim=1), state
+
+
+class AdditiveFeedbackCellCore(nn.Module):
+    """RNN/GRU/LSTM cell with one explicit trainable feedback affine pathway."""
+
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        feedback_dim: int,
+        cell_type: Literal["rnn", "gru", "lstm"],
+        dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        cell_classes = {"rnn": nn.RNNCell, "gru": nn.GRUCell, "lstm": nn.LSTMCell}
+        gate_counts = {"rnn": 1, "gru": 3, "lstm": 4}
+        if cell_type not in cell_classes:
+            raise ValueError(f"Unsupported feedback cell type: {cell_type!r}")
+        self.input_size = int(input_size)
+        self.hidden_size = int(hidden_size)
+        self.output_size = int(hidden_size)
+        self.feedback_dim = int(feedback_dim)
+        self.cell_type = cell_type
+        self.dropout = float(dropout)
+        self.output_wrap = "none"
+        self.rnn_activation = "tanh" if cell_type == "rnn" else None
+        self.norm = None
+        self.cell = cell_classes[cell_type](self.input_size, self.hidden_size)
+        self.feedback_linear = nn.Linear(
+            self.feedback_dim,
+            gate_counts[cell_type] * self.hidden_size,
+            bias=True,
+        )
+        bound = 1.0 / math.sqrt(self.hidden_size)
+        nn.init.uniform_(self.feedback_linear.weight, -bound, bound)
+        nn.init.uniform_(self.feedback_linear.bias, -bound, bound)
+
+    def initial_state(
+        self,
+        batch_size: int,
+        device: torch.device | str,
+        dtype: torch.dtype,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """Return the official zero state for the selected recurrent cell."""
+        hidden = torch.zeros(batch_size, self.hidden_size, device=device, dtype=dtype)
+        if self.cell_type == "lstm":
+            return hidden, torch.zeros_like(hidden)
+        return hidden
+
+    def _advance(
+        self,
+        x_t: torch.Tensor,
+        state: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
+        feedback_affine: torch.Tensor | None,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """Apply the native cell equations with an optional input-side feedback affine."""
+        if self.cell_type == "lstm":
+            hidden, cell_state = state
+            gates = F.linear(x_t, self.cell.weight_ih, self.cell.bias_ih)
+            gates = gates + F.linear(hidden, self.cell.weight_hh, self.cell.bias_hh)
+            if feedback_affine is not None:
+                gates = gates + feedback_affine
+            input_gate, forget_gate, candidate, output_gate = gates.chunk(4, dim=-1)
+            next_cell = torch.sigmoid(forget_gate) * cell_state
+            next_cell = next_cell + torch.sigmoid(input_gate) * torch.tanh(candidate)
+            next_hidden = torch.sigmoid(output_gate) * torch.tanh(next_cell)
+            return next_hidden, next_cell
+
+        hidden = state
+        input_affine = F.linear(x_t, self.cell.weight_ih, self.cell.bias_ih)
+        if feedback_affine is not None:
+            input_affine = input_affine + feedback_affine
+        hidden_affine = F.linear(hidden, self.cell.weight_hh, self.cell.bias_hh)
+        if self.cell_type == "rnn":
+            return torch.tanh(input_affine + hidden_affine)
+
+        input_reset, input_update, input_candidate = input_affine.chunk(3, dim=-1)
+        hidden_reset, hidden_update, hidden_candidate = hidden_affine.chunk(3, dim=-1)
+        reset_gate = torch.sigmoid(input_reset + hidden_reset)
+        update_gate = torch.sigmoid(input_update + hidden_update)
+        candidate = torch.tanh(input_candidate + reset_gate * hidden_candidate)
+        return candidate + update_gate * (hidden - candidate)
+
+    def step(
+        self,
+        x_t: torch.Tensor,
+        state: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
+        feedback: torch.Tensor,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor | tuple[torch.Tensor, torch.Tensor],
+    ]:
+        """Advance one step; the official hidden state is also the no-wrap layer output."""
+        fb = feedback.to(device=x_t.device, dtype=x_t.dtype).clamp(-10, 10)
+        next_state = self._advance(x_t, state, self.feedback_linear(fb))
+        output = next_state[0] if self.cell_type == "lstm" else next_state
+        return output, next_state
+
+    def forward_no_feedback(self, x: torch.Tensor):
+        """Run the same cell while omitting the complete feedback affine, including its bias."""
+        batch_size, frame_num = x.shape[:2]
+        state = self.initial_state(batch_size, x.device, x.dtype)
+        outputs = []
+        for step in range(frame_num):
+            state = self._advance(x[:, step, :], state, feedback_affine=None)
+            outputs.append(state[0] if self.cell_type == "lstm" else state)
         return torch.stack(outputs, dim=1), state

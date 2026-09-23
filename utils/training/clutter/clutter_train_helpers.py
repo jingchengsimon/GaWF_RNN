@@ -795,6 +795,9 @@ def get_model_classes(
     gawf_legacy_notanh_conv_class=None,
     gawf_rnncore_conv_class=None,
     rnn_inloop_notanh_conv_class=None,
+    rnn_additive_feedback_conv_class=None,
+    gru_additive_feedback_conv_class=None,
+    lstm_additive_feedback_conv_class=None,
 ):
     """Return mapping from model type name to model class.
 
@@ -823,6 +826,9 @@ def get_model_classes(
         "rnn_fb": rnn_feedback_conv_class,
         "gru_fb": gru_feedback_conv_class,
         "lstm_fb": lstm_feedback_conv_class,
+        "rnn_fb_add": rnn_additive_feedback_conv_class,
+        "gru_fb_add": gru_additive_feedback_conv_class,
+        "lstm_fb_add": lstm_additive_feedback_conv_class,
     }
     model_classes.update({
         name: model_class
@@ -886,6 +892,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "rnn_fb",
             "gru_fb",
             "lstm_fb",
+            "rnn_fb_add",
+            "gru_fb_add",
+            "lstm_fb_add",
             "mlstm",
             "hyperlstm",
             "brims",

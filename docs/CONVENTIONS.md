@@ -29,8 +29,9 @@ Architecture and workflow rules live in `ARCHITECTURE.md` and `DEVELOPMENT_WORKF
 - Common loop indices: `sidx` sample, `t` time, `b` batch, `d` digit/component, `c` channel.
 - Public model keys use lowercase: `ann`, `rnn`, `gru`, `lstm`, `gawf`, `mamba`, `s5`.
   Clutter's isolated reviewer controls additionally use `gawf_additive`, `rnn_fb`, `gru_fb`,
-  `lstm_fb`, `mlstm`, `hyperlstm`, and `brims`; these names must not alias or replace the original
-  model keys. The latter three are open-loop baselines.
+  `lstm_fb`, `rnn_fb_add`, `gru_fb_add`, `lstm_fb_add`, `mlstm`, `hyperlstm`, and `brims`; these
+  names must not alias or replace the original model keys. The latter three are open-loop
+  baselines.
 - `gawf` is the later RNN-aligned core (`nn.RNN` plus the element-wise gate). `gawf_legacy` is the
   frozen original GaWF definition whose wrapped activity is also its recurrent state; use that key
   for original-definition analyses and ablations.

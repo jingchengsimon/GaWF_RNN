@@ -52,9 +52,11 @@ from utils.training.clutter.clutter_task_models import (
     GaWFLegacyNoWrapConv,
     GaWFAdditiveConv,
     GRUConv,
+    GRUAdditiveFeedbackConv,
     GRUFeedbackConv,
     GRUNoWrapConv,
     LSTMConv,
+    LSTMAdditiveFeedbackConv,
     LSTMFeedbackConv,
     LSTMNoWrapConv,
     HyperLSTMConv,
@@ -62,6 +64,7 @@ from utils.training.clutter.clutter_task_models import (
     MambaNoWrapConv,
     MultiLayerGaWFRNNConv,
     RNNConv,
+    RNNAdditiveFeedbackConv,
     RNNFeedbackConv,
     RNNInLoopNoTanhConv,
     RNNNoTanhConv,
@@ -953,6 +956,9 @@ if __name__ == "__main__":
         GaWFLegacyNoTanhConv,
         GaWFRNNConv,
         RNNInLoopNoTanhConv,
+        RNNAdditiveFeedbackConv,
+        GRUAdditiveFeedbackConv,
+        LSTMAdditiveFeedbackConv,
     )
 
     model_types = args.model_types
@@ -1107,7 +1113,15 @@ if __name__ == "__main__":
             model_kwargs["feedback_dim"] = feedback_dim
             if num_layers > 1:
                 model_kwargs["num_layers"] = num_layers
-        elif model_type in ("gawf_additive", "rnn_fb", "gru_fb", "lstm_fb"):
+        elif model_type in (
+            "gawf_additive",
+            "rnn_fb",
+            "gru_fb",
+            "lstm_fb",
+            "rnn_fb_add",
+            "gru_fb_add",
+            "lstm_fb_add",
+        ):
             if num_layers != 1:
                 raise ValueError(f"{model_type} supports only --num_layers 1")
             if args.nofb:
@@ -1422,6 +1436,9 @@ if __name__ == "__main__":
             "rnn_fb",
             "gru_fb",
             "lstm_fb",
+            "rnn_fb_add",
+            "gru_fb_add",
+            "lstm_fb_add",
             "mlstm",
             "hyperlstm",
             "brims",
@@ -1450,11 +1467,28 @@ if __name__ == "__main__":
                 metric_summary["layer_feedback_dims"] = [
                     int(dim) for dim in getattr(mdl, "layer_feedback_dims", [])
                 ]
-        elif model_type in ("gawf_additive", "rnn_fb", "gru_fb", "lstm_fb"):
+        elif model_type in (
+            "gawf_additive",
+            "rnn_fb",
+            "gru_fb",
+            "lstm_fb",
+            "rnn_fb_add",
+            "gru_fb_add",
+            "lstm_fb_add",
+        ):
             metric_summary["feedback_dim"] = int(mdl.feedback_dim)
             metric_summary["feedback_source"] = "detached_char_sector_logits"
             metric_summary["feedback_pathway"] = (
-                "additive_linear" if model_type == "gawf_additive" else "input_concatenation"
+                "additive_affine"
+                if model_type in ("rnn_fb_add", "gru_fb_add", "lstm_fb_add")
+                else "additive_linear"
+                if model_type == "gawf_additive"
+                else "input_concatenation"
+            )
+            metric_summary["feedback_bias"] = model_type in (
+                "rnn_fb_add",
+                "gru_fb_add",
+                "lstm_fb_add",
             )
             if model_type == "gawf_additive":
                 metric_summary["initial_recurrent_weight_scale"] = 0.5

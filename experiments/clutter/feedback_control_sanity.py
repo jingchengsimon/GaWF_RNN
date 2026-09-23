@@ -13,8 +13,11 @@ import torch.nn.functional as F
 
 from utils.training.clutter.clutter_task_models import (
     GaWFAdditiveConv,
+    GRUAdditiveFeedbackConv,
     GRUFeedbackConv,
+    LSTMAdditiveFeedbackConv,
     LSTMFeedbackConv,
+    RNNAdditiveFeedbackConv,
     RNNFeedbackConv,
 )
 from utils.training.clutter.clutter_train_acceleration import run_forward_with_feedback
@@ -27,6 +30,14 @@ MODEL_SPECS: tuple[tuple[str, Type[torch.nn.Module], int, float, float, int], ..
     ("lstm_fb", LSTMFeedbackConv, 79, 0.001, 0.001, 585_406),
 )
 
+ADDITIVE_MODEL_SPECS: tuple[
+    tuple[str, Type[torch.nn.Module], int, float, float, int], ...
+] = (
+    ("rnn_fb_add", RNNAdditiveFeedbackConv, 272, 0.001, 0.00001, 586_595),
+    ("gru_fb_add", GRUAdditiveFeedbackConv, 103, 0.005, 0.001, 584_665),
+    ("lstm_fb_add", LSTMAdditiveFeedbackConv, 79, 0.001, 0.001, 585_564),
+)
+
 
 def parse_args() -> argparse.Namespace:
     """Parse the bounded synthetic optimization check."""
@@ -35,6 +46,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--steps", type=int, default=200)
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--model-set", choices=("legacy", "additive"), default="legacy")
     return parser.parse_args()
 
 
@@ -54,7 +66,8 @@ def run_sanity(args: argparse.Namespace) -> list[dict[str, object]]:
     sector_targets = torch.randint(0, 9, (4, 4), device=device)
     reports: list[dict[str, object]] = []
 
-    for name, model_class, width, lr, weight_decay, expected_count in MODEL_SPECS:
+    model_specs = ADDITIVE_MODEL_SPECS if args.model_set == "additive" else MODEL_SPECS
+    for name, model_class, width, lr, weight_decay, expected_count in model_specs:
         torch.manual_seed(args.seed)
         model = model_class(
             10,

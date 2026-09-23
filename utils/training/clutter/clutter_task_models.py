@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..recurrent_cores.additive_feedback import (
+    AdditiveFeedbackCellCore,
     AdditiveFeedbackRNNCore,
     ConcatenatedFeedbackCellCore,
 )
@@ -932,6 +933,58 @@ class GRUFeedbackConv(ConcatenatedFeedbackConv):
 
 class LSTMFeedbackConv(ConcatenatedFeedbackConv):
     """LSTM control with previous detached logits concatenated to each input."""
+
+    cell_type = "lstm"
+
+
+class AdditiveFeedbackConv(FeedbackControlConv):
+    """Native no-wrap recurrent cell with an independent additive feedback affine."""
+
+    cell_type = "rnn"
+
+    def __init__(
+        self,
+        num_classes: int,
+        num_pos: int,
+        kernel_size: int = 3,
+        device: str = "cuda",
+        input_channels: int = 2,
+        cnn_dropout: float = 0.0,
+        rnn_dropout: float = 0.5,
+        hidden_size: int = 256,
+        max_chars: int = 15,
+        predict_all_chars: bool = False,
+    ) -> None:
+        super().__init__(
+            num_classes,
+            num_pos,
+            hidden_size=hidden_size,
+            core_class=AdditiveFeedbackCellCore,
+            core_kwargs={"cell_type": self.cell_type},
+            kernel_size=kernel_size,
+            device=device,
+            input_channels=input_channels,
+            cnn_dropout=cnn_dropout,
+            rnn_dropout=rnn_dropout,
+            max_chars=max_chars,
+            predict_all_chars=predict_all_chars,
+        )
+
+
+class RNNAdditiveFeedbackConv(AdditiveFeedbackConv):
+    """No-wrap tanh RNN with an independent additive feedback affine."""
+
+    cell_type = "rnn"
+
+
+class GRUAdditiveFeedbackConv(AdditiveFeedbackConv):
+    """No-wrap GRU with an independent additive feedback affine."""
+
+    cell_type = "gru"
+
+
+class LSTMAdditiveFeedbackConv(AdditiveFeedbackConv):
+    """No-wrap LSTM with an independent additive feedback affine."""
 
     cell_type = "lstm"
 

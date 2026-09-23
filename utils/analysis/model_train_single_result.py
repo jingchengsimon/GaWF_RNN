@@ -366,6 +366,12 @@ def parse_hparams_from_filename(filename):
         hparams['model_type'] = 'HyperLSTM'
     elif filename.startswith('brims_'):
         hparams['model_type'] = 'BRIMs'
+    elif filename.startswith('rnn_fb_add_'):
+        hparams['model_type'] = 'RNNFBAdd'
+    elif filename.startswith('gru_fb_add_'):
+        hparams['model_type'] = 'GRUFBAdd'
+    elif filename.startswith('lstm_fb_add_'):
+        hparams['model_type'] = 'LSTMFBAdd'
     elif filename.startswith('rnn_fb_'):
         hparams['model_type'] = 'RNNFB'
     elif filename.startswith('lstm_fb_'):

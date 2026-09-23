@@ -21,7 +21,15 @@ from utils.training.clutter.clutter_train_acceleration import run_forward_with_f
 
 
 ORIGINAL_MODELS = ("gawf", "rnn", "lstm", "gru", "mamba", "s5")
-FEEDBACK_CONTROL_MODELS = ("gawf_additive", "rnn_fb", "gru_fb", "lstm_fb")
+FEEDBACK_CONTROL_MODELS = (
+    "gawf_additive",
+    "rnn_fb",
+    "gru_fb",
+    "lstm_fb",
+    "rnn_fb_add",
+    "gru_fb_add",
+    "lstm_fb_add",
+)
 DYNAMIC_WEIGHT_MODELS = ("mlstm", "hyperlstm", "brims")
 NONLINEARITY_ABLATION_MODELS = (
     "gawf_nowrap",

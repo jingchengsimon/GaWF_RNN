@@ -87,6 +87,19 @@ The parameter-matching target is the complete GaWF `H=256` Clutter model with 58
 parameters. All controls use the same detached previous-step 19-D raw-logit feedback and the
 same model-family hyperparameters as the corresponding formal baseline; there is no tuning.
 
+The corrected seeds 1--5 additive-feedback campaign uses native no-wrap recurrent semantics and
+an independent feedback affine with its own trainable bias:
+
+| Model | Width | Full trainable parameters | LR | Weight decay |
+|---|---:|---:|---:|---:|
+| `rnn_fb_add` | 272 | 586,595 | 0.001 | 0.00001 |
+| `gru_fb_add` | 103 | 584,665 | 0.005 | 0.001 |
+| `lstm_fb_add` | 79 | 585,564 | 0.001 | 0.001 |
+
+For each model, `W_fb f_(t-1) + b_fb` is added to the native cell preactivation. The feedback
+parameters share the cell optimizer settings and initialization bound. This campaign reuses the
+family LR/weight decay without additional tuning.
+
 On SJC, `experiments/remote/run_sjc_clutter_feedback_controls.sh` runs a mandatory seed-1,
 200-step sanity gate and then distributes four models times ten seeds across GPUs 0 and 1. Each
 unit trains for 150 epochs with `patience=0`, evaluates reset-excluded test accuracy, and runs the
