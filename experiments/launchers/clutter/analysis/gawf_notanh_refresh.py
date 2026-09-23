@@ -8,10 +8,8 @@ markers exist.  Outputs are isolated below caller-supplied data and figure roots
 from __future__ import annotations
 
 import argparse
-import csv
 import hashlib
 import json
-import math
 import os
 import shutil
 import subprocess
@@ -120,37 +118,7 @@ def _collect_steps(
     compact = (
         root / "fig7" / f"seed{tag}" / "compact" / "recurrent_gate_condition_means.npz"
     )
-    behavior = root / "behavior" / f"{MODEL}-seed{tag}"
     steps = [
-        Step(
-            "reset-excluded test accuracy",
-            _module(
-                config,
-                "utils.analysis.clutter.fig1_reset_excluded_test_accuracy",
-                "collect",
-                "--ckpt",
-                checkpoint,
-                "--model",
-                MODEL,
-                "--seed",
-                seed,
-                "--output_dir",
-                behavior,
-                "--data_dir",
-                config.data_dir,
-                "--data_suffix",
-                "40h-uint8",
-                "--sequence_length",
-                32,
-                "--batch_size",
-                256,
-                "--num_workers",
-                2,
-                "--device",
-                config.device,
-            ),
-            behavior / "reset_excluded_test_accuracy.json",
-        ),
         Step(
             "Figure 3 gate trajectory and distributions",
             _module(
@@ -328,23 +296,7 @@ def _aggregate_steps(config: Config) -> list[Step]:
         root / "fig6_gate" / f"seed{seed:02d}" / "sector_gate_mean_sequential_equal_n.npz"
         for seed in SEEDS
     ]
-    behavior_csv = final / "behavior" / "reset_excluded_test_accuracy_10seed_notanh.csv"
     steps = [
-        Step(
-            "Aggregate reset-excluded behavior data",
-            _module(
-                config,
-                "utils.analysis.clutter.fig1_reset_excluded_test_accuracy",
-                "aggregate",
-                "--data_root",
-                root / "behavior",
-                "--models",
-                MODEL,
-                "--output_csv",
-                behavior_csv,
-            ),
-            behavior_csv,
-        ),
         Step(
             "Render Figure 3 distributions",
             _module(
@@ -678,29 +630,12 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _behavior_summary(path: Path) -> str:
-    """Return GaWF no-tanh test accuracy as seed-level mean and SEM."""
-
-    with path.open(newline="", encoding="utf-8") as handle:
-        rows = list(csv.DictReader(handle))
-    if len(rows) != 10:
-        raise RuntimeError(f"Expected ten behavior rows, found {len(rows)}")
-    pieces = []
-    for key, label in (("char_acc", "Digit"), ("sector_acc", "Sector")):
-        values = [float(row[key]) for row in rows]
-        mean = sum(values) / len(values)
-        sem = math.sqrt(sum((value - mean) ** 2 for value in values) / 9) / math.sqrt(10)
-        pieces.append(f"- {label}: {mean:.4f}% ± {sem:.4f}% seed-level SEM")
-    return "\n".join(pieces)
-
-
 def _write_record(config: Config) -> None:
     """Write a non-overwriting notanh delta record from the regenerated structured outputs."""
 
     if config.record_output.exists():
         raise FileExistsError(config.record_output)
     final = config.output_root / "final"
-    behavior = final / "behavior" / "reset_excluded_test_accuracy_10seed_notanh.csv"
     sources = (
         final / "fig3" / "fig3_gate_half_mass_notanh.json",
         final
@@ -711,14 +646,14 @@ def _write_record(config: Config) -> None:
         final / "current_records" / "Supple4_recurrent_current_unit_caption_stats.json",
         final / "current_records" / "Fig8_recurrent_current_connection_caption_stats.json",
     )
-    for path in (behavior, *sources):
+    for path in sources:
         if not path.is_file():
             raise FileNotFoundError(path)
     figure_paths = sorted(config.figure_root.glob("*.pdf"))
     if not figure_paths:
         raise RuntimeError(f"No notanh figures found in {config.figure_root}")
     source_rows = "\n".join(
-        f"| `{path}` | `{_sha256(path)}` |" for path in (behavior, *sources)
+        f"| `{path}` | `{_sha256(path)}` |" for path in sources
     )
     figure_rows = "\n".join(f"- `{path}`" for path in figure_paths)
     deferred_rows = "\n".join(f"- {item}" for item in DEFERRED)
@@ -737,12 +672,6 @@ dataset、sampling、reset exclusion 与 seed-level aggregation 口径沿用原�
 `tanh(preactivation)` 替换为 identity。训练协议要求 `actual_epochs=150`、
 `core_rnn_activation=identity`、`core_output_wrap=ln_relu_dropout`、
 `gawf_core_semantics=legacy`。
-
-## Reset-excluded test accuracy
-
-{_behavior_summary(behavior)}
-
-结构化十 seed 表：`{behavior}`。
 
     ## 结构化事实源
 
