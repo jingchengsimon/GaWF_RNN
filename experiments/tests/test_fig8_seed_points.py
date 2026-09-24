@@ -45,4 +45,6 @@ def test_fig8_points_and_records_are_seed_averages() -> None:
             np.sort(expected[:, group_idx, sign_idx]),
         )
         assert "condition_means" not in record
+    _handles, labels = axis.get_legend_handles_labels()
+    assert labels == ["W > 0", "W < 0", "All"]
     plt.close(figure)

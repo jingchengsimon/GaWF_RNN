@@ -16,6 +16,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.colors import TwoSlopeNorm  # noqa: E402
+from matplotlib.ticker import FuncFormatter  # noqa: E402
 import numpy as np  # noqa: E402
 
 from utils.analysis.anal_paths import output_dir
@@ -42,6 +43,12 @@ NUM_SECTORS = 9
 SOURCE_GROUPS = ("sector0_sources", "other_sources")
 
 
+def _compact_tick(value: float, _position: int | None = None) -> str:
+    """Format zero without a decimal while keeping other ticks compact."""
+
+    return "0" if np.isclose(value, 0.0) else f"{value:g}"
+
+
 def parse_args() -> argparse.Namespace:
     """Parse retained-summary paths and the one publication PDF destination."""
 
@@ -50,6 +57,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gate_root", type=Path, default=GATE_ROOT)
     parser.add_argument("--supple2_root", type=Path, default=SUPPLE2_ROOT)
     parser.add_argument("--figure", type=Path, default=SAVE_FIGURE)
+    parser.add_argument(
+        "--output_data_dir",
+        type=Path,
+        default=None,
+        help="Optional non-default structured-data directory for a parallel result version.",
+    )
+    parser.add_argument(
+        "--output_figure_dir",
+        type=Path,
+        default=None,
+        help="Optional non-default development-figure directory.",
+    )
     return parser.parse_args()
 
 
@@ -169,6 +188,7 @@ def _draw_map_grid(
     vmin: float | None = None,
     vmax: float | None = None,
     colorbar_label: str | None = None,
+    colorbar_ticks: tuple[float, ...] | None = None,
     block_title: str,
 ) -> None:
     """Draw one Fig6-style 3-by-3 spatial map block with its own colorbar."""
@@ -196,9 +216,14 @@ def _draw_map_grid(
         axis.set_xticks([])
         axis.set_yticks([])
     assert image is not None
-    colorbar = figure.colorbar(image, cax=figure.add_subplot(inner[:, 3]))
+    colorbar = figure.colorbar(
+        image,
+        cax=figure.add_subplot(inner[:, 3]),
+        ticks=colorbar_ticks,
+    )
     if colorbar_label is not None:
         colorbar.set_label(colorbar_label, fontsize=7, labelpad=2)
+    colorbar.ax.yaxis.set_major_formatter(FuncFormatter(_compact_tick))
     colorbar.ax.tick_params(labelsize=6, length=2, pad=1)
     position = grid.get_position(figure)
     figure.text(
@@ -249,6 +274,8 @@ def _draw_curves(
     axis.set_ylabel(y_label, fontsize=7, labelpad=0)
     axis.tick_params(labelsize=6, length=2)
     axis.tick_params(axis="x", labelbottom=show_xaxis)
+    axis.xaxis.set_major_formatter(FuncFormatter(_compact_tick))
+    axis.yaxis.set_major_formatter(FuncFormatter(_compact_tick))
     axis.spines[["top", "right"]].set_visible(False)
 
 
@@ -292,6 +319,7 @@ def render(
             gate_delta_maps,
             cmap="RdBu_r",
             norm=TwoSlopeNorm(vmin=-limit, vcenter=0.0, vmax=limit),
+            colorbar_ticks=(-0.2, 0.0, 0.2),
             block_title=r"$\Delta g^{\mathrm{in}}$",
         )
         curve_grid = figure.add_gridspec(
@@ -368,8 +396,12 @@ def main() -> None:
     other_positive, other_negative = _source_curves(source_arrays, "other_sources")
     matching_baseline = _zero_weight_baseline(matching_positive, matching_negative)
     other_baseline = _zero_weight_baseline(other_positive, other_negative)
-    data_dir = output_dir("B_gate_by_context", SCRIPT_NAME, "data")
-    figure_dir = output_dir("B_gate_by_context", SCRIPT_NAME, "figs")
+    data_dir = args.output_data_dir or output_dir("B_gate_by_context", SCRIPT_NAME, "data")
+    figure_dir = args.output_figure_dir or output_dir(
+        "B_gate_by_context", SCRIPT_NAME, "figs"
+    )
+    data_dir.mkdir(parents=True, exist_ok=True)
+    figure_dir.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         data_dir / "fig6_overall_sector_input_gate_1x3_10seed.npz",
         encoder_spatial_maps=encoder_maps.astype(np.float32),

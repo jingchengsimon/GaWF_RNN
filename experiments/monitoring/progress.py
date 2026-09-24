@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import re
 import shlex
 import subprocess
 from collections import defaultdict
@@ -23,6 +24,9 @@ from experiments.monitoring.job_registry import (
 )
 
 
+_PROBE_JSON_MARKER = "__AIM3_PROGRESS_JSON__="
+
+
 def _ssh_alias_map(values: Iterable[str]) -> dict[str, str]:
     aliases: dict[str, str] = {}
     for value in values:
@@ -31,6 +35,53 @@ def _ssh_alias_map(values: Iterable[str]) -> dict[str, str]:
         host, alias = value.split("=", 1)
         aliases[host.strip()] = alias.strip()
     return aliases
+
+
+def _local_ssh_commands(path: Path | None = None) -> dict[str, list[str]]:
+    """Read explicit full SSH commands from the ignored ``.agents/local.md`` file.
+
+    A full command is an intentional direct endpoint, not a fallback after a failed control-socket
+    check. Human-readable labels are normalized so ``DSW 5000`` maps to logical host
+    ``dsw-5000``. Alias-only entries continue to require an existing ControlMaster socket.
+    """
+
+    config_path = path or Path(__file__).resolve().parents[2] / ".agents" / "local.md"
+    try:
+        lines = config_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    commands: dict[str, list[str]] = {}
+    for line in lines:
+        match = re.fullmatch(r"\s*-\s+([^:]+):\s+`([^`]+)`\s*", line)
+        if not match:
+            continue
+        label, value = match.groups()
+        argv = shlex.split(value)
+        if not argv or argv[0] != "ssh":
+            continue
+        if len(argv) < 2 or any(token in {";", "&&", "||", "|"} for token in argv):
+            raise RegistryError(f"Unsafe SSH command in {config_path}: {value!r}")
+        host = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
+        commands[host] = [
+            str(Path(token).expanduser()) if token.startswith("~/") else token for token in argv
+        ]
+    return commands
+
+
+def _direct_ssh_command(base: list[str], remote_command: str) -> list[str]:
+    """Append one remote command to a validated full SSH endpoint command."""
+
+    if not base or base[0] != "ssh" or len(base) < 2 or base[-1].startswith("-"):
+        raise RegistryError(f"Invalid direct SSH command: {base!r}")
+    return [
+        *base[:-1],
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=15",
+        base[-1],
+        remote_command,
+    ]
 
 
 def select_job(experiment_id: str, *, base_dir: Path | None = None) -> dict[str, Any]:
@@ -49,7 +100,9 @@ def _probe_source(manifests: list[dict[str, Any]]) -> str:
     trailer = f"""
 import base64 as _base64
 _manifests = json.loads(_base64.b64decode({encoded!r}).decode('utf-8'))
-print(json.dumps([collect(item) for item in _manifests], ensure_ascii=False, allow_nan=False))
+print({_PROBE_JSON_MARKER!r} + json.dumps(
+    [collect(item) for item in _manifests], ensure_ascii=False, allow_nan=False
+))
 """
     return module_source + trailer
 
@@ -58,11 +111,13 @@ def collect_remote_jobs(
     jobs: list[dict[str, Any]],
     *,
     alias_overrides: dict[str, str] | None = None,
+    direct_commands: dict[str, list[str]] | None = None,
     timeout: int = 120,
 ) -> list[dict[str, Any]]:
     """Probe jobs with one SSH session per host/environment/Conda-initialization tuple."""
 
     alias_overrides = alias_overrides or {}
+    direct_commands = direct_commands or {}
     groups: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for job in jobs:
         environment = job["environment"]
@@ -71,48 +126,52 @@ def collect_remote_jobs(
     reports: list[dict[str, Any]] = []
     for (host, environment_name, conda_init), group in groups.items():
         alias = alias_overrides.get(host, host)
-        try:
-            socket_check = subprocess.run(
-                ["ssh", "-O", "check", alias],
-                text=True,
-                capture_output=True,
-                timeout=min(timeout, 15),
-                check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            reports.extend(
-                {
-                    "id": job["id"],
-                    "host": host,
-                    "probe_error": f"SSH socket check failed: {exc}",
-                }
-                for job in group
-            )
-            continue
-        if socket_check.returncode != 0:
-            error = socket_check.stderr.strip() or socket_check.stdout.strip()
-            if not error:
-                error = f"ssh -O check {alias} failed with exit code {socket_check.returncode}."
-            reports.extend(
-                {
-                    "id": job["id"],
-                    "host": host,
-                    "probe_error": f"SSH socket unavailable: {error}",
-                }
-                for job in group
-            )
-            continue
+        direct = direct_commands.get(host) if host not in alias_overrides else None
+        if direct is None:
+            try:
+                socket_check = subprocess.run(
+                    ["ssh", "-O", "check", alias],
+                    text=True,
+                    capture_output=True,
+                    timeout=min(timeout, 15),
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                reports.extend(
+                    {
+                        "id": job["id"],
+                        "host": host,
+                        "probe_error": f"SSH socket check failed: {exc}",
+                    }
+                    for job in group
+                )
+                continue
+            if socket_check.returncode != 0:
+                error = socket_check.stderr.strip() or socket_check.stdout.strip()
+                if not error:
+                    error = (
+                        f"ssh -O check {alias} failed with exit code "
+                        f"{socket_check.returncode}."
+                    )
+                reports.extend(
+                    {
+                        "id": job["id"],
+                        "host": host,
+                        "probe_error": f"SSH socket unavailable: {error}",
+                    }
+                    for job in group
+                )
+                continue
         activation = (
             f"source {shlex.quote(conda_init)} && "
             f"conda activate {shlex.quote(environment_name)} && python -"
         )
-        command = [
-            "ssh",
-            "-o",
-            "ConnectTimeout=15",
-            alias,
-            f"bash -lc {shlex.quote(activation)}",
-        ]
+        remote_command = f"bash -lc {shlex.quote(activation)}"
+        command = (
+            _direct_ssh_command(direct, remote_command)
+            if direct is not None
+            else ["ssh", "-o", "ConnectTimeout=15", alias, remote_command]
+        )
         try:
             completed = subprocess.run(
                 command,
@@ -138,8 +197,9 @@ def collect_remote_jobs(
                 {"id": job["id"], "host": host, "probe_error": error} for job in group
             )
             continue
+        payload = completed.stdout.rsplit(_PROBE_JSON_MARKER, 1)[-1].strip()
         try:
-            values = json.loads(completed.stdout)
+            values = json.loads(payload)
         except json.JSONDecodeError:
             output = completed.stdout[-1000:] or "<empty stdout>"
             error = f"Remote probe returned invalid JSON: {output}"
@@ -274,6 +334,7 @@ def main() -> None:
         reports = collect_remote_jobs(
             jobs,
             alias_overrides=_ssh_alias_map(args.ssh_alias),
+            direct_commands=_local_ssh_commands(),
             timeout=args.timeout,
         )
         jobs_by_id = {job["id"]: job for job in jobs}

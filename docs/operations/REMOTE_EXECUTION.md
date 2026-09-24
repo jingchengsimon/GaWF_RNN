@@ -38,7 +38,10 @@ and training must use the same resolved root.
 ## SSH diagnostics
 
 - Prefer the SSH aliases recorded in `.agents/local.md`; do not embed usernames or addresses in
-  tracked documentation.
+  tracked documentation. A DSW endpoint without a stable alias may instead use an explicit full
+  SSH command in that ignored file, labeled to match its logical host (for example `DSW 5000` for
+  `dsw-5000`). The monitoring checker treats this as an intentional direct foreground endpoint,
+  never as an automatic fallback after a failed alias/socket check.
 - Configure `sjc-remote` and `amarel` in `~/.ssh/config` with a shared `ControlPath`,
   `ControlMaster auto`, and `ControlPersist`. Before a remote status query, run
   `ssh -O check <alias>`; a successful check confirms that the query can reuse the existing
@@ -252,6 +255,22 @@ which is exactly what happened to `61717444` (`git: command not found`) and `617
 - Prefer a stable tmux session/run ID and keep the result suffix unique.
 - Fetch only results created for the run when possible; avoid copying the entire result history.
 - Report the process/session ID, result root, and status/fetch command after launch.
+
+## Coordinated DSW checkpoint pause
+
+Cross-node Clutter pauses use
+`experiments/launchers/clutter/dsw/pause_campaigns.py` with an ignored endpoint config. Its
+default mode is a read-only two-host plan. Mutation requires an explicit human pause request,
+`--execute`, and the exact confirmation token documented beside the launcher.
+
+The launcher first validates both campaigns and rejects duplicate root writers. It then holds
+coordinator shells with `SIGSTOP` so no queued seed can start, waits for every active writer to
+reach its nearest five-epoch atomic checkpoint, sends `SIGINT` to the root trainer, verifies that
+the trainer exited and the checkpoint remains present, and writes a pause receipt. Prior status
+markers are renamed with a `prepause` suffix rather than deleted. A cross-host pause is coordinated
+but not transactionally atomic; any partial failure must be reported before resume or
+redistribution. Do not use `SIGSTOP` on trainers as a durable pause because it neither saves state
+nor releases GPU memory.
 
 ## Result and script safety
 

@@ -3,7 +3,7 @@
   "id": "clutter-cm-mnist-rnn-inloop-notanh-ep150-seeds1-10",
   "description": "GaWF-aligned RNN behavioral control: identity inner activation and the LayerNorm/ReLU/dropout output fed back as the next recurrent state, ten seeds.",
   "host": "dsw-8095",
-  "status": "running",
+  "status": "completed",
   "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
   "source_commit": "988ee1b0f2727189479a56e494556651b589e1ca",
   "environment": {
@@ -15,7 +15,17 @@
     "job_ids": [],
     "run_ids": [
       "rnn_inloop_notanh_dsw8095_v1",
-      "formal-coordinator-pid-1396959"
+      "formal-coordinator-pid-1396959",
+      "extra-seed05-pid-1503181",
+      "extra-seed06-pid-1503182",
+      "extra-seed07-pid-1503186",
+      "extra-seed08-pid-1503190",
+      "extra-seed09-pid-1492455",
+      "extra-seed10-pid-1492456",
+      "recovery-seed03-pid-1536756",
+      "recovery-seed04-pid-1536757",
+      "reset-excluded-eval-seed03-pid-1672700",
+      "reset-excluded-eval-seed04-pid-1672702"
     ],
     "tmux_session": null,
     "process_patterns": [
@@ -25,8 +35,8 @@
     "dependency_strategy": {
       "type": "smoke_then_array",
       "smoke": "DSW GPU3 seed1, two epochs, passed",
-      "formal": "two serial lanes on GPUs4-5",
-      "task_map": "GPU4 runs seeds 1,3,5,7,9; GPU5 runs seeds 2,4,6,8,10",
+      "formal": "two original serial lanes on GPUs4-5 plus six accelerated units on GPUs0-3 and GPUs6-7",
+      "task_map": "GPU4 retains seeds 1,3,5,7,9; GPU5 retains seeds 2,4,6,8,10; GPUs0-3 independently run seeds5-8, GPU6 independently runs seed9, and GPU7 independently runs seed10. The original lanes use the runner's completed-output guard and will skip seeds5-10 training once their valid final artifacts exist.",
       "amarel_handoff": "61760273 and 61760274 cancelled after DSW formal seeds1-2 entered epoch 1"
     }
   },
@@ -67,8 +77,16 @@
     "Submission gate passed locally: bash -n, launcher --dry-run, pytest experiments/tests/test_amarel_submit_safety.py and experiments/tests/test_clutter_nonlinearity_variants.py (24 passed).",
     "DSW 8095 preflight matched source stamp 988ee1b, all six 40h data-file byte sizes, the cloned torch 2.4.1+cu121 environment, model import, absent result targets, and initially idle GPUs3-5. The node-local /mnt/workspace filesystem had about 58.8 GB free before launch.",
     "GPU3 acquired a new external approximately 11.1 GB process after the smoke ended, so formal uses only GPUs4-5. Each formal writer used about 39.0 GB at epoch-1 startup; no occupied external GPU was used or stopped.",
-    "After formal seeds1-2 entered epoch 1 on DSW, pending Amarel smoke 61760273 and dependent array 61760274 were cancelled. The separate no-wrap array 61753234 remained 30/30 pending."
+    "After formal seeds1-2 entered epoch 1 on DSW, pending Amarel smoke 61760273 and dependent array 61760274 were cancelled. The separate no-wrap array 61753234 remained 30/30 pending.",
+    "2026-09-22 19:28 EDT acceleration: GPUs6-7 were rechecked with zero compute processes, then seed9 (PID 1492455) and seed10 (PID 1492456) were launched there. Both entered formal running state and used about 39.0 GB each. No active or partial seed9/10 result existed. The original GPU4/5 queues were left intact; their shared runner validates complete final outputs and therefore skips duplicate training when it eventually reaches seeds9/10.",
+    "2026-09-22 20:00 EDT acceleration: GPUs0-3 were rechecked with zero compute processes and 2 MiB used each, then seeds5-8 were launched there with runner PIDs 1503181, 1503182, 1503186, and 1503190. All four Python writers entered epoch 1 and stabilized at about 39.0 GB per GPU with no immediate error. Seeds5-8 had no prior writer, status marker, or result leaf. The original GPU4/5 queues remain responsible for seeds3-4 next and will skip seeds5-8 after validating their completed outputs.",
+    "2026-09-22 coordinated-pause control: experiments/launchers/clutter/dsw/pause_campaigns.py now includes this campaign in a two-host checkpoint-aligned pause plan. Read-only plan validation found one root writer per active seed, no duplicate writers, and correctly classified seeds3-4 as queued. The trigger is inert without --execute plus the exact human confirmation token.",
+    "2026-09-23 01:12 EDT recovery: seeds1-2 had complete model/metrics/history but their post-training reset-excluded evaluation failed because the cloned environment lacked matplotlib. Installed matplotlib 3.10.9 under the documented Linux constraint, then called the existing collect() function directly because the CLI choices did not yet include rnn_inloop_notanh. Both JSON outputs were validated for model, seed, finite accuracies, and positive frame count; prior fail/running markers were preserved under a recovered_* status directory and replaced by done markers.",
+    "2026-09-23 01:12 EDT recovery: seeds3-4 launched on GPUs4-5 as PIDs 1536756 and 1536757. Both entered Epoch 1/150 and stabilized at approximately 39,012 MiB per GPU.",
+    "2026-09-23 01:41 EDT recovery: seeds9-10 had complete model/metrics/history but the old snapshot still rejected the rnn_inloop_notanh CLI key. Reused the same collect() numerical path directly on idle GPUs6-7; both reset-excluded JSON outputs passed model, seed, finite-accuracy, and positive-frame-count checks. The old fail/running markers were retained under recovered_20260923T134106+0800 and replaced by done markers.",
+    "2026-09-23 02:00 EDT recovery: seeds5-8 completed training, then their reset-excluded evaluations were recovered in place on GPUs0-3 with the same direct collect() path. All four JSON outputs passed identity and finite-value checks; prior markers were retained under recovered_20260923T140011+0800 before done markers were written.",
+    "2026-09-23 11:45 EDT completion: seeds3-4 reset-excluded evaluations ran on idle GPUs6-7 through the same collect() numerical path used for the earlier recoveries. All ten JSON outputs now match model=rnn_inloop_notanh and their registered seed, contain finite metrics, and report n_frames=55769. The old task_2/task_3 fail and running markers were preserved under recovered_eval_seed03_04_20260923T2345+0800; the canonical status directory now has 10 done and 0 fail markers."
   ],
   "created_at": "2026-09-22T18:23:22+00:00",
-  "updated_at": "2026-09-22T21:14:03+00:00"
+  "updated_at": "2026-09-23T15:45:00+00:00"
 }

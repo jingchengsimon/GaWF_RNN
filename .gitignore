@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
+utils/training/recurrent_cores.zip
 
 /results/*
 !/results/anal_index/
@@ -13,6 +14,7 @@ __pycache__/
 !/results/anal_figs/README.md
 /source/clutter/stimuli/
 experiments/remote/config.sh
+experiments/launchers/**/*.local.json
 .agents/local.md
 .claude/settings.local.json
 mimo_pack.egg-info/

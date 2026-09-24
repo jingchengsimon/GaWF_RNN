@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "id": "clutter-jointbalanced-shuffle-resetexcluded-seq512-gawf-legacy-notanh-seeds1-10",
+  "description": "GaWF legacy no-tanh feedback-shuffle evaluation on the formal joint-switch-balanced test movie, ten seeds, 512-frame rollouts, reset frame excluded.",
+  "host": "dsw-5000",
+  "status": "completed",
+  "created_at": "2026-09-23T19:12:58-04:00",
+  "updated_at": "2026-09-23T19:15:11-04:00",
+  "completed_at": "2026-09-23T19:15:11-04:00",
+  "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
+  "environment": {
+    "name": "/mnt/workspace/sjc/envs/aim3_gawf_rnn_bbade07",
+    "conda_init": "/mnt/workspace/sjc/miniconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "none",
+    "job_ids": [],
+    "run_ids": [
+      "gawf_legacy_notanh_feedback_shuffle_seq512_10seed_v1"
+    ],
+    "tmux_session": null,
+    "process_patterns": [
+      "utils.analysis.clutter.fig2_feedback_ablation",
+      "gawf_legacy_notanh_feedback_shuffle_resetexcluded_seq512_10seed_v1"
+    ],
+    "collect_gpu": true,
+    "dependency_strategy": {
+      "type": "two_fixed_gpu_lanes",
+      "task_map": "odd seeds sequentially on GPU0; even seeds sequentially on GPU1",
+      "smoke": "not applicable to frozen-checkpoint analysis"
+    }
+  },
+  "paths": {
+    "log_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/gawf_legacy_notanh_feedback_shuffle_seq512_10seed_v1/logs/seed*.log",
+      "/mnt/workspace/sjc/gawf_notanh_shuffle512.stdout"
+    ],
+    "status_dir": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/gawf_legacy_notanh_feedback_shuffle_seq512_10seed_v1/status",
+    "result_paths": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/analysis/gawf_legacy_notanh_feedback_shuffle_resetexcluded_seq512_10seed_v1"
+    ],
+    "data_path": "/mnt/workspace/sjc/aim3_gawf_rnn_data/stimuli/stimulus_reg-test-40h-float32-jointswitch-balanced-10digit-unique"
+  },
+  "tracking": {
+    "expected_units": 10,
+    "auto_complete": true,
+    "result_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/analysis/gawf_legacy_notanh_feedback_shuffle_resetexcluded_seq512_10seed_v1/gawf_legacy_notanh-seed*/ablation_metrics.json"
+    ],
+    "defaults": {
+      "expected": {
+        "sequence_length": 512,
+        "batch_size": 16,
+        "K": 10,
+        "pre_K": 10,
+        "exclude_window_initial_frame": true
+      }
+    },
+    "units": []
+  },
+  "notes": [
+    "Conditions are baseline, shuffle_digit, shuffle_sector, and shuffle_all, exactly matching the completed formal GaWF shuffle protocol.",
+    "The frozen checkpoints are gawf_legacy_notanh seeds1-10 from clutter_ablate_legacy_notanh_40h_ep150_dsw5000_v1.",
+    "The formal dataset was copied from Amarel only after source size and SHA256 were recorded, then verified on DSW5000: NPY ba1f1f61047013df7051fdd33bfd7c04ef46debb2586c280a7ef639b9b38b1e0; TSV 32d0d4d7d07b4daadef8bad4b2d3ba9d6002a0e0befa03475f7e2877b0ac3669.",
+    "The first attempt failed before model inference because DSW5000 lacked the formal NPY. Failed logs and markers were preserved under the run-root recovery directory. The second attempt only encountered the resulting empty seed01/02 directories; those empty leaves and stdout were moved into a separate recovery directory before the successful launch.",
+    "Completion gate passed at 2026-09-23 19:15:11 EDT: 10 done, 0 running, 0 failed, 10 ablation_metrics.json, no writer; every JSON matched sequence_length=512, batch_size=16, K=pre_K=10, exclude_window_initial_frame=true, and the four requested conditions.",
+    "Visualization is intentionally deferred until the remaining no-wrap training results are available, as requested."
+  ]
+}

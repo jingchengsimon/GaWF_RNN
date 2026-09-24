@@ -501,3 +501,18 @@
 - **队列修订（Queue）：** 取消待运行的 `gawf_rnncore` seeds 1–10、RNN-aligned
   `gawf_notanh` seeds 6–10，以及 out-of-loop `rnn_notanh` seeds 6–10；保留 original GaWF 的
   `gawf_legacy_notanh` seeds 1–10 和其他 baseline 的 no-wrap 扩展。
+
+## 2026-09-23 — GaWF/RNN no-tanh 训练曲线完成为 10 seeds × 150 epochs
+
+- **完成状态（Completion）：** `gawf_legacy_notanh` 与 `rnn_inloop_notanh` 均完成十个 seeds、
+  每个 150 epochs，并各有匹配的 final model、metrics 与 history。RNN seeds 3–4 的
+  reset-excluded eval 已补齐；现十个 seeds 均为 `model=rnn_inloop_notanh`、seed identity 匹配、
+  finite metrics，且每 seed 使用 55,769 个 non-reset frames。
+- **结构化输出（Structured output）：** 完整四条件曲线（original GaWF、GaWF no-tanh、旧 RNN、
+  RNN in-loop no-tanh）使用每条件十个 seeds，写入
+  `results/data/analysis/G_behaviour/partial_nonlinearity_training_curves_20260922/` 中带
+  `_complete_20260923` 后缀的独立文件；保留原 partial snapshot，不覆盖其数据或图。
+- **描述性结果（Descriptive result）：** 在 epoch 150，GaWF no-tanh 相对 original GaWF 的
+  validation Digit / Sector 配对差为 −0.056±0.271 / +0.016±0.121 pt（mean±SEM，n=10）；
+  RNN in-loop no-tanh 相对旧 RNN 为 +3.126±0.260 / +0.246±0.104 pt。以上是沿用 legacy
+  lr/wd 的 validation-trajectory endpoint，不是独立调参后的 test-accuracy 因果结论。

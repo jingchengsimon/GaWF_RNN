@@ -18,6 +18,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
+from matplotlib.patches import Patch  # noqa: E402
 from matplotlib.ticker import FormatStrFormatter  # noqa: E402
 import numpy as np
 import torch
@@ -769,7 +770,7 @@ def _plot_fig8_bars(
     labels = {
         "excitatory": "W > 0",
         "inhibitory": "W < 0",
-        "total": "Balanced",
+        "total": "All",
     }
     for sign_idx, sign in enumerate(FULL_SIGNS):
         centers = x + (sign_idx - 1) * width
@@ -914,22 +915,48 @@ def plot_fig8(args: argparse.Namespace) -> tuple[Path, Path]:
         bar_limits = (-0.02, 0.08)
         bar_ticks: tuple[float, ...] | None = (-0.02, 0.0, 0.04, 0.08)
     else:
-        bar_limits = (-0.5, 2.3)
-        bar_ticks = (-0.5, 0.0, 1.0, 2.0)
+        reference_limits = (-0.5, 2.3)
+        seed_bar_values = np.concatenate(
+            [report["gate_component"].mean(axis=1).reshape(-1) for report in reports.values()]
+        )
+        data_limits = (float(seed_bar_values.min()), float(seed_bar_values.max()))
+        within_reference = (
+            data_limits[0] >= reference_limits[0]
+            and data_limits[1] <= reference_limits[1]
+        )
+        if within_reference:
+            bar_limits = reference_limits
+            bar_ticks = (-0.5, 0.0, 1.0, 2.0)
+        else:
+            lower = min(reference_limits[0], data_limits[0])
+            upper = max(reference_limits[1], data_limits[1])
+            padding = 0.08 * (upper - lower)
+            bar_limits = (lower - padding, upper + padding)
+            bar_ticks = None
     caption_report["shared_bar_y_limits"] = bar_limits
-    with plt.rc_context(
-        {
-            "font.size": 13,
-            "axes.labelsize": 15,
-            "axes.titlesize": 15,
-            "xtick.labelsize": 12,
-            "ytick.labelsize": 12,
-            "legend.fontsize": 11,
-            "pdf.fonttype": 42,
-            "ps.fonttype": 42,
-        }
-    ):
-        fig, axes = plt.subplots(1, 2, figsize=(10.5, 5.4), sharey=True)
+    standalone_rc = {
+        "font.size": 13,
+        "axes.labelsize": 15,
+        "axes.titlesize": 15,
+        "xtick.labelsize": 12,
+        "ytick.labelsize": 12,
+        "legend.fontsize": 11,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    }
+    reference_rc = {
+        "font.size": 7.2,
+        "axes.labelsize": 7.5,
+        "axes.titlesize": 8.2,
+        "xtick.labelsize": 6.7,
+        "ytick.labelsize": 6.7,
+        "legend.fontsize": 7.0,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    }
+    with plt.rc_context(standalone_rc if connection_normalized else reference_rc):
+        figure_size = (10.5, 5.4) if connection_normalized else (5.5, 2.35)
+        fig, axes = plt.subplots(1, 2, figsize=figure_size, sharey=True)
         for axis, (family, report) in zip(axes, reports.items()):
             seed_gate = report["gate_component"].mean(axis=1)[:, :, 2]
             gate_mean, gate_sem = _mean_sem(seed_gate)
@@ -945,8 +972,14 @@ def plot_fig8(args: argparse.Namespace) -> tuple[Path, Path]:
                 "%.2f" if connection_normalized else "%.1f",
                 show_legend=False,
             )
-            axis.set_title(family.capitalize())
+            axis.set_title(family.capitalize(), pad=1 if not connection_normalized else None)
             axis.set_xlabel("Group")
+            if not connection_normalized:
+                for text in list(axis.texts):
+                    if text.get_text() == "*":
+                        text.remove()
+                axis.tick_params(labelsize=6.7, length=2.5, width=0.7)
+                axis.yaxis.set_major_formatter(FormatStrFormatter("%.1f"))
             total_by_condition = report["gate_component"][:, :, :, 2].mean(axis=0)
             caption_report["families"][family] = {
                 "gate_total_mean_sem": {
@@ -971,11 +1004,57 @@ def plot_fig8(args: argparse.Namespace) -> tuple[Path, Path]:
                 "bar_summary": bar_records,
             }
         axes[1].set_ylabel("")
-        handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc="upper center", ncol=3, frameon=False)
-        fig.subplots_adjust(left=0.08, right=0.99, bottom=0.14, top=0.84, wspace=0.08)
+        if connection_normalized:
+            handles, labels = axes[0].get_legend_handles_labels()
+            fig.legend(handles, labels, loc="upper center", ncol=3, frameon=False)
+            fig.subplots_adjust(
+                left=0.08, right=0.99, bottom=0.14, top=0.84, wspace=0.08
+            )
+        else:
+            fig.legend(
+                handles=(
+                    Patch(
+                        facecolor=CURRENT_COLORS["excitatory"],
+                        edgecolor="none",
+                        label=r"$w^{\mathrm{rec}}_{+}$",
+                    ),
+                    Patch(
+                        facecolor=CURRENT_COLORS["inhibitory"],
+                        edgecolor="none",
+                        label=r"$w^{\mathrm{rec}}_{-}$",
+                    ),
+                    Patch(
+                        facecolor=CURRENT_COLORS["total"],
+                        edgecolor="none",
+                        label="All",
+                    ),
+                ),
+                loc="upper center",
+                bbox_to_anchor=(0.5, 0.995),
+                ncol=3,
+                frameon=False,
+                handlelength=1.0,
+                columnspacing=1.2,
+            )
+            fig.subplots_adjust(
+                left=0.105, right=0.995, bottom=0.20, top=0.82, wspace=0.12
+            )
+            for label, axis in zip("AB", axes):
+                position = axis.get_position()
+                fig.text(
+                    position.x0 - 0.025,
+                    position.y1 + 0.02,
+                    label,
+                    ha="right",
+                    va="bottom",
+                    fontsize=9,
+                    fontweight="bold",
+                )
         destination = args.figure_dir / f"{stem}.pdf"
-        fig.savefig(destination, bbox_inches="tight", pad_inches=0.04)
+        if connection_normalized:
+            fig.savefig(destination, bbox_inches="tight", pad_inches=0.04)
+        else:
+            fig.savefig(destination)
         plt.close(fig)
     (args.output_dir / f"{stem}_caption_stats.json").write_text(
         json.dumps(caption_report, indent=2) + "\n", encoding="utf-8"

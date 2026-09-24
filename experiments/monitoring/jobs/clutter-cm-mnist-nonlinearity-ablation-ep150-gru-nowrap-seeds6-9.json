@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-gru-nowrap-seeds6-9",
+  "description": "GRU no-ReLU-wrap behavioral controls for seeds 6-9, migrated from pending Amarel elements to DSW 5000.",
+  "host": "dsw-5000",
+  "status": "running",
+  "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
+  "source_commit": "988ee1b0f2727189479a56e494556651b589e1ca",
+  "environment": {
+    "name": "/mnt/workspace/sjc/envs/aim3_gawf_rnn_bbade07",
+    "conda_init": "/mnt/workspace/sjc/miniconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "none",
+    "job_ids": [],
+    "run_ids": [
+      "nowrap_migration_dsw5000_v1",
+      "task10-pid-1892810",
+      "task11-pid-1892813",
+      "task12-pid-1892816",
+      "task13-pid-1892819"
+    ],
+    "tmux_session": null,
+    "process_patterns": [
+      "clutter_ablate_outer_norm_40h_ep150_v1/gru_nowrap-seed06",
+      "clutter_ablate_outer_norm_40h_ep150_v1/gru_nowrap-seed07",
+      "clutter_ablate_outer_norm_40h_ep150_v1/gru_nowrap-seed08",
+      "clutter_ablate_outer_norm_40h_ep150_v1/gru_nowrap-seed09"
+    ],
+    "collect_gpu": true,
+    "dependency_strategy": {
+      "type": "direct_formal_launch",
+      "smoke": "waived by explicit human instruction; completed Amarel seeds 1-5 validate the identical protocol",
+      "task_map": "tasks 10-13 -> gru_nowrap seeds 6-9; tasks 10-11 on GPU2 and tasks 12-13 on GPU3",
+      "amarel_handoff": "61753234_10-13 cancelled only after all four DSW writers entered epoch 1"
+    }
+  },
+  "paths": {
+    "log_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_migration_dsw5000_v1/logs/task_*_seed6to10.out",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_migration_dsw5000_v1/logs/task_*_seed6to10.err"
+    ],
+    "status_dir": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_migration_dsw5000_v1/status",
+    "result_paths": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/gru_nowrap-seed0[6-9]",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/analysis/clutter_ablation_reset_excluded_test_10seed_v1/gru_nowrap-seed0[6-9]"
+    ],
+    "data_path": "/mnt/workspace/sjc/aim3_gawf_rnn_data/stimuli"
+  },
+  "tracking": {
+    "expected_units": 4,
+    "auto_complete": true,
+    "result_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/gru_nowrap-seed0[6-9]/*_metrics.json"
+    ],
+    "done_glob": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_migration_dsw5000_v1/status/task_1[0-3].done",
+    "fail_glob": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_migration_dsw5000_v1/status/task_1[0-3].fail",
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "Protocol: gru_nowrap h105, lr=0.005, wd=0.001, cnn dropout 0.0, recurrent dropout 0.5, AdamW, 40h-uint8, sequence length 32, 150 epochs, checkpoint every 5 epochs, automatic resume.",
+    "Each H20 runs two writers. At the epoch-1 handoff check, GPU2 and GPU3 each used 77,786 MiB of 97,871 MiB with no logged error.",
+    "The DSW source snapshot predates AIM3_SEED_OFFSET support. A run-root execution copy adds only seed-offset and output-leaf environment overrides; its SHA-256 is d7b23c9bbeab28ff9301693f968e5585a35ea597a8af7cecec17e87e0d2b2ee3. The wrapper SHA-256 is d3e6c87ff177b03362b7052c8e35639e571d2e44780614c555195cf6d60331ed.",
+    "An initial attempt exposed the old snapshot mismatch and started seeds 1-4. It was interrupted during epoch 1 before the migration gate, its evidence was retained, and no Amarel element was cancelled for that attempt.",
+    "The corrected writers were verified at Epoch 1/150 with result suffixes seed06 through seed09 before Amarel elements 61753234_10-13 were cancelled."
+  ],
+  "created_at": "2026-09-23T05:52:05+00:00",
+  "updated_at": "2026-09-23T05:52:05+00:00"
+}

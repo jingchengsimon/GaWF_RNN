@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-gawf-nowrap-seeds6-10",
+  "description": "Retained already-running RNN-aligned GaWF no-wrap seeds 6 and 8 on DSW 5000; unstarted seeds 7, 9, and 10 are excluded after correcting the requested legacy-core semantics.",
+  "host": "dsw-5000",
+  "status": "running",
+  "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
+  "source_commit": "988ee1b0f2727189479a56e494556651b589e1ca",
+  "environment": {
+    "name": "/mnt/workspace/sjc/envs/aim3_gawf_rnn_bbade07",
+    "conda_init": "/mnt/workspace/sjc/miniconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "none",
+    "job_ids": [],
+    "run_ids": [
+      "nowrap_migration_dsw5000_v1",
+      "fixed-gpu0-queue-pid-1899583",
+      "fixed-gpu1-queue-pid-1899584"
+    ],
+    "tmux_session": null,
+    "process_patterns": [
+      "run_fixed_gpu_nowrap_queue.sh",
+      "clutter_ablate_outer_norm_40h_ep150_v1/gawf_nowrap-seed"
+    ],
+    "collect_gpu": true,
+    "dependency_strategy": {
+      "type": "exact_pid_then_serial_fixed_gpu",
+      "gpu0": "task 0 (seed6) remains live; coordinator PID 1899583 is stopped so queued task 1 (seed7) cannot start",
+      "gpu1": "task 2 (seed8) remains live; coordinator PID 1899584 is stopped so queued tasks 3 and 4 (seeds9 and 10) cannot start",
+      "amarel_handoff": "none; the corresponding Amarel elements remain queued by explicit human instruction"
+    }
+  },
+  "paths": {
+    "log_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_migration_dsw5000_v1/lanes/gpu*/task_*.out",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_migration_dsw5000_v1/lanes/gpu*/task_*.err"
+    ],
+    "status_dir": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_migration_dsw5000_v1/lanes",
+    "result_paths": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/gawf_nowrap-seed*",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/analysis/clutter_ablation_reset_excluded_test_10seed_v1/gawf_nowrap-seed*"
+    ],
+    "data_path": "/mnt/workspace/sjc/aim3_gawf_rnn_data/stimuli"
+  },
+  "tracking": {
+    "expected_units": 2,
+    "auto_complete": true,
+    "result_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/gawf_nowrap-seed*/*_metrics.json"
+    ],
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "The queues bind tasks permanently to GPU0/GPU1 and wait on exact incumbent PID plus command token. They do not scan for arbitrary free GPUs.",
+    "Each lane executes its assigned tasks serially and stops on the first failure. No queue action cancels an Amarel job.",
+    "Execution copies add only seed-offset/output-leaf support to the frozen source snapshot. Queue SHA-256: 5ffc6de0eafdb445ca65c56e4c451ff582eb0d4f592a73e8dcd15c882edfebe7.",
+    "Code audit confirmed public gawf_nowrap selects GaWFCore (rnn_aligned): tanh(preactivation) is recurrent state and the outer LayerNorm/ReLU/dropout readout wrap is removed. It is not GaWFCoreLegacy with in-loop ReLU.",
+    "At 2026-09-23T16:50Z, only the two parent coordinators were stopped. Existing child writers for seeds6 and8 remained live; unstarted seeds7,9,10 were intentionally suppressed."
+  ],
+  "created_at": "2026-09-23T06:04:15+00:00",
+  "updated_at": "2026-09-23T16:53:45+00:00"
+}

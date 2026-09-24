@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-s5-nowrap-seeds7-10",
+  "description": "S5 no-ReLU-wrap behavioral controls for seeds 7-10 migrated from queued DSW 5000 tails to idle DSW 8095 GPUs.",
+  "host": "dsw-8095",
+  "status": "running",
+  "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
+  "source_commit": "988ee1b0f2727189479a56e494556651b589e1ca",
+  "environment": {
+    "name": "/mnt/workspace/sjc/envs/aim3_gawf_rnn_ssm_v1",
+    "conda_init": "/mnt/workspace/sjc/miniconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "none",
+    "job_ids": [],
+    "run_ids": [
+      "nowrap_s5_seed7to10_dsw8095_v1",
+      "gpu0-supervisor-pid-1723292",
+      "gpu1-supervisor-pid-1723293",
+      "gpu2-supervisor-pid-1723294",
+      "gpu3-supervisor-pid-1723295"
+    ],
+    "tmux_session": null,
+    "process_patterns": [
+      "clutter_ablate_outer_norm_40h_ep150_v1/s5_nowrap-seed07",
+      "clutter_ablate_outer_norm_40h_ep150_v1/s5_nowrap-seed08",
+      "clutter_ablate_outer_norm_40h_ep150_v1/s5_nowrap-seed09",
+      "clutter_ablate_outer_norm_40h_ep150_v1/s5_nowrap-seed10"
+    ],
+    "collect_gpu": true,
+    "dependency_strategy": {
+      "type": "direct_parallel_fixed_gpu",
+      "gpu0": "task 26 s5_nowrap seed7",
+      "gpu1": "task 27 s5_nowrap seed8",
+      "gpu2": "task 28 s5_nowrap seed9",
+      "gpu3": "task 29 s5_nowrap seed10",
+      "smoke": "waived by explicit human instruction; completed Amarel seeds1-5 validate the identical protocol",
+      "dsw5000_handoff": "source queue supervisors were stopped before launch; active Mamba writers remained alive",
+      "amarel_handoff": "none; corresponding Amarel elements remain queued by explicit human instruction"
+    }
+  },
+  "paths": {
+    "log_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_s5_seed7to10_dsw8095_v1/lanes/gpu*/task_*.out",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_s5_seed7to10_dsw8095_v1/lanes/gpu*/task_*.err",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_s5_seed7to10_dsw8095_v1/supervisors/gpu*.err"
+    ],
+    "status_dir": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_s5_seed7to10_dsw8095_v1/lanes",
+    "result_paths": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results_dsw8095/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/s5_nowrap-seed0[7-9]",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results_dsw8095/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/s5_nowrap-seed10",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results_dsw8095/data/analysis/clutter_ablation_reset_excluded_test_10seed_v1/s5_nowrap-seed0[7-9]",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results_dsw8095/data/analysis/clutter_ablation_reset_excluded_test_10seed_v1/s5_nowrap-seed10"
+    ],
+    "data_path": "/mnt/workspace/sjc/aim3_gawf_rnn_data/stimuli"
+  },
+  "tracking": {
+    "expected_units": 4,
+    "auto_complete": true,
+    "result_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results_dsw8095/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/s5_nowrap-seed0[7-9]/*_metrics.json",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results_dsw8095/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/s5_nowrap-seed10/*_metrics.json"
+    ],
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "Protocol: s5_nowrap d_model256 state128 lr=0.001 wd=0.0, AdamW, CNN dropout0.0, recurrent dropout0.5, 40h-uint8, sequence length32, 150 epochs, checkpoint every5 epochs, and automatic resume.",
+    "The prepared environment provides torch2.4.1+cu121 and imported mamba_ssm and s5 successfully before launch.",
+    "All four writers reached Epoch 1/150 at 2026-09-23T21:59Z with no training error; GPUs0-3 each used 38,988 MiB of 46,068 MiB. GPU6 retained the unrelated LSTM no-wrap seed10 writer."
+  ],
+  "created_at": "2026-09-23T22:00:26+00:00",
+  "updated_at": "2026-09-23T22:00:26+00:00"
+}

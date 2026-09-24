@@ -1,26 +1,26 @@
-% Table 16: connection-normalized gate-dependent recurrent current.
+% Table: connection-normalized gate-dependent recurrent current.
 \begin{table*}[t]
-\caption{Connection-normalized gate-dependent recurrent current. Values are seed-level means over ten training seeds after averaging conditions within seed, rounded to five decimal places. The Balanced row is a connection-count-weighted average using the actual positive/negative connection counts and is not the sum of the sign-specific rows.}
+\caption{\textbf{Connection-normalized gate-dependent recurrent current by connection group and weight sign.} Entries of \(\Delta I^{\mathrm{gate}}\) are computed as in \Cref{fig:recurrentdisinhibition}C; All averages over all nonzero connections of the group and is not the sum of the rows above.}
 \label{tab:recurrent-current}
 \begin{center}
 \small
 \setlength{\tabcolsep}{8pt}
 \begin{tabular}{lrrrr}
-\multicolumn{1}{c}{\bf Metric} &
+\multicolumn{1}{c}{} &
 \multicolumn{1}{c}{\bf \(T\!\to\!T\)} &
 \multicolumn{1}{c}{\bf \(T\!\to\!R\)} &
 \multicolumn{1}{c}{\bf \(R\!\to\!T\)} &
 \multicolumn{1}{c}{\bf \(R\!\to\!R\)}
 \\ \hline \\
 \multicolumn{5}{l}{\bf Target identity} \\
-\(W>0\) & \(-0.01339\) & \(-0.00876\) & \(-0.00317\) & \(-0.00221\) \\
-\(W<0\) & \(0.05628\) & \(-0.00005\) & \(0.01147\) & \(0.00404\) \\
-Balanced & \(0.02461\) & \(-0.00313\) & \(0.00641\) & \(0.00166\) \\
+\(w^{\mathrm{rec}}_{+}\) & \(-0.0112 \pm 0.0017\) & \(-0.0196 \pm 0.0017\) & \(-0.0062 \pm 0.0005\) & \(-0.0107 \pm 0.0006\) \\
+\(w^{\mathrm{rec}}_{-}\) & \(0.1213 \pm 0.0052\) & \(0.0253 \pm 0.0039\) & \(0.0298 \pm 0.0016\) & \(0.0186 \pm 0.0010\) \\
+All & \(0.0325 \pm 0.0025\) & \(0.0038 \pm 0.0024\) & \(0.0137 \pm 0.0010\) & \(0.0042 \pm 0.0008\) \\
 \hline \\
 \multicolumn{5}{l}{\bf Target location} \\
-\(W>0\) & \(-0.00983\) & \(-0.00704\) & \(-0.00255\) & \(-0.00225\) \\
-\(W<0\) & \(0.01372\) & \(0.01316\) & \(0.00362\) & \(0.00374\) \\
-Balanced & \(0.00200\) & \(0.00534\) & \(0.00121\) & \(0.00150\) \\
+\(w^{\mathrm{rec}}_{+}\) & \(-0.0244 \pm 0.0011\) & \(-0.0229 \pm 0.0010\) & \(-0.0084 \pm 0.0006\) & \(-0.0094 \pm 0.0006\) \\
+\(w^{\mathrm{rec}}_{-}\) & \(0.0366 \pm 0.0022\) & \(0.0420 \pm 0.0023\) & \(0.0162 \pm 0.0013\) & \(0.0182 \pm 0.0012\) \\
+All & \(0.0009 \pm 0.0013\) & \(0.0103 \pm 0.0012\) & \(0.0047 \pm 0.0010\) & \(0.0048 \pm 0.0009\) \\
 \end{tabular}
 \end{center}
 \end{table*}

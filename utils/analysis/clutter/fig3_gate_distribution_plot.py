@@ -157,7 +157,7 @@ def _style_probability_axis(axis: plt.Axes) -> None:
     axis.spines["right"].set_visible(False)
 
 
-GATE_YTICKS = {"input": (0, 30, 60), "recurrent": (0, 12, 24)}
+GATE_YTICKS = {"input": (0, 30, 60)}
 GATE_XTICKS = (0.0, 0.25, 0.5, 0.75, 1.0)
 WEIGHT_XTICKS = (-2, -1, 0, 1, 2)
 GATE_REBIN_FACTOR = 4  # 400 saved bins at width 0.0025 -> 100 bins at width 0.01.
@@ -195,9 +195,10 @@ def _pooled_gate_probability_axes(
     ):
         counts, coarse_edges = _rebin_counts(arrays[f"hist_{kind}_all"], edges, GATE_REBIN_FACTOR)
         centers = (coarse_edges[:-1] + coarse_edges[1:]) / 2.0
+        probability = _probability_percent(counts)
         axis.plot(
             centers,
-            _probability_percent(counts),
+            probability,
             color="#2b6cb0",
             linewidth=1.5,
             label=r"$g$",
@@ -205,7 +206,12 @@ def _pooled_gate_probability_axes(
         axis.set(title=title, xlabel="Gate value", ylabel="Probability (%)", xlim=(-0.01, 1.01))
         axis.set_title(title, pad=0)
         axis.set_xticks(GATE_XTICKS, ("0", "0.25", "0.5", "0.75", "1"))
-        axis.set_yticks(GATE_YTICKS[kind])
+        if kind == "recurrent":
+            maximum_tick = int(np.rint(float(probability.max())))
+            midpoint_tick = int(np.rint(maximum_tick / 2.0))
+            axis.set_yticks((0, midpoint_tick, maximum_tick))
+        else:
+            axis.set_yticks(GATE_YTICKS[kind])
         _style_probability_axis(axis)
 
 
@@ -357,6 +363,50 @@ def _fixed_histogram(values: np.ndarray, edges: np.ndarray) -> np.ndarray:
     return np.bincount(indices, minlength=bins).astype(np.int64)
 
 
+def _mean_sem(values: np.ndarray) -> dict[str, object]:
+    """Return the mean, seed-level SEM, and values for independent training seeds."""
+
+    array = np.asarray(values, dtype=np.float64)
+    if array.ndim != 1 or array.size < 2:
+        raise ValueError(f"Expected at least two one-dimensional seed values, got {array.shape}")
+    return {
+        "mean": float(array.mean()),
+        "sem": float(array.std(ddof=1) / np.sqrt(array.size)),
+        "seed_values": array.tolist(),
+    }
+
+
+def _endpoint_fraction_summary(
+    arrays_by_seed: list[dict[str, np.ndarray]],
+) -> dict[str, object]:
+    """Summarize reset-excluded gate fractions below 0.1 and at or above 0.9."""
+
+    edges = np.asarray(arrays_by_seed[0]["gate_edges"], dtype=np.float64)
+    centers = (edges[:-1] + edges[1:]) / 2.0
+    below = centers < 0.1
+    above = centers >= 0.9
+    summary: dict[str, object] = {
+        "definition": {"closed": "[0, 0.1)", "open": "[0.9, 1]"},
+        "aggregation": "fraction within seed, then mean and SEM across training seeds",
+    }
+    for kind in ("input", "recurrent"):
+        fractions = []
+        for arrays in arrays_by_seed:
+            counts = np.asarray(arrays[f"hist_{kind}_all"], dtype=np.int64)
+            total = int(counts.sum())
+            if total <= 0:
+                raise ValueError(f"Empty {kind} gate histogram")
+            fractions.append(
+                (float(counts[below].sum() / total), float(counts[above].sum() / total))
+            )
+        values = np.asarray(fractions, dtype=np.float64)
+        summary[kind] = {
+            "below_0_1": _mean_sem(values[:, 0]),
+            "at_or_above_0_9": _mean_sem(values[:, 1]),
+        }
+    return summary
+
+
 def _exclude_reset_histograms(
     arrays: dict[str, np.ndarray],
     trajectory_path: str,
@@ -454,6 +504,10 @@ def _load_multiseed_gate_statistics(
         record["median"] = _histogram_median(pooled[f"hist_{kind}_all"], pooled["gate_edges"])
         distribution[kind] = record
     metadata["distribution"] = distribution
+    metadata["seed_level_endpoint_fractions"] = _endpoint_fraction_summary(arrays_by_seed)
+    sources_exclude_reset = all(
+        int(item.get("reset_frames_excluded", 0)) > 0 for item in metadata_by_seed
+    )
     metadata["multiseed_aggregation"] = {
         "n_seeds": len(seed_dirs),
         "seed_dirs": [os.path.abspath(directory) for directory in seed_dirs],
@@ -463,7 +517,8 @@ def _load_multiseed_gate_statistics(
             "reprojected by bin overlap to a common symmetric range before summation."
         ),
         "seed42_included": False,
-        "reset_frames_excluded": bool(exclude_zero_feedback_reset),
+        "reset_frames_excluded": bool(sources_exclude_reset or exclude_zero_feedback_reset),
+        "additional_reset_subtraction_at_aggregation": bool(exclude_zero_feedback_reset),
     }
     return pooled, metadata
 

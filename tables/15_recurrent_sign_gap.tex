@@ -1,28 +1,28 @@
-% Table 15: recurrent-gate sign dependence.
+% Table: recurrent-gate sign dependence.
 \begin{table*}[t]
-\caption{Recurrent \(\dg\) by weight sign. Values are seed-level means over ten training seeds, displayed to five decimal places. Within each seed and source group, positive- and negative-weight connections are restricted to their common absolute-weight range (shared-\(|W|\) support). The sign gap is \(\dg_{W>0}-\dg_{W<0}\) and is computed before rounding. The Balanced row averages all nonzero connections using their actual positive/negative connection counts, without the shared-support restriction, and is not the sum of the sign-specific rows.}
+\caption{\textbf{Recurrent-gate modulation by connection group and weight sign.} Entries of \(\dg^{\mathrm{rec}}\) are computed as in \Cref{fig:recurrentdisinhibition}A. Sign-specific rows restrict positive- and negative-weight connections to their shared \(|w^{\mathrm{rec}}|\) range; the gap is the \(w^{\mathrm{rec}}_{+}\) row minus the \(w^{\mathrm{rec}}_{-}\) row, and All averages over all nonzero connections of the group.}
 \label{tab:recurrent-sign-gap}
 \begin{center}
 \small
 \setlength{\tabcolsep}{8pt}
 \begin{tabular}{lrrrr}
-\multicolumn{1}{c}{\bf Metric} &
+\multicolumn{1}{c}{} &
 \multicolumn{1}{c}{\bf \(T\!\to\!T\)} &
 \multicolumn{1}{c}{\bf \(T\!\to\!R\)} &
 \multicolumn{1}{c}{\bf \(R\!\to\!T\)} &
 \multicolumn{1}{c}{\bf \(R\!\to\!R\)}
 \\ \hline \\
 \multicolumn{5}{l}{\bf Target identity} \\
-\(W>0\) & \(-0.25143\) & \(-0.13963\) & \(-0.01416\) & \(0.01802\) \\
-\(W<0\) & \(-0.36111\) & \(-0.06945\) & \(0.00018\) & \(0.01088\) \\
-Gap & \(0.10968\) & \(-0.07018\) & \(-0.01434\) & \(0.00714\) \\
-Balanced & \(-0.30980\) & \(-0.09410\) & \(-0.00460\) & \(0.01360\) \\
+\(w^{\mathrm{rec}}_{+}\) & \(-0.0099 \pm 0.0044\) & \(-0.0277 \pm 0.0036\) & \(0.0023 \pm 0.0010\) & \(0.0030 \pm 0.0004\) \\
+\(w^{\mathrm{rec}}_{-}\) & \(-0.1176 \pm 0.0106\) & \(-0.0205 \pm 0.0032\) & \(0.0004 \pm 0.0013\) & \(0.0032 \pm 0.0004\) \\
+Gap & \(0.1077 \pm 0.0069\) & \(-0.0072 \pm 0.0032\) & \(0.0019 \pm 0.0012\) & \(-0.0002 \pm 0.0004\) \\
+All & \(-0.0447 \pm 0.0070\) & \(-0.0241 \pm 0.0030\) & \(0.0016 \pm 0.0010\) & \(0.0031 \pm 0.0003\) \\
 \hline \\
 \multicolumn{5}{l}{\bf Target location} \\
-\(W>0\) & \(-0.10195\) & \(-0.08709\) & \(0.00630\) & \(0.01012\) \\
-\(W<0\) & \(-0.08891\) & \(-0.07392\) & \(0.01603\) & \(0.00665\) \\
-Gap & \(-0.01304\) & \(-0.01317\) & \(-0.00972\) & \(0.00348\) \\
-Balanced & \(-0.09520\) & \(-0.07900\) & \(0.01240\) & \(0.00790\) \\
+\(w^{\mathrm{rec}}_{+}\) & \(-0.0394 \pm 0.0025\) & \(-0.0422 \pm 0.0021\) & \(0.0011 \pm 0.0005\) & \(0.0052 \pm 0.0003\) \\
+\(w^{\mathrm{rec}}_{-}\) & \(-0.0405 \pm 0.0024\) & \(-0.0430 \pm 0.0015\) & \(0.0091 \pm 0.0004\) & \(0.0041 \pm 0.0002\) \\
+Gap & \(0.0011 \pm 0.0010\) & \(0.0007 \pm 0.0011\) & \(-0.0080 \pm 0.0004\) & \(0.0011 \pm 0.0002\) \\
+All & \(-0.0400 \pm 0.0024\) & \(-0.0425 \pm 0.0017\) & \(0.0055 \pm 0.0003\) & \(0.0046 \pm 0.0002\) \\
 \end{tabular}
 \end{center}
 \end{table*}

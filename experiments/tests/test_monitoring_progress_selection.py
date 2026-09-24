@@ -9,7 +9,13 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from experiments.monitoring.job_registry import RegistryError
-from experiments.monitoring.progress import collect_remote_jobs, format_report, select_job
+from experiments.monitoring.progress import (
+    _PROBE_JSON_MARKER,
+    _local_ssh_commands,
+    collect_remote_jobs,
+    format_report,
+    select_job,
+)
 from experiments.monitoring.remote_probe import collect
 
 
@@ -67,6 +73,47 @@ def test_socket_check_failure_does_not_open_a_remote_ssh_connection() -> None:
     assert reports[0]["probe_error"] == "SSH socket unavailable: Control socket missing"
     assert run.call_count == 1
     assert run.call_args.args[0] == ["ssh", "-O", "check", "sjc-remote"]
+
+
+def test_local_full_ssh_command_is_loaded_as_direct_endpoint(tmp_path: Path) -> None:
+    config = tmp_path / "local.md"
+    config.write_text(
+        "## SSH aliases\n"
+        "- sjc remote: `sjc-remote`\n"
+        "- DSW 5000: `ssh -o IdentitiesOnly=yes -i ~/.ssh/key -p 5000 root@example`\n",
+        encoding="utf-8",
+    )
+
+    commands = _local_ssh_commands(config)
+
+    assert "sjc-remote" not in commands
+    assert commands["dsw-5000"][0] == "ssh"
+    assert commands["dsw-5000"][-1] == "root@example"
+    assert commands["dsw-5000"][4] == str(Path.home() / ".ssh" / "key")
+
+
+def test_explicit_direct_endpoint_skips_control_socket_check() -> None:
+    job = _manifest("dsw-direct-target")
+    job["host"] = "dsw-5000"
+    response = "remote banner\n" + _PROBE_JSON_MARKER + json.dumps(
+        [{"id": job["id"], "host": job["host"]}]
+    )
+    direct = ["ssh", "-p", "5000", "root@example"]
+
+    with patch(
+        "experiments.monitoring.progress.subprocess.run",
+        return_value=CompletedProcess(["ssh"], 0, response, ""),
+    ) as run:
+        reports = collect_remote_jobs(
+            [job], direct_commands={"dsw-5000": direct}, timeout=30
+        )
+
+    assert reports == [{"id": "dsw-direct-target", "host": "dsw-5000"}]
+    assert run.call_count == 1
+    command = run.call_args.args[0]
+    assert command[:3] == ["ssh", "-p", "5000"]
+    assert "BatchMode=yes" in command
+    assert command[-2] == "root@example"
 
 
 def test_file_result_glob_counts_complete_analysis_units() -> None:

@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+import numpy as np
+
 
 MODEL = "gawf_legacy_notanh"
 SEEDS = tuple(range(1, 11))
@@ -35,6 +37,14 @@ DEFERRED = (
     "cross-scale and H128 comparison figures",
 )
 STATIC = ("GaWF/CM-MNIST schematic", "dataset-generation protocol")
+GENERATED_FIGURES = (
+    "gate_and_weight_distributions_1x4_10seed.pdf",
+    "input_gate_sign_vs_mag_sector_delta_zoom_10seed_9sector.pdf",
+    "overall_sector_input_gate_1x3_10seed.pdf",
+    "rec_gate_disinhibit_and_current_2x3_10seed.pdf",
+    "rec_gate_sign_vs_mag_digit_sector_delta_2x4_10seed.pdf",
+    "recurrent_current_unit.pdf",
+)
 
 
 @dataclass(frozen=True)
@@ -630,6 +640,45 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _mean_sem(values: np.ndarray) -> tuple[float, float]:
+    """Return the mean and seed-level SEM for exactly ten training seeds."""
+
+    array = np.asarray(values, dtype=np.float64)
+    if array.shape != (10,):
+        raise RuntimeError(f"Expected ten seed values, got {array.shape}")
+    return float(array.mean()), float(array.std(ddof=1) / np.sqrt(array.size))
+
+
+def _manuscript_stats(final: Path) -> str:
+    """Return the reproducible gate-endpoint and digit-TT record section."""
+
+    gate_path = final / "fig3" / "gate_and_weight_distributions_1x4_10seed_notanh.json"
+    gate = json.loads(gate_path.read_text(encoding="utf-8"))
+    endpoint = gate["seed_level_endpoint_fractions"]
+    recurrent_closed = endpoint["recurrent"]["below_0_1"]
+    recurrent_open = endpoint["recurrent"]["at_or_above_0_9"]
+
+    summary_path = final / "fig7" / "fig7_seed_level_summary.npz"
+    with np.load(summary_path, allow_pickle=False) as arrays:
+        positive = _mean_sem(arrays["digit_TT_+_seed_values"])
+        negative = _mean_sem(arrays["digit_TT_-_seed_values"])
+        gap = _mean_sem(arrays["digit_TT_gap_seed_values"])
+    return f"""## Manuscript statistics added after the initial refresh
+
+All values below use the standard test movie, 32-frame rollouts, reset-excluded frames,
+and ten training seeds; uncertainty is seed-level SEM.
+
+- Recurrent-gate endpoints: `g_rec < 0.1` =
+  **{100 * recurrent_closed['mean']:.4f}% ± {100 * recurrent_closed['sem']:.4f}%**;
+  `g_rec >= 0.9` =
+  **{100 * recurrent_open['mean']:.4f}% ± {100 * recurrent_open['sem']:.4f}%**.
+- Digit `T->T` recurrent modulation on the shared-|W| support: `W>0` =
+  **{positive[0]:+.5f} ± {positive[1]:.5f}**; `W<0` =
+  **{negative[0]:+.5f} ± {negative[1]:.5f}**; sign gap (`W>0 - W<0`) =
+  **{gap[0]:+.5f} ± {gap[1]:.5f}**.
+"""
+
+
 def _write_record(config: Config) -> None:
     """Write a non-overwriting notanh delta record from the regenerated structured outputs."""
 
@@ -638,46 +687,51 @@ def _write_record(config: Config) -> None:
     final = config.output_root / "final"
     sources = (
         final / "fig3" / "fig3_gate_half_mass_notanh.json",
+        final / "fig3" / "gate_and_weight_distributions_1x4_10seed_notanh.json",
         final
         / "fig6_overall_data"
         / "fig6_overall_sector_input_gate_1x3_10seed.json",
         final / "supple2" / "Supple2_input_gate_sign_vs_mag_9sector_10seed_stats.json",
         final / "fig7" / "supple3_seed_level_sign_magnitude_stats.json",
+        final / "fig7" / "fig7_seed_level_summary.npz",
         final / "current_records" / "Supple4_recurrent_current_unit_caption_stats.json",
         final / "current_records" / "Fig8_recurrent_current_connection_caption_stats.json",
     )
     for path in sources:
         if not path.is_file():
             raise FileNotFoundError(path)
-    figure_paths = sorted(config.figure_root.glob("*.pdf"))
-    if not figure_paths:
-        raise RuntimeError(f"No notanh figures found in {config.figure_root}")
+    figure_paths = tuple(config.figure_root / name for name in GENERATED_FIGURES)
+    missing_figures = [path for path in figure_paths if not path.is_file()]
+    if missing_figures:
+        raise RuntimeError("Missing notanh figures: " + ", ".join(map(str, missing_figures)))
     source_rows = "\n".join(
         f"| `{path}` | `{_sha256(path)}` |" for path in sources
     )
     figure_rows = "\n".join(f"- `{path}`" for path in figure_paths)
     deferred_rows = "\n".join(f"- {item}" for item in DEFERRED)
     static_rows = "\n".join(f"- {item}" for item in STATIC)
+    manuscript_stats = _manuscript_stats(final).rstrip()
     content = f"""# GaWF no-tanh 统计记录
 
 本文件由 `gawf_notanh_refresh.py` 从 `gawf_legacy_notanh` 十个 seed 的独立结构化结果
 生成。它是 `docs/GaWF_STATS_RECORD.md` 的 **notanh delta 版本**，不复制旧 GaWF
-数值。未列出的
-dataset、sampling、reset exclusion 与 seed-level aggregation 口径沿用原记录。
+数值。未列出的 dataset、sampling、reset exclusion 与 seed-level aggregation
+口径沿用原记录。
 
 ## 模型定义
 
-`gawf_legacy_notanh` 保留 legacy in-loop `LayerNorm → ReLU → Dropout` recurrence，但将
-内部
-`tanh(preactivation)` 替换为 identity。训练协议要求 `actual_epochs=150`、
+`gawf_legacy_notanh` 保留 legacy in-loop `LayerNorm → ReLU → Dropout` recurrence，
+但将内部 `tanh(preactivation)` 替换为 identity。训练协议要求 `actual_epochs=150`、
 `core_rnn_activation=identity`、`core_output_wrap=ln_relu_dropout`、
 `gawf_core_semantics=legacy`。
 
-    ## 结构化事实源
+## 结构化事实源
 
 | Path | SHA-256 |
 |---|---|
 {source_rows}
+
+{manuscript_stats}
 
 ## 已生成 GaWF-only figures
 

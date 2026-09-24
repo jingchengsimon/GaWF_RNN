@@ -39,17 +39,17 @@ BATCH1_MODELS=(gawf_nowrap rnn_nowrap gru_nowrap lstm_nowrap mamba_nowrap s5_now
 BATCH1_WIDTHS=(256 275 105 80 170 256)
 BATCH1_LRS=(0.005 0.001 0.005 0.001 0.001 0.001)
 BATCH1_WDS=(0.001 0.00001 0.001 0.001 0.001 0.0)
-BATCH1_LEAF="clutter_ablate_outer_norm_40h_ep150_v1"
+BATCH1_LEAF="${AIM3_BATCH1_LEAF:-clutter_ablate_outer_norm_40h_ep150_v1}"
 BATCH2_MODELS=(gawf_notanh rnn_notanh)
 BATCH2_WIDTHS=(256 275)
 BATCH2_LRS=(0.005 0.001)
 BATCH2_WDS=(0.001 0.00001)
-BATCH2_LEAF="clutter_ablate_inner_activation_40h_ep150_v1"
-TEST_LEAF="clutter_ablation_reset_excluded_test_10seed_v1"
+BATCH2_LEAF="${AIM3_BATCH2_LEAF:-clutter_ablate_inner_activation_40h_ep150_v1}"
+TEST_LEAF="${AIM3_TEST_LEAF:-clutter_ablation_reset_excluded_test_10seed_v1}"
 
 if (( TASK_ID < 30 )); then
   INDEX=$((TASK_ID / 5))
-  SEED=$((TASK_ID % 5 + 1))
+  SEED=$((TASK_ID % 5 + ${AIM3_SEED_OFFSET:-0} + 1))
   MODEL="${BATCH1_MODELS[INDEX]}"
   WIDTH="${BATCH1_WIDTHS[INDEX]}"
   LR="${BATCH1_LRS[INDEX]}"
@@ -58,7 +58,7 @@ if (( TASK_ID < 30 )); then
 else
   OFFSET=$((TASK_ID - 30))
   INDEX=$((OFFSET / 5))
-  SEED=$((OFFSET % 5 + 1))
+  SEED=$((OFFSET % 5 + ${AIM3_SEED_OFFSET:-0} + 1))
   MODEL="${BATCH2_MODELS[INDEX]}"
   WIDTH="${BATCH2_WIDTHS[INDEX]}"
   LR="${BATCH2_LRS[INDEX]}"

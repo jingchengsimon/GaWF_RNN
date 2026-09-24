@@ -8,18 +8,118 @@
   ],
   "jobs": [
     {
-      "id": "clutter-cm-mnist-rnn-inloop-notanh-ep150-seeds1-10",
-      "description": "GaWF-aligned RNN behavioral control: identity inner activation and the LayerNorm/ReLU/dropout output fed back as the next recurrent state, ten seeds.",
+      "id": "clutter-cm-mnist-feedback-add-newsem-ep150-gru-seeds2-5-lstm-seeds1-5",
+      "description": "Remaining new-semantics additive-feedback units: GRU seeds2-5 and LSTM seeds1-5 on DSW 8095.",
       "host": "dsw-8095",
       "status": "running",
       "job_ids": [],
       "run_ids": [
-        "rnn_inloop_notanh_dsw8095_v1",
-        "formal-coordinator-pid-1396959"
+        "feedback_add_newsem_remaining9_dsw8095_v1",
+        "gpu4-coordinator-pid-1725384",
+        "gpu5-coordinator-pid-1725385",
+        "gpu7-coordinator-pid-1725386"
+      ],
+      "tmux_session": null,
+      "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn_feedback_add_ec89657",
+      "updated_at": "2026-09-23T22:09:52+00:00"
+    },
+    {
+      "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-s5-nowrap-seeds7-10",
+      "description": "S5 no-ReLU-wrap behavioral controls for seeds 7-10 migrated from queued DSW 5000 tails to idle DSW 8095 GPUs.",
+      "host": "dsw-8095",
+      "status": "running",
+      "job_ids": [],
+      "run_ids": [
+        "nowrap_s5_seed7to10_dsw8095_v1",
+        "gpu0-supervisor-pid-1723292",
+        "gpu1-supervisor-pid-1723293",
+        "gpu2-supervisor-pid-1723294",
+        "gpu3-supervisor-pid-1723295"
       ],
       "tmux_session": null,
       "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
-      "updated_at": "2026-09-22T21:14:03+00:00"
+      "updated_at": "2026-09-23T22:00:26+00:00"
+    },
+    {
+      "id": "clutter-cm-mnist-feedback-add-newsem-ep150-rnn-gru-lstm-seeds1-5",
+      "description": "First wave of the new-semantics additive-feedback campaign on DSW 5000: RNN seeds1-5 and GRU seed1.",
+      "host": "dsw-5000",
+      "status": "queued",
+      "job_ids": [],
+      "run_ids": [
+        "feedback_add_newsem_5seed_dsw5000_v1",
+        "feedback-add-active-rnn1-5-gru1"
+      ],
+      "tmux_session": null,
+      "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn_feedback_add_ec89657",
+      "updated_at": "2026-09-23T22:09:52+00:00"
+    },
+    {
+      "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-mamba-s5-nowrap-seeds6-10",
+      "description": "Mamba no-wrap seeds 6-10 plus S5 no-wrap seed 6 retained on DSW 5000; S5 seeds 7-10 migrated to DSW 8095.",
+      "host": "dsw-5000",
+      "status": "running",
+      "job_ids": [],
+      "run_ids": [
+        "nowrap_mamba_s5_seed6to10_dsw5000_v1",
+        "gpu6-supervisor-pid-2478285",
+        "gpu7-supervisor-pid-2478286"
+      ],
+      "tmux_session": null,
+      "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
+      "updated_at": "2026-09-23T22:00:26+00:00"
+    },
+    {
+      "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-rnn-gru-lstm-nowrap-seeds6-10",
+      "description": "Fixed-GPU serial continuation for RNN, GRU, and LSTM no-wrap controls on DSW 8095.",
+      "host": "dsw-8095",
+      "status": "running",
+      "job_ids": [],
+      "run_ids": [
+        "nowrap_fixed_queue_dsw8095_v1",
+        "gpu0-pid-1545309",
+        "gpu1-pid-1545311",
+        "gpu2-pid-1545315",
+        "gpu3-pid-1545316",
+        "gpu4-pid-1545322",
+        "gpu5-pid-1545326",
+        "gpu6-pid-1681732"
+      ],
+      "tmux_session": null,
+      "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
+      "updated_at": "2026-09-23T16:53:45+00:00"
+    },
+    {
+      "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-gawf-nowrap-seeds6-10",
+      "description": "Retained already-running RNN-aligned GaWF no-wrap seeds 6 and 8 on DSW 5000; unstarted seeds 7, 9, and 10 are excluded after correcting the requested legacy-core semantics.",
+      "host": "dsw-5000",
+      "status": "running",
+      "job_ids": [],
+      "run_ids": [
+        "nowrap_migration_dsw5000_v1",
+        "fixed-gpu0-queue-pid-1899583",
+        "fixed-gpu1-queue-pid-1899584"
+      ],
+      "tmux_session": null,
+      "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
+      "updated_at": "2026-09-23T16:53:45+00:00"
+    },
+    {
+      "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-gru-nowrap-seeds6-9",
+      "description": "GRU no-ReLU-wrap behavioral controls for seeds 6-9, migrated from pending Amarel elements to DSW 5000.",
+      "host": "dsw-5000",
+      "status": "running",
+      "job_ids": [],
+      "run_ids": [
+        "nowrap_migration_dsw5000_v1",
+        "task10-pid-1892810",
+        "task11-pid-1892813",
+        "task12-pid-1892816",
+        "task13-pid-1892819"
+      ],
+      "tmux_session": null,
+      "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
+      "updated_at": "2026-09-23T05:52:05+00:00"
     },
     {
       "id": "clutter-cm-mnist-gawf-wrap-placement-short24ep-abc-sjc-v2",
@@ -46,7 +146,7 @@
       ],
       "tmux_session": null,
       "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
-      "updated_at": "2026-09-22T20:46:20+00:00"
+      "updated_at": "2026-09-23T01:20:48+00:00"
     },
     {
       "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-seeds6-10-gawf-rnn-gru-lstm-mamba-s5",
@@ -59,7 +159,7 @@
       "run_ids": [],
       "tmux_session": null,
       "remote_root": "/cache/home/js3269/projects/.aim3_gawf_rnn_execution_snapshots/20260922/nonlinearity_ablation_seed6to10_20260922",
-      "updated_at": "2026-09-22T18:30:25+00:00"
+      "updated_at": "2026-09-23T06:04:15+00:00"
     },
     {
       "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-gawf-rnn-gru-lstm-mamba-s5-seeds1-5",

@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-rnn-gru-lstm-nowrap-seeds6-10",
+  "description": "Fixed-GPU serial continuation for RNN, GRU, and LSTM no-wrap controls on DSW 8095.",
+  "host": "dsw-8095",
+  "status": "running",
+  "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
+  "source_commit": "988ee1b0f2727189479a56e494556651b589e1ca",
+  "environment": {
+    "name": "/mnt/workspace/sjc/envs/aim3_gawf_rnn_bbade07",
+    "conda_init": "/mnt/workspace/sjc/miniconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "none",
+    "job_ids": [],
+    "run_ids": [
+      "nowrap_fixed_queue_dsw8095_v1",
+      "gpu0-pid-1545309",
+      "gpu1-pid-1545311",
+      "gpu2-pid-1545315",
+      "gpu3-pid-1545316",
+      "gpu4-pid-1545322",
+      "gpu5-pid-1545326",
+      "gpu6-pid-1681732"
+    ],
+    "tmux_session": null,
+    "process_patterns": [
+      "run_fixed_gpu_nowrap_queue.sh",
+      "clutter_ablate_outer_norm_40h_ep150_v1"
+    ],
+    "collect_gpu": true,
+    "dependency_strategy": {
+      "type": "exact_pid_then_serial_fixed_gpu",
+      "gpu0_gpu3": "tasks 5,15; 6,16; 7,17; and 8,18 started after RNN seeds5-8 completed and their evaluations were recovered",
+      "gpu4": "wait for RNN in-loop no-tanh seed3 PID 1536756, then task 9; coordinator PID 1545322 was stopped while task 9 kept running so it cannot later duplicate reassigned task 19",
+      "gpu5": "wait for RNN in-loop no-tanh seed4 PID 1536757, then task 14",
+      "gpu6": "task 19 (lstm_nowrap seed10) was reassigned to coordinator PID 1681732 and reached Epoch 1/150 on the previously idle GPU",
+      "amarel_handoff": "none; the corresponding Amarel elements remain queued by explicit human instruction"
+    }
+  },
+  "paths": {
+    "log_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_fixed_queue_dsw8095_v1/lanes/gpu*/task_*.out",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_fixed_queue_dsw8095_v1/lanes/gpu*/task_*.err"
+    ],
+    "status_dir": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_fixed_queue_dsw8095_v1/lanes",
+    "result_paths": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results_dsw8095/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/*",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results_dsw8095/data/analysis/clutter_ablation_reset_excluded_test_10seed_v1/*"
+    ],
+    "data_path": "/mnt/workspace/sjc/aim3_gawf_rnn_data/stimuli"
+  },
+  "tracking": {
+    "expected_units": 11,
+    "auto_complete": true,
+    "result_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results_dsw8095/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/*/*_metrics.json"
+    ],
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "GPU0-3 immediately started rnn_nowrap seeds6-9 and reached Epoch 1/150; each used about 38,990 MiB of 46,068 MiB.",
+    "After each rnn_nowrap unit, the same GPU runs its assigned lstm_nowrap unit. GPU4/GPU5 remain bound to their exact incumbent RNN PID until it exits.",
+    "The queues execute serially per GPU and stop on the first failure. They never cancel Amarel jobs.",
+    "Mamba/S5 are intentionally excluded because the cloned environment lacks mamba_ssm/s5-pytorch; their Amarel elements remain queued.",
+    "At 2026-09-23T16:52Z, task 19 (lstm_nowrap seed10) was moved from the not-yet-reached tail of GPU4's queue to idle GPU6. GPU4's current task 9 writer remained live; only its parent coordinator was stopped."
+  ],
+  "created_at": "2026-09-23T06:04:15+00:00",
+  "updated_at": "2026-09-23T16:53:45+00:00"
+}

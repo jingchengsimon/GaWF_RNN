@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "id": "clutter-cm-mnist-nonlinearity-ablation-ep150-mamba-s5-nowrap-seeds6-10",
+  "description": "Mamba no-wrap seeds 6-10 plus S5 no-wrap seed 6 retained on DSW 5000; S5 seeds 7-10 migrated to DSW 8095.",
+  "host": "dsw-5000",
+  "status": "running",
+  "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
+  "source_commit": "988ee1b0f2727189479a56e494556651b589e1ca",
+  "environment": {
+    "name": "/mnt/workspace/sjc/envs/aim3_gawf_rnn_ssm_v1",
+    "conda_init": "/mnt/workspace/sjc/miniconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "none",
+    "job_ids": [],
+    "run_ids": [
+      "nowrap_mamba_s5_seed6to10_dsw5000_v1",
+      "gpu6-supervisor-pid-2478285",
+      "gpu7-supervisor-pid-2478286"
+    ],
+    "tmux_session": null,
+    "process_patterns": [
+      "clutter_ablate_outer_norm_40h_ep150_v1/mamba_nowrap-seed",
+      "clutter_ablate_outer_norm_40h_ep150_v1/s5_nowrap-seed",
+      "nowrap_mamba_s5_seed6to10_dsw5000_v1"
+    ],
+    "collect_gpu": true,
+    "dependency_strategy": {
+      "type": "gpu_memory_then_serial_fixed_gpu",
+      "gpu2": "task 20 mamba seed6 only; supervisor 2477495 stopped after writer launch",
+      "gpu3": "task 21 mamba seed7 only; supervisor 2477497 stopped after writer launch",
+      "gpu4": "task 22 mamba seed8 only; supervisor 2477504 stopped after writer launch",
+      "gpu5": "task 23 mamba seed9 only; supervisor 2477509 stopped after writer launch",
+      "gpu6": "wait for <=1024 MiB, then task 24 mamba seed10",
+      "gpu7": "wait for <=1024 MiB, then task 25 s5 seed6",
+      "smoke": "waived by explicit human instruction; completed Amarel seeds 1-5 validate the identical protocol",
+      "amarel_handoff": "none; corresponding Amarel elements remain queued by explicit human instruction",
+      "lower_priority": "unstarted gawf tanh seeds 7, 9, and 10 are not included"
+    }
+  },
+  "paths": {
+    "log_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_mamba_s5_seed6to10_dsw5000_v1/lanes/gpu*/task_*.out",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_mamba_s5_seed6to10_dsw5000_v1/lanes/gpu*/task_*.err",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_mamba_s5_seed6to10_dsw5000_v1/dispatchers/gpu*/process.err"
+    ],
+    "status_dir": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_mamba_s5_seed6to10_dsw5000_v1/status",
+    "result_paths": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/mamba_nowrap-seed*",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/s5_nowrap-seed*",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/analysis/clutter_ablation_reset_excluded_test_10seed_v1/mamba_nowrap-seed*",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/analysis/clutter_ablation_reset_excluded_test_10seed_v1/s5_nowrap-seed*"
+    ],
+    "data_path": "/mnt/workspace/sjc/aim3_gawf_rnn_data/stimuli"
+  },
+  "tracking": {
+    "expected_units": 6,
+    "auto_complete": true,
+    "result_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/mamba_nowrap-seed0[6-9]/*_metrics.json",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/mamba_nowrap-seed10/*_metrics.json",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_v1/s5_nowrap-seed06/*_metrics.json"
+    ],
+    "done_glob": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_mamba_s5_seed6to10_dsw5000_v1/status/task_2[0-5].done",
+    "fail_glob": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/nowrap_mamba_s5_seed6to10_dsw5000_v1/status/task_2[0-5].fail",
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "Protocol: mamba_nowrap d_model170 lr=0.001 wd=0.001; s5_nowrap h128 lr=0.0005 wd=0.0001; both use AdamW, CNN dropout0.0, recurrent dropout0.5, 40h-uint8, 150 epochs, checkpoint every5 epochs, and automatic resume.",
+    "The cloned environment keeps the original Torch 2.4.1+cu121 stack and adds transformers4.44.2, mamba-ssm2.2.4, causal-conv1d1.4.0, and s5-pytorch0.2.1; package imports were verified before launch.",
+    "GPU2 and GPU3 started mamba_nowrap seeds6 and7 immediately; both entered Epoch 1/150 and reached validation with zero logged training errors. GPU4-GPU7 retain memory-threshold dispatchers so the prioritized jobs claim those fixed cards after current incumbents exit.",
+    "A DSW tmux launch was attempted before any writer started, but tmux is unavailable on this node. The active supervisors use nohup plus exact PID, lock, and status files instead.",
+    "The 53.8 MB partial direct-transfer wheel created during dependency setup was removed only after the complete 323,641,408-byte wheel was installed and cached.",
+    "2026-09-23T21:58Z migration: supervisors 2477495, 2477497, 2477504, and 2477509 were stopped after their current Mamba writers were verified to remain alive, preventing queued tasks 26-29 from starting on DSW 5000. S5 seeds7-10 moved to the separate DSW 8095 manifest."
+  ],
+  "created_at": "2026-09-23T18:12:09+00:00",
+  "updated_at": "2026-09-23T22:00:26+00:00"
+}

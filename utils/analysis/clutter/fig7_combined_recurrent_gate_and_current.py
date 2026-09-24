@@ -302,8 +302,8 @@ def _draw_balanced_gate(
         add_seed_points(axis, positions + offset, seed_values, bar_width=width)
     axis.axhline(0.0, color="black", linewidth=1.0, zorder=2)
     axis.set_xticks(positions, ("T→T", "T→R", "R→T", "R→R"))
-    axis.set_ylim(-0.46, 0.1)
-    axis.set_yticks((0.1, 0.0, -0.2, -0.4))
+    axis.set_ylim(-0.2, 0.05)
+    axis.set_yticks((0.05, 0.0, -0.1, -0.2), ("0.05", "0", "-0.1", "-0.2"))
     axis.set_title(title)
     axis.set_xlabel("Group")
     axis.spines[["top", "right"]].set_visible(False)
@@ -410,12 +410,12 @@ def render(
                 if line.get_linestyle() not in ("", "None", "none"):
                     line.set_linewidth(1.2)
             _compact_axis(axis)
-        curve_axes[0].set_ylim(-0.55, 0.05)
-        curve_axes[0].set_yticks((-0.5, -0.25, 0.0))
-        curve_axes[1].set_ylim(-0.3, 0.3)
-        curve_axes[1].set_yticks((-0.3, 0.0, 0.3))
-        bar_limits = (-0.02, 0.08)
-        bar_ticks = (-0.02, 0.0, 0.04, 0.08)
+        curve_axes[0].set_ylim(-0.35, 0.05)
+        curve_axes[0].set_yticks((-0.3, 0.0), ("-0.3", "0"))
+        curve_axes[1].set_ylim(-0.2, 0.2)
+        curve_axes[1].set_yticks((-0.2, 0.0, 0.2), ("-0.2", "0", "0.2"))
+        bar_limits = (-0.05, 0.15)
+        bar_ticks = (-0.05, 0.0, 0.075, 0.15)
         for index, (axis, family) in enumerate(zip(bottom_axes, VARIABLES)):
             _plot_fig8_bars(
                 axis,
@@ -424,9 +424,10 @@ def render(
                 "connection",
                 bar_limits,
                 bar_ticks,
-                "%.2f",
+                {"digit": "%.3g", "sector": "%.3g"}[family],
                 show_legend=False,
             )
+            axis.set_yticks(bar_ticks, ("-0.05", "0", "0.075", "0.15"))
             axis.set_title("")
             axis.set_xlabel("Group")
             if index > 0:

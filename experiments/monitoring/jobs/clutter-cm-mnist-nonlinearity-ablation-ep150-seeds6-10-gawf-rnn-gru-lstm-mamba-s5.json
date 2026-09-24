@@ -17,10 +17,10 @@
     "tmux_session": null,
     "dependency_strategy": {
       "type": "single_array_no_gate",
-      "array_tasks": "0-29 retained; 30-39 cancelled",
+      "array_tasks": "0-9 and 14-29 retained; 10-13 migrated; 30-39 cancelled",
       "throttle": "none",
       "seed_offset_env": "AIM3_SEED_OFFSET=5 (task i -> model i//5, seed i%5+6)",
-      "cancelled_tasks": "30-34 gawf_notanh and 35-39 rnn_notanh cancelled by explicit user instruction"
+      "cancelled_tasks": "10-13 migrated to DSW 5000 after epoch-1 validation; 30-39 cancelled by explicit user instruction"
     }
   },
   "paths": {
@@ -37,7 +37,7 @@
     "data_path": "/scratch/js3269/stimuli"
   },
   "tracking": {
-    "expected_units": 30,
+    "expected_units": 26,
     "auto_complete": true,
     "result_globs": [
       "/scratch/js3269/results/data/clutter/runs/clutter_ablate_outer_norm_40h_ep150_seed6to10_v1/*/*_metrics.json"
@@ -59,8 +59,10 @@
     "Result leaves must not be reused and are distinct from the seeds1-5 leaves.",
     "Status-dir caveat (2026-09-22): this snapshot was copied from the seeds1-5 snapshot, so status/ still contains that campaign's 15 .done, 1 .fail (mamba_nowrap seed1) and 40 .running markers (timestamps 2026-09-21). Do NOT read seeds6-10 progress from status/: use the scheduler plus the seed6to10 result leaves, or wait until the new array overwrites the same marker names as its elements run.",
     "2026-09-22 corrected design decision: pending elements 30-34 (RNN-aligned gawf_notanh seeds 6-10) and 35-39 (out-of-loop rnn_notanh seeds 6-10) were cancelled with scancel. Elements 0-29, the six no-wrap controls, remain active; no output was deleted.",
-    "2026-09-22 18:30 UTC prioritization: Slurm Nice was raised from 0 to 10000 for the retained no-wrap array 61753234, lowering its priority from 33 to 1 so original-GaWF no-tanh job 61754570 runs first. The training protocol and outputs were not changed."
+    "2026-09-22 18:30 UTC prioritization: Slurm Nice was raised from 0 to 10000 for the retained no-wrap array 61753234, lowering its priority from 33 to 1 so original-GaWF no-tanh job 61754570 runs first. The training protocol and outputs were not changed.",
+    "2026-09-23 05:51 UTC migration: elements 10-13 (gru_nowrap seeds 6-9) were cancelled only after corrected DSW 5000 writers entered Epoch 1/150. Remaining Amarel range is 0-9,14-29; no output was deleted.",
+    "2026-09-23 06:04 UTC policy update: fixed-GPU DSW continuation queues were installed for tasks 0-9 and 14-19, but no further Amarel element will be cancelled. Elements 0-9 and 14-29 remain queued; Mamba/S5 stay Amarel-only because the DSW clone lacks their optional dependencies."
   ],
   "created_at": "2026-09-22T04:40:00+00:00",
-  "updated_at": "2026-09-22T18:30:25+00:00"
+  "updated_at": "2026-09-23T06:04:15+00:00"
 }

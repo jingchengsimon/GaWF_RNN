@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "remote_worker": "experiments/launchers/clutter/dsw/pause_remote.py",
+  "poll_seconds": 15,
+  "checkpoint_wait_seconds": 3600,
+  "exit_wait_seconds": 300,
+  "campaigns": [
+    {
+      "name": "gawf_legacy_notanh",
+      "ssh_command": [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "IdentitiesOnly=yes",
+        "-i",
+        "~/.ssh/REPLACE_WITH_KEY",
+        "-p",
+        "REPLACE_WITH_PORT",
+        "root@REPLACE_WITH_HOST"
+      ],
+      "run_root": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/gawf_legacy_notanh_10seed_v1",
+      "result_root": "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/clutter/runs/clutter_ablate_legacy_notanh_40h_ep150_dsw5000_v1",
+      "log_template": "logs/seed{seed:02d}.log",
+      "result_leaf_template": "gawf_legacy_notanh-seed{seed:02d}",
+      "process_token_template": "--result_suffix clutter_ablate_legacy_notanh_40h_ep150_dsw5000_v1/gawf_legacy_notanh-seed{seed:02d}",
+      "status_style": "seed_status",
+      "status_template": "status/seed{seed:02d}.status",
+      "campaign_status": "campaign.status",
+      "controller_pid_sources": [
+        {
+          "path": "coordinator.pid",
+          "format": "single"
+        }
+      ],
+      "seeds": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "checkpoint_interval_epochs": 5,
+      "total_epochs": 150
+    },
+    {
+      "name": "rnn_inloop_notanh",
+      "ssh_command": [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "IdentitiesOnly=yes",
+        "-i",
+        "~/.ssh/REPLACE_WITH_KEY",
+        "-p",
+        "REPLACE_WITH_PORT",
+        "root@REPLACE_WITH_HOST"
+      ],
+      "run_root": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/rnn_inloop_notanh_dsw8095_v1",
+      "result_root": "/mnt/workspace/sjc/aim3_gawf_rnn_results_dsw8095/data/clutter/runs/clutter_rnn_inloop_notanh_40h_ep150_v1",
+      "log_template": "logs/formal_seed{seed:02d}.out",
+      "result_leaf_template": "rnn_inloop_notanh-seed{seed:02d}",
+      "process_token_template": "--result_suffix clutter_rnn_inloop_notanh_40h_ep150_v1/rnn_inloop_notanh-seed{seed:02d}",
+      "status_style": "task_markers",
+      "status_dir": "status/formal",
+      "campaign_status": "formal_campaign.status",
+      "controller_pid_sources": [
+        {
+          "path": "formal_coordinator.pid",
+          "format": "single"
+        },
+        {
+          "path": "formal_lane_pids.txt",
+          "format": "last_column"
+        }
+      ],
+      "seeds": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "checkpoint_interval_epochs": 5,
+      "total_epochs": 150
+    }
+  ]
+}

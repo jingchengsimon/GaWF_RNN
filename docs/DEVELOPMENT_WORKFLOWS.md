@@ -317,7 +317,7 @@ renderer reads only those completed long tables and writes matched Digit/Sector 
 long CSV with `I`, `I_frozen = I - ΔI^gate`, and `ΔI^gate`, and caption statistics. Its
 connection-level Figure 8 and destination-unit Supplementary 4 each retain only grouped current
 bars, with Digit and Sector arranged as a Figure-7-style pair and one shared `W > 0` / `W < 0` /
-`Balanced` legend. Each condition is first summarized within its training seed; every gray point
+`All` legend. Each condition is first summarized within its training seed; every gray point
 is one seed's equal-weight mean across the 10 Digit or 9 Sector conditions, and the bar, SEM, and
 uncorrected two-sided one-sample t-test against zero use those same ten seed values. The standalone
 Figure 8 / Supplementary 4 renderers are deprecated after their required panels were merged into
@@ -364,6 +364,14 @@ ambiguous mixed artifacts remain in place and appear in its migration report.
 
 Plotting belongs in `utils/analysis/` beside its owning analysis and reads saved result files rather
 than loading models independently.
+
+`utils.analysis.clutter.partial_nonlinearity_training_curves_20260922 --complete` renders the
+complete 10-seed, 150-epoch GaWF/RNN baseline-versus-no-tanh comparison from staged pickle
+histories. It preserves the earlier partial snapshot, writes the complete long-form epoch table,
+coverage, and summary below
+`results/data/analysis/G_behaviour/partial_nonlinearity_training_curves_20260922/` with the unique
+suffix `_complete_20260923`, and writes the matching PNG/PDF directly below
+`results/figs/G_behaviour/`.
 
 `utils.analysis.clutter.data_scale_comparison` summarizes the formal Clutter 4h/10h/20h/40h
 comparison for the fixed best6 hyperparameters, six models, and seeds 1-10. It validates the

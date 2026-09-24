@@ -72,7 +72,11 @@ python -m experiments.monitoring.progress \
 完整 ID 的本地解析不会遍历 `jobs/`，因此无关旧 JSON 的本地读取/校验错误不会阻断该查询；
 自然语言只用于人工或 agent 在 `JOBS.md` / `active_jobs.json` 中确定唯一完整 ID，不能作为
 checker 参数。单任务查询没有扫描完整历史的入口。每次
-`progress` 会先执行 `ssh -O check <alias>`；失败会原样报告 socket 错误且不新建 SSH。成功后，
+`progress` 对 alias-only endpoint 会先执行 `ssh -O check <alias>`；失败会原样报告 socket
+错误且不新建 SSH。DSW 等没有稳定 alias/ControlMaster 的 endpoint，可以在忽略的
+`.agents/local.md` 中按 ``- DSW 5000: `ssh ... root@host` `` 记录完整命令；logical host
+`dsw-5000` 会自动匹配该配置并执行一次显式 direct foreground SSH，而不是在 socket 失败后
+静默降级。`--ssh-alias` 显式覆盖仍优先，并继续要求可用的 ControlMaster socket。成功后，
 同一 host/Conda 配置的多个 job 会合并到一个前台 SSH 会话。即使用 `--no-update`，若全部
 expected units 都具有有效 artifacts，输出也会报告 `completed (verified)`，不会再把
 已经完成的文件型分析显示为 `0/N`。只有 manifest 明确设置

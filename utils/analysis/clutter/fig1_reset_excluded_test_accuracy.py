@@ -42,6 +42,8 @@ NONLINEARITY_ABLATION_MODELS = (
     "rnn_notanh",
     "gawf_rnncore",
     "gawf_legacy",
+    "gawf_legacy_notanh",
+    "rnn_inloop_notanh",
 )
 MODELS = (
     ORIGINAL_MODELS
@@ -115,7 +117,7 @@ def collect(args: argparse.Namespace) -> Path:
         for batch_index, batch in enumerate(loader):
             inputs = batch[0].to(device=device, dtype=torch.float32, non_blocking=True)
             labels = batch[1].to(device=device, non_blocking=True)
-            use_feedback = True if args.model == "gawf" else None
+            use_feedback = True if args.model == "gawf" or args.model.startswith("gawf_") else None
             char_logits, sector_logits = run_forward_with_feedback(model, inputs, use_feedback)
             valid = torch.ones(labels.shape[:2], device=device, dtype=torch.bool)
             valid[:, 0] = False

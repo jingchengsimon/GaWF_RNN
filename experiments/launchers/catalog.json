@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "policy": "Canonical launchers stay in their task-owned directories; this catalog groups them without duplicating implementation.",
+  "clutter": {
+    "amarel": [
+      "experiments/launchers/clutter/amarel/launch_current_ablation.sh",
+      "experiments/clutter/amarel/submit_clutter_nonlinearity_ablation.sh",
+      "experiments/clutter/amarel/run_clutter_nonlinearity_ablation.sh",
+      "experiments/clutter/amarel/submit_clutter_gawf_core_variants.sh",
+      "experiments/clutter/amarel/run_clutter_gawf_core_variants.sh",
+      "experiments/clutter/amarel/submit_clutter_rnn_inloop_notanh.sh",
+      "experiments/clutter/amarel/run_clutter_rnn_inloop_notanh.sh",
+      "experiments/clutter/amarel/submit_clutter_ablation_behavior.sh",
+      "experiments/clutter/amarel/run_clutter_ablation_behavior.sh"
+    ],
+    "dsw": [
+      "experiments/launchers/clutter/dsw/launch_gawf_legacy_notanh.sh",
+      "experiments/remote/run_dsw_clutter_gawf_legacy_notanh.sh",
+      "experiments/launchers/clutter/dsw/run_fixed_gpu_nowrap_queue.sh",
+      "experiments/launchers/clutter/dsw/run_nowrap_unit.sh",
+      "experiments/launchers/clutter/dsw/pause_campaigns.py",
+      "experiments/launchers/clutter/dsw/pause_remote.py",
+      "experiments/launchers/clutter/dsw/archive/rnn_inloop_notanh_dsw8095_v1_coordinator.sh",
+      "experiments/launchers/clutter/dsw/archive/launch_rnn_seeds05_08_gpu00_03.sh",
+      "experiments/launchers/clutter/dsw/archive/launch_rnn_seeds09_10_gpu06_07.sh"
+    ]
+  },
+  "text": {
+    "amarel": [
+      "experiments/text/amarel/"
+    ],
+    "dsw": []
+  },
+  "rl": {
+    "amarel": [
+      "experiments/rl/atari/amarel/",
+      "experiments/rl/minigrid/amarel/"
+    ],
+    "dsw": [
+      "experiments/remote/run_sjc_atari_multitask_l3_gru.sh",
+      "experiments/remote/run_sjc_atari_skiing_warmstart_l3.sh"
+    ]
+  }
+}
