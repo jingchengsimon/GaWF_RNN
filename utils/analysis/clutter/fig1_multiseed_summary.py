@@ -288,29 +288,6 @@ def _plot_validation_loss_axis(
     _style_axis(axis)
 
 
-def _set_compact_test_axis(
-    axis: plt.Axes,
-    metrics: dict[str, dict[str, np.ndarray]],
-    metric: str,
-) -> None:
-    """Fit all seed points with three or four evenly spaced ticks."""
-
-    values = np.concatenate([model_values[metric] for model_values in metrics.values()])
-    for step in (2.0, 4.0, 6.0):
-        lower = step * np.floor(values.min() / step)
-        upper = step * np.ceil(values.max() / step)
-        ticks = np.arange(lower, upper + 0.001, step)
-        if 3 <= ticks.size <= 4:
-            break
-    else:
-        step = 6.0
-        lower = step * np.floor(values.min() / step)
-        upper = step * np.ceil(values.max() / step)
-        ticks = np.arange(lower, upper + 0.001, step)
-    axis.set_ylim(lower - 0.5, upper + 0.5)
-    axis.set_yticks(ticks)
-
-
 def main() -> None:
     args = parse_args()
     test_metrics = load_test_metrics(args.test_csv)
@@ -359,8 +336,10 @@ def main() -> None:
             axes[1, 0].set_ylim(68.0, 87.0)
             axes[1, 0].set_yticks((70.0, 78.0, 86.0))
         else:
-            _set_compact_test_axis(axes[0, 0], test_metrics, "sector")
-            _set_compact_test_axis(axes[1, 0], test_metrics, "char")
+            axes[0, 0].set_ylim(46.0, 84.0)
+            axes[0, 0].set_yticks((50.0, 60.0, 70.0, 80.0))
+            axes[1, 0].set_ylim(29.0, 75.0)
+            axes[1, 0].set_yticks((35.0, 55.0, 75.0))
         _plot_validation_loss_axis(
             axes[0, 1],
             validation_losses["sector"],
