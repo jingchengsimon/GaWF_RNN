@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "id": "clutter-cm-mnist-feedback-add-newsem-ep150-recovery-rnn5-gru1-lstm2-lstm5",
+  "description": "DSW 5000 recovery for two interrupted and two stranded seeds1-5 additive-feedback units.",
+  "host": "dsw-5000",
+  "status": "running",
+  "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn_feedback_add_ec89657",
+  "source_commit": "ec89657f3118f2592bfca4d999240572cf2f45c2",
+  "environment": {
+    "name": "/mnt/workspace/sjc/envs/aim3_gawf_rnn_bbade07",
+    "conda_init": "/mnt/workspace/sjc/miniconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "none",
+    "job_ids": [],
+    "run_ids": [
+      "feedback_add_newsem_recovery_dsw5000_v1",
+      "supervisor-pid-3191247"
+    ],
+    "tmux_session": null,
+    "process_patterns": [
+      "feedback_add_newsem_recovery_dsw5000_v1",
+      "clutter_feedback_add_newsem_40h_ep150_v1/rnn_fb_add-seed05",
+      "clutter_feedback_add_newsem_40h_ep150_v1/gru_fb_add-seed01",
+      "clutter_feedback_add_newsem_40h_ep150_v1/lstm_fb_add-seed02",
+      "clutter_feedback_add_newsem_40h_ep150_v1/lstm_fb_add-seed05"
+    ],
+    "collect_gpu": true,
+    "dependency_strategy": {
+      "type": "two_parallel_pairs_on_one_96g_gpu",
+      "phase1": "resume RNN seed5 and GRU seed1 from completed epoch65",
+      "phase2": "start LSTM seeds2 and5 after both resumed units finish"
+    }
+  },
+  "paths": {
+    "log_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/feedback_add_newsem_recovery_dsw5000_v1/supervisor.*",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/feedback_add_newsem_recovery_dsw5000_v1/logs/*"
+    ],
+    "status_dir": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/feedback_add_newsem_recovery_dsw5000_v1/status",
+    "result_paths": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/clutter/runs/clutter_feedback_add_newsem_40h_ep150_v1/{rnn_fb_add-seed05,gru_fb_add-seed01}",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results_dsw8095/data/clutter/runs/clutter_feedback_add_newsem_40h_ep150_v1/lstm_fb_add-seed0[25]"
+    ],
+    "data_path": "/mnt/workspace/sjc/aim3_gawf_rnn_data/stimuli"
+  },
+  "tracking": {
+    "expected_units": 4,
+    "auto_complete": true,
+    "result_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/clutter/runs/clutter_feedback_add_newsem_40h_ep150_v1/rnn_fb_add-seed05/*_metrics.json",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/clutter/runs/clutter_feedback_add_newsem_40h_ep150_v1/gru_fb_add-seed01/*_metrics.json",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results_dsw8095/data/clutter/runs/clutter_feedback_add_newsem_40h_ep150_v1/lstm_fb_add-seed02/*_metrics.json",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results_dsw8095/data/clutter/runs/clutter_feedback_add_newsem_40h_ep150_v1/lstm_fb_add-seed05/*_metrics.json"
+    ],
+    "defaults": {
+      "expected": {},
+      "checkpoint_glob": "*_model.pth",
+      "checkpoint_count": 1
+    },
+    "units": []
+  },
+  "notes": [
+    "RNN seed5 and GRU seed1 resumed from completed epoch65 at 2026-09-24T16:02:48+08:00.",
+    "Both phase1 writers share GPU5 and used 77814 MiB of 97871 MiB at startup; LSTM seeds2 and5 start only after both exit.",
+    "The recovery does not duplicate the live 8095 GRU seed5 or LSTM seeds1,3,4 writers."
+  ],
+  "created_at": "2026-09-24T08:02:48+00:00",
+  "updated_at": "2026-09-24T08:02:48+00:00"
+}

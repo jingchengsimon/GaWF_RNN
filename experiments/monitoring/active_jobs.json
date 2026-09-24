@@ -8,6 +8,38 @@
   ],
   "jobs": [
     {
+      "id": "clutter-cm-mnist-feedback-add-newsem-ep150-recovery-rnn5-gru1-lstm2-lstm5",
+      "description": "DSW 5000 recovery for two interrupted and two stranded seeds1-5 additive-feedback units.",
+      "host": "dsw-5000",
+      "status": "running",
+      "job_ids": [],
+      "run_ids": [
+        "feedback_add_newsem_recovery_dsw5000_v1",
+        "supervisor-pid-3191247"
+      ],
+      "tmux_session": null,
+      "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn_feedback_add_ec89657",
+      "updated_at": "2026-09-24T08:02:48+00:00"
+    },
+    {
+      "id": "clutter-cm-mnist-feedback-add-newsem-ep150-rnn-gru-lstm-seeds6-10",
+      "description": "Corrected additive-feedback RNN, GRU, and LSTM seeds6-10 on five fixed DSW 5000 GPUs.",
+      "host": "dsw-5000",
+      "status": "running",
+      "job_ids": [],
+      "run_ids": [
+        "feedback_add_newsem_seed6to10_dsw5000_v1",
+        "gpu0-pid-3187831",
+        "gpu1-pid-3187832",
+        "gpu2-pid-3187834",
+        "gpu3-pid-3187836",
+        "gpu4-pid-3187844"
+      ],
+      "tmux_session": null,
+      "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn_feedback_add_ec89657",
+      "updated_at": "2026-09-24T08:00:14+00:00"
+    },
+    {
       "id": "clutter-cm-mnist-feedback-add-newsem-ep150-gru-seeds2-5-lstm-seeds1-5",
       "description": "Remaining new-semantics additive-feedback units: GRU seeds2-5 and LSTM seeds1-5 on DSW 8095.",
       "host": "dsw-8095",
