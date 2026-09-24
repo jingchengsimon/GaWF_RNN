@@ -17,7 +17,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from utils.analysis.anal_helpers import build_model_from_ckpt, build_test_dataset, resolve_device
-from utils.training.clutter.clutter_train_acceleration import run_forward_with_feedback
+from utils.training.clutter.clutter_train_acceleration import run_forward
 
 
 ORIGINAL_MODELS = ("gawf", "rnn", "lstm", "gru", "mamba", "s5")
@@ -117,8 +117,7 @@ def collect(args: argparse.Namespace) -> Path:
         for batch_index, batch in enumerate(loader):
             inputs = batch[0].to(device=device, dtype=torch.float32, non_blocking=True)
             labels = batch[1].to(device=device, non_blocking=True)
-            use_feedback = True if args.model == "gawf" or args.model.startswith("gawf_") else None
-            char_logits, sector_logits = run_forward_with_feedback(model, inputs, use_feedback)
+            char_logits, sector_logits = run_forward(model, inputs)
             valid = torch.ones(labels.shape[:2], device=device, dtype=torch.bool)
             valid[:, 0] = False
             char_correct += int(

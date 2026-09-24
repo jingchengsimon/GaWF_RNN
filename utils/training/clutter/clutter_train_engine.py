@@ -28,7 +28,7 @@ from .clutter_train_acceleration import (
     AccelerationConfig,
     setup_acceleration,
     build_loaders,
-    run_forward_with_feedback,
+    run_forward,
     TrainStepper,
     GawfDiagnosticsRecorder,
 )
@@ -518,7 +518,6 @@ def evaluate_epoch(
     device,
     use_tqdm: bool,
     logger,
-    use_feedback,
     desc: str = "Validation",
     metrics_mode=None,
     run_label: str = "",
@@ -595,11 +594,7 @@ def evaluate_epoch(
                     labels = labels.float()
                 labels = labels.to(device)
 
-            out_char, out_pos = run_forward_with_feedback(
-                mdl,
-                inputs,
-                use_feedback=use_feedback,
-            )
+            out_char, out_pos = run_forward(mdl, inputs)
             # Single-char and all-chars modes have different eval update signatures.
             if isinstance(eval_mode, AllCharsMetricsMode):
                 acc = eval_mode.update_eval_batch(acc, out_char, labels)
@@ -696,7 +691,6 @@ def eval_train_subset(
     """
     epoch = epoch_ctx["epoch"]
     num_epochs = epoch_ctx["num_epochs"]
-    use_feedback = epoch_ctx["use_feedback_this_epoch"]
     metrics_mode = components["metrics_mode"]
     device = components["device"]
     use_tqdm = components["use_tqdm"]
@@ -709,7 +703,6 @@ def eval_train_subset(
         device=device,
         use_tqdm=use_tqdm,
         logger=logger,
-        use_feedback=use_feedback,
         desc="Train(eval-subset)",
         metrics_mode=metrics_mode,
         run_label=components.get("run_label") or "",
@@ -753,7 +746,6 @@ def eval_valid(
     Returns ``format_val_str`` line.
     """
     epoch = epoch_ctx["epoch"]
-    use_feedback = epoch_ctx["use_feedback_this_epoch"]
     metrics_mode = components["metrics_mode"]
     val_acc_char = components["val_acc_char"]
     val_metric_pos = components["val_metric_pos"]
@@ -771,7 +763,6 @@ def eval_valid(
             device=device,
             use_tqdm=use_tqdm,
             logger=logger,
-            use_feedback=use_feedback,
             desc="Validation",
             metrics_mode=metrics_mode,
             run_label=components.get("run_label") or "",
@@ -863,44 +854,19 @@ def stop_requested(stop_flag: Dict[str, bool]) -> bool:
     return bool(stop_flag.get("requested", False))
 
 
-def use_feedback_this_epoch(epoch: int, is_gawf: bool, nofb: bool, fb_start_epoch: int):
-    """
-    GaWFRNN: single nofb-based control for feedback.
-    This governs whether the feedback path is used and when U,V are frozen.
-    """
-    if not is_gawf:
-        return None  # not used
-    if not nofb:
-        return True  # default: always feedback
-    return epoch >= fb_start_epoch
-
-
 def begin_epoch(
     mdl: nn.Module,
     components: Dict[str, Any],
     epoch: int,
     num_epochs: int,
-    nofb: bool,
-    fb_start_epoch: int,
 ) -> Dict[str, Any]:
-    """
-    Start one training epoch:
-    - optionally freeze/unfreeze feedback parameters (GaWF nofb)
-    - init epoch online metrics accumulator and tqdm progress bar
-    """
-    is_gawf = components["is_gawf"]
+    """Initialize one epoch's online metrics and progress bar."""
+
+    del mdl
     train_dl = components["train_dl"]
     metrics_mode = components["metrics_mode"]
     use_tqdm = components["use_tqdm"]
     logger = components["logger"]
-
-    feedback_flag = use_feedback_this_epoch(epoch, is_gawf, nofb, fb_start_epoch)
-
-    if is_gawf and nofb:
-        if hasattr(mdl, "set_feedback_frozen"):
-            mdl.set_feedback_frozen(feedback_flag is False)
-        if use_tqdm and (epoch == 0 or epoch == fb_start_epoch) and logger is not None:
-            logger.info("GaWFRNN (nofb): epoch %d use_feedback=%s", epoch, feedback_flag)
 
     gawf_diagnostics = components.get("gawf_diagnostics")
     if gawf_diagnostics is not None:
@@ -926,7 +892,6 @@ def begin_epoch(
     return {
         "epoch": epoch,
         "num_epochs": num_epochs,
-        "use_feedback_this_epoch": feedback_flag,
         "metrics_mode": metrics_mode,
         "epoch_acc": epoch_acc,
         "num_batches_total": num_batches_total,
@@ -945,15 +910,10 @@ def train_batch(epoch_ctx: Dict[str, Any], batch_idx: int, batch):
     stepper = components["stepper"]
     metrics_mode = epoch_ctx["metrics_mode"]
     train_dl = components["train_dl"]
-    use_feedback_this_epoch = epoch_ctx["use_feedback_this_epoch"]
     use_tqdm = components["use_tqdm"]
     train_pbar = epoch_ctx["train_pbar"]
 
-    current_loss, out_char, out_pos, labels_device = stepper.step(
-        batch,
-        batch_idx,
-        use_feedback_this_epoch,
-    )
+    current_loss, out_char, out_pos, labels_device = stepper.step(batch, batch_idx)
 
     epoch_ctx["epoch_acc"] = metrics_mode.update_train_batch(
         epoch_ctx["epoch_acc"],

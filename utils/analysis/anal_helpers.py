@@ -1,8 +1,8 @@
 """
 Shared helpers for analysis scripts: test split dataset construction and GaWF checkpoint loading.
 
-Imports: the Clutter training entry module (MC_RNN_Dataset), clutter helpers (paths/datasets), and the canonical
-checkpoint-filename hyperparameter parser.
+Imports: the Clutter training entry module (MC_RNN_Dataset), clutter helpers, and the
+canonical checkpoint-filename hyperparameter parser.
 """
 
 from __future__ import annotations
@@ -15,34 +15,12 @@ import torch
 
 from utils.training.train_scripts.clutter import MC_RNN_Dataset
 from utils.training.clutter.clutter_task_models import (
-    BRIMsConv,
     GaWFRNNConv,
-    GaWFAdditiveConv,
-    GaWFLegacyNoTanhConv,
-    GaWFLegacyNoWrapConv,
-    GaWFNoTanhConv,
-    GaWFNoWrapConv,
     GRUConv,
-    GRUAdditiveFeedbackConv,
-    GRUFeedbackConv,
-    GRUNoWrapConv,
     LSTMConv,
-    LSTMAdditiveFeedbackConv,
-    LSTMFeedbackConv,
-    LSTMNoWrapConv,
-    HyperLSTMConv,
     MambaConv,
-    MambaNoWrapConv,
-    MultiLayerGaWFRNNConv,
     RNNConv,
-    RNNAdditiveFeedbackConv,
-    RNNFeedbackConv,
-    RNNInLoopNoTanhConv,
-    RNNNoTanhConv,
-    RNNNoWrapConv,
     S5Conv,
-    S5NoWrapConv,
-    MLSTMConv,
 )
 from utils.training.clutter.clutter_train_helpers import PathHelper, create_datasets
 from utils.analysis.model_train_single_result import parse_hparams_from_filename
@@ -160,35 +138,18 @@ def build_train_dataset_allchars(args: argparse.Namespace) -> MC_RNN_Dataset:
 
 _HPARAM_MODEL_TO_KEY: Dict[str, str] = {
     "GaWF": "gawf",
-    "GaWFMulti": "gawf_multi",
     "RNN": "rnn",
     "LSTM": "lstm",
     "GRU": "gru",
     "MAMBA": "mamba",
     "S5": "s5",
-    "GaWFAdditive": "gawf_additive",
-    "RNNFB": "rnn_fb",
-    "GRUFB": "gru_fb",
-    "LSTMFB": "lstm_fb",
-    "RNNFBAdd": "rnn_fb_add",
-    "GRUFBAdd": "gru_fb_add",
-    "LSTMFBAdd": "lstm_fb_add",
-    "MLSTM": "mlstm",
-    "HyperLSTM": "hyperlstm",
-    "BRIMs": "brims",
-    "GaWFNoWrap": "gawf_nowrap",
-    "GaWFNoTanh": "gawf_notanh",
-    "GaWFRNNCore": "gawf_rnncore",
-    "GaWFLegacy": "gawf_legacy",
-    "GaWFLegacyNoWrap": "gawf_legacy_nowrap",
-    "GaWFLegacyNoTanh": "gawf_legacy_notanh",
-    "RNNNoWrap": "rnn_nowrap",
-    "RNNNoTanh": "rnn_notanh",
-    "RNNInLoopNoTanh": "rnn_inloop_notanh",
-    "GRUNoWrap": "gru_nowrap",
-    "LSTMNoWrap": "lstm_nowrap",
-    "MambaNoWrap": "mamba_nowrap",
-    "S5NoWrap": "s5_nowrap",
+    # Filename-only aliases for the six already-trained manuscript checkpoints.
+    "GaWFLegacyNoTanh": "gawf",
+    "RNNInLoopNoTanh": "rnn",
+    "GRUNoWrap": "gru",
+    "LSTMNoWrap": "lstm",
+    "MambaNoWrap": "mamba",
+    "S5NoWrap": "s5",
 }
 
 
@@ -251,85 +212,32 @@ def build_model_from_ckpt(
 
     num_classes = 10
     model_name = hparams.get("model_type")
-    model_key = _HPARAM_MODEL_TO_KEY.get(model_name, "gawf")
+    if model_name not in _HPARAM_MODEL_TO_KEY:
+        raise ValueError(f"Unsupported checkpoint model type: {model_name!r}")
+    model_key = _HPARAM_MODEL_TO_KEY[model_name]
     num_layers = int(hparams.get("num_layers", hparams.get("gawf_layers", 1)))
-    if model_key == "gawf" and num_layers > 1:
-        model_key = "gawf_multi"
     model_class_map = {
         "gawf": GaWFRNNConv,
-        "gawf_multi": MultiLayerGaWFRNNConv,
         "rnn": RNNConv,
         "lstm": LSTMConv,
         "gru": GRUConv,
         "mamba": MambaConv,
         "s5": S5Conv,
-        "gawf_additive": GaWFAdditiveConv,
-        "rnn_fb": RNNFeedbackConv,
-        "gru_fb": GRUFeedbackConv,
-        "lstm_fb": LSTMFeedbackConv,
-        "rnn_fb_add": RNNAdditiveFeedbackConv,
-        "gru_fb_add": GRUAdditiveFeedbackConv,
-        "lstm_fb_add": LSTMAdditiveFeedbackConv,
-        "mlstm": MLSTMConv,
-        "hyperlstm": HyperLSTMConv,
-        "brims": BRIMsConv,
-        "gawf_nowrap": GaWFNoWrapConv,
-        "rnn_nowrap": RNNNoWrapConv,
-        "gru_nowrap": GRUNoWrapConv,
-        "lstm_nowrap": LSTMNoWrapConv,
-        "mamba_nowrap": MambaNoWrapConv,
-        "s5_nowrap": S5NoWrapConv,
-        "gawf_notanh": GaWFNoTanhConv,
-        "rnn_notanh": RNNNoTanhConv,
-        "rnn_inloop_notanh": RNNInLoopNoTanhConv,
-        "gawf_rnncore": GaWFRNNConv,
-        "gawf_legacy": GaWFRNNConv,
-        "gawf_legacy_nowrap": GaWFLegacyNoWrapConv,
-        "gawf_legacy_notanh": GaWFLegacyNoTanhConv,
     }
     model_cls = model_class_map[model_key]
     model_kwargs = {}
-    # Historical ``gawf_*`` checkpoints predate the RNN alignment and must keep loading through the
-    # frozen legacy core; only explicitly marked stems use the RNN-aligned core.
-    if model_key in (
-        "gawf",
-        "gawf_legacy",
-        "gawf_rnncore",
-        "gawf_legacy_nowrap",
-        "gawf_legacy_notanh",
-    ):
-        model_kwargs["gawf_core"] = (
-            "rnn_aligned" if model_key == "gawf_rnncore" else "legacy"
-        )
-    if model_key == "gawf_additive":
-        # Completed feedback-control units were trained with the in-loop-wrap additive core; new
-        # aligned additive runs must introduce a distinct stem token before relaxation here.
-        model_kwargs["state_semantics"] = "legacy"
-    if model_key in (
-        "gawf",
-        "gawf_multi",
-        "gawf_legacy",
-        "gawf_rnncore",
-        "gawf_legacy_nowrap",
-        "gawf_legacy_notanh",
-    ):
+    if model_key == "gawf":
         parsed_feedback_dim = hparams.get("feedback_dim")
         if parsed_feedback_dim is not None:
             model_kwargs["feedback_dim"] = int(parsed_feedback_dim)
-        if model_key == "gawf_multi":
-            model_kwargs["num_layers"] = num_layers
-    elif model_key in ("rnn", "rnn_inloop_notanh", "lstm", "gru"):
         model_kwargs["num_layers"] = num_layers
-    elif model_key in ("mamba", "mamba_nowrap"):
+    elif model_key in ("rnn", "lstm", "gru"):
+        model_kwargs["num_layers"] = num_layers
+    elif model_key == "mamba":
         model_kwargs["mamba_d_model"] = int(hparams.get("d_model", 170))
-    elif model_key in ("s5", "s5_nowrap"):
+    elif model_key == "s5":
         model_kwargs["s5_d_model"] = int(hparams.get("d_model", 256))
         model_kwargs["s5_state_size"] = int(hparams.get("state_size", 128))
-    elif model_key == "hyperlstm":
-        model_kwargs["hyper_hidden_size"] = int(hparams.get("hyper_hidden_size", 10))
-        model_kwargs["hyper_embedding_size"] = int(
-            hparams.get("hyper_embedding_size", 4)
-        )
 
     model = model_cls(
         num_classes=num_classes,
@@ -341,7 +249,7 @@ def build_model_from_ckpt(
         rnn_dropout=rnn_dropout,
         **(
             {}
-            if model_key in ("mamba", "s5", "mamba_nowrap", "s5_nowrap")
+            if model_key in ("mamba", "s5")
             else {"hidden_size": hidden_size}
         ),
         max_chars=15,
@@ -379,8 +287,10 @@ def build_rnn_allchars_model_from_sector_ckpt(
 
     num_classes = 10
     model_name = hparams.get("model_type")
-    model_key = _HPARAM_MODEL_TO_KEY.get(model_name, "gawf")
-    if model_key in ("gawf", "gawf_multi"):
+    if model_name not in _HPARAM_MODEL_TO_KEY:
+        raise ValueError(f"Unsupported checkpoint model type: {model_name!r}")
+    model_key = _HPARAM_MODEL_TO_KEY[model_name]
+    if model_key == "gawf":
         raise RuntimeError(
             "BG switch offset analysis does not support GaWF checkpoints "
             "(use RNN, LSTM, or GRU sector checkpoints only)."

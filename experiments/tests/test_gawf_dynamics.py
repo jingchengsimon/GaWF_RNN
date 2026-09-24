@@ -27,7 +27,6 @@ def test_closed_loop_jacobian_matches_autograd() -> None:
         kernel_size=5,
         device="cpu",
         rnn_dropout=0.0,
-        gawf_core="legacy",
     ).eval()
     encoded = torch.randn(1, model.encoder_flatten_size) * 0.05
     hidden = torch.rand(1, 4)
@@ -136,7 +135,6 @@ def test_event_measurements_accept_numpy_frames() -> None:
         kernel_size=5,
         device="cpu",
         rnn_dropout=0.0,
-        gawf_core="legacy",
     ).eval()
     event = {
         "sequence_id": 0,

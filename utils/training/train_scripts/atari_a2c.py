@@ -39,9 +39,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--feedback_mode",
         type=str,
-        default="none",
+        default=None,
         choices=["none", "output"],
-        help="GaWF gate feedback source; LSTM requires 'none'.",
+        help="Feedback source; defaults to output for GaWF and none for LSTM.",
     )
     parser.add_argument("--hidden_size", type=int, default=256)
     parser.add_argument("--num_layers", type=int, default=1)
@@ -96,6 +96,8 @@ def _extract_episode_returns(infos) -> list[float]:
 def train(args: argparse.Namespace) -> dict[str, float | int | str | None]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
     logger = logging.getLogger("train_atari")
+    if args.feedback_mode is None:
+        args.feedback_mode = "output" if args.model_type == "gawf" else "none"
     set_atari_seed(args.seed)
     device = select_device(args.device)
     save_dir = args.save_dir or os.path.join("results", "data", "rl", "atari", "runs", args.result_suffix)

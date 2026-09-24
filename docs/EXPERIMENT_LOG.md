@@ -516,3 +516,18 @@
   validation Digit / Sector 配对差为 −0.056±0.271 / +0.016±0.121 pt（mean±SEM，n=10）；
   RNN in-loop no-tanh 相对旧 RNN 为 +3.126±0.260 / +0.246±0.104 pt。以上是沿用 legacy
   lr/wd 的 validation-trajectory endpoint，不是独立调参后的 test-accuracy 因果结论。
+
+## 2026-09-24 — ICLR 匿名仓库收敛到六个最终模型定义
+
+- **改动（Change）：** active recurrent cores 与 Clutter CLI 只保留 `gawf`、`rnn`、`gru`、
+  `lstm`、`mamba`、`s5`。`gawf` 与 `rnn` 均采用 loop 内
+  `dropout(ReLU(LayerNorm(z_t)))` 且不含 `tanh`；GaWF 仅比 RNN 多 feedback-conditioned
+  `W_ih/W_hh` gates。GRU/LSTM 使用 native PyTorch 通路，Mamba/S5 使用 projected residual
+  native block 通路，四者均无额外 readout wrap。
+- **归档（Archive）：** nonlinearity-placement variants、additive/concatenated feedback
+  controls、mLSTM/HyperLSTM/BRIMs 及其测试移至
+  `utils/training/recurrent_cores/archive/pre_iclr_2026_09_24/` 与
+  `experiments/archive/pre_iclr_2026_09_24/`，active code 不再 import 它们。
+- **接口（Interface）：** GaWF 不再提供 feedback-off path 或 `--nofb`；`--dz` 与
+  `--num_layers` 保留。历史结果 stem 仅作为当前六种 checkpoint 的 input-only aliases，
+  新训练不再生成旧 variant 名称。

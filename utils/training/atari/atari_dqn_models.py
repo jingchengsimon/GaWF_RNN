@@ -103,7 +103,7 @@ class AtariQNetwork(nn.Module):
         hidden_size: int = 512,
         encoder_feature_dim: int = 512,
         core_dropout: float = 0.0,
-        feedback_mode: DQNFeedbackMode = "none",
+        feedback_mode: DQNFeedbackMode | None = None,
         detach_feedback: bool = True,
         ssm_d_model: int = 256,
         ssm_state_size: int = 128,
@@ -115,11 +115,11 @@ class AtariQNetwork(nn.Module):
         super().__init__()
         if model_type not in {*FEEDFORWARD_MODEL_TYPES, *RECURRENT_MODEL_TYPES}:
             raise ValueError(f"Unsupported Atari DQN model_type: {model_type}")
-        if feedback_mode not in {"none", "qvalues"}:
-            raise ValueError(f"Unsupported feedback_mode: {feedback_mode}")
-        if model_type != "gawf" and feedback_mode != "none":
+        expected_feedback = "qvalues" if model_type == "gawf" else "none"
+        feedback_mode = feedback_mode or expected_feedback
+        if feedback_mode != expected_feedback:
             raise ValueError(
-                f"feedback_mode='qvalues' is only valid for model_type='gawf', not '{model_type}'"
+                f"{model_type} requires feedback_mode={expected_feedback!r}, got {feedback_mode!r}"
             )
         self.num_actions = int(num_actions)
         self.input_channels = int(input_channels)
@@ -154,9 +154,7 @@ class AtariQNetwork(nn.Module):
             head_input_size = encoder_feature_dim
         elif self.model_type == "gawf":
             self.proj = None
-            top_feedback_dim = max(
-                1, self.feedback_dim_for_mode(self.feedback_mode, self.num_actions)
-            )
+            top_feedback_dim = self.num_actions
             self.core = GaWFCore(
                 input_size=conv_out,
                 hidden_size=self.hidden_size,
@@ -339,18 +337,11 @@ class AtariQNetwork(nn.Module):
         feedback: torch.Tensor | None,
     ) -> tuple[torch.Tensor, AtariRecurrentState]:
         if self.model_type == "gawf":
-            if self.feedback_mode == "none":
-                stepped = self.core.step_no_feedback(x_t, recurrent)
-                if self.num_layers == 1:
-                    # Aligned GaWF: raw state carried, wrapped value read by the head.
-                    return self.core.project_readout(stepped), stepped
-                features, next_recurrent = stepped
-                return features, next_recurrent
             if feedback is None:
                 raise ValueError("GaWF qvalues feedback mode requires feedback")
             if self.num_layers == 1:
                 state = self.core.step(x_t, recurrent, feedback)
-                return self.core.project_readout(state), state
+                return state, state
             if not isinstance(recurrent, list):
                 raise TypeError("multi-layer GaWF state must be a list")
             feedbacks = [part.detach() for part in recurrent[1:]] + [feedback]

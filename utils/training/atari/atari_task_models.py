@@ -3,8 +3,8 @@
 Inputs are preprocessed Atari observations shaped ``(B, C, 84, 84)`` or sequences
 ``(B, T, C, 84, 84)``. Outputs are policy logits over environment actions and a
 scalar value estimate. LSTM and GaWF variants both receive previous action and
-reward as recurrent inputs. GaWF can optionally use previous policy/value outputs
-as detached gate feedback.
+reward as recurrent inputs. GaWF uses previous policy/value outputs as detached
+gate feedback.
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ class AtariActorCriticHead(nn.Module):
 
 
 class AtariActorCritic(nn.Module):
-    """Atari recurrent policy/value model with optional GaWF output feedback."""
+    """Atari recurrent policy/value model with canonical GaWF output feedback."""
 
     def __init__(
         self,
@@ -92,17 +92,19 @@ class AtariActorCritic(nn.Module):
         hidden_size: int = 256,
         encoder_feature_dim: int = 512,
         core_dropout: float = 0.0,
-        feedback_mode: FeedbackMode = "none",
+        feedback_mode: FeedbackMode | None = None,
         detach_feedback: bool = True,
         num_layers: int = 1,
     ) -> None:
         super().__init__()
         if model_type not in {"lstm", "gawf"}:
             raise ValueError(f"Unsupported Atari model_type: {model_type}")
-        if feedback_mode not in {"none", "output"}:
-            raise ValueError(f"Unsupported feedback_mode: {feedback_mode}")
-        if model_type == "lstm" and feedback_mode != "none":
-            raise ValueError("Atari LSTM baseline only supports feedback_mode='none'")
+        expected_feedback = "output" if model_type == "gawf" else "none"
+        feedback_mode = feedback_mode or expected_feedback
+        if feedback_mode != expected_feedback:
+            raise ValueError(
+                f"{model_type} requires feedback_mode={expected_feedback!r}, got {feedback_mode!r}"
+            )
         self.num_actions = int(num_actions)
         self.input_channels = int(input_channels)
         self.model_type = model_type
@@ -126,9 +128,7 @@ class AtariActorCritic(nn.Module):
                 num_layers=self.num_layers,
             )
         else:
-            top_feedback_dim = max(
-                1, self.feedback_dim_for_mode(self.feedback_mode, self.num_actions)
-            )
+            top_feedback_dim = self.num_actions + 1
             self.core = GaWFCore(
                 input_size=self.recurrent_input_size,
                 hidden_size=self.hidden_size,
@@ -298,17 +298,11 @@ class AtariActorCritic(nn.Module):
         if self.model_type == "lstm":
             features, next_recurrent = self.core(x_t.unsqueeze(1), recurrent)
             return features[:, 0, :], next_recurrent
-        if self.feedback_mode == "none":
-            stepped = self.core.step_no_feedback(x_t, recurrent)
-            if self.num_layers == 1:
-                # Aligned GaWF: the state is the raw activation, the head reads the wrapped value.
-                return self.core.project_readout(stepped), stepped
-            return stepped
         if feedback is None:
             raise ValueError("GaWF output feedback mode requires feedback")
         if self.num_layers == 1:
             state = self.core.step(x_t, recurrent, feedback)
-            return self.core.project_readout(state), state
+            return state, state
         if not isinstance(recurrent, list):
             raise TypeError("multi-layer GaWF recurrent state must be a list")
         feedbacks = [part.detach() for part in recurrent[1:]] + [feedback]

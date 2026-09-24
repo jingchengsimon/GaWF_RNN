@@ -1,6 +1,6 @@
 """
 Acceleration-related utilities for training.
-Contains AccelerationConfig, setup_acceleration, build_loaders, run_forward_with_feedback, TrainStepper.
+Contains AccelerationConfig, setup_acceleration, build_loaders, run_forward, and TrainStepper.
 Device/dtype helpers for CUDA/MPS/CPU compatibility (MPS does not support float64).
 """
 import json
@@ -246,20 +246,11 @@ def build_loaders(train_data, val_data, batch_size, num_workers, pin_memory, acc
     return train_dl, train_eval_dl, val_dl
 
 
-def run_forward_with_feedback(mdl, inputs, use_feedback=None):
-    """
-    Single forward path for both training and evaluation.
-    Stateless: always start with prev_feedback=None and reset_feedback=True so feedback
-    is updated only within the same batch's timestep loop. No cross-batch/epoch table.
-    Returns: (out_char, out_pos).
-    """
-    if hasattr(mdl, "prev_feedback"):
-        mdl.prev_feedback = None
-    if use_feedback is not None:
-        out_char, out_pos = mdl(inputs, use_feedback=use_feedback, reset_feedback=True)
-    else:
-        out_char, out_pos = mdl(inputs)
-    return out_char, out_pos
+def run_forward(mdl, inputs):
+    """Reset runtime state and execute the model's single canonical forward path."""
+
+    mdl.reset_sequence_state()
+    return mdl(inputs)
 
 
 def _total_norm_from_tensors(tensors):
@@ -463,7 +454,7 @@ class TrainStepper:
         self.chan_num = int(getattr(train_data, "chan_num", 2))
         self.gawf_diagnostics = gawf_diagnostics
 
-    def step(self, batch, batch_idx, use_feedback_this_epoch):
+    def step(self, batch, batch_idx):
         """
         Run one batch: move to device (with MPS-safe dtypes), forward, loss, backward, step at accum boundary.
         Returns: (current_loss, out_char, out_pos, labels_device). labels_device is labels
@@ -503,10 +494,7 @@ class TrainStepper:
             diag.begin_forward(self.mdl, record_diag)
 
         with self.autocast_fn(self.device):
-            out_char, out_pos = run_forward_with_feedback(
-                self.mdl, inputs,
-                use_feedback=use_feedback_this_epoch,
-            )
+            out_char, out_pos = run_forward(self.mdl, inputs)
             loss = self.loss_fn(out_char, out_pos, labels_device) * loss_scale
         diag_row = diag.pop_forward(self.mdl, record_diag) if diag is not None else {}
 

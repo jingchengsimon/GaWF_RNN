@@ -1,4 +1,4 @@
-"""CPU regression checks for legacy GaWF runtime state and formal submission guards."""
+"""CPU regression checks for GaWF runtime state and formal submission guards."""
 
 import os
 import subprocess
@@ -10,16 +10,15 @@ import torch
 
 from utils.training.train_scripts.clutter import (
     GaWFRNNConv,
-    MultiLayerGaWFRNNConv,
     _load_clutter_checkpoint,
     _load_clutter_model_state,
     _save_clutter_checkpoint,
 )
 
 
-@pytest.mark.parametrize("model_class", [GaWFRNNConv, MultiLayerGaWFRNNConv])
-def test_legacy_feedback_resume(model_class: type, tmp_path: Path) -> None:
-    model = model_class(10, 9, hidden_size=8, device="cpu")
+@pytest.mark.parametrize("num_layers", [1, 2])
+def test_legacy_feedback_resume(num_layers: int, tmp_path: Path) -> None:
+    model = GaWFRNNConv(10, 9, hidden_size=8, device="cpu", num_layers=num_layers)
     model.prev_feedback = torch.ones(3, 19)
     assert "prev_feedback" not in model.state_dict()
     optimizer = torch.optim.AdamW(model.parameters())
@@ -39,7 +38,7 @@ def test_legacy_feedback_resume(model_class: type, tmp_path: Path) -> None:
     payload["model"]["prev_feedback"] = torch.ones(3, 19)
     payload["best_state"]["prev_feedback"] = torch.ones(7, 19)
     torch.save(payload, path)
-    target = model_class(10, 9, hidden_size=8, device="cpu")
+    target = GaWFRNNConv(10, 9, hidden_size=8, device="cpu", num_layers=num_layers)
     target.prev_feedback = torch.zeros(2, 19)
     restored = {
         "optim": torch.optim.AdamW(target.parameters()),

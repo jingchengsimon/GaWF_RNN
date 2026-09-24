@@ -56,24 +56,14 @@ The arrows are one-way:
 
 `utils/training/recurrent_cores/` provides:
 
-- `RNNCore`, `GRUCore`, and `LSTMCore`, including unified `num_layers` handling.
-- `GaWFCore`, the later RNN-aligned experimental branch with single- and multi-layer paths. It is
-  `nn.RNN` plus an element-wise gate on the input and hidden weight matrices, so the recurrence,
-  both biases, the in-recurrence activation (`rnn_activation`: built-in `tanh` or `relu`) and the
-  state convention are the built-in ones; `rnn_activation="identity"` is the single non-built-in
-  branch and yields a linear recurrence. `gawf_legacy.GaWFCoreLegacy` freezes the original GaWF
-  definition, in which the wrapped activity is the recurrent state, and is reachable as the
-  `gawf_legacy` model type.
-- `RNNCore` additionally supports `wrap_recurrent_state=True` for matched controls. The
-  `rnn_inloop_notanh` control uses identity inner activation and feeds
-  `dropout(ReLU(LayerNorm(preactivation)))` into the next time step.
-- `AdditiveFeedbackRNNCore` and `ConcatenatedFeedbackCellCore`, used only by the
-  non-multiplicative Clutter feedback controls.
-- `MambaCore` and `S5Core` sequence models.
-- `MLSTMCore`, `HyperLSTMCore`, and `BRIMsCore` for the open-loop
-  dynamic/input-conditioned reviewer baselines. HyperLSTM uses the pinned minimal labml subset
-  under `third_party/labml_nn/`; BRIMs is a clean-room implementation because the inspected
-  upstream repository has no license grant.
+- `GaWFCore`, the feedback-gated recurrence used by the reported model.
+- `RNNCore`, the matched ungated recurrence.
+- `GRUCore` and `LSTMCore`, direct wrappers around `nn.GRU` and `nn.LSTM`.
+- `MambaCore` and `S5Core`, projected residual sequence stacks.
+
+Historical ablations and reviewer-only recurrent definitions are frozen under
+`utils/training/recurrent_cores/archive/pre_iclr_2026_09_24/`. Active training and analysis code
+must not import from that directory.
 
 GaWF uses feedback-conditioned input/hidden transforms. For feedback vector `fb`:
 
@@ -83,31 +73,25 @@ V: (fb_dim, input_size + hidden_size)
 gate = sigmoid(U @ (fb * V) / 0.5)
 ```
 
-The gate multiplies every element of `W_ih` and `W_hh`. The original GaWF definition used by the
-completed Clutter results is:
+The gate multiplies every element of `W_ih` and `W_hh`. The current reported GaWF definition is:
 
 ```text
-pre_t = (gate_ih * W_ih) x_t + (gate_hh * W_hh) h_{t-1} + b_ih + b_hh
-h_t   = dropout(ReLU(LayerNorm(activation(pre_t))))  # readout and next recurrent state
+z_t = (gate_ih * W_ih) x_t + (gate_hh * W_hh) h_{t-1} + b_ih + b_hh
+h_t = dropout(ReLU(LayerNorm(z_t)))  # layer output and next recurrent state
 ```
 
-The later RNN-aligned branch instead carries only `activation(pre_t)` and applies the wrap to the
-readout. It remains available for provenance as `GaWFCore`/`gawf_rnncore`, but its planned formal
-rerun was cancelled after the original in-loop activity was reconfirmed as the intended GaWF
-definition. The matched `rnn_inloop_notanh` behavioral control removes both the feedback gate and
-the inner `tanh`, while retaining the in-loop wrap:
+The matched RNN removes only the feedback-conditioned gates:
 
 ```text
-pre_t = W_ih x_t + W_hh h_{t-1} + b_ih + b_hh
-h_t   = dropout(ReLU(LayerNorm(pre_t)))             # readout and next recurrent state
+z_t = W_ih x_t + W_hh h_{t-1} + b_ih + b_hh
+h_t = dropout(ReLU(LayerNorm(z_t)))  # layer output and next recurrent state
 ```
 
 For one layer, omitted Clutter `--dz` retains output-sized legacy feedback; explicit `--dz > 0`
 uses a projector. For multiple layers, direct feedback uses the detached adjacent upper hidden
 state at non-final layers and the detached previous task output at the final layer. Projected
-mode gives each layer its own U/V pair and projector dimension. Multi-layer GaWF stacks built-in
-`nn.RNN` layers, applies the external wrap between layers (each layer's readout is the next
-layer's input), and carries each layer's raw `activation(preactivation)` as that layer's state.
+mode gives each layer its own U/V pair and projector dimension. Each layer carries the wrapped
+activity above as both its output and its next recurrent state.
 
 `prev_feedback` is detached runtime state, registered as a non-persistent buffer in Clutter.
 Resume and best-validation loading filter legacy copies, reset the runtime cache, and use
@@ -133,41 +117,12 @@ channels or 6x6 spatial structure.
 ### Model and training composition
 
 `ClutterSequenceModel` composes the CNN, a middle recurrent/sequence model, and
-`ClutterCharPosHead`. Public wrappers include `RNNConv`, `GRUConv`, `LSTMConv`, `GaWFRNNConv`,
-`MambaConv`, `S5Conv`, `MLSTMConv`, `HyperLSTMConv`, and `BRIMsConv`. Historical multi-layer
-class/checkpoint names remain readable, while new runs use `gawf --num_layers N`.
-
-The three dynamic/input-conditioned baselines are open-loop: none receives task-head output.
-`MLSTMConv` implements Krause et al. (2017) Equations (17)--(21), not the xLSTM matrix-memory
-mLSTM. `HyperLSTMConv` preserves labml's four-tensor main/hyper state. `BRIMsConv` contains the
-paper's two internal layers, bottom-up/current and top-down/previous-timestep attention, sparse
-module updates, and within-layer communication; its default MNIST structure is blocks `(6, 3)`
-and top-k `(4, 2)`. Its fixed attention dimensions follow the inspected MNIST core: input
-attention uses 4 heads with `d_k=64`, and within-layer communication uses 4 heads with
-`d_k=d_v=32`. All three return `(B,T,H)` and reset when called without an explicit state,
-then use the same external `LayerNorm -> ReLU -> dropout` contract as existing recurrent cores.
-
-The separate feedback-control model types are `gawf_additive`, `rnn_fb`, `gru_fb`, and
-`lstm_fb`. They reuse `GaWFRNNConv._compute_feedback`: the previous frame's detached raw digit
-and sector logits are concatenated into a 19-dimensional vector, with an all-zero vector at the
-first frame of every independent rollout. `gawf_additive` adds `Linear(19, hidden_size)` to the
-RNN preactivation and initializes its input/recurrent weights at `0.5W`, matching GaWF's
-zero-feedback `sigmoid(0)=0.5` effective weight. The other three controls concatenate feedback
-to every cell input and therefore use per-frame `RNNCell`, `GRUCell`, or `LSTMCell` execution.
-These model types are single-layer controls and do not alter the original open-loop paths.
-All four controls follow the same aligned readout contract as GaWF: the state that is fed back is
-the raw activation and the wrap is applied to the readout only. Because the additive projection
-and the concatenated input block are algebraically interchangeable, the two RNN controls differ
-after this alignment only by that parameterization, by the additive bias and by the `0.5W`
-initialization.
-
-The corrected additive-feedback controls are `rnn_fb_add`, `gru_fb_add`, and `lstm_fb_add`.
-They use the native no-wrap RNN-tanh, GRU, or LSTM output/state semantics and add one independent
-affine source `W_fb f_(t-1) + b_fb` to the cell preactivation (all three GRU gates or all four
-LSTM gates). `W_fb` and trainable `b_fb` use the same PyTorch uniform initialization bound as the
-cell parameters and remain in the same optimizer parameter group. Disabling feedback omits the
-entire affine source, including `b_fb`; the zero feedback vector on the first closed-loop step
-still retains the learned source bias.
+`ClutterCharPosHead`. The public wrappers are exactly `RNNConv`, `GRUConv`, `LSTMConv`,
+`GaWFRNNConv`, `MambaConv`, and `S5Conv`. `GaWFRNNConv` owns both single- and multi-layer paths via
+`--num_layers`; there is no separate multi-layer class. GaWF feedback is always active after the
+zero-initialized first frame. GRU/LSTM return the native PyTorch layer output. Mamba/S5 return the
+projected residual stack output. None of these four baselines receives an external
+`LayerNorm -> ReLU -> dropout` wrap.
 
 `clutter_train_helpers.py` owns CLI construction, paths, dataset creation, logging, model
 registration, seeding, and saved summaries. `clutter_train_acceleration.py` owns loaders, AMP,
@@ -198,7 +153,7 @@ not introduce separate RNN/GaWF implementations.
 The recurrent input contains encoded observation features plus previous action and reward.
 
 - Model types: `lstm`, `gawf`.
-- Feedback modes: `none`; GaWF may use `output`.
+- LSTM has no task-output feedback; GaWF always uses `output` feedback.
 - `output` feedback is detached previous policy logits concatenated with previous value.
 
 ### DQN/DRQN

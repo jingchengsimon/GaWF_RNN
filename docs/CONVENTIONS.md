@@ -12,7 +12,6 @@ Architecture and workflow rules live in `ARCHITECTURE.md` and `DEVELOPMENT_WORKF
 | `ih`, `hh` | input-to-hidden and hidden-to-hidden paths |
 | `cdo`, `rdo` | CNN and recurrent/middle-path dropout filename fields |
 | `h`, `dmodel`, `state` | recurrent hidden size, sequence-model width, S5 state size |
-| `hh`, `nz` | HyperLSTM hyper-network hidden size and row-scaling feature size |
 | `L` | recurrent/readout layer count in filenames |
 | `fs`, `stack` | ALE frame skip and observation frame stack |
 | `glob` | global correct frames divided by global frame count |
@@ -27,21 +26,13 @@ Architecture and workflow rules live in `ARCHITECTURE.md` and `DEVELOPMENT_WORKF
 - Constants: `UPPER_SNAKE_CASE`.
 - Private helpers: one leading underscore.
 - Common loop indices: `sidx` sample, `t` time, `b` batch, `d` digit/component, `c` channel.
-- Public model keys use lowercase: `ann`, `rnn`, `gru`, `lstm`, `gawf`, `mamba`, `s5`.
-  Clutter's isolated reviewer controls additionally use `gawf_additive`, `rnn_fb`, `gru_fb`,
-  `lstm_fb`, `rnn_fb_add`, `gru_fb_add`, `lstm_fb_add`, `mlstm`, `hyperlstm`, and `brims`; these
-  names must not alias or replace the original model keys. The latter three are open-loop
-  baselines.
-- `gawf` is the later RNN-aligned core (`nn.RNN` plus the element-wise gate). `gawf_legacy` is the
-  frozen original GaWF definition whose wrapped activity is also its recurrent state; use that key
-  for original-definition analyses and ablations.
-- The nonlinearity-placement ablations use `gawf_nowrap`, `rnn_nowrap`, `gru_nowrap`,
-  `lstm_nowrap`, `mamba_nowrap`, `s5_nowrap` (outer `LayerNorm -> ReLU -> dropout` wrap removed)
-  and `gawf_notanh`, `rnn_notanh` (in-recurrence activation removed). These names are derived from
-  the aligned core, so they must be re-derived if the core semantics ever change again.
-- `rnn_inloop_notanh` is the matched original-GaWF control:
-  `h_t = dropout(ReLU(LayerNorm(W_ih x_t + W_hh h_{t-1} + b_ih + b_hh)))`. It differs from
-  `rnn_notanh`, whose wrap remains outside the recurrence.
+- Public Clutter model keys are exactly `rnn`, `gru`, `lstm`, `gawf`, `mamba`, and `s5`.
+- `gawf` is the reported feedback-gated recurrence with no bounded inner activation; its
+  `LayerNorm -> ReLU -> dropout` activity is both layer output and next recurrent state.
+- `rnn` is the matched ungated recurrence with the same in-loop activity definition.
+- `gru`, `lstm`, `mamba`, and `s5` use their native no-wrap layer outputs.
+- Historical ablation names remain only as checkpoint-filename aliases for the six manuscript
+  checkpoints; they are not accepted by the training CLI and are never emitted for new runs.
 
 Do not introduce a second name for an existing public argument or model. Historical aliases may
 remain parsable for compatibility but must not appear in new result names.
@@ -72,12 +63,8 @@ Clutter training uses:
 | `--mamba_d_models` | one or more Mamba widths |
 | `--ssm_d_models` | one or more S5 sequence widths |
 | `--s5_state_sizes` | one or more S5 latent state sizes |
-| `--hyper_hidden_sizes` | one or more HyperLSTM hyper-network hidden sizes |
-| `--hyper_embedding_size` | HyperLSTM feature size `n_z`; default `4` |
-| `--brims_num_blocks`, `--brims_topk` | two-layer BRIMs module/active-module structure |
-| `--brims_*_attention_*` | pinned input/communication attention dimensions from the official MNIST core |
 | `--feedback_dim`, `--dz` | GaWF projected feedback dimension; positive enables projectors |
-| `--num_layers` | ANN/RNN/GRU/LSTM/GaWF depth; dynamic baselines require `1` because BRIMs owns its internal two-layer structure |
+| `--num_layers` | RNN/GRU/LSTM/GaWF depth |
 | `--gawf_feedback_lr_scale` | U/V/projector LR multiplier; default `1.0` |
 | `--data_suffix` | training and default validation data suffix; default `40h-uint8` |
 | `--eval_data_suffix` | optional validation-only suffix |
@@ -256,13 +243,9 @@ Standard recurrent Clutter form:
 
 - Multi-layer recurrent runs add `_L{layers}`.
 - Explicit/projected GaWF feedback adds `_dz{dimension}`.
-- Legacy single-layer GaWF may omit `_dz` and infer task-output feedback.
-- RNN-aligned GaWF writes the `gawf_rnncore_` stem token in addition to the model key, so
-  historical `gawf_*` checkpoints (pre-alignment, in-loop wrap) stay unambiguous. Analysis code
-  loads the legacy core for `gawf_*` stems and the aligned core only for `gawf_rnncore_*`.
-- The matched in-loop RNN writes the distinct `rnn_inloop_notanh_` stem; never relabel it as
-  `rnn_notanh_`, because the latter carries the unwrapped linear state between time steps.
-- Historical `gawf_multi_` and unified `_do{dropout}` names remain readable but are not emitted.
+- Omitted single-layer GaWF `--dz` uses the concatenated task logits directly.
+- New runs always emit one of the six public model keys. Historical stems are input-only aliases
+  used to load the already-trained manuscript checkpoints.
 
 Mamba/S5 use model-native width fields:
 

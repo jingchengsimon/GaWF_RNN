@@ -300,11 +300,7 @@ class PaperMiniGridActorCritic(nn.Module):
                 prev_logits = prev_logits * (1.0 - done).view(-1, 1)
                 feedback = prev_logits.detach() if self.detach_feedback else prev_logits
                 recurrent = self.core.step(encoded[:, step], recurrent, feedback)
-                if isinstance(recurrent, tuple):
-                    features, recurrent = recurrent
-                else:
-                    # Aligned single-layer GaWF: carry the raw state, read the wrapped value.
-                    features, recurrent = self.core.project_readout(recurrent), recurrent
+                features = recurrent
                 logits = self.policy(features)
                 logits_steps.append(logits)
                 value_steps.append(self.value(features).squeeze(-1))

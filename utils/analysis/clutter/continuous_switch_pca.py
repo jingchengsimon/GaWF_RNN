@@ -18,7 +18,6 @@ from typing import Any, Iterable
 import matplotlib
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -109,12 +108,17 @@ def _rnn_chunk(
     encoded: torch.Tensor,
     state: torch.Tensor | None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Advance a canonical one-layer RNN chunk and retain raw recurrent states."""
+    """Advance a canonical one-layer RNN chunk while preserving its in-loop state."""
 
-    raw, next_state = model.core.rnn(encoded, state) if state is not None else model.core.rnn(encoded)
-    activation = F.relu(model.core.norm(raw))
-    char_logits, sector_logits = model.classifier(activation)
-    return raw, activation, char_logits, sector_logits, next_state
+    if state is None:
+        state = model.core.initial_state(encoded.size(0), encoded.device, encoded.dtype)
+    activation_steps: list[torch.Tensor] = []
+    for index in range(encoded.shape[1]):
+        activation, state = model.core.step(encoded[:, index], state)
+        activation_steps.append(activation)
+    sequence = torch.stack(activation_steps, dim=1)
+    char_logits, sector_logits = model.classifier(sequence)
+    return sequence, sequence, char_logits, sector_logits, state
 
 
 def _gawf_chunk(
@@ -139,8 +143,7 @@ def _gawf_chunk(
         feedback_before.append(feedback)
         state = model.core.step(encoded[:, index], state, feedback)
         # The state carried into the next step is the raw recurrence value; the classifier reads the
-        # externally wrapped readout. ``project_readout`` is the identity for the historical core.
-        char_logits, sector_logits = model.classifier(model.core.project_readout(state))
+        char_logits, sector_logits = model.classifier(state)
         feedback = model._compute_feedback(char_logits, sector_logits).to(torch.float32)
         hidden.append(state)
         char_steps.append(char_logits)

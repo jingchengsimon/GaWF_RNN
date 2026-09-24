@@ -221,12 +221,6 @@ def gawf_jacobian_objects(
 
     if getattr(model.core, "num_layers", 1) != 1:
         raise RuntimeError("Dynamics analysis currently supports single-layer GaWF only")
-    if getattr(model, "gawf_core", "legacy") != "legacy":
-        raise RuntimeError(
-            "The dynamics Jacobian implements the historical in-loop-wrap GaWF map "
-            "(hidden_next = relu(LN(tanh(preactivation)))). Pass gawf_core='legacy' to analyze the "
-            "checkpoints this analysis was derived for; the RNN-aligned core needs a new derivation."
-        )
     input_size = encoded_t.shape[-1]
     hidden_size = hidden_prev.shape[-1]
     feedback = feedback_prev.to(dtype=torch.float32)
@@ -246,13 +240,12 @@ def gawf_jacobian_objects(
     if model.rnn.bias_hh_l0 is not None:
         preactivation = preactivation + model.rnn.bias_hh_l0
 
-    tanh_value = torch.tanh(preactivation)
-    normalized = model.LNormRNN(tanh_value)
+    normalized = model.LNormRNN(preactivation)
     hidden_next = torch.relu(normalized)
-    tanh_derivative = 1.0 - tanh_value.square()
-    relu_derivative = (normalized > 0).to(dtype=tanh_value.dtype)
-    dphi = _layernorm_jacobian(tanh_value, model.LNormRNN)
-    dphi = relu_derivative.unsqueeze(2) * dphi * tanh_derivative.unsqueeze(1)
+    relu_derivative = (normalized > 0).to(dtype=preactivation.dtype)
+    dphi = relu_derivative.unsqueeze(2) * _layernorm_jacobian(
+        preactivation, model.LNormRNN
+    )
 
     effective = gate_hidden * weight_hidden.unsqueeze(0)
     realized = torch.matmul(dphi, effective)

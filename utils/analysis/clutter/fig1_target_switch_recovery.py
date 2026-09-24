@@ -41,7 +41,7 @@ from utils.analysis.anal_paths import output_dir
 
 from utils.training.clutter.clutter_train_acceleration import (
     AccelerationConfig,
-    run_forward_with_feedback,
+    run_forward,
     setup_acceleration,
 )
 from utils.training.clutter.clutter_train_predict_all_chars import loss_char_all_chars
@@ -168,14 +168,6 @@ def _collect_ckpts(args: argparse.Namespace) -> List[str]:
     if not paths:
         raise RuntimeError("No checkpoints found to evaluate.")
     return paths
-
-
-def _parse_model_key(ckpt_path: str) -> str:
-    base = os.path.basename(ckpt_path).lower()
-    for key in ("gawf", "rnn", "lstm", "gru"):
-        if base.startswith(f"{key}_"):
-            return key
-    return "unknown"
 
 
 def _build_offset_targets_from_switch(switch_01: np.ndarray, window_radius: int) -> np.ndarray:
@@ -305,8 +297,6 @@ def evaluate_ckpt_offset_acc(
         num_workers=0,
     )
 
-    model_key = _parse_model_key(ckpt_path)
-    use_feedback = True if model_key == "gawf" else None
     seq_len = int(getattr(test_ds, "frame_num", 32))
     chan_num = int(getattr(test_ds, "chan_num", 2))
 
@@ -320,11 +310,7 @@ def evaluate_ckpt_offset_acc(
             inputs = inputs.to(device)
             labels = labels.to(device)
 
-            out_char, out_pos = run_forward_with_feedback(
-                model,
-                inputs,
-                use_feedback=use_feedback,
-            )
+            out_char, out_pos = run_forward(model, inputs)
 
             pred_char_ok = torch.argmax(out_char, dim=2) == labels[:, :, 0].long()
             pred_pos_ok = torch.argmax(out_pos, dim=2) == labels[:, :, 1].long()
@@ -451,7 +437,7 @@ def _finetune_fcchars_only(
             labels = labels.to(device, non_blocking=non_blocking)
             opt.zero_grad(set_to_none=True)
             with autocast_fn(device):
-                out_char, _ = run_forward_with_feedback(model, inputs, use_feedback=None)
+                out_char, _ = run_forward(model, inputs)
                 loss, _ = loss_char_all_chars(out_char, labels, criterion, max_chars, device)
 
             if scaler is not None:

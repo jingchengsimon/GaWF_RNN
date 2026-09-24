@@ -29,12 +29,11 @@ if PROJECT_ROOT not in sys.path:
 
 from utils.analysis.anal_paths import output_dir
 
-from utils.train_acceleration import run_forward_with_feedback
+from utils.training.clutter.clutter_train_acceleration import run_forward
 from utils.analysis.anal_helpers import build_model_from_ckpt, build_test_dataset, resolve_device
 from utils.analysis.clutter.fig1_target_switch_recovery import (
     _build_offset_targets_from_switch,
     _collect_ckpts,
-    _parse_model_key,
     build_offset_labels,
     build_offset_order,
 )
@@ -110,8 +109,6 @@ def evaluate_with_switch_resets(
         num_workers=0,
         pin_memory=False,
     )
-    model_key = _parse_model_key(ckpt_path)
-    use_feedback = True if model_key == "gawf" else None
     seq_len = int(getattr(test_ds, "frame_num", 32))
     chan_num = int(getattr(test_ds, "chan_num", 2))
     reset_count = 0
@@ -140,11 +137,7 @@ def evaluate_with_switch_resets(
                     segment_inputs = torch.stack(
                         [inputs[sample, start:end] for sample, start, end in chunk]
                     ).to(device)
-                    out_char, out_sector = run_forward_with_feedback(
-                        model,
-                        segment_inputs,
-                        use_feedback=use_feedback,
-                    )
+                    out_char, out_sector = run_forward(model, segment_inputs)
                     char_np = torch.argmax(out_char, dim=2).detach().cpu().numpy()
                     sector_np = torch.argmax(out_sector, dim=2).detach().cpu().numpy()
                     for local_idx, (sample, start, end) in enumerate(chunk):

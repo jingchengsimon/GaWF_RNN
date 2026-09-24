@@ -43,60 +43,13 @@ from utils.training.clutter.clutter_train_engine import (
 )
 
 from utils.training.clutter.clutter_task_models import (
-    BRIMsConv,
     GaWFRNNConv,
-    GaWFNoTanhConv,
-    GaWFNoWrapConv,
-    GaWFLegacyConv,
-    GaWFLegacyNoTanhConv,
-    GaWFLegacyNoWrapConv,
-    GaWFAdditiveConv,
     GRUConv,
-    GRUAdditiveFeedbackConv,
-    GRUFeedbackConv,
-    GRUNoWrapConv,
     LSTMConv,
-    LSTMAdditiveFeedbackConv,
-    LSTMFeedbackConv,
-    LSTMNoWrapConv,
-    HyperLSTMConv,
     MambaConv,
-    MambaNoWrapConv,
-    MultiLayerGaWFRNNConv,
     RNNConv,
-    RNNAdditiveFeedbackConv,
-    RNNFeedbackConv,
-    RNNInLoopNoTanhConv,
-    RNNNoTanhConv,
-    RNNNoWrapConv,
     S5Conv,
-    S5NoWrapConv,
-    MLSTMConv,
 )
-
-# Nonlinearity-placement ablation types reuse the width grids, state sizes, and model kwargs of
-# their base type; only the sequence core's activation/wrap mode differs.
-CORE_MODE_MODEL_TYPES: dict[str, str] = {
-    "gawf_nowrap": "gawf",
-    "gawf_notanh": "gawf",
-    "gawf_legacy": "gawf",
-    "gawf_legacy_nowrap": "gawf",
-    "gawf_legacy_notanh": "gawf",
-    "gawf_rnncore": "gawf",
-    "rnn_nowrap": "rnn",
-    "rnn_notanh": "rnn",
-    "rnn_inloop_notanh": "rnn",
-    "gru_nowrap": "gru",
-    "lstm_nowrap": "lstm",
-    "mamba_nowrap": "mamba",
-    "s5_nowrap": "s5",
-}
-
-
-def dispatch_model_type(model_type: str) -> str:
-    """Return the base model type that owns widths, state sizes, and model kwargs."""
-
-    return CORE_MODE_MODEL_TYPES.get(model_type, model_type)
 
 
 torch.set_num_threads(4)
@@ -481,8 +434,6 @@ def network_train(
     rnn_diag_lambda=1e-4,
     use_mmap=False,
     use_tqdm=True,
-    nofb=False,
-    fb_start_epoch=999999,
     seed=42,
     logger=None,
     optim: str = "adam",
@@ -581,8 +532,6 @@ def network_train(
                 components=components,
                 epoch=epoch,
                 num_epochs=num_epochs,
-                nofb=nofb,
-                fb_start_epoch=fb_start_epoch,
             )
             train_pbar = epoch_ctx["train_pbar"]
 
@@ -822,26 +771,6 @@ if __name__ == "__main__":
         parser.error("--gawf_diag_gate_eps must be in (0, 0.5)")
     if args.checkpoint_interval_epochs < 0:
         parser.error("--checkpoint_interval_epochs must be >= 0")
-    if args.hyper_embedding_size <= 0:
-        parser.error("--hyper_embedding_size must be > 0")
-    if any(value <= 0 for value in args.hyper_hidden_sizes):
-        parser.error("--hyper_hidden_sizes values must be > 0")
-    if any(value <= 0 for value in args.brims_num_blocks):
-        parser.error("--brims_num_blocks values must be > 0")
-    if any(value <= 0 for value in args.brims_topk):
-        parser.error("--brims_topk values must be > 0")
-    if any(k > blocks for k, blocks in zip(args.brims_topk, args.brims_num_blocks)):
-        parser.error("each --brims_topk value must be <= its --brims_num_blocks value")
-    brims_attention_sizes = (
-        args.brims_input_attention_heads,
-        args.brims_input_attention_key_size,
-        args.brims_communication_attention_heads,
-        args.brims_communication_attention_key_size,
-        args.brims_communication_attention_value_size,
-    )
-    if any(value <= 0 for value in brims_attention_sizes):
-        parser.error("all BRIMs attention head/size values must be > 0")
-
     # GPU selection before any CUDA init. If the launcher already set
     # CUDA_VISIBLE_DEVICES, respect it (logical cuda:0 is that device).
     cuda_visible_preset = bool(os.environ.get("CUDA_VISIBLE_DEVICES", "").strip())
@@ -936,29 +865,6 @@ if __name__ == "__main__":
         GaWFRNNConv,
         MambaConv,
         S5Conv,
-        GaWFAdditiveConv,
-        RNNFeedbackConv,
-        GRUFeedbackConv,
-        LSTMFeedbackConv,
-        MLSTMConv,
-        HyperLSTMConv,
-        BRIMsConv,
-        GaWFNoWrapConv,
-        RNNNoWrapConv,
-        GRUNoWrapConv,
-        LSTMNoWrapConv,
-        MambaNoWrapConv,
-        S5NoWrapConv,
-        GaWFNoTanhConv,
-        RNNNoTanhConv,
-        GaWFLegacyConv,
-        GaWFLegacyNoWrapConv,
-        GaWFLegacyNoTanhConv,
-        GaWFRNNConv,
-        RNNInLoopNoTanhConv,
-        RNNAdditiveFeedbackConv,
-        GRUAdditiveFeedbackConv,
-        LSTMAdditiveFeedbackConv,
     )
 
     model_types = args.model_types
@@ -966,7 +872,6 @@ if __name__ == "__main__":
     mamba_d_models = args.mamba_d_models
     s5_d_models = args.s5_d_models
     s5_state_sizes = args.s5_state_sizes
-    hyper_hidden_sizes = args.hyper_hidden_sizes
     feedback_dim = args.feedback_dim
     lrs = args.lrs
     wds = args.wds
@@ -977,8 +882,7 @@ if __name__ == "__main__":
     # Build hyperparameter combinations with model-specific width/state names.
     experiment_configs = []
     for model_type in model_types:
-        dispatch_type = dispatch_model_type(model_type)
-        if dispatch_type == "mamba":
+        if model_type == "mamba":
             for mamba_d_model, lr, weight_decay, cnn_dropout in product(
                 mamba_d_models, lrs, wds, cnn_dropout_grid
             ):
@@ -988,13 +892,12 @@ if __name__ == "__main__":
                         "model_width": mamba_d_model,
                         "width_label": "dmodel",
                         "state_size": None,
-                        "hyper_hidden_size": None,
                         "lr": lr,
                         "weight_decay": weight_decay,
                         "cnn_dropout": cnn_dropout,
                     }
                 )
-        elif dispatch_type in ("ssm", "s5"):
+        elif model_type == "s5":
             for s5_d_model, s5_state_size, lr, weight_decay, cnn_dropout in product(
                 s5_d_models, s5_state_sizes, lrs, wds, cnn_dropout_grid
             ):
@@ -1004,27 +907,6 @@ if __name__ == "__main__":
                         "model_width": s5_d_model,
                         "width_label": "dmodel",
                         "state_size": s5_state_size,
-                        "hyper_hidden_size": None,
-                        "lr": lr,
-                        "weight_decay": weight_decay,
-                        "cnn_dropout": cnn_dropout,
-                    }
-                )
-        elif model_type == "hyperlstm":
-            for hidden_size, hyper_hidden_size, lr, weight_decay, cnn_dropout in product(
-                hidden_sizes,
-                hyper_hidden_sizes,
-                lrs,
-                wds,
-                cnn_dropout_grid,
-            ):
-                experiment_configs.append(
-                    {
-                        "model_type": model_type,
-                        "model_width": hidden_size,
-                        "width_label": "h",
-                        "state_size": None,
-                        "hyper_hidden_size": hyper_hidden_size,
                         "lr": lr,
                         "weight_decay": weight_decay,
                         "cnn_dropout": cnn_dropout,
@@ -1040,7 +922,6 @@ if __name__ == "__main__":
                         "model_width": hidden_size,
                         "width_label": "h",
                         "state_size": None,
-                        "hyper_hidden_size": None,
                         "lr": lr,
                         "weight_decay": weight_decay,
                         "cnn_dropout": cnn_dropout,
@@ -1069,7 +950,6 @@ if __name__ == "__main__":
         model_width = config["model_width"]
         width_label = config["width_label"]
         state_size = config["state_size"]
-        hyper_hidden_size = config["hyper_hidden_size"]
         lr = config["lr"]
         weight_decay = config["weight_decay"]
         cnn_dropout = config["cnn_dropout"]
@@ -1094,71 +974,21 @@ if __name__ == "__main__":
             logger.warning("Unsupported model_type: %s, skipping...", model_type)
             continue
 
-        ModelClass = (
-            MultiLayerGaWFRNNConv
-            if model_type == "gawf" and num_layers > 1
-            else model_classes[model_type]
-        )
-        dispatch_type = dispatch_model_type(model_type)
+        ModelClass = model_classes[model_type]
         model_kwargs = {}
         width_kwarg = "hidden_size"
-        if dispatch_type == "mamba":
+        if model_type == "mamba":
             width_kwarg = "mamba_d_model"
-        elif dispatch_type in ("ssm", "s5"):
+        elif model_type == "s5":
             width_kwarg = "s5_d_model"
             model_kwargs["s5_state_size"] = state_size
             model_kwargs["s5_num_layers"] = args.s5_num_layers
             model_kwargs["s5_dropout"] = args.s5_dropout
-        elif dispatch_type == "gawf":
+        elif model_type == "gawf":
             model_kwargs["feedback_dim"] = feedback_dim
-            if num_layers > 1:
-                model_kwargs["num_layers"] = num_layers
-        elif model_type in (
-            "gawf_additive",
-            "rnn_fb",
-            "gru_fb",
-            "lstm_fb",
-            "rnn_fb_add",
-            "gru_fb_add",
-            "lstm_fb_add",
-        ):
-            if num_layers != 1:
-                raise ValueError(f"{model_type} supports only --num_layers 1")
-            if args.nofb:
-                raise ValueError(f"{model_type} is a feedback control and does not support --nofb")
-        elif dispatch_type in ("rnn", "gru", "lstm"):
             model_kwargs["num_layers"] = num_layers
-        elif model_type in ("mlstm", "hyperlstm", "brims"):
-            if num_layers != 1:
-                raise ValueError(
-                    f"{model_type} uses its fixed paper architecture and requires --num_layers 1"
-                )
-            if model_type == "hyperlstm":
-                model_kwargs["hyper_hidden_size"] = hyper_hidden_size
-                model_kwargs["hyper_embedding_size"] = args.hyper_embedding_size
-            elif model_type == "brims":
-                model_kwargs.update(
-                    {
-                        "brims_num_blocks": tuple(args.brims_num_blocks),
-                        "brims_topk": tuple(args.brims_topk),
-                        "brims_input_attention_heads": (
-                            args.brims_input_attention_heads
-                        ),
-                        "brims_input_attention_key_size": (
-                            args.brims_input_attention_key_size
-                        ),
-                        "brims_communication_attention_heads": (
-                            args.brims_communication_attention_heads
-                        ),
-                        "brims_communication_attention_key_size": (
-                            args.brims_communication_attention_key_size
-                        ),
-                        "brims_communication_attention_value_size": (
-                            args.brims_communication_attention_value_size
-                        ),
-                        "brims_attention_dropout": args.brims_attention_dropout,
-                    }
-                )
+        elif model_type in ("rnn", "gru", "lstm"):
+            model_kwargs["num_layers"] = num_layers
         mdl = ModelClass(
             num_classes=10,
             num_pos=num_pos,
@@ -1174,26 +1004,16 @@ if __name__ == "__main__":
         )
 
         width_desc = f"{width_label}={model_width}"
-        if dispatch_type in ("ssm", "s5"):
+        if model_type == "s5":
             width_desc = f"s5_d_model={model_width}, s5_state_size={state_size}"
-        elif dispatch_type == "gawf" and feedback_dim is not None:
+        elif model_type == "gawf" and feedback_dim is not None:
             width_desc = f"{width_desc}, dz={feedback_dim}"
-        elif dispatch_type == "gawf" and num_layers > 1:
+        elif model_type == "gawf" and num_layers > 1:
             if getattr(mdl, "use_feedback_projector", False):
                 feedback_desc = f"dz={mdl.feedback_dim}"
             else:
                 feedback_desc = "direct_feedback"
             width_desc = f"{width_desc}, layers={num_layers}, {feedback_desc}"
-        elif model_type == "hyperlstm":
-            width_desc = (
-                f"{width_desc}, hyper_h={hyper_hidden_size}, "
-                f"n_z={args.hyper_embedding_size}"
-            )
-        elif model_type == "brims":
-            width_desc = (
-                f"{width_desc}, internal_layers=2, blocks={tuple(args.brims_num_blocks)}, "
-                f"topk={tuple(args.brims_topk)}"
-            )
         logger.info(
             "Created %s model (predict_all_chars=%s, max_chars=%s, cnn_dropout=%s, rnn_dropout=%s, %s, cnn_feature_size=large)",
             model_type.upper(),
@@ -1218,41 +1038,18 @@ if __name__ == "__main__":
         )
         acc_suffix = "_acc" if use_acceleration else ""
         hp_suffix = f"_lr{train_lr}_wd{weight_decay}_cdo{cnn_dropout}_rdo{rnn_dropout}"
-        # nofb/fb_start_epoch in result path: nofb only -> _nofb; nofb + fb_start_epoch -> _fb{N} only
-        if args.nofb:
-            if args.fb_start_epoch >= 999999:
-                fb_path_suffix = "_nofb"
-            else:
-                fb_path_suffix = f"_fb{args.fb_start_epoch}"
-        else:
-            fb_path_suffix = ""
         width_suffix = f"_{width_label}{model_width}"
-        if model_type in ("ssm", "s5"):
+        if model_type == "s5":
             width_suffix = f"_dmodel{model_width}_state{state_size}"
-        elif model_type == "hyperlstm":
-            width_suffix = (
-                f"_h{model_width}_hh{hyper_hidden_size}_nz{args.hyper_embedding_size}"
-            )
         layer_suffix = ""
         if model_type in ("rnn", "gru", "lstm", "gawf") and num_layers > 1:
             layer_suffix = f"_L{num_layers}"
         dz_suffix = ""
         if model_type == "gawf" and feedback_dim is not None:
             dz_suffix = f"_dz{feedback_dim}"
-        elif (
-            model_type == "gawf"
-            and num_layers > 1
-            and getattr(mdl, "use_feedback_projector", False)
-        ):
-            dz_suffix = f"_dz{mdl.feedback_dim}"
-        # Provenance: the RNN-aligned GaWF core writes a distinct stem token so historical
-        # in-loop-wrap checkpoints (plain ``gawf_*`` stems) stay unambiguous.
-        stem_model = model_type
-        if dispatch_type == "gawf" and getattr(mdl, "gawf_core", None) == "rnn_aligned":
-            stem_model = "gawf_rnncore"
         results_stem = (
-            f"{stem_model}_{mode_suffix}{acc_suffix}{width_suffix}"
-            f"{layer_suffix}{hp_suffix}{dz_suffix}{fb_path_suffix}"
+            f"{model_type}_{mode_suffix}{acc_suffix}{width_suffix}"
+            f"{layer_suffix}{hp_suffix}{dz_suffix}"
         )
         results_path = os.path.join(results_dir, results_stem)
         checkpoint_path = f"{results_path}_train_state.pth"
@@ -1269,12 +1066,6 @@ if __name__ == "__main__":
             "model_type": model_type,
             "model_width": int(model_width),
             "state_size": int(state_size) if state_size is not None else None,
-            "hyper_hidden_size": (
-                int(hyper_hidden_size) if hyper_hidden_size is not None else None
-            ),
-            "hyper_embedding_size": (
-                int(args.hyper_embedding_size) if model_type == "hyperlstm" else None
-            ),
             "num_layers": int(num_layers),
             "seed": int(args.seed),
             "num_epochs": int(args.num_epochs),
@@ -1290,38 +1081,6 @@ if __name__ == "__main__":
             "input_cast_mode": args.input_cast_mode,
             "frame_layout": args.frame_layout,
             "shuffle_block_size": int(args.shuffle_block_size),
-            "brims_num_blocks": (
-                list(args.brims_num_blocks) if model_type == "brims" else None
-            ),
-            "brims_topk": list(args.brims_topk) if model_type == "brims" else None,
-            "brims_input_attention_heads": (
-                int(args.brims_input_attention_heads) if model_type == "brims" else None
-            ),
-            "brims_input_attention_key_size": (
-                int(args.brims_input_attention_key_size)
-                if model_type == "brims"
-                else None
-            ),
-            "brims_communication_attention_heads": (
-                int(args.brims_communication_attention_heads)
-                if model_type == "brims"
-                else None
-            ),
-            "brims_communication_attention_key_size": (
-                int(args.brims_communication_attention_key_size)
-                if model_type == "brims"
-                else None
-            ),
-            "brims_communication_attention_value_size": (
-                int(args.brims_communication_attention_value_size)
-                if model_type == "brims"
-                else None
-            ),
-            "brims_attention_dropout": (
-                float(args.brims_attention_dropout) if model_type == "brims" else None
-            ),
-            "open_loop": model_type in ("mlstm", "hyperlstm", "brims"),
-            "brims_internal_layers": 2 if model_type == "brims" else None,
         }
 
         gawf_diag_path = None
@@ -1361,8 +1120,6 @@ if __name__ == "__main__":
             rnn_diag_lambda=1e-4,
             use_mmap=args.use_mmap,
             use_tqdm=use_tqdm,
-            nofb=args.nofb,
-            fb_start_epoch=args.fb_start_epoch,
             seed=args.seed,
             logger=logger,
             optim=args.optim,
@@ -1423,32 +1180,21 @@ if __name__ == "__main__":
         metric_summary["core_wrap_recurrent_state"] = bool(
             getattr(core_module, "wrap_recurrent_state", False)
         )
-        metric_summary["gawf_core_semantics"] = getattr(mdl, "gawf_core", None)
+        metric_summary["gawf_core_semantics"] = (
+            "feedback_gated_in_loop_ln_relu_dropout_no_tanh"
+            if model_type == "gawf"
+            else None
+        )
         if train_lr != lr:
             metric_summary["requested_lr"] = lr
             metric_summary["effective_lr"] = train_lr
-        if model_type in (
-            "rnn",
-            "gru",
-            "lstm",
-            "gawf",
-            "gawf_additive",
-            "rnn_fb",
-            "gru_fb",
-            "lstm_fb",
-            "rnn_fb_add",
-            "gru_fb_add",
-            "lstm_fb_add",
-            "mlstm",
-            "hyperlstm",
-            "brims",
-        ):
+        if model_type in ("rnn", "gru", "lstm", "gawf"):
             metric_summary["num_layers"] = int(num_layers)
         metric_summary["core_param_count"] = int(sum(p.numel() for p in mdl.core.parameters()))
         metric_summary["total_param_count"] = int(sum(p.numel() for p in mdl.parameters()))
         if model_type == "mamba":
             metric_summary["mamba_d_model"] = model_width
-        elif model_type in ("ssm", "s5"):
+        elif model_type == "s5":
             metric_summary["s5_d_model"] = model_width
             metric_summary["s5_state_size"] = state_size
             metric_summary["s5_num_layers"] = args.s5_num_layers
@@ -1465,62 +1211,8 @@ if __name__ == "__main__":
                     getattr(mdl, "use_feedback_projector", False)
                 )
                 metric_summary["layer_feedback_dims"] = [
-                    int(dim) for dim in getattr(mdl, "layer_feedback_dims", [])
+                    int(dim) for dim in mdl.core.layer_feedback_dims
                 ]
-        elif model_type in (
-            "gawf_additive",
-            "rnn_fb",
-            "gru_fb",
-            "lstm_fb",
-            "rnn_fb_add",
-            "gru_fb_add",
-            "lstm_fb_add",
-        ):
-            metric_summary["feedback_dim"] = int(mdl.feedback_dim)
-            metric_summary["feedback_source"] = "detached_char_sector_logits"
-            metric_summary["feedback_pathway"] = (
-                "additive_affine"
-                if model_type in ("rnn_fb_add", "gru_fb_add", "lstm_fb_add")
-                else "additive_linear"
-                if model_type == "gawf_additive"
-                else "input_concatenation"
-            )
-            metric_summary["feedback_bias"] = model_type in (
-                "rnn_fb_add",
-                "gru_fb_add",
-                "lstm_fb_add",
-            )
-            if model_type == "gawf_additive":
-                metric_summary["initial_recurrent_weight_scale"] = 0.5
-        elif model_type == "hyperlstm":
-            metric_summary["hyper_hidden_size"] = int(hyper_hidden_size)
-            metric_summary["hyper_embedding_size"] = int(args.hyper_embedding_size)
-            metric_summary["open_loop"] = True
-        elif model_type == "brims":
-            metric_summary["brims_internal_layers"] = 2
-            metric_summary["brims_num_blocks"] = list(args.brims_num_blocks)
-            metric_summary["brims_topk"] = list(args.brims_topk)
-            metric_summary["brims_input_attention_heads"] = int(
-                args.brims_input_attention_heads
-            )
-            metric_summary["brims_input_attention_key_size"] = int(
-                args.brims_input_attention_key_size
-            )
-            metric_summary["brims_communication_attention_heads"] = int(
-                args.brims_communication_attention_heads
-            )
-            metric_summary["brims_communication_attention_key_size"] = int(
-                args.brims_communication_attention_key_size
-            )
-            metric_summary["brims_communication_attention_value_size"] = int(
-                args.brims_communication_attention_value_size
-            )
-            metric_summary["brims_attention_dropout"] = float(
-                args.brims_attention_dropout
-            )
-            metric_summary["open_loop"] = True
-        elif model_type == "mlstm":
-            metric_summary["open_loop"] = True
         if gawf_diag_path is not None:
             metric_summary["gawf_diag_path"] = gawf_diag_path
             metric_summary["gawf_diag_every"] = args.gawf_diag_every

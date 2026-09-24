@@ -773,103 +773,19 @@ def get_model_classes(
     lstm_conv_class,
     gru_conv_class,
     gawf_rnn_conv_class,
-    mamba_conv_class=None,
-    s5_conv_class=None,
-    gawf_additive_conv_class=None,
-    rnn_feedback_conv_class=None,
-    gru_feedback_conv_class=None,
-    lstm_feedback_conv_class=None,
-    mlstm_conv_class=None,
-    hyper_lstm_conv_class=None,
-    brims_conv_class=None,
-    gawf_nowrap_conv_class=None,
-    rnn_nowrap_conv_class=None,
-    gru_nowrap_conv_class=None,
-    lstm_nowrap_conv_class=None,
-    mamba_nowrap_conv_class=None,
-    s5_nowrap_conv_class=None,
-    gawf_notanh_conv_class=None,
-    rnn_notanh_conv_class=None,
-    gawf_legacy_conv_class=None,
-    gawf_legacy_nowrap_conv_class=None,
-    gawf_legacy_notanh_conv_class=None,
-    gawf_rnncore_conv_class=None,
-    rnn_inloop_notanh_conv_class=None,
-    rnn_additive_feedback_conv_class=None,
-    gru_additive_feedback_conv_class=None,
-    lstm_additive_feedback_conv_class=None,
+    mamba_conv_class,
+    s5_conv_class,
 ):
-    """Return mapping from model type name to model class.
+    """Return the six canonical public model classes."""
 
-    Args:
-        rnn_conv_class: RNNConv class
-        lstm_conv_class: LSTMConv class
-        gru_conv_class: GRUConv class
-        gawf_rnn_conv_class: GaWFRNNConv class
-
-    Returns:
-        Dictionary mapping model type names to model classes
-    """
-    model_classes = {
+    return {
         "rnn": rnn_conv_class,
         "lstm": lstm_conv_class,
         "gru": gru_conv_class,
         "gawf": gawf_rnn_conv_class,
+        "mamba": mamba_conv_class,
+        "s5": s5_conv_class,
     }
-    if mamba_conv_class is not None:
-        model_classes["mamba"] = mamba_conv_class
-    if s5_conv_class is not None:
-        model_classes["ssm"] = s5_conv_class
-        model_classes["s5"] = s5_conv_class
-    optional_feedback_classes = {
-        "gawf_additive": gawf_additive_conv_class,
-        "rnn_fb": rnn_feedback_conv_class,
-        "gru_fb": gru_feedback_conv_class,
-        "lstm_fb": lstm_feedback_conv_class,
-        "rnn_fb_add": rnn_additive_feedback_conv_class,
-        "gru_fb_add": gru_additive_feedback_conv_class,
-        "lstm_fb_add": lstm_additive_feedback_conv_class,
-    }
-    model_classes.update({
-        name: model_class
-        for name, model_class in optional_feedback_classes.items()
-        if model_class
-    })
-    optional_dynamic_classes = {
-        "mlstm": mlstm_conv_class,
-        "hyperlstm": hyper_lstm_conv_class,
-        "brims": brims_conv_class,
-    }
-    model_classes.update(
-        {
-            name: model_class
-            for name, model_class in optional_dynamic_classes.items()
-            if model_class
-        }
-    )
-    optional_core_mode_classes = {
-        "gawf_nowrap": gawf_nowrap_conv_class,
-        "rnn_nowrap": rnn_nowrap_conv_class,
-        "gru_nowrap": gru_nowrap_conv_class,
-        "lstm_nowrap": lstm_nowrap_conv_class,
-        "mamba_nowrap": mamba_nowrap_conv_class,
-        "s5_nowrap": s5_nowrap_conv_class,
-        "gawf_notanh": gawf_notanh_conv_class,
-        "rnn_notanh": rnn_notanh_conv_class,
-        "gawf_legacy": gawf_legacy_conv_class,
-        "gawf_legacy_nowrap": gawf_legacy_nowrap_conv_class,
-        "gawf_legacy_notanh": gawf_legacy_notanh_conv_class,
-        "gawf_rnncore": gawf_rnncore_conv_class,
-        "rnn_inloop_notanh": rnn_inloop_notanh_conv_class,
-    }
-    model_classes.update(
-        {
-            name: model_class
-            for name, model_class in optional_core_mode_classes.items()
-            if model_class
-        }
-    )
-    return model_classes
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -880,45 +796,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=str,
         nargs="+",
         default=["rnn"],
-        choices=[
-            "rnn",
-            "lstm",
-            "gru",
-            "gawf",
-            "mamba",
-            "ssm",
-            "s5",
-            "gawf_additive",
-            "rnn_fb",
-            "gru_fb",
-            "lstm_fb",
-            "rnn_fb_add",
-            "gru_fb_add",
-            "lstm_fb_add",
-            "mlstm",
-            "hyperlstm",
-            "brims",
-            "gawf_nowrap",
-            "rnn_nowrap",
-            "gru_nowrap",
-            "lstm_nowrap",
-            "mamba_nowrap",
-            "s5_nowrap",
-            "gawf_notanh",
-            "rnn_notanh",
-            "gawf_legacy",
-            "gawf_legacy_nowrap",
-            "gawf_legacy_notanh",
-            "gawf_rnncore",
-            "rnn_inloop_notanh",
-        ],
+        choices=["rnn", "lstm", "gru", "gawf", "mamba", "s5"],
         help='Model types to train (default: ["rnn"])',
     )
     parser.add_argument(
         "--num_layers",
         type=int,
         default=1,
-        help="Number of ANN/RNN/GRU/LSTM/GaWF layers (default: 1).",
+        help="Number of RNN/GRU/LSTM/GaWF layers (default: 1).",
     )
     parser.add_argument(
         "--hidden_sizes",
@@ -926,71 +811,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         nargs="+",
         default=[256],
         help="Hidden sizes to test (default: [256])",
-    )
-    parser.add_argument(
-        "--hyper_hidden_sizes",
-        type=int,
-        nargs="+",
-        default=[10],
-        help="HyperLSTM hyper-network hidden sizes (formal match: [10]).",
-    )
-    parser.add_argument(
-        "--hyper_embedding_size",
-        type=int,
-        default=4,
-        help="HyperLSTM row-scaling feature size n_z (default: 4).",
-    )
-    parser.add_argument(
-        "--brims_num_blocks",
-        type=int,
-        nargs=2,
-        default=[6, 3],
-        metavar=("LOWER", "UPPER"),
-        help="BRIMs module counts for its two internal layers (default: 6 3).",
-    )
-    parser.add_argument(
-        "--brims_topk",
-        type=int,
-        nargs=2,
-        default=[4, 2],
-        metavar=("LOWER", "UPPER"),
-        help="BRIMs active-module counts for its two internal layers (default: 4 2).",
-    )
-    parser.add_argument(
-        "--brims_input_attention_heads",
-        type=int,
-        default=4,
-        help="BRIMs input attention heads from the official MNIST core (default: 4).",
-    )
-    parser.add_argument(
-        "--brims_input_attention_key_size",
-        type=int,
-        default=64,
-        help="BRIMs input-attention per-head query/key size (default: 64).",
-    )
-    parser.add_argument(
-        "--brims_communication_attention_heads",
-        type=int,
-        default=4,
-        help="BRIMs within-layer communication attention heads (default: 4).",
-    )
-    parser.add_argument(
-        "--brims_communication_attention_key_size",
-        type=int,
-        default=32,
-        help="BRIMs communication per-head query/key size (default: 32).",
-    )
-    parser.add_argument(
-        "--brims_communication_attention_value_size",
-        type=int,
-        default=32,
-        help="BRIMs communication per-head value size (default: 32).",
-    )
-    parser.add_argument(
-        "--brims_attention_dropout",
-        type=float,
-        default=0.1,
-        help="BRIMs internal attention dropout (default: 0.1).",
     )
     parser.add_argument(
         "--mamba_d_models",
@@ -1070,7 +890,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--rnn_dropout",
         type=float,
         default=0.5,
-        help="Dropout p after RNN/GaWF/FFN middle (after ReLU); used in checkpoint suffix rdo (default: 0.5)",
+        help=(
+            "GaWF/RNN in-loop activity dropout; for stacked GRU/LSTM it is inter-layer "
+            "dropout. Recorded as rdo (default: 0.5)."
+        ),
     )
     parser.add_argument(
         "--feedback_dim",
@@ -1168,23 +991,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Predict all characters (fg+bg) per frame instead of only foreground character (default: False)",
-    )
-    parser.add_argument(
-        "--nofb",
-        action="store_true",
-        default=False,
-        help=(
-            "GaWFRNN only: disable feedback. Behavior: "
-            "(1) omit --nofb -> full feedback throughout. "
-            "(2) use --nofb only -> no feedback throughout. "
-            "(3) use --nofb and --fb_start_epoch N -> no feedback until epoch N, then feedback on"
-        ),
-    )
-    parser.add_argument(
-        "--fb_start_epoch",
-        type=int,
-        default=999999,
-        help="GaWFRNN with --nofb: 0-based epoch at which to turn on feedback and unfreeze U,V.",
     )
     parser.add_argument(
         "--data_dir",

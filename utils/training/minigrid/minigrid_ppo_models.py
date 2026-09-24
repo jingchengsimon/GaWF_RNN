@@ -9,7 +9,7 @@ Reuses the shared recurrent cores (rnn/gru/lstm/gawf stepwise; s5/mamba as
 whole-sequence scan cores) and ``MiniGridEncoder``. This mirrors the DRQN model's
 core handling but emits (policy_logits, value) instead of Q-values, and is trained
 on-policy by ``run_task.py minigrid-ppo`` (PPO) rather than DQN. All six cores run
-uniformly with no output feedback (a clean first comparison).
+uniformly; GaWF uses its previous hidden activity as gate feedback.
 """
 
 from __future__ import annotations
@@ -64,15 +64,13 @@ class MiniGridActorCritic(nn.Module):
         enc_out = int(encoder.output_size)
 
         if model_type == "gawf":
-            # No output feedback in this first version: feedback_dim is a dummy 1
-            # and we use the no-feedback recurrence path (still gated internally).
             self.core = GaWFCore(
                 input_size=enc_out,
                 hidden_size=self.hidden_size,
-                feedback_dim=1,
+                feedback_dim=self.hidden_size,
                 dropout=core_dropout,
                 num_layers=self.num_layers,
-                layer_feedback_dims=[1] * self.num_layers,
+                layer_feedback_dims=[self.hidden_size] * self.num_layers,
             )
         elif model_type in ("rnn", "gru", "lstm"):
             cls = {"rnn": RNNCore, "gru": GRUCore, "lstm": LSTMCore}[model_type]
@@ -159,11 +157,11 @@ class MiniGridActorCritic(nn.Module):
 
     def _core_step(self, x_t, recurrent):
         if self.model_type == "gawf":
-            stepped = self.core.step_no_feedback(x_t, recurrent)
             if self.num_layers == 1:
-                # Aligned GaWF: raw state carried, wrapped value read by the heads.
-                return self.core.project_readout(stepped), stepped
-            return stepped
+                state = self.core.step(x_t, recurrent, recurrent.detach())
+                return state, state
+            feedbacks = [part.detach() for part in recurrent[1:]] + [recurrent[-1].detach()]
+            return self.core.step(x_t, recurrent, feedbacks)
         feat, nxt = self.core(x_t.unsqueeze(1), recurrent)
         return feat[:, 0, :], nxt
 

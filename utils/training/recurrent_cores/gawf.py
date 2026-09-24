@@ -1,145 +1,130 @@
-"""Task-agnostic GaWF recurrent core aligned with :class:`torch.nn.RNN`.
+"""GaWF recurrence with feedback-gated weights and ReLU activity inside the loop.
 
-GaWF is ``nn.RNN`` plus an element-wise multiplicative gate on the input and hidden weight
-matrices. Everything else follows ``nn.RNN`` exactly: the recurrence, the activation inside the
-recurrence (``rnn_activation``: the built-in ``tanh`` or ``relu``), both built-in bias vectors, and
-the state convention. The state that is fed back at the next step is the raw
-``activation(preactivation)``; the outer ``LayerNorm -> ReLU -> dropout`` contract is applied
-*outside* the recurrence to the readout only, exactly as in
-``utils.training.recurrent_cores.rnn.TorchRecurrentCore``.
+Inputs are one encoded timestep, the previous activity, and the previous detached task
+feedback. The returned activity is both the layer output and the next recurrent state:
 
-The only GaWF-specific code is the per-element weight modulation ``gate * W``, because
-``nn.RNN.forward`` cannot express input-dependent weights; the module, parameters, biases, and
-activation still come from the ``nn.RNN`` instance held in ``self.rnn``.
-``rnn_activation="identity"`` removes the activation entirely (a linear recurrence); ``nn.RNN`` has
-no such mode, so that single branch is the one deviation from the built-in op.
+    z_t = (G_ih * W_ih) x_t + (G_hh * W_hh) h_(t-1) + b_ih + b_hh
+    h_t = dropout(relu(layer_norm(z_t)))
 
-The pre-2026-09 implementation, which fed the wrapped value back into the recurrence, is frozen in
-``gawf_legacy.GaWFCoreLegacy`` and is retained only to reproduce artifacts trained with it.
+There is no bounded inner activation and no feedback-off execution path.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+import warnings
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# The gate tensors are identical in both core generations, so the pure-tensor helpers stay shared
-# with the analysis code that recomputes gates from stored U/V parameters.
-from .gawf_legacy import (  # noqa: F401
-    GaWFDiagnosticsMixin,
-    _compute_gawf_transform,
-    _compute_gawf_transforms,
-)
+
+def _compute_gawf_transforms(
+    U: torch.Tensor,
+    fb_t: torch.Tensor,
+    V: torch.Tensor,
+    input_size: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return feedback-conditioned input and recurrent gate logits before temperature."""
+
+    scaled_u = U.unsqueeze(0) * fb_t.transpose(1, 2)
+    return (
+        torch.matmul(scaled_u, V[:, :input_size]),
+        torch.matmul(scaled_u, V[:, input_size:]),
+    )
 
 
-class GaWFCore(GaWFDiagnosticsMixin, nn.Module):
-    """Single-layer ``nn.RNN`` core whose input/hidden weights are gated by feedback."""
+def _gawf_preactivation(
+    x_t: torch.Tensor,
+    h_prev: torch.Tensor,
+    feedback: torch.Tensor,
+    U: torch.Tensor,
+    V: torch.Tensor,
+    weight_ih: torch.Tensor,
+    weight_hh: torch.Tensor,
+    bias_ih: torch.Tensor,
+    bias_hh: torch.Tensor,
+    gate_tau: float,
+) -> torch.Tensor:
+    """Pure tensor GaWF preactivation used by the optional compiled fast path."""
+
+    input_size = x_t.size(-1)
+    fb_t = feedback.clamp(-10, 10).unsqueeze(2)
+    transform_ih, transform_hh = _compute_gawf_transforms(U, fb_t, V, input_size)
+    gate_ih = torch.sigmoid(transform_ih / gate_tau)
+    gate_hh = torch.sigmoid(transform_hh / gate_tau)
+    input_current = torch.einsum("bi,bhi,hi->bh", x_t, gate_ih, weight_ih)
+    recurrent_current = torch.einsum("bi,bhi,hi->bh", h_prev, gate_hh, weight_hh)
+    return input_current + recurrent_current + bias_ih + bias_hh
+
+
+class GaWFCore(nn.Module):
+    """Single- or multi-layer GaWF core with one fixed recurrence definition."""
 
     def __init__(
         self,
         input_size: int,
         hidden_size: int,
-        feedback_dim: int | None = None,
+        feedback_dim: int,
         dropout: float = 0.0,
         gate_tau: float = 0.5,
         num_layers: int = 1,
         layer_feedback_dims: Sequence[int] | None = None,
-        output_wrap: str = "ln_relu_dropout",
-        rnn_activation: str = "tanh",
     ) -> None:
         super().__init__()
         if num_layers < 1:
             raise ValueError(f"num_layers must be >= 1, got {num_layers}")
-        if feedback_dim is None or feedback_dim <= 0:
+        if feedback_dim <= 0:
             raise ValueError(f"feedback_dim must be > 0, got {feedback_dim}")
-        if layer_feedback_dims is not None and len(list(layer_feedback_dims)) != int(num_layers):
-            raise ValueError("layer_feedback_dims must contain one dimension per layer")
-        if (
-            int(num_layers) == 1
-            and layer_feedback_dims is not None
-            and list(layer_feedback_dims) != [feedback_dim]
-        ):
-            raise ValueError("single-layer layer_feedback_dims must equal [feedback_dim]")
-        if output_wrap not in ("ln_relu_dropout", "none"):
-            raise ValueError(f"Unsupported output_wrap: {output_wrap!r}")
-        if rnn_activation not in ("tanh", "relu", "identity"):
-            raise ValueError(f"Unsupported rnn_activation: {rnn_activation!r}")
 
         self.input_size = int(input_size)
         self.hidden_size = int(hidden_size)
         self.output_size = int(hidden_size)
-        self.num_layers = int(num_layers)
+        self.feedback_dim = int(feedback_dim)
         self.dropout = float(dropout)
         self.gate_tau = float(gate_tau)
-        self.output_wrap = str(output_wrap)
-        self.rnn_activation = str(rnn_activation)
-        wrap_enabled = self.output_wrap == "ln_relu_dropout"
-        nonlinearity = "relu" if self.rnn_activation == "relu" else "tanh"
+        self.num_layers = int(num_layers)
+        self.rnn_activation = "identity"
+        self.output_wrap = "in_loop_ln_relu_dropout"
+        self.wrap_recurrent_state = True
+
+        dims = (
+            [int(value) for value in layer_feedback_dims]
+            if layer_feedback_dims is not None
+            else [self.feedback_dim] * self.num_layers
+        )
+        if len(dims) != self.num_layers or any(value <= 0 for value in dims):
+            raise ValueError("layer_feedback_dims must contain one positive value per layer")
+        self.layer_feedback_dims = dims
 
         if self.num_layers == 1:
-            self.feedback_dim = int(feedback_dim)
-            self.layer_feedback_dims = [self.feedback_dim]
-            # Weights, biases, and the in-recurrence activation are the built-in ones.
-            self.rnn = nn.RNN(
-                input_size=self.input_size,
-                hidden_size=self.hidden_size,
-                num_layers=1,
-                batch_first=True,
-                nonlinearity=nonlinearity,
-            )
-            self.U = nn.Parameter(torch.randn(self.hidden_size, self.feedback_dim) * 0.01)
+            self.rnn = nn.RNN(self.input_size, self.hidden_size, batch_first=True)
+            self.U = nn.Parameter(torch.randn(self.hidden_size, dims[0]) * 0.01)
             self.V = nn.Parameter(
-                torch.randn(self.feedback_dim, self.input_size + self.hidden_size) * 0.01
+                torch.randn(dims[0], self.input_size + self.hidden_size) * 0.01
             )
-            self.norm = nn.LayerNorm(self.hidden_size) if wrap_enabled else None
+            self.norm = nn.LayerNorm(self.hidden_size)
         else:
-            dims = (
-                [int(dim) for dim in layer_feedback_dims]
-                if layer_feedback_dims is not None
-                else [int(feedback_dim)] * self.num_layers
-            )
-            if any(dim <= 0 for dim in dims):
-                raise ValueError("layer_feedback_dims must be positive")
-            self.layer_feedback_dims = dims
-            self.feedback_dim = dims[-1]
-            layer_input_sizes = [self.input_size] + [self.hidden_size] * (self.num_layers - 1)
-            # Same module names as the historical multi-layer core so checkpoints stay readable.
+            layer_inputs = [self.input_size] + [self.hidden_size] * (self.num_layers - 1)
             self.rnns = nn.ModuleList(
-                [
-                    nn.RNN(
-                        input_size=layer_input_size,
-                        hidden_size=self.hidden_size,
-                        num_layers=1,
-                        batch_first=True,
-                        nonlinearity=nonlinearity,
-                    )
-                    for layer_input_size in layer_input_sizes
-                ]
+                [nn.RNN(size, self.hidden_size, batch_first=True) for size in layer_inputs]
             )
             self.U_layers = nn.ParameterList(
-                [
-                    nn.Parameter(torch.randn(self.hidden_size, dim) * 0.01)
-                    for dim in self.layer_feedback_dims
-                ]
+                [nn.Parameter(torch.randn(self.hidden_size, dim) * 0.01) for dim in dims]
             )
             self.V_layers = nn.ParameterList(
                 [
-                    nn.Parameter(torch.randn(dim, layer_input_size + self.hidden_size) * 0.01)
-                    for dim, layer_input_size in zip(self.layer_feedback_dims, layer_input_sizes)
+                    nn.Parameter(torch.randn(dim, size + self.hidden_size) * 0.01)
+                    for dim, size in zip(dims, layer_inputs)
                 ]
             )
-            self.norms = (
-                nn.ModuleList([nn.LayerNorm(self.hidden_size) for _ in range(self.num_layers)])
-                if wrap_enabled
-                else None
+            self.norms = nn.ModuleList(
+                [nn.LayerNorm(self.hidden_size) for _ in range(self.num_layers)]
             )
-        self._init_gawf_diagnostics_state()
-        self._compiled_feedback_preactivation = None
 
-    # --- RNN-aligned interface -----------------------------------------------------------------
+        self._compiled_preactivation = None
+        self._diagnostics = None
+        self._diagnostic_gate_eps = 0.01
 
     def initial_state(
         self,
@@ -147,232 +132,200 @@ class GaWFCore(GaWFDiagnosticsMixin, nn.Module):
         device: torch.device | str,
         dtype: torch.dtype,
     ) -> torch.Tensor | list[torch.Tensor]:
-        """Return the zero recurrent state for one independent sequence batch."""
-
-        if self.num_layers > 1:
-            return [
-                torch.zeros(batch_size, self.hidden_size, device=device, dtype=dtype)
-                for _ in range(self.num_layers)
-            ]
-        return torch.zeros(batch_size, self.hidden_size, device=device, dtype=dtype)
-
-    def _layer_rnn(self, layer_idx: int) -> nn.RNN:
-        """Return the built-in recurrent module of one layer."""
-
-        return self.rnn if self.num_layers == 1 else self.rnns[layer_idx]
-
-    def _layer_gate_params(self, layer_idx: int) -> tuple[nn.Parameter, nn.Parameter]:
-        """Return the layer's gate parameters ``(U, V)``."""
+        """Return zero recurrent activity for a new independent sequence."""
 
         if self.num_layers == 1:
-            return self.U, self.V
-        return self.U_layers[layer_idx], self.V_layers[layer_idx]
-
-    def _layer_norm(self, layer_idx: int) -> nn.Module | None:
-        """Return the layer's external LayerNorm, or ``None`` when the wrap is disabled."""
-
-        if self.num_layers == 1:
-            return self.norm
-        return None if self.norms is None else self.norms[layer_idx]
-
-    def _apply_activation(self, preactivation: torch.Tensor) -> torch.Tensor:
-        """Apply the configured in-recurrence activation.
-
-        ``tanh`` and ``relu`` mirror the built-in ``nn.RNN`` modes; ``identity`` is the only
-        non-built-in branch and yields a linear recurrence.
-        """
-
-        if self.rnn_activation == "relu":
-            return F.relu(preactivation)
-        if self.rnn_activation == "identity":
-            return preactivation
-        return torch.tanh(preactivation)
-
-    def _gate(
-        self, layer_idx: int, feedback: torch.Tensor, layer_input_size: int
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Return one layer's input/hidden gate values and their logits."""
-
-        U, V = self._layer_gate_params(layer_idx)
-        fb = feedback.to(dtype=torch.float32).clamp(-10, 10)
-        self._record_gawf_feedback(layer_idx, fb)
-        scaled = U.unsqueeze(0) * fb.unsqueeze(2).transpose(1, 2)
-        logits = torch.matmul(scaled, V) / self.gate_tau
-        gate = torch.sigmoid(logits)
-        self._record_gawf_gate(
-            layer_idx,
-            logits[..., :layer_input_size],
-            logits[..., layer_input_size:],
-            gate[..., :layer_input_size],
-            gate[..., layer_input_size:],
-        )
-        return (
-            gate[..., :layer_input_size],
-            gate[..., layer_input_size:],
-            logits[..., :layer_input_size],
-            logits[..., layer_input_size:],
-        )
-
-    def step(
-        self,
-        x_t: torch.Tensor,
-        h_prev: torch.Tensor | list[torch.Tensor],
-        feedback: torch.Tensor | list[torch.Tensor],
-    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
-        """Advance one timestep and return ``activation(preactivation)`` as the next state.
-
-        This is one ``nn.RNN`` step with the input and hidden weights modulated element-wise; with a
-        unit gate it reproduces ``nn.RNN`` exactly. For multiple layers the layers are chained the
-        way :class:`TorchRecurrentCore` chains them: each layer consumes the previous layer's
-        wrapped output, returns its raw ``activation(preactivation)`` as the state that is fed back,
-        and the top layer's wrapped output is the readout.
-        """
-
-        if self.num_layers == 1:
-            return self._step_single_layer(0, x_t, h_prev, feedback)  # type: ignore[arg-type]
-        if isinstance(h_prev, torch.Tensor) or isinstance(feedback, torch.Tensor):
-            raise TypeError("multi-layer GaWF expects per-layer state and feedback sequences")
-        if len(h_prev) != self.num_layers or len(feedback) != self.num_layers:
-            raise ValueError("state and feedback sequences must match num_layers")
-        layer_input = x_t
-        next_states: list[torch.Tensor] = []
-        for layer_idx in range(self.num_layers):
-            raw_state = self._step_single_layer(
-                layer_idx, layer_input, h_prev[layer_idx], feedback[layer_idx]
-            )
-            next_states.append(raw_state)
-            layer_input = self._wrap(raw_state, self._layer_norm(layer_idx))
-        return layer_input, next_states
-
-    def _step_single_layer(
-        self,
-        layer_idx: int,
-        x_t: torch.Tensor,
-        h_prev: torch.Tensor,
-        feedback: torch.Tensor,
-    ) -> torch.Tensor:
-        """Run one layer's gated ``nn.RNN`` step and return the raw next state."""
-
-        rnn = self._layer_rnn(layer_idx)
-        gate_ih, gate_hh, _logits_ih, _logits_hh = self._gate(
-            layer_idx, feedback, x_t.size(-1)
-        )
-        # nn.RNN's step with every weight element modulated: (G * W) x + b_ih + (G * W) h + b_hh.
-        preactivation = torch.einsum("bi,bhi,hi->bh", x_t, gate_ih, rnn.weight_ih_l0)
-        preactivation = preactivation + torch.einsum(
-            "bi,bhi,hi->bh", h_prev, gate_hh, rnn.weight_hh_l0
-        )
-        preactivation = preactivation + rnn.bias_ih_l0 + rnn.bias_hh_l0
-        return self._apply_activation(preactivation)
-
-    def project_readout(self, h_t: torch.Tensor) -> torch.Tensor:
-        """Apply the single-layer external LayerNorm, ReLU, and dropout contract to a state."""
-
-        if self.norm is None:
-            return h_t
-        h_t = self.norm(h_t)
-        h_t = F.relu(h_t)
-        return F.dropout(h_t, p=self.dropout, training=self.training)
-
-    def _wrap(self, h_t: torch.Tensor, norm: nn.Module | None) -> torch.Tensor:
-        """Apply the external LayerNorm, ReLU, and dropout contract with an explicit norm."""
-
-        if norm is None:
-            return h_t
-        h_t = norm(h_t)
-        h_t = F.relu(h_t)
-        return F.dropout(h_t, p=self.dropout, training=self.training)
-
-    def step_no_feedback(
-        self,
-        x_t: torch.Tensor,
-        state: torch.Tensor | list[torch.Tensor],
-    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
-        """Advance one timestep using the underlying ungated ``nn.RNN`` weights."""
-
-        if self.num_layers == 1:
-            return self._step_single_layer_no_feedback(0, x_t, state)  # type: ignore[arg-type]
-        if isinstance(state, torch.Tensor):
-            raise TypeError("multi-layer GaWF expects one state tensor per layer")
-        if len(state) != self.num_layers:
-            raise ValueError("state sequence must match num_layers")
-        layer_input = x_t
-        next_states: list[torch.Tensor] = []
-        for layer_idx in range(self.num_layers):
-            raw_state = self._step_single_layer_no_feedback(layer_idx, layer_input, state[layer_idx])
-            next_states.append(raw_state)
-            layer_input = self._wrap(raw_state, self._layer_norm(layer_idx))
-        return layer_input, next_states
-
-    def _step_single_layer_no_feedback(
-        self, layer_idx: int, x_t: torch.Tensor, state: torch.Tensor
-    ) -> torch.Tensor:
-        """Run one layer's ungated ``nn.RNN`` step and return the raw next state."""
-
-        rnn = self._layer_rnn(layer_idx)
-        preactivation = F.linear(x_t, rnn.weight_ih_l0, rnn.bias_ih_l0)
-        preactivation = preactivation + F.linear(state, rnn.weight_hh_l0, rnn.bias_hh_l0)
-        return self._apply_activation(preactivation)
-
-    def forward_no_feedback(self, x: torch.Tensor):
-        """Run the ungated recurrence and return the wrapped readout sequence.
-
-        For the built-in activations this calls ``nn.RNN`` itself, so the ungated path is exactly
-        the ``rnn`` baseline core.
-        """
-
-        if self.num_layers > 1:
-            layer_input = x
-            final_states: list[torch.Tensor] = []
-            for layer_idx in range(self.num_layers):
-                rnn = self._layer_rnn(layer_idx)
-                if self.rnn_activation in ("tanh", "relu"):
-                    out, state = rnn(layer_input)
-                    final_states.append(state.squeeze(0))
-                else:
-                    batch_size, frame_num = layer_input.shape[:2]
-                    state = self.initial_state(batch_size, layer_input.device, layer_input.dtype)
-                    if isinstance(state, list):
-                        state = state[layer_idx]
-                    outputs = []
-                    for time_idx in range(frame_num):
-                        state = self._step_single_layer_no_feedback(
-                            layer_idx, layer_input[:, time_idx, :], state
-                        )
-                        outputs.append(state)
-                    out = torch.stack(outputs, dim=1)
-                    final_states.append(state)
-                layer_input = self._wrap(out, self._layer_norm(layer_idx))
-            return layer_input, final_states
-        if self.rnn_activation in ("tanh", "relu"):
-            out, state = self.rnn(x)
-            return self.project_readout(out), state
-        batch_size, frame_num = x.shape[:2]
-        state = self.initial_state(batch_size, x.device, x.dtype)
-        outputs = []
-        for step in range(frame_num):
-            state = self.step_no_feedback(x[:, step, :], state)
-            outputs.append(state)
-        return self.project_readout(torch.stack(outputs, dim=1)), state.unsqueeze(0)
-
-    def set_feedback_frozen(self, freeze: bool) -> None:
-        """Freeze or unfreeze the gate parameters."""
-
-        for param in (self.U, self.V):
-            param.requires_grad = not freeze
+            return torch.zeros(batch_size, self.hidden_size, device=device, dtype=dtype)
+        return [
+            torch.zeros(batch_size, self.hidden_size, device=device, dtype=dtype)
+            for _ in range(self.num_layers)
+        ]
 
     def configure_feedback_acceleration(
         self,
         compile_feedback: bool,
         compile_mode: str = "reduce-overhead",
     ) -> None:
-        """Accept the shared acceleration flag; the gated step stays eager.
+        """Compile only the pure feedback-conditioned preactivation when requested."""
 
-        ``nn.RNN.forward`` cannot take input-dependent weights, so the gated step runs eagerly per
-        timestep. Data-pipeline acceleration and AMP are unaffected.
-        """
+        self._compiled_preactivation = None
+        if not compile_feedback:
+            return
+        if not hasattr(torch, "compile"):
+            raise RuntimeError("Compiled GaWF feedback requires torch.compile")
+        try:
+            self._compiled_preactivation = torch.compile(
+                _gawf_preactivation,
+                mode=compile_mode,
+                fullgraph=True,
+                dynamic=False,
+            )
+        except RuntimeError as exc:
+            warnings.warn(
+                f"Compiled GaWF feedback is unavailable ({exc}); using eager feedback",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
-        self._compiled_feedback_preactivation = None
+    def begin_gawf_diagnostics(self, gate_saturation_eps: float = 0.01) -> None:
+        """Start lightweight feedback and gate diagnostics for subsequent steps."""
+
+        self._diagnostic_gate_eps = float(gate_saturation_eps)
+        self._diagnostics = {
+            "gate_logit_min": float("inf"),
+            "gate_logit_max": float("-inf"),
+            "gate_saturation_count": 0,
+            "gate_count": 0,
+            "feedback_norm_sum": 0.0,
+            "feedback_norm_max": 0.0,
+            "feedback_count": 0,
+        }
+
+    def pop_gawf_diagnostics(self) -> dict[str, float | None]:
+        """Return and clear the currently accumulated diagnostic summary."""
+
+        state = self._diagnostics
+        self._diagnostics = None
+        if state is None:
+            return {}
+        return {
+            "gate_logit_min": (
+                state["gate_logit_min"]
+                if state["gate_logit_min"] != float("inf")
+                else None
+            ),
+            "gate_logit_max": (
+                state["gate_logit_max"]
+                if state["gate_logit_max"] != float("-inf")
+                else None
+            ),
+            "gate_saturation_frac": (
+                state["gate_saturation_count"] / state["gate_count"]
+                if state["gate_count"]
+                else None
+            ),
+            "feedback_norm_mean": (
+                state["feedback_norm_sum"] / state["feedback_count"]
+                if state["feedback_count"]
+                else None
+            ),
+            "feedback_norm_max": state["feedback_norm_max"],
+        }
+
+    def step(
+        self,
+        x_t: torch.Tensor,
+        h_prev: torch.Tensor | Sequence[torch.Tensor],
+        feedback: torch.Tensor | Sequence[torch.Tensor],
+    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
+        """Advance one timestep; wrapped activity is both output and next state."""
+
+        if self.num_layers == 1:
+            if not isinstance(h_prev, torch.Tensor) or not isinstance(feedback, torch.Tensor):
+                raise TypeError("single-layer GaWF expects tensor state and feedback")
+            states = [h_prev]
+            feedbacks = [feedback]
+        else:
+            if isinstance(h_prev, torch.Tensor) or isinstance(feedback, torch.Tensor):
+                raise TypeError("multi-layer GaWF expects state and feedback sequences")
+            if len(h_prev) != self.num_layers or len(feedback) != self.num_layers:
+                raise ValueError("state and feedback sequences must match num_layers")
+            states = list(h_prev)
+            feedbacks = list(feedback)
+
+        layer_input = x_t
+        next_states: list[torch.Tensor] = []
+        for layer_idx, (state, layer_feedback) in enumerate(zip(states, feedbacks)):
+            if self.num_layers == 1:
+                rnn, U, V, norm = self.rnn, self.U, self.V, self.norm
+            else:
+                rnn = self.rnns[layer_idx]
+                U = self.U_layers[layer_idx]
+                V = self.V_layers[layer_idx]
+                norm = self.norms[layer_idx]
+
+            fb = layer_feedback.to(device=layer_input.device, dtype=torch.float32)
+            if self._diagnostics is not None:
+                with torch.no_grad():
+                    norms = fb.detach().float().norm(dim=-1)
+                    self._diagnostics["feedback_norm_sum"] += float(norms.mean().item())
+                    self._diagnostics["feedback_norm_max"] = max(
+                        self._diagnostics["feedback_norm_max"], float(norms.max().item())
+                    )
+                    self._diagnostics["feedback_count"] += 1
+
+            if self._compiled_preactivation is not None and self._diagnostics is None:
+                preactivation = self._compiled_preactivation(
+                    layer_input,
+                    state,
+                    fb,
+                    U,
+                    V,
+                    rnn.weight_ih_l0,
+                    rnn.weight_hh_l0,
+                    rnn.bias_ih_l0,
+                    rnn.bias_hh_l0,
+                    self.gate_tau,
+                )
+            else:
+                input_size = layer_input.size(-1)
+                transforms = _compute_gawf_transforms(
+                    U, fb.clamp(-10, 10).unsqueeze(2), V, input_size
+                )
+                logits_ih = transforms[0] / self.gate_tau
+                logits_hh = transforms[1] / self.gate_tau
+                gate_ih = torch.sigmoid(logits_ih)
+                gate_hh = torch.sigmoid(logits_hh)
+                if self._diagnostics is not None:
+                    eps = self._diagnostic_gate_eps
+                    with torch.no_grad():
+                        self._diagnostics["gate_logit_min"] = min(
+                            self._diagnostics["gate_logit_min"],
+                            float(logits_ih.amin().item()),
+                            float(logits_hh.amin().item()),
+                        )
+                        self._diagnostics["gate_logit_max"] = max(
+                            self._diagnostics["gate_logit_max"],
+                            float(logits_ih.amax().item()),
+                            float(logits_hh.amax().item()),
+                        )
+                        self._diagnostics["gate_saturation_count"] += int(
+                            ((gate_ih <= eps) | (gate_ih >= 1.0 - eps)).sum().item()
+                            + ((gate_hh <= eps) | (gate_hh >= 1.0 - eps)).sum().item()
+                        )
+                        self._diagnostics["gate_count"] += gate_ih.numel() + gate_hh.numel()
+
+                input_current = torch.einsum(
+                    "bi,bhi,hi->bh", layer_input, gate_ih, rnn.weight_ih_l0
+                )
+                recurrent_current = torch.einsum(
+                    "bi,bhi,hi->bh", state, gate_hh, rnn.weight_hh_l0
+                )
+                preactivation = (
+                    input_current
+                    + recurrent_current
+                    + rnn.bias_ih_l0
+                    + rnn.bias_hh_l0
+                )
+
+            layer_input = F.dropout(
+                F.relu(norm(preactivation)), p=self.dropout, training=self.training
+            )
+            next_states.append(layer_input)
+
+        if self.num_layers == 1:
+            return next_states[0]
+        return layer_input, next_states
+
+    def forward(
+        self,
+        x_t: torch.Tensor,
+        h_prev: torch.Tensor | Sequence[torch.Tensor],
+        feedback: torch.Tensor | Sequence[torch.Tensor],
+    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
+        """Alias the module call to the explicit one-timestep recurrence."""
+
+        return self.step(x_t, h_prev, feedback)
 
 
 def configure_gawf_feedback_acceleration(
@@ -380,12 +333,11 @@ def configure_gawf_feedback_acceleration(
     enabled: bool,
     compile_mode: str = "reduce-overhead",
 ) -> int:
-    """Configure every nested :class:`GaWFCore`; the RNN-aligned core always counts as eager."""
+    """Configure every nested GaWF core and return the number compiled."""
 
-    configured = 0
+    compiled = 0
     for child in module.modules():
-        if not isinstance(child, GaWFCore):
-            continue
-        child.configure_feedback_acceleration(enabled, compile_mode)
-        configured += int(child._compiled_feedback_preactivation is not None)
-    return configured
+        if isinstance(child, GaWFCore):
+            child.configure_feedback_acceleration(enabled, compile_mode)
+            compiled += int(child._compiled_preactivation is not None)
+    return compiled
