@@ -29,8 +29,8 @@ shift
 (( $# > 0 )) || usage
 TASKS=("$@")
 
-UNIT="$ROOT/experiments/launchers/clutter/dsw/run_feedback_add_unit.sh"
-SMOKE="$ROOT/experiments/launchers/clutter/dsw/run_feedback_add_smoke.sh"
+UNIT="${AIM3_FEEDBACK_ADD_UNIT:-$ROOT/experiments/launchers/clutter/dsw/run_feedback_add_unit.sh}"
+SMOKE="${AIM3_FEEDBACK_ADD_SMOKE:-$ROOT/experiments/launchers/clutter/dsw/run_feedback_add_smoke.sh}"
 LANE_ROOT="$RUN_ROOT/lanes/gpu$GPU"
 mkdir -p "$LANE_ROOT"
 [[ -x "$UNIT" && -x "$SMOKE" ]] || { echo "Queue runners are missing" >&2; exit 1; }
@@ -72,6 +72,7 @@ for task in "${TASKS[@]}"; do
     "$GPU" "$task" "$(date -Is)" > "$LANE_ROOT/task_${task}.status"
   if bash "$UNIT" \
     "$ROOT" "$ENV_ROOT" "$DATA_ROOT" "$RESULTS_ROOT" "$RUN_ROOT" "$task" "$GPU" \
+    "${AIM3_FEEDBACK_ADD_SEED_OFFSET:-0}" \
     > "$LANE_ROOT/task_${task}.out" 2> "$LANE_ROOT/task_${task}.err"; then
     printf 'state=done gpu=%s task=%s timestamp=%s\n' \
       "$GPU" "$task" "$(date -Is)" > "$LANE_ROOT/task_${task}.status"

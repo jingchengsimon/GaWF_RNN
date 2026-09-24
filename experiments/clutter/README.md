@@ -87,7 +87,7 @@ The parameter-matching target is the complete GaWF `H=256` Clutter model with 58
 parameters. All controls use the same detached previous-step 19-D raw-logit feedback and the
 same model-family hyperparameters as the corresponding formal baseline; there is no tuning.
 
-The corrected seeds 1--5 additive-feedback campaign uses native no-wrap recurrent semantics and
+The corrected seeds 1--10 additive-feedback campaign uses native no-wrap recurrent semantics and
 an independent feedback affine with its own trainable bias:
 
 | Model | Width | Full trainable parameters | LR | Weight decay |

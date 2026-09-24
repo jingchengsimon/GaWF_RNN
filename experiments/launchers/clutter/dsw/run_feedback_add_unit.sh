@@ -3,8 +3,8 @@
 
 set -euo pipefail
 
-if (( $# != 7 )); then
-  echo "Usage: $0 ROOT ENV_ROOT DATA_ROOT RESULTS_ROOT RUN_ROOT TASK_ID GPU" >&2
+if (( $# < 7 || $# > 8 )); then
+  echo "Usage: $0 ROOT ENV_ROOT DATA_ROOT RESULTS_ROOT RUN_ROOT TASK_ID GPU [SEED_OFFSET]" >&2
   exit 2
 fi
 
@@ -15,12 +15,17 @@ RESULTS_ROOT="$4"
 RUN_ROOT="$5"
 TASK_ID="$6"
 GPU="$7"
+SEED_OFFSET="${8:-0}"
 
 [[ "$TASK_ID" =~ ^[0-9]+$ ]] && (( TASK_ID >= 0 && TASK_ID < 15 )) || {
   echo "TASK_ID must be an integer in [0, 14]" >&2
   exit 2
 }
 [[ "$GPU" =~ ^[0-7]$ ]] || { echo "GPU must be an integer in [0, 7]" >&2; exit 2; }
+[[ "$SEED_OFFSET" == 0 || "$SEED_OFFSET" == 5 ]] || {
+  echo "SEED_OFFSET must be 0 or 5" >&2
+  exit 2
+}
 [[ -x "$ENV_ROOT/bin/python" && -f "$ROOT/run_task.py" ]] || {
   echo "Prepared environment or source checkout is missing" >&2
   exit 1
@@ -45,10 +50,14 @@ MODEL="${MODELS[$MODEL_INDEX]}"
 WIDTH="${WIDTHS[$MODEL_INDEX]}"
 LR="${LRS[$MODEL_INDEX]}"
 WD="${WDS[$MODEL_INDEX]}"
-SEED=$((TASK_ID % 5 + 1))
+SEED=$((TASK_ID % 5 + 1 + SEED_OFFSET))
 printf -v SEED_TAG '%02d' "$SEED"
 LEAF=clutter_feedback_add_newsem_40h_ep150_v1
-TEST_LEAF=clutter_feedback_add_newsem_reset_excluded_test_5seed_v1
+if (( SEED_OFFSET == 0 )); then
+  TEST_LEAF=clutter_feedback_add_newsem_reset_excluded_test_5seed_v1
+else
+  TEST_LEAF=clutter_feedback_add_newsem_reset_excluded_test_seed6to10_v1
+fi
 SUFFIX="$LEAF/$MODEL-seed$SEED_TAG"
 RESULT_DIR="$RESULTS_ROOT/data/clutter/runs/$SUFFIX"
 TEST_DIR="$RESULTS_ROOT/data/analysis/$TEST_LEAF/$MODEL-seed$SEED_TAG"

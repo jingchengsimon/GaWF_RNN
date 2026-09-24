@@ -17,10 +17,11 @@ explicit task list serially through `run_nowrap_unit.sh`. It does not discover f
 task between GPUs, or cancel Amarel jobs; a failed task stops that lane and preserves its logs.
 
 `run_fixed_gpu_feedback_add_queue.sh` queues the corrected `rnn_fb_add`, `gru_fb_add`, and
-`lstm_fb_add` seeds 1--5 on fixed GPUs after explicitly named incumbent processes exit. The first
-released lane owns a shared 200-step optimization smoke; every lane requires its pass record
-before starting formal 150-epoch units. Each unit preserves one model, metrics, and history file
-plus a reset-excluded evaluation under unique campaign result roots.
+`lstm_fb_add` on fixed GPUs after explicitly named incumbent processes exit. Task IDs 0--14 map
+to five seeds for each model; `AIM3_FEEDBACK_ADD_SEED_OFFSET=0` selects seeds 1--5 and offset 5
+selects seeds 6--10. The first released lane owns a shared 200-step optimization smoke; every lane
+requires its pass record before starting formal 150-epoch units. Each unit preserves one model,
+metrics, and history file plus a reset-excluded evaluation under unique campaign result roots.
 
 ## Coordinated pause trigger
 
