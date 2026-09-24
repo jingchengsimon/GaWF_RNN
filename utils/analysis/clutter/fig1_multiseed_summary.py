@@ -401,7 +401,7 @@ def main() -> None:
         )
         if args.axis_profile == "notanh_mixed":
             axes[0, 3].set_ylim(55.0, 96.0)
-            axes[0, 3].set_yticks((60.0, 70.0, 80.0, 90.0))
+            axes[0, 3].set_yticks((60.0, 75.0, 90.0))
             axes[1, 3].set_ylim(45.0, 92.0)
             axes[1, 3].set_yticks((50.0, 70.0, 90.0))
         else:
@@ -430,22 +430,22 @@ def main() -> None:
             )
             for column in range(4)
         ]
-        title_y = max(axes[0, column].get_position().y1 for column in range(4)) + 0.065
+        title_y = max(axes[0, column].get_position().y1 for column in range(4)) + 0.035
         for x, title in zip(
             column_centers,
             (
-                "Test accuracy\nstandard, 32-frame",
+                "Test accuracy",
                 "Validation loss",
-                "Target switch\njoint-balanced, 32-frame",
-                "GaWF shuffle\nstandard, 512",
+                "Target switch recovery\n(mean ± SEM)",
+                "GaWF shuffle\nablation",
             ),
         ):
             fig.text(x, title_y, title, ha="center", va="bottom", fontsize=8)
         for label, axis in zip("ABCD", axes[0]):
             position = axis.get_position()
             fig.text(
-                position.x0 - 0.025,
-                position.y1 + 0.015,
+                position.x0 - 0.012,
+                title_y,
                 label,
                 ha="right",
                 va="bottom",
