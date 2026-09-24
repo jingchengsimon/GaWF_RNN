@@ -6,7 +6,9 @@ import numpy as np
 
 from utils.analysis.clutter.fig6_encoder_sector_patterns import (
     CONDITIONS,
+    ENCODER_SHAPE,
     _equal_n_condition_mask,
+    _load_patterns,
     _spatial_activation_limits,
 )
 
@@ -37,3 +39,18 @@ def test_spatial_plot_uses_the_spatial_activation_range_only() -> None:
     maps = np.linspace(0.02, 0.18, 9 * 6 * 6, dtype=np.float32).reshape(9, 6, 6)
 
     assert np.allclose(_spatial_activation_limits(maps, CONDITIONS["sector"]), (0.02, 0.18))
+
+
+def test_load_patterns_accepts_refresh_seed_directories(tmp_path) -> None:
+    """The no-tanh refresh collector's ``seedNN`` layout must aggregate directly."""
+
+    config = CONDITIONS["sector"]
+    expected = []
+    for seed in range(1, 11):
+        patterns = np.full((config.count, *ENCODER_SHAPE), seed, dtype=np.float32)
+        expected.append(patterns)
+        destination = tmp_path / f"seed{seed:02d}"
+        destination.mkdir()
+        np.savez_compressed(destination / "encoder_sector_patterns.npz", patterns=patterns)
+
+    np.testing.assert_array_equal(_load_patterns(tmp_path, config), np.stack(expected))

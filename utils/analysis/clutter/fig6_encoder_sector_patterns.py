@@ -204,7 +204,10 @@ def collect(args: argparse.Namespace) -> Path:
 def _load_patterns(data_root: Path, config: ConditionConfig) -> np.ndarray:
     """Load the exactly ten compact seed pattern files."""
 
-    paths = sorted(data_root.glob(f"gawf-seed*/{_result_name(config)}"))
+    result_name = _result_name(config)
+    paths = sorted(data_root.glob(f"gawf-seed*/{result_name}"))
+    if not paths:
+        paths = sorted(data_root.glob(f"seed*/{result_name}"))
     if len(paths) != 10:
         raise RuntimeError(f"Expected ten GaWF seed outputs in {data_root}, found {len(paths)}.")
     values = []
