@@ -6,8 +6,8 @@ reset-excluded JSONs override the retained five-seed ablation table. The three t
 columns remain the validated eight-model, ten-seed curves because matched histories are not yet
 complete for every added variant.
 
-Outputs are a seed-level CSV, a coverage JSON, and a non-overwriting 2-by-4 PNG/PDF.  Models in
-the same recurrent family always share one colour; bar hatch distinguishes semantics.
+Outputs are a seed-level CSV, a coverage JSON, and a non-overwriting 2-by-4 PNG/PDF. Models in
+the same recurrent family share one colour and are placed next to each other without hatching.
 """
 
 from __future__ import annotations
@@ -347,14 +347,14 @@ def _plot_curve(
     epochs = np.arange(1, 151)
     for model in CURVE_MODELS:
         mean, sem = curves[(model, readout, metric)]
-        is_relu = model in {"gawf_legacy_notanh", "rnn_inloop_notanh"}
+        is_current = model in {"gawf_legacy_notanh", "rnn_inloop_notanh"}
         color = MODEL_COLORS[FAMILY[model]]
         axis.plot(
             epochs,
             mean,
             color=color,
-            linestyle="--" if is_relu else "-",
-            linewidth=2.0 if is_relu else 1.5,
+            linestyle="-",
+            linewidth=2.0 if is_current else 1.5,
         )
         axis.fill_between(epochs, mean - sem, mean + sem, color=color, alpha=0.12, linewidth=0)
     axis.set_xlim(0, 150)
@@ -404,14 +404,14 @@ def _render(
         )
         handles = []
         for model in CURVE_MODELS:
-            is_relu = model in {"gawf_legacy_notanh", "rnn_inloop_notanh"}
+            is_current = model in {"gawf_legacy_notanh", "rnn_inloop_notanh"}
             handles.append(
                 Line2D(
                     [0],
                     [0],
                     color=MODEL_COLORS[FAMILY[model]],
-                    linestyle="--" if is_relu else "-",
-                    linewidth=2.0,
+                    linestyle="-",
+                    linewidth=2.0 if is_current else 1.5,
                     label=CURVE_LABELS[model],
                 )
             )

@@ -77,11 +77,24 @@ def parse_args() -> argparse.Namespace:
 
 
 def _model_key(checkpoint: Path) -> str:
-    model_type = parse_hparams_from_filename(checkpoint.name).get("model_type", "").lower()
-    keys = {key: key for key in MODEL_ORDER}
-    if model_type not in keys:
+    model_type = parse_hparams_from_filename(checkpoint.name).get("model_type", "")
+    aliases = {
+        "GaWF": "gawf",
+        "GaWFLegacyNoTanh": "gawf",
+        "RNN": "rnn",
+        "RNNInLoopNoTanh": "rnn",
+        "LSTM": "lstm",
+        "LSTMNoWrap": "lstm",
+        "GRU": "gru",
+        "GRUNoWrap": "gru",
+        "MAMBA": "mamba",
+        "MambaNoWrap": "mamba",
+        "S5": "s5",
+        "S5NoWrap": "s5",
+    }
+    if model_type not in aliases:
         raise ValueError(f"Unsupported checkpoint model type {model_type!r}: {checkpoint}")
-    return keys[model_type]
+    return aliases[model_type]
 
 
 def _hidden_activations(model: torch.nn.Module, encoded: torch.Tensor) -> torch.Tensor:
