@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "id": "clutter-jointbalanced-seq512-resetexcluded-nowrap-baselines-seeds1-5",
+  "description": "Joint-balanced 512-rollout test accuracy and switch recovery for GRU, LSTM, Mamba, and S5 no-wrap seeds 1-5.",
+  "host": "sjc-remote",
+  "status": "completed",
+  "created_at": "2026-09-24T09:06:06-04:00",
+  "updated_at": "2026-09-24T09:25:15-04:00",
+  "completed_at": "2026-09-24T09:25:15-04:00",
+  "remote_root": "/G/MIMOlab/Codes/aim3_gawf_rnn",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/G/anaconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "tmux",
+    "job_ids": [],
+    "run_ids": [
+      "current6_seq512_sjc_v1"
+    ],
+    "tmux_session": "current6_seq512_sjc_v1",
+    "process_patterns": [
+      "run_current6_jointbalanced_seq512_compat.sh",
+      "fig1_reset_excluded_test_accuracy",
+      "fig1_target_switch_recovery"
+    ],
+    "collect_gpu": true
+  },
+  "paths": {
+    "log_globs": [
+      "results/data/analysis/launchers/current6_jointbalanced_seq512_20260924_sjc_v1/*.log",
+      "results/data/analysis/current6_notanh_jointbalanced_seq512_20260924_sjc_v1/logs/*.log"
+    ],
+    "status_dir": "results/data/analysis/current6_notanh_jointbalanced_seq512_20260924_sjc_v1/status",
+    "result_paths": [
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/analysis/current6_notanh_jointbalanced_seq512_20260924_sjc_v1"
+    ]
+  },
+  "tracking": {
+    "expected_units": 40,
+    "auto_complete": true,
+    "result_globs": [
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/analysis/current6_notanh_jointbalanced_seq512_20260924_sjc_v1/test/*-seed*/reset_excluded_test_accuracy.json",
+      "/G/MIMOlab/Codes/aim3_gawf_rnn/results/data/analysis/current6_notanh_jointbalanced_seq512_20260924_sjc_v1/recovery/*-seed*/fg_switch_offset_acc_*.npz"
+    ]
+  },
+  "notes": [
+    "Twenty model-seed pairs each produce two required artifacts; expected_units=40 counts both artifact classes.",
+    "The joint-balanced movie uses sequence_length=512 and excludes timestep 0 from every rollout.",
+    "The execution-only runner is stored outside the source checkout and does not modify the pre-existing untracked source/text/data directory."
+  ]
+}

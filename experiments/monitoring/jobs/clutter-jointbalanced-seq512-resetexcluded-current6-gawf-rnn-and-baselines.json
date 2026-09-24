@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "id": "clutter-jointbalanced-seq512-resetexcluded-current6-gawf-rnn-and-baselines",
+  "description": "Joint-balanced 512-rollout test accuracy and switch recovery for current GaWF/RNN seeds 1-10 and no-wrap baseline seeds 6-10.",
+  "host": "dsw-5000",
+  "status": "completed",
+  "created_at": "2026-09-24T09:06:06-04:00",
+  "updated_at": "2026-09-24T09:25:15-04:00",
+  "completed_at": "2026-09-24T09:25:15-04:00",
+  "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn_analysis_38ecb22_v2",
+  "environment": {
+    "name": "/mnt/workspace/sjc/envs/aim3_gawf_rnn_ssm_v1",
+    "conda_init": "/mnt/workspace/sjc/miniconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "tmux",
+    "job_ids": [],
+    "run_ids": [
+      "current6_seq512_dsw5000_v1"
+    ],
+    "tmux_session": "current6_seq512_dsw5000_v1",
+    "process_patterns": [
+      "run_current6_jointbalanced_seq512_compat.sh",
+      "fig1_reset_excluded_test_accuracy",
+      "fig1_target_switch_recovery"
+    ],
+    "collect_gpu": true
+  },
+  "paths": {
+    "log_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/current6_jointbalanced_seq512_20260924_dsw5000_v1/*.log",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/analysis/current6_notanh_jointbalanced_seq512_20260924_dsw5000_v1/logs/*.log"
+    ],
+    "status_dir": "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/analysis/current6_notanh_jointbalanced_seq512_20260924_dsw5000_v1/status",
+    "result_paths": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/analysis/current6_notanh_jointbalanced_seq512_20260924_dsw5000_v1"
+    ]
+  },
+  "tracking": {
+    "expected_units": 80,
+    "auto_complete": true,
+    "result_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/analysis/current6_notanh_jointbalanced_seq512_20260924_dsw5000_v1/test/*-seed*/reset_excluded_test_accuracy.json",
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/analysis/current6_notanh_jointbalanced_seq512_20260924_dsw5000_v1/recovery/*-seed*/fg_switch_offset_acc_*.npz"
+    ]
+  },
+  "notes": [
+    "Forty model-seed pairs each produce two required artifacts; expected_units=80 counts both artifact classes.",
+    "The joint-balanced movie uses sequence_length=512 and excludes timestep 0 from every rollout.",
+    "Evaluation is pinned to DSW GPU4 and GPU5; training writers on the other GPUs are not disturbed."
+  ]
+}
