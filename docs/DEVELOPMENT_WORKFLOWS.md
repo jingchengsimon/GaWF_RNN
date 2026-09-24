@@ -173,8 +173,9 @@ PCA arrays and per-digit capture in the shared basis remain in the separate data
 
 ### RNN fixed-point inputs
 
-`utils.analysis.clutter.rnn_fixed_points` uses the original one-layer tanh `nn.RNN` with
-frozen weights. Autonomous input removes the entire `W_ih*u + b_ih` term via a stateless
+`utils.analysis.clutter.rnn_fixed_points` reconstructs the historical one-layer tanh `nn.RNN`
+from the checkpoint-compatible affine weights and freezes it. Autonomous input removes the
+entire `W_ih*u + b_ih` term via a stateless
 `bias_ih=0` override and zero features; recurrent `W_hh*h + b_hh` remains. The separate
 zero-feature condition retaining `b_ih` is deliberately excluded. Real-input conditions fix
 the actual two-frame CNN features at each clean switch's preceding frame and switch frame.

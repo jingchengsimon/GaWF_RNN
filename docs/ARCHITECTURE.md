@@ -87,6 +87,11 @@ z_t = W_ih x_t + W_hh h_{t-1} + b_ih + b_hh
 h_t = dropout(ReLU(LayerNorm(z_t)))  # layer output and next recurrent state
 ```
 
+GaWF and RNN compute these recurrences explicitly. Their ``rnn.weight_ih_l0``,
+``rnn.weight_hh_l0``, ``rnn.bias_ih_l0``, and ``rnn.bias_hh_l0`` names are retained through an
+activation-free affine parameter container for checkpoint and analysis compatibility; neither core
+calls ``nn.RNN`` or inherits its default ``tanh`` activation.
+
 For one layer, omitted Clutter `--dz` retains output-sized legacy feedback; explicit `--dz > 0`
 uses a projector. For multiple layers, direct feedback uses the detached adjacent upper hidden
 state at non-final layers and the detached previous task output at the final layer. Projected

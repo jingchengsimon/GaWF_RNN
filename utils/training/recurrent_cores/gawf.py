@@ -18,6 +18,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .rnn import ElmanAffine
+
 
 def _compute_gawf_transforms(
     U: torch.Tensor,
@@ -98,16 +100,14 @@ class GaWFCore(nn.Module):
         self.layer_feedback_dims = dims
 
         if self.num_layers == 1:
-            self.rnn = nn.RNN(self.input_size, self.hidden_size, batch_first=True)
+            self.rnn = ElmanAffine(self.input_size, self.hidden_size)
             self.U = nn.Parameter(torch.randn(self.hidden_size, dims[0]) * 0.01)
-            self.V = nn.Parameter(
-                torch.randn(dims[0], self.input_size + self.hidden_size) * 0.01
-            )
+            self.V = nn.Parameter(torch.randn(dims[0], self.input_size + self.hidden_size) * 0.01)
             self.norm = nn.LayerNorm(self.hidden_size)
         else:
             layer_inputs = [self.input_size] + [self.hidden_size] * (self.num_layers - 1)
             self.rnns = nn.ModuleList(
-                [nn.RNN(size, self.hidden_size, batch_first=True) for size in layer_inputs]
+                [ElmanAffine(size, self.hidden_size) for size in layer_inputs]
             )
             self.U_layers = nn.ParameterList(
                 [nn.Parameter(torch.randn(self.hidden_size, dim) * 0.01) for dim in dims]
@@ -118,9 +118,7 @@ class GaWFCore(nn.Module):
                     for dim, size in zip(dims, layer_inputs)
                 ]
             )
-            self.norms = nn.ModuleList(
-                [nn.LayerNorm(self.hidden_size) for _ in range(self.num_layers)]
-            )
+            self.norms = nn.ModuleList([nn.LayerNorm(self.hidden_size) for _ in range(num_layers)])
 
         self._compiled_preactivation = None
         self._diagnostics = None
@@ -190,14 +188,10 @@ class GaWFCore(nn.Module):
             return {}
         return {
             "gate_logit_min": (
-                state["gate_logit_min"]
-                if state["gate_logit_min"] != float("inf")
-                else None
+                state["gate_logit_min"] if state["gate_logit_min"] != float("inf") else None
             ),
             "gate_logit_max": (
-                state["gate_logit_max"]
-                if state["gate_logit_max"] != float("-inf")
-                else None
+                state["gate_logit_max"] if state["gate_logit_max"] != float("-inf") else None
             ),
             "gate_saturation_frac": (
                 state["gate_saturation_count"] / state["gate_count"]
@@ -269,13 +263,11 @@ class GaWFCore(nn.Module):
                 )
             else:
                 input_size = layer_input.size(-1)
-                transforms = _compute_gawf_transforms(
+                transform_ih, transform_hh = _compute_gawf_transforms(
                     U, fb.clamp(-10, 10).unsqueeze(2), V, input_size
                 )
-                logits_ih = transforms[0] / self.gate_tau
-                logits_hh = transforms[1] / self.gate_tau
-                gate_ih = torch.sigmoid(logits_ih)
-                gate_hh = torch.sigmoid(logits_hh)
+                logits_ih, logits_hh = transform_ih / self.gate_tau, transform_hh / self.gate_tau
+                gate_ih, gate_hh = torch.sigmoid(logits_ih), torch.sigmoid(logits_hh)
                 if self._diagnostics is not None:
                     eps = self._diagnostic_gate_eps
                     with torch.no_grad():
@@ -298,19 +290,10 @@ class GaWFCore(nn.Module):
                 input_current = torch.einsum(
                     "bi,bhi,hi->bh", layer_input, gate_ih, rnn.weight_ih_l0
                 )
-                recurrent_current = torch.einsum(
-                    "bi,bhi,hi->bh", state, gate_hh, rnn.weight_hh_l0
-                )
-                preactivation = (
-                    input_current
-                    + recurrent_current
-                    + rnn.bias_ih_l0
-                    + rnn.bias_hh_l0
-                )
+                recurrent_current = torch.einsum("bi,bhi,hi->bh", state, gate_hh, rnn.weight_hh_l0)
+                preactivation = input_current + recurrent_current + rnn.bias_ih_l0 + rnn.bias_hh_l0
 
-            layer_input = F.dropout(
-                F.relu(norm(preactivation)), p=self.dropout, training=self.training
-            )
+            layer_input = F.dropout(F.relu(norm(preactivation)), self.dropout, self.training)
             next_states.append(layer_input)
 
         if self.num_layers == 1:

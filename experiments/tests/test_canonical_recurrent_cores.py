@@ -15,7 +15,7 @@ from utils.training.clutter.clutter_task_models import (
     S5Conv,
 )
 from utils.training.recurrent_cores.gawf import GaWFCore
-from utils.training.recurrent_cores.rnn import GRUCore, LSTMCore, RNNCore
+from utils.training.recurrent_cores.rnn import ElmanAffine, GRUCore, LSTMCore, RNNCore
 
 _ = np.__version__  # Load NumPy before PyTorch in the macOS test environment.
 
@@ -43,6 +43,22 @@ def test_gawf_and_rnn_differ_only_by_feedback_gates() -> None:
     torch.testing.assert_close(gawf_next, rnn_next)
 
 
+def test_elman_affine_preserves_native_rnn_parameters_and_initialization() -> None:
+    """The activation-free container loads old checkpoints without changing initialization."""
+
+    torch.manual_seed(7)
+    native = torch.nn.RNN(3, 4, batch_first=True)
+    torch.manual_seed(7)
+    affine = ElmanAffine(3, 4)
+
+    assert isinstance(RNNCore(3, 4).rnn, ElmanAffine)
+    assert isinstance(GaWFCore(3, 4, feedback_dim=2).rnn, ElmanAffine)
+    assert tuple(affine.state_dict()) == tuple(native.state_dict())
+    for name, parameter in affine.state_dict().items():
+        torch.testing.assert_close(parameter, native.state_dict()[name], rtol=0, atol=0)
+    affine.load_state_dict(native.state_dict(), strict=True)
+
+
 def test_native_gru_and_lstm_have_no_external_wrap() -> None:
     """Canonical GRU/LSTM delegates directly to the corresponding PyTorch module."""
 
@@ -58,13 +74,9 @@ def test_native_gru_and_lstm_have_no_external_wrap() -> None:
 def test_public_clutter_registry_contains_only_six_models() -> None:
     """Historical ablations are not public model choices after archival."""
 
-    classes = get_model_classes(
-        RNNConv, LSTMConv, GRUConv, GaWFRNNConv, MambaConv, S5Conv
-    )
+    classes = get_model_classes(RNNConv, LSTMConv, GRUConv, GaWFRNNConv, MambaConv, S5Conv)
     assert tuple(classes) == ("rnn", "lstm", "gru", "gawf", "mamba", "s5")
     choices = next(
-        action.choices
-        for action in build_arg_parser()._actions
-        if action.dest == "model_types"
+        action.choices for action in build_arg_parser()._actions if action.dest == "model_types"
     )
     assert choices == ["rnn", "lstm", "gru", "gawf", "mamba", "s5"]

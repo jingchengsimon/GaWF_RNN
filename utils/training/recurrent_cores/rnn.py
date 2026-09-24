@@ -2,6 +2,8 @@
 
 The Elman RNN uses the same in-loop activity definition as GaWF and has no tanh:
 `h_t = dropout(relu(layer_norm(W_ih x_t + W_hh h_(t-1) + b_ih + b_hh)))`.
+Its four affine parameters retain the historical ``nn.RNN`` names for checkpoint compatibility,
+but no native ``nn.RNN`` forward or implicit activation is present.
 GRU and LSTM use the native PyTorch sequence layers without an external wrap.
 """
 
@@ -10,6 +12,27 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+
+class ElmanAffine(nn.Module):
+    """Checkpoint-compatible parameters for one activation-free Elman affine transform."""
+
+    def __init__(self, input_size: int, hidden_size: int) -> None:
+        super().__init__()
+        self.input_size = int(input_size)
+        self.hidden_size = int(hidden_size)
+        self.weight_ih_l0 = nn.Parameter(torch.empty(self.hidden_size, self.input_size))
+        self.weight_hh_l0 = nn.Parameter(torch.empty(self.hidden_size, self.hidden_size))
+        self.bias_ih_l0 = nn.Parameter(torch.empty(self.hidden_size))
+        self.bias_hh_l0 = nn.Parameter(torch.empty(self.hidden_size))
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        """Match the default initialization used by ``nn.RNN``."""
+
+        bound = self.hidden_size**-0.5
+        for parameter in self.parameters():
+            nn.init.uniform_(parameter, -bound, bound)
 
 
 class RNNCore(nn.Module):
@@ -35,16 +58,14 @@ class RNNCore(nn.Module):
         self.wrap_recurrent_state = True
 
         if self.num_layers == 1:
-            self.rnn = nn.RNN(self.input_size, self.hidden_size, batch_first=True)
+            self.rnn = ElmanAffine(self.input_size, self.hidden_size)
             self.norm = nn.LayerNorm(self.hidden_size)
         else:
             layer_inputs = [self.input_size] + [self.hidden_size] * (self.num_layers - 1)
             self.rnns = nn.ModuleList(
-                [nn.RNN(size, self.hidden_size, batch_first=True) for size in layer_inputs]
+                [ElmanAffine(size, self.hidden_size) for size in layer_inputs]
             )
-            self.norms = nn.ModuleList(
-                [nn.LayerNorm(self.hidden_size) for _ in range(self.num_layers)]
-            )
+            self.norms = nn.ModuleList([nn.LayerNorm(self.hidden_size) for _ in range(num_layers)])
 
     def initial_state(
         self,
@@ -74,12 +95,10 @@ class RNNCore(nn.Module):
                 rnn, norm = self.rnn, self.norm
             else:
                 rnn, norm = self.rnns[layer_idx], self.norms[layer_idx]
-            preactivation = F.linear(
-                layer_input, rnn.weight_ih_l0, rnn.bias_ih_l0
-            ) + F.linear(state[layer_idx], rnn.weight_hh_l0, rnn.bias_hh_l0)
-            layer_input = F.dropout(
-                F.relu(norm(preactivation)), p=self.dropout, training=self.training
+            preactivation = F.linear(layer_input, rnn.weight_ih_l0, rnn.bias_ih_l0) + F.linear(
+                state[layer_idx], rnn.weight_hh_l0, rnn.bias_hh_l0
             )
+            layer_input = F.dropout(F.relu(norm(preactivation)), self.dropout, self.training)
             next_states.append(layer_input)
         return layer_input, torch.stack(next_states, dim=0)
 
