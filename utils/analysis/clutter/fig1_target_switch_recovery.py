@@ -139,6 +139,12 @@ def parse_args() -> argparse.Namespace:
         help="Number of frames before/after each switch to export (default: 5).",
     )
     parser.add_argument(
+        "--sequence_length",
+        type=int,
+        default=32,
+        help="Fixed recurrent rollout length used to construct the test dataset (default: 32).",
+    )
+    parser.add_argument(
         "--debug_switch_map",
         type=int,
         default=0,
@@ -480,6 +486,7 @@ def _save_outputs_fg(
     offset_order: List[int],
     offset_labels: List[str],
     exclude_window_initial_frame: bool,
+    sequence_length: int,
 ) -> None:
     ckpt_tag = os.path.basename(ckpt_path).replace("_model.pth", "")
     npz_path = os.path.join(save_dir, f"fg_switch_offset_acc_{ckpt_tag}.npz")
@@ -503,6 +510,7 @@ def _save_outputs_fg(
                 "offset_labels": offset_labels,
                 "frame_counts": frame_counts.astype(np.int64).tolist(),
                 "exclude_window_initial_frame": exclude_window_initial_frame,
+                "sequence_length": sequence_length,
             },
             f,
             indent=2,
@@ -520,6 +528,7 @@ def _save_outputs_bg(
     offset_order: List[int],
     offset_labels: List[str],
     exclude_window_initial_frame: bool,
+    sequence_length: int,
 ) -> None:
     ckpt_tag = os.path.basename(ckpt_path).replace("_model.pth", "")
     npz_path = os.path.join(save_dir, f"bg_switch_offset_acc_{ckpt_tag}.npz")
@@ -543,6 +552,7 @@ def _save_outputs_bg(
                 "offset_labels": offset_labels,
                 "frame_counts": frame_counts.astype(np.int64).tolist(),
                 "exclude_window_initial_frame": exclude_window_initial_frame,
+                "sequence_length": sequence_length,
             },
             f,
             indent=2,
@@ -633,6 +643,7 @@ def main() -> None:
                 offset_order,
                 offset_labels,
                 args.exclude_window_initial_frame,
+                args.sequence_length,
             )
         else:
             _save_outputs_bg(
@@ -644,6 +655,7 @@ def main() -> None:
                 offset_order,
                 offset_labels,
                 args.exclude_window_initial_frame,
+                args.sequence_length,
             )
 
 

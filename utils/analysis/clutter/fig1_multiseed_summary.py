@@ -110,6 +110,15 @@ def parse_args() -> argparse.Namespace:
         default=True,
         help="Overlay one neutral-gray point per training seed on each 10-seed bar.",
     )
+    parser.add_argument(
+        "--axis_profile",
+        choices=("notanh_mixed", "jointbalanced_512"),
+        default="notanh_mixed",
+        help=(
+            "Axis layout for the current mixed-protocol figure or the all-joint-balanced "
+            "512-rollout comparison."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -279,6 +288,29 @@ def _plot_validation_loss_axis(
     _style_axis(axis)
 
 
+def _set_compact_test_axis(
+    axis: plt.Axes,
+    metrics: dict[str, dict[str, np.ndarray]],
+    metric: str,
+) -> None:
+    """Fit all seed points with three or four evenly spaced ticks."""
+
+    values = np.concatenate([model_values[metric] for model_values in metrics.values()])
+    for step in (2.0, 4.0, 6.0):
+        lower = step * np.floor(values.min() / step)
+        upper = step * np.ceil(values.max() / step)
+        ticks = np.arange(lower, upper + 0.001, step)
+        if 3 <= ticks.size <= 4:
+            break
+    else:
+        step = 6.0
+        lower = step * np.floor(values.min() / step)
+        upper = step * np.ceil(values.max() / step)
+        ticks = np.arange(lower, upper + 0.001, step)
+    axis.set_ylim(lower - 0.5, upper + 0.5)
+    axis.set_yticks(ticks)
+
+
 def main() -> None:
     args = parse_args()
     test_metrics = load_test_metrics(args.test_csv)
@@ -321,12 +353,14 @@ def main() -> None:
             show_xticks=True,
             show_seed_points=args.show_seed_points,
         )
-        # Override the shared helper's default ylim/ticks for this merged figure only. Bounds
-        # track the tick range with a 1-point margin where real seeds sit just outside it.
-        axes[0, 0].set_ylim(87.0, 94.0)
-        axes[0, 0].set_yticks((88.0, 90.0, 92.0, 94.0))
-        axes[1, 0].set_ylim(73.0, 87.0)
-        axes[1, 0].set_yticks((74.0, 78.0, 82.0, 86.0))
+        if args.axis_profile == "notanh_mixed":
+            axes[0, 0].set_ylim(86.0, 94.5)
+            axes[0, 0].set_yticks((86.0, 90.0, 94.0))
+            axes[1, 0].set_ylim(68.0, 87.0)
+            axes[1, 0].set_yticks((70.0, 78.0, 86.0))
+        else:
+            _set_compact_test_axis(axes[0, 0], test_metrics, "sector")
+            _set_compact_test_axis(axes[1, 0], test_metrics, "char")
         _plot_validation_loss_axis(
             axes[0, 1],
             validation_losses["sector"],
@@ -353,8 +387,8 @@ def main() -> None:
             show_xlabel=True,
             show_xticks=True,
         )
-        axes[0, 2].set_yticks((0, 20, 40, 60, 80, 100))
-        axes[1, 2].set_yticks((0, 20, 40, 60, 80, 100))
+        axes[0, 2].set_yticks((0, 50, 100))
+        axes[1, 2].set_yticks((0, 50, 100))
         use_shuffle_baseline = (
             args.shuffle_anova_long_csv is not None or args.ablation_baseline_source == "ablation"
         )
@@ -386,10 +420,10 @@ def main() -> None:
             show_seed_points=args.show_seed_points,
         )
         # The requested readout-specific ranges: location on top, identity on the bottom.
-        axes[0, 3].set_ylim(60.0, 95.0)
-        axes[0, 3].set_yticks((65.0, 75.0, 85.0, 95.0))
-        axes[1, 3].set_ylim(50.0, 92.0)
-        axes[1, 3].set_yticks((55.0, 65.0, 75.0, 85.0))
+        axes[0, 3].set_ylim(40.0, 85.0)
+        axes[0, 3].set_yticks((45.0, 65.0, 85.0))
+        axes[1, 3].set_ylim(35.0, 75.0)
+        axes[1, 3].set_yticks((35.0, 55.0, 75.0))
 
         # The 30% narrower columns crowd the recovery tick labels; rotate that column's bottom
         # x labels so pre10/switch/post4/post10 no longer overlap. Only this merged figure is
