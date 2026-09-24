@@ -78,6 +78,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rnn_batch_size", type=int, default=16)
     parser.add_argument("--gawf_trajectory_batch_size", type=int, default=16)
     parser.add_argument("--gawf_frame_batch_size", type=int, default=64)
+    parser.add_argument(
+        "--gawf_trajectory_root",
+        type=Path,
+        default=None,
+        help="Optionally retain each GaWF seed trajectory for downstream gate analyses.",
+    )
     parser.add_argument("--chan_num", type=int, default=2)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cuda")
     parser.add_argument("--use_mmap", action=argparse.BooleanOptionalAction, default=True)
@@ -128,6 +134,7 @@ def _fractions_from_report(report: dict[str, Any], model_type: str) -> dict[str,
 
 def _gawf_fractions(
     checkpoint: str,
+    seed: int,
     dataset: torch.utils.data.Dataset,
     num_pos: int,
     reference_labels: np.ndarray,
@@ -153,7 +160,14 @@ def _gawf_fractions(
     if not np.array_equal(labels, reference_labels):
         raise RuntimeError("GaWF trajectory labels diverge from the reference labels")
     trajectory.update({"U": u, "V": v, "weight_ih": weight_ih, "weight_hh": weight_hh})
-    trajectory_path = work_dir / "gawf_trajectory_tmp.npz"
+    trajectory_path = (
+        args.gawf_trajectory_root / f"seed{seed:02d}" / "gawf_gate_trajectory.npz"
+        if args.gawf_trajectory_root is not None
+        else work_dir / "gawf_trajectory_tmp.npz"
+    )
+    trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+    if trajectory_path.exists():
+        raise FileExistsError(f"Refusing to overwrite GaWF trajectory: {trajectory_path}")
     np.savez_compressed(trajectory_path, **trajectory)
     del model, trajectory
     gc.collect()
@@ -170,7 +184,8 @@ def _gawf_fractions(
         args.gawf_gate_tau,
         device,
     )
-    trajectory_path.unlink(missing_ok=True)
+    if args.gawf_trajectory_root is None:
+        trajectory_path.unlink(missing_ok=True)
     return _fractions_from_report(report, "gawf")
 
 
@@ -322,6 +337,7 @@ def main() -> None:
         if model == "gawf":
             fractions = _gawf_fractions(
                 checkpoint,
+                seed,
                 dataset,
                 num_pos,
                 reference_labels,
