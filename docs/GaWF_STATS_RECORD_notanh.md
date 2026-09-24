@@ -14,8 +14,10 @@ h_t=\operatorname{Dropout}(\operatorname{ReLU}(\operatorname{LayerNorm}(z_t))).
 $$
 
 这里没有 bounded inner activation；$h_t$ 同时是 recurrent/state-space layer output 与
-下一时刻 recurrence input。除明确标记为 512-frame feedback-shuffle movie 外，统计均来自
-standard test movie、32-frame rollouts，并剔除每个 rollout 的 `t=0` reset frame。
+下一时刻 recurrence input。行为汇总图按 panel 区分 protocol：A 为 standard movie、32-frame
+rollout，C 为 joint-balanced movie、32-frame rollout，D 为 standard movie、512-frame rollout。
+其余统计除非另行标注，均来自 standard test movie、32-frame rollouts；所有统计都剔除每个
+rollout 的 `t=0` reset frame。
 所有 `mean ± SEM` 均先在每个 training seed 内完成 condition/connection aggregation，再以
 seeds 1–10 为独立重复计算 $s/\sqrt{10}$。`Digit` 等同 manuscript 的 target identity，
 `Sector` 等同 target location。
@@ -30,7 +32,7 @@ control、旧 wrapped baselines，以及未完成十 seeds 的开发结果。历
 |---|---|---:|---|---:|
 | test accuracy、activation ANOVA、gate ANOVA | standard | 32 | 每个 window 排除 `t=0` | 10 |
 | target-switch recovery | joint-balanced | 32 | 每个 window 排除 `t=0` | 10 |
-| feedback shuffle | joint-balanced | 512 | 每个 window 排除 `t=0` | 10 |
+| feedback shuffle | standard | 512 | 每个 window 排除 `t=0` | 10 |
 | gate distribution、sign/magnitude、recurrent current | standard | 32 | 每个 window 排除 `t=0` | 10 |
 
 ## Appendix A — 当前六模型定义与配置
@@ -98,7 +100,8 @@ foreground Digit（10 classes）与 coarse 3×3 Sector（9 classes）。
 
 joint-balanced movie 也是独立 held-out test realization。它在每帧令 foreground 加九个
 backgrounds 恰好覆盖 digits 0–9，并显式平衡 identity/location switches。它仅用于
-target-switch recovery 与 feedback-shuffle，不与 standard test accuracy 混报。
+target-switch recovery；feedback-shuffle 使用 standard movie，不与 joint-balanced recovery
+混报。
 
 ## Appendix D — Training、selection 与 compute
 
@@ -140,20 +143,22 @@ recovery scalar。
 
 ### E.2 Feedback-shuffle ablation
 
-该分析只对 GaWF 运行。movie 为 joint-balanced，rollout=512，每个 seed 保留 57,232 frames。
+该分析只对 GaWF 运行。movie 为 standard `40h-uint8`，rollout=512，每个 seed 保留 57,232
+frames。
 shuffle 在每个 rollout 内、对每个 sample 独立 permute 指定 feedback slice；未被 shuffle 的
 slice 保持 live-rollout 值。
 
 | Condition | Digit / identity (%) | Sector / location (%) |
 |---|---:|---:|
-| Baseline | 72.9620 ± 0.2925 | 82.6199 ± 0.1905 |
-| Shuffle digit feedback | 68.4131 ± 0.3405 | 81.7855 ± 0.1591 |
-| Shuffle sector feedback | 36.1352 ± 0.4066 | 44.4805 ± 0.5944 |
-| Shuffle both | 33.3974 ± 0.4145 | 44.4444 ± 0.6997 |
+| Baseline | 89.7162 ± 0.1399 | 94.0846 ± 0.1056 |
+| Shuffle digit feedback | 83.5019 ± 0.3513 | 92.5196 ± 0.0780 |
+| Shuffle sector feedback | 52.2896 ± 0.4713 | 60.5925 ± 0.5282 |
+| Shuffle both | 50.4968 ± 0.4500 | 61.5556 ± 0.6041 |
 
 相对同一 512-frame baseline，shuffle digit / shuffle sector 导致的 percentage-point drop 为：
-Digit **4.5489 / 36.8268**，Sector **0.8343 / 38.1393**。不要把 512-frame baseline 与上节
-standard 32-frame test accuracy 直接相减。
+Digit **6.2144 / 37.4266**，Sector **1.5650 / 33.4921**。A 与 D 虽然都使用 standard movie，
+仍分别是独立的 32-frame 与 512-frame recurrence rollouts；不得把两个 baseline 当作同一
+protocol。
 
 ## Appendix F / 正文 §3.2 — Gate distribution
 
@@ -321,8 +326,9 @@ decomposition，不是冻结 gate 后重跑完整动力学的 counterfactual。
 当前六模型 merge root 为
 `results/data/analysis/current6_notanh_baselines_refresh_20260924_v1/`：60 个 test-accuracy rows、
 60 个 activation units、60 个 recovery units、10 个 GaWF gate-synapse units、10 个 GaWF
-trajectories、60 个 training histories、10 个 shuffle units；Mamba 与 S5 no-wrap 均为 seeds
-1–10 完整覆盖。其主要事实源 SHA-256 为：
+trajectories、60 个 training histories，以及 10 个历史 joint-balanced/512 shuffle units；后者
+保留作 compatibility control，不用于当前 Figure D。Mamba 与 S5 no-wrap 均为 seeds 1–10
+完整覆盖。其主要事实源 SHA-256 为：
 
 | File | SHA-256 |
 |---|---|
@@ -330,7 +336,13 @@ trajectories、60 个 training histories、10 个 shuffle units；Mamba 与 S5 n
 | `current6_statistics.json` | `b08c612c0a5e314c69a41f5e44093c17985f5e85f063ef333015e6021ce66e7d` |
 | `test_accuracy_current6_10seed.csv` | `92846f74bb2f8819226d6d172a7a89d55dc97102d3058cb8e73e559fddcdea52` |
 | `unit_gate/unit_gate_context_variance_multiseed.json` | `4a690c91bc1f609b00ddeaa31df34d7e3dde9a572b169d8d4417da71631851cf` |
-| `shuffle_ablation/source_manifest.json` | `c53149d8042e476cda316c59a6453bfbb61fb6e8e0de1ad76f298c732b7ab7e8` |
+
+当前 Figure D 的独立事实源为
+`results/data/analysis/gawf_legacy_notanh_feedback_shuffle_standard_resetexcluded_seq512_10seed_v1/`。
+其中 10 个 `gawf-seed*/ablation_metrics.json` 均记录 `data_suffix=40h-uint8`、
+`sequence_length=512`、`exclude_window_initial_frame=true` 与四个完整 conditions；汇总 manifest
+`source_manifest.json` 的 SHA-256 为
+`97286eafb6c4b48fad6b0eca9b8de530578412f809d7c9d458ab5eedb560d829`。
 
 GaWF-only 严格 refresh root 为
 `results/data/analysis/gawf_legacy_notanh_refresh_10seed_v4/`；十个 `seedNN.complete.json`、

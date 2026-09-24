@@ -6,6 +6,7 @@
 
 | Experiment ID | Status | Host | Scheduler / run IDs | Units | Remote root | Description |
 |---|---|---|---|---:|---|---|
+| `clutter-standard-shuffle-resetexcluded-seq512-gawf-notanh-seeds1-10` | completed | `dsw-5000` | gawf_legacy_notanh_feedback_shuffle_standard_seq512_10seed_v1 | 10 | `/mnt/workspace/sjc/aim3_gawf_rnn` | GaWF no-tanh feedback-shuffle evaluation on the standard 40h-uint8 test movie, ten seeds, 512-frame rollouts, reset frame excluded. |
 | `clutter-jointbalanced-seq512-resetexcluded-nowrap-baselines-seeds1-5` | completed | `sjc-remote` | current6_seq512_sjc_v1, current6_seq512_sjc_v1 | 40 | `/G/MIMOlab/Codes/aim3_gawf_rnn` | Joint-balanced 512-rollout test accuracy and switch recovery for GRU, LSTM, Mamba, and S5 no-wrap seeds 1-5. |
 | `clutter-jointbalanced-seq512-resetexcluded-current6-gawf-rnn-and-baselines` | completed | `dsw-5000` | current6_seq512_dsw5000_v1, current6_seq512_dsw5000_v1 | 80 | `/mnt/workspace/sjc/aim3_gawf_rnn_analysis_38ecb22_v2` | Joint-balanced 512-rollout test accuracy and switch recovery for current GaWF/RNN seeds 1-10 and no-wrap baseline seeds 6-10. |
 | `clutter-cm-mnist-feedback-add-newsem-ep150-recovery-rnn5-gru1-lstm2-lstm5` | running | `dsw-5000` | feedback_add_newsem_recovery_dsw5000_v1, supervisor-pid-3191247, gru4-eval-repair-pid-3198183 | 4 | `/mnt/workspace/sjc/aim3_gawf_rnn_feedback_add_ec89657` | DSW 5000 recovery for two interrupted and two stranded seeds1-5 additive-feedback units. |

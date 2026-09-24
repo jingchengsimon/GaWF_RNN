@@ -3,8 +3,9 @@
 Columns 0-2 reuse the exact panels of ``clutter_multiseed_summary`` (test accuracy, validation
 loss, target-switch recovery) for the Location (row 0) and Identity (row 1) readouts. Column 3 adds
 the GaWF feedback shuffle ablation: three bars (Baseline, Shuffle digit, Shuffle sector) per
-readout, with the baseline taken from the same multiseed test CSV as column 0. The two shuffle
-panels share one y-axis. All four columns are equal width and 30% narrower than the 2x3 columns.
+readout. The formal no-tanh figure uses standard/32 for A, joint-balanced/32 for C, and an
+independently evaluated standard/512 baseline and shuffles for D. The two shuffle panels share one
+y-axis. All four columns are equal width and 30% narrower than the 2x3 columns.
 
 The original 2x3 summary and the standalone shuffle figure are left untouched; this writes a new
 ``best6_multiseed_shuffle_2x4`` PNG/PDF pair alongside them.
@@ -115,8 +116,8 @@ def parse_args() -> argparse.Namespace:
         choices=("notanh_mixed", "jointbalanced_512"),
         default="notanh_mixed",
         help=(
-            "Axis layout for the current mixed-protocol figure or the all-joint-balanced "
-            "512-rollout comparison."
+            "Axis layout for the current panel-specific protocol figure or the "
+            "all-joint-balanced 512-rollout comparison."
         ),
     )
     return parser.parse_args()
@@ -398,11 +399,16 @@ def main() -> None:
             y_step=4.0,
             show_seed_points=args.show_seed_points,
         )
-        # The requested readout-specific ranges: location on top, identity on the bottom.
-        axes[0, 3].set_ylim(40.0, 85.0)
-        axes[0, 3].set_yticks((45.0, 65.0, 85.0))
-        axes[1, 3].set_ylim(35.0, 75.0)
-        axes[1, 3].set_yticks((35.0, 55.0, 75.0))
+        if args.axis_profile == "notanh_mixed":
+            axes[0, 3].set_ylim(55.0, 96.0)
+            axes[0, 3].set_yticks((60.0, 70.0, 80.0, 90.0))
+            axes[1, 3].set_ylim(45.0, 92.0)
+            axes[1, 3].set_yticks((50.0, 70.0, 90.0))
+        else:
+            axes[0, 3].set_ylim(40.0, 85.0)
+            axes[0, 3].set_yticks((45.0, 65.0, 85.0))
+            axes[1, 3].set_ylim(35.0, 75.0)
+            axes[1, 3].set_yticks((35.0, 55.0, 75.0))
 
         # The 30% narrower columns crowd the recovery tick labels; rotate that column's bottom
         # x labels so pre10/switch/post4/post10 no longer overlap. Only this merged figure is
@@ -424,22 +430,22 @@ def main() -> None:
             )
             for column in range(4)
         ]
-        title_y = max(axes[0, column].get_position().y1 for column in range(4)) + 0.035
+        title_y = max(axes[0, column].get_position().y1 for column in range(4)) + 0.065
         for x, title in zip(
             column_centers,
             (
-                "Test accuracy",
+                "Test accuracy\nstandard, 32-frame",
                 "Validation loss",
-                "Target switch recovery\n(mean ± SEM)",
-                "GaWF shuffle\nablation",
+                "Target switch\njoint-balanced, 32-frame",
+                "GaWF shuffle\nstandard, 512",
             ),
         ):
             fig.text(x, title_y, title, ha="center", va="bottom", fontsize=8)
         for label, axis in zip("ABCD", axes[0]):
             position = axis.get_position()
             fig.text(
-                position.x0 - 0.012,
-                title_y,
+                position.x0 - 0.025,
+                position.y1 + 0.015,
                 label,
                 ha="right",
                 va="bottom",

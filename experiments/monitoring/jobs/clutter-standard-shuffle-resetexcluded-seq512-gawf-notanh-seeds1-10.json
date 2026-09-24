@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "id": "clutter-standard-shuffle-resetexcluded-seq512-gawf-notanh-seeds1-10",
+  "description": "GaWF no-tanh feedback-shuffle evaluation on the standard 40h-uint8 test movie, ten seeds, 512-frame rollouts, reset frame excluded.",
+  "host": "dsw-5000",
+  "status": "completed",
+  "created_at": "2026-09-24T10:03:55-04:00",
+  "updated_at": "2026-09-24T10:05:34-04:00",
+  "completed_at": "2026-09-24T10:05:34-04:00",
+  "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn",
+  "source_commit": "988ee1b0f2727189479a56e494556651b589e1ca",
+  "environment": {
+    "name": "/mnt/workspace/sjc/envs/aim3_gawf_rnn_bbade07",
+    "conda_init": "/mnt/workspace/sjc/miniconda3/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "none",
+    "job_ids": [],
+    "run_ids": [
+      "gawf_legacy_notanh_feedback_shuffle_standard_seq512_10seed_v1"
+    ],
+    "tmux_session": null,
+    "process_patterns": [
+      "utils.analysis.clutter.fig2_feedback_ablation",
+      "gawf_legacy_notanh_feedback_shuffle_standard_resetexcluded_seq512_10seed_v1"
+    ],
+    "collect_gpu": true,
+    "dependency_strategy": {
+      "type": "two_fixed_gpu_lanes",
+      "task_map": "odd seeds sequentially on GPU4; even seeds sequentially on GPU5",
+      "smoke": "not applicable to frozen-checkpoint analysis"
+    }
+  },
+  "paths": {
+    "log_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_runs/gawf_legacy_notanh_feedback_shuffle_standard_seq512_10seed_v1/logs/seed*.log",
+      "/mnt/workspace/sjc/gawf_notanh_standard_shuffle512_v1.stdout"
+    ],
+    "status_dir": "/mnt/workspace/sjc/aim3_gawf_rnn_runs/gawf_legacy_notanh_feedback_shuffle_standard_seq512_10seed_v1/status",
+    "result_paths": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/analysis/gawf_legacy_notanh_feedback_shuffle_standard_resetexcluded_seq512_10seed_v1"
+    ],
+    "data_path": "/mnt/workspace/sjc/aim3_gawf_rnn_data/stimuli/stimulus_reg-test-40h-uint8"
+  },
+  "tracking": {
+    "expected_units": 10,
+    "auto_complete": true,
+    "result_globs": [
+      "/mnt/workspace/sjc/aim3_gawf_rnn_results/data/analysis/gawf_legacy_notanh_feedback_shuffle_standard_resetexcluded_seq512_10seed_v1/gawf-seed*/ablation_metrics.json"
+    ],
+    "defaults": {
+      "expected": {
+        "data_suffix": "40h-uint8",
+        "sequence_length": 512,
+        "batch_size": 16,
+        "K": 10,
+        "pre_K": 10,
+        "exclude_window_initial_frame": true
+      }
+    },
+    "units": []
+  },
+  "notes": [
+    "Conditions are baseline, shuffle_digit, shuffle_sector, and shuffle_all.",
+    "Frozen checkpoints are gawf_legacy_notanh seeds1-10 from clutter_ablate_legacy_notanh_40h_ep150_dsw5000_v1.",
+    "Completion gate passed at 2026-09-24 10:05:34 EDT: 10 done, 0 failed, 10 matching ablation_metrics.json, no writer; all JSONs match the registered standard/512/reset-excluded protocol.",
+    "This run replaces the earlier joint-balanced/512 shuffle input only for formal Figure D; the prior result is preserved as a compatibility control."
+  ]
+}
