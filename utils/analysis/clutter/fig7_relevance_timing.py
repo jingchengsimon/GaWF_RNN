@@ -158,7 +158,7 @@ def _trajectory_with_measurements(
             preactivation = preactivation + model.rnn.bias_ih_l0.unsqueeze(0)
         if model.rnn.bias_hh_l0 is not None:
             preactivation = preactivation + model.rnn.bias_hh_l0.unsqueeze(0)
-        hidden = torch.relu(model.LNormRNN(torch.tanh(preactivation)))
+        hidden = torch.relu(model.LNormRNN(preactivation))
         char_logits, sector_logits = model.classifier(hidden)
         feedback = torch.cat([char_logits, sector_logits], dim=-1).to(torch.float32)
         hidden_steps.append(hidden)

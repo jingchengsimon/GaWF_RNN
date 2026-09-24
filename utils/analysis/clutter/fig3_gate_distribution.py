@@ -169,7 +169,7 @@ def _trajectory(
             preactivation = preactivation + model.rnn.bias_ih_l0.unsqueeze(0)
         if model.rnn.bias_hh_l0 is not None:
             preactivation = preactivation + model.rnn.bias_hh_l0.unsqueeze(0)
-        hidden = torch.relu(model.LNormRNN(torch.tanh(preactivation)))
+        hidden = torch.relu(model.LNormRNN(preactivation))
         char_t, sector_t = model.classifier(hidden)
         feedback = torch.cat([char_t, sector_t], dim=-1).to(dtype=torch.float32)
         char_steps.append(char_t)

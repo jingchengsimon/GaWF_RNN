@@ -208,7 +208,7 @@ def collect(args: argparse.Namespace) -> Path:
                     preactivation += model.rnn.bias_ih_l0
                 if model.rnn.bias_hh_l0 is not None:
                     preactivation += model.rnn.bias_hh_l0
-                hidden = torch.relu(model.LNormRNN(torch.tanh(preactivation)))
+                hidden = torch.relu(model.LNormRNN(preactivation))
                 digit_logits, sector_logits = model.classifier(hidden)
                 feedback = torch.cat([digit_logits, sector_logits], dim=-1).to(torch.float32)
             frame_offset += frame_count
