@@ -23,6 +23,11 @@ selects seeds 6--10. The first released lane owns a shared 200-step optimization
 requires its pass record before starting formal 150-epoch units. Each unit preserves one model,
 metrics, and history file plus a reset-excluded evaluation under unique campaign result roots.
 
+`run_feedback_add_recovery_pairs.sh` is the bounded recovery path for the 2026-09-24 DSW
+interruption: it resumes RNN seed5 and GRU seed1 together, then runs the two LSTM units stranded
+behind the failed 8095 lane. Both pairs share one 96-GiB GPU; each unit still uses the canonical
+single-unit runner, checkpoint continuation, duplicate-writer guard, and final-artifact checks.
+
 ## Coordinated pause trigger
 
 Create the ignored local config from the example and fill in the current SSH commands:
