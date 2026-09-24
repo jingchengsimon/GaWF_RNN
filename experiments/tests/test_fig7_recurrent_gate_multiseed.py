@@ -10,8 +10,11 @@ torch = pytest.importorskip("torch")
 
 from utils.analysis.clutter.fig3_gate_distribution import _gate_tensors
 from utils.analysis.clutter.fig7_recurrent_gate_multiseed import (
+    GROUP_NAMES,
     RESULT_NAME,
+    VARIABLES,
     _compact_paths,
+    _group_variable_interaction,
     _recurrent_gate_chunks,
     _sign_magnitude_seed_metrics,
 )
@@ -67,3 +70,22 @@ def test_sign_magnitude_metrics_split_slopes_and_keep_overall_level() -> None:
         assert group["positive_overlap_slope"] == pytest.approx(2.0)
         assert group["negative_overlap_slope"] == pytest.approx(-1.0)
         assert group["overall_delta_level"] == pytest.approx(1.5)
+
+
+def test_group_variable_interaction_reads_the_requested_summary_directory(tmp_path) -> None:
+    """Supplementary statistics must reuse the summary written by the preceding plot step."""
+
+    rng = np.random.default_rng(17)
+    values = rng.normal(size=(10, len(GROUP_NAMES), len(VARIABLES)))
+    payload = {
+        f"{variable}_{group}_gap_seed_values": values[:, group_index, variable_index]
+        for group_index, group in enumerate(GROUP_NAMES)
+        for variable_index, variable in enumerate(VARIABLES)
+    }
+    np.savez_compressed(tmp_path / "fig7_seed_level_summary.npz", **payload)
+
+    result = _group_variable_interaction(tmp_path)
+
+    assert result["df_num"] == 3
+    assert result["df_den"] == 27
+    assert np.isfinite(result["f_statistic"])

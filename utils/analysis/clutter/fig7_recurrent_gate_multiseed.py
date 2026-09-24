@@ -271,10 +271,10 @@ def _mean_sem(values: list[float]) -> dict[str, object]:
     }
 
 
-def _group_variable_interaction(data_root: Path) -> dict[str, float | int]:
+def _group_variable_interaction(summary_dir: Path) -> dict[str, float | int]:
     """Fit the seed-level group-by-variable interaction on saved sign-gap cells."""
 
-    summary_path = data_root / "final" / "fig7_seed_level_summary.npz"
+    summary_path = summary_dir / "fig7_seed_level_summary.npz"
     if not summary_path.is_file():
         raise FileNotFoundError(f"Missing Figure 7 seed-level summary: {summary_path}")
     values = np.empty((10, len(GROUP_NAMES), len(VARIABLES)), dtype=np.float64)
@@ -366,7 +366,7 @@ def write_supple3_seed_stats(args: argparse.Namespace) -> Path:
                 ),
                 "level": "Per-seed mean delta_g over all group connections and contexts",
                 "inference_unit": "training seed; mean +/- SEM",
-                "group_variable_interaction": _group_variable_interaction(args.data_root),
+                "group_variable_interaction": _group_variable_interaction(args.summary_dir),
                 "groups": summary,
             },
             indent=2,
