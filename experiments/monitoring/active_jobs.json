@@ -15,7 +15,8 @@
       "job_ids": [],
       "run_ids": [
         "feedback_add_newsem_recovery_dsw5000_v1",
-        "supervisor-pid-3191247"
+        "supervisor-pid-3191247",
+        "gru4-eval-repair-pid-3198183"
       ],
       "tmux_session": null,
       "remote_root": "/mnt/workspace/sjc/aim3_gawf_rnn_feedback_add_ec89657",

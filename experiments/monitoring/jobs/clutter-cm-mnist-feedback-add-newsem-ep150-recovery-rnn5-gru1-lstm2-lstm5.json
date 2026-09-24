@@ -15,7 +15,8 @@
     "job_ids": [],
     "run_ids": [
       "feedback_add_newsem_recovery_dsw5000_v1",
-      "supervisor-pid-3191247"
+      "supervisor-pid-3191247",
+      "gru4-eval-repair-pid-3198183"
     ],
     "tmux_session": null,
     "process_patterns": [
@@ -63,7 +64,8 @@
   "notes": [
     "RNN seed5 and GRU seed1 resumed from completed epoch65 at 2026-09-24T16:02:48+08:00.",
     "Both phase1 writers share GPU5 and used 77814 MiB of 97871 MiB at startup; LSTM seeds2 and5 start only after both exit.",
-    "The recovery does not duplicate the live 8095 GRU seed5 or LSTM seeds1,3,4 writers."
+    "The recovery does not duplicate the live 8095 GRU seed5 or LSTM seeds1,3,4 writers.",
+    "GRU seed4 training artifacts are complete; its failed 8095 CUDA evaluation is queued after the GPU5 recovery supervisor exits."
   ],
   "created_at": "2026-09-24T08:02:48+00:00",
   "updated_at": "2026-09-24T08:02:48+00:00"
