@@ -3,7 +3,7 @@
   "id": "clutter-cm-mnist-dynamic-weight-baselines-ep150-mlstm-hyperlstm-brims-seeds1-10",
   "description": "CM-MNIST open-loop dynamic/input-conditioned baselines: parameter-matched mLSTM, HyperLSTM, and clean-room BRIMs; 150 epochs, seeds 1-10, reset-excluded test accuracy, and mean plus SEM aggregation.",
   "host": "amarel",
-  "status": "queued",
+  "status": "cancelled",
   "remote_root": "/cache/home/js3269/projects/aim3_worktrees/dynamic_baselines_3ee4c2d",
   "environment": {
     "name": "aim3_rnn",
@@ -49,8 +49,9 @@
     "Resubmitted on 2026-09-20 22:32 EDT as the automatic chain preflight 61726135 -> preaggregate 61726136 -> formal array 61726137 (0-29%30, afterok:61726136) -> formal aggregate 61726138 (afterok:61726137), all from worktree dynamic_baselines_3ee4c2d at commit 3ee4c2dc5af5f3caa4522971d305b97c6de40da6; artifact root is the fresh clutter_dynamic_weight_baselines_ep150_v3_chain.",
     "The formal array runs at full 30-way concurrency (--max-concurrent 30) by user request, matching the original 0-29%30 submission.",
     "Chained mode is declared with --afterok-preflight-aggregate <preaggregate job id>; the array cannot pre-verify the summary, so each formal unit re-verifies $AIM3_DYNAMIC_BASELINE_PREFLIGHT_SUMMARY (status passed plus matching source commit) on the compute node and writes task_*.fail instead of training if the gate is missing.",
-    "Formal aggregate writes /scratch/js3269/results/data/analysis/dynamic_weight_baselines_formal_10seed_v1 (mean plus SEM over ten seeds) and each unit writes its reset-excluded test JSON under dynamic_weight_baselines_reset_excluded_test_10seed_v1."
+    "Formal aggregate writes /scratch/js3269/results/data/analysis/dynamic_weight_baselines_formal_10seed_v1 (mean plus SEM over ten seeds) and each unit writes its reset-excluded test JSON under dynamic_weight_baselines_reset_excluded_test_10seed_v1.",
+    "2026-09-25 EDT: user retired this old dynamic-baseline scheme to development history. Held formal array 61726137 and aggregate 61726138 were cancelled; both were absent from squeue afterward, with no matching writer process. Partial results, checkpoints, preflight artifacts and logs remain on Amarel pending approval of an exact deletion list; they are not formal results."
   ],
   "created_at": "2026-09-20T05:36:30+00:00",
-  "updated_at": "2026-09-21T02:32:30+00:00"
+  "updated_at": "2026-09-26T02:51:54+00:00"
 }

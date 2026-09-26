@@ -556,6 +556,16 @@
   在新定义下的 587,139 更接近 GaWF 586,067 的参数匹配目标。
 - **现状（Current）：** 修订后 30 个 model-seed 单元尚未训练，需独立结果根目录。
 
+## 2026-09-25 — 旧 feedback-control 与 dynamic-baseline 方案仅作开发记录
+
+- **改动（Change）：** 旧 `gawf_additive/rnn_fb/gru_fb/lstm_fb` feedback-control 和
+  `mLSTM/HyperLSTM/BRIMs` dynamic-baseline 训练停止，未完成的队列任务取消。
+- **原因（Reason）：** 这些实验采用旧模型语义；当前比较以统一 output-only dropout 的新方案为准。
+- **证据（Evidence）：** 旧实验曾运行并产生部分训练与测试输出，但未形成适用于当前定义的
+  完整正式比较。任务取消后无对应训练写入者。
+- **现状（Current）：** 仅保留方法演进与任务登记作为 development provenance；旧 checkpoint、
+  模型和数值结果不作为正式证据。远端产物在精确清单获批前仍暂存。
+
 ## 2026-09-25 — 前两版 GaWF 结果转为历史非正式结果
 
 - **第一版（tanh，历史非正式）：** `tanh(preactivation) → LayerNorm → ReLU → Dropout`；
