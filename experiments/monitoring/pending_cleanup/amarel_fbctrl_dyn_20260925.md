@@ -1,16 +1,15 @@
-# Amarel old fbctrl / dyn cleanup — pending exact-target approval
+# Amarel old fbctrl / dyn cleanup — completed
 
 The user retired the old feedback-control and dynamic-baseline protocols to development
 history. Their four held jobs (61726137, 61726138, 61731757, 61731758) were cancelled on
 2026-09-25 EDT and then absent from `squeue`; no matching trainer process was observed.
-**No result or artifact directory below has been deleted.** Automated approval rejected the
-proposed 17-leaf deletion because the user's broad authorization did not explicitly cover
-these exact preflight, versioned artifact, and log paths.
+The user explicitly approved all 17 exact leaves, including preflight and log paths, on
+2026-09-25 EDT. After rechecking the Slurm queue, writer absence, file counts, byte counts,
+and zero symbolic links, all 17 leaves were deleted. The post-delete check found none remaining.
 
 Inventory was captured on 2026-09-25 EDT. All listed leaves were directories with zero
 symbolic links. The 17 leaves contain 732 files and 771,402,238 file bytes in total.
-Approve this exact list before deletion; recheck job and writer absence and the full inventory
-immediately before carrying it out.
+The full inventory and writer absence were rechecked immediately before deletion.
 
 | Exact leaf under `/scratch/js3269/results/` | Files | File bytes |
 |---|---:|---:|
