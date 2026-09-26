@@ -16,7 +16,10 @@
       "61866399",
       "61866400",
       "61866418",
-      "61866419"
+      "61866419",
+      "61866491",
+      "61866492",
+      "61866501"
     ],
     "run_ids": [],
     "tmux_session": null,
@@ -5329,8 +5332,9 @@
     "Rolling controller ledger: /scratch/js3269/results/artifacts/clutter_output_only_330_v1/rolling_state.json; future sparse-array IDs are recorded there.",
     "Old Amarel/SJC result roots are historical and excluded from 330-unit completion.",
     "Submission: smoke 61866399; dependent CPU controller 61866400; window <=90, user-wide ceiling 99.",
-    "GPU smoke passed; first rolling array 61866419 submitted task IDs 0-64 (65 units); next CPU controller 61866418."
+    "GPU smoke passed; first rolling array 61866419 submitted task IDs 0-64 (65 units); CPU controller 61866418 completed and scheduled successor 61866491 plus array 61866492 for task IDs 65-89 (25 units).",
+    "2026-09-25 EDT: after the 32 old held fbctrl/dyn tasks were cancelled, user explicitly requested 32 additional training units. The normal window-90 controller filled 25, then exact one-off array 61866501 submitted task IDs 90-96 (7 units) under the same source commit, result protocol and rolling ledger. Active campaign window temporarily reached 97; future controller cycles retain the original window-90 rule. Post-submit user-wide queue was 98 tasks against the 100-task limit, leaving two slots."
   ],
   "created_at": "2026-09-26T02:39:48+00:00",
-  "updated_at": "2026-09-26T02:42:40+00:00"
+  "updated_at": "2026-09-26T02:59:00+00:00"
 }

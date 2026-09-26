@@ -32,6 +32,11 @@ one spare slot. Each short controller job schedules a successor 15 minutes later
 on a login node. An ambiguous submission or missing final artifact blocks that unit for review
 instead of risking a duplicate writer.
 
+On 2026-09-25, after 32 old held jobs were cancelled, a user-requested one-time submission
+added task IDs 90–96 beyond the controller's 90-task window. The campaign then had 97 submitted
+tasks; subsequent controller cycles keep the original 90-task rolling limit. The one-time array
+ID and source identity are recorded in the monitoring manifest and remote rolling ledger.
+
 The fixed task map is `0–59` 40h parameter-matched six-model, `60–89` 40h additive-feedback
 three-model, `90–149` 4h equal-width H=128 six-model, then `150–209`, `210–269`, and `270–329`
 for parameter-matched six-model 4h, 10h, and 20h respectively. Every group has ten seeds per
