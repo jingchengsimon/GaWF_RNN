@@ -223,6 +223,14 @@ def _scheduler_lines(scheduler: dict[str, Any]) -> list[str]:
         return ", ".join(f"{state}:{count}" for state, count in sorted(counts.items()))
 
     lines: list[str] = []
+    rolling = scheduler.get("rolling")
+    if rolling:
+        lines.append(
+            "rolling={} submitted, {} completed, {} blocked, {} batches".format(
+                rolling["submitted"], rolling["completed"],
+                rolling["blocked"], rolling["batches"],
+            )
+        )
     if scheduler.get("tmux_session"):
         state = "active" if scheduler.get("tmux_active") else "inactive"
         lines.append(f"tmux={scheduler['tmux_session']} ({state})")

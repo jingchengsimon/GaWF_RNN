@@ -16,7 +16,7 @@ from experiments.monitoring.progress import (
     format_report,
     select_job,
 )
-from experiments.monitoring.remote_probe import collect
+from experiments.monitoring.remote_probe import _scheduler_state, collect
 
 
 def _manifest(job_id: str, *, status: str = "running") -> dict[str, object]:
@@ -138,3 +138,37 @@ def test_file_result_glob_counts_complete_analysis_units() -> None:
     assert report["valid_units"] == 2
     assert all(unit["artifact_exists"] for unit in report["units"])
     assert "status=completed (verified)" in format_report(report, job)
+
+
+def test_rolling_scheduler_reads_later_array_ids(tmp_path: Path) -> None:
+    state_file = tmp_path / "rolling_state.json"
+    state_file.write_text(
+        json.dumps({
+            "submitted": {"0": "100", "1": "101"},
+            "completed": [0],
+            "blocked": {},
+            "batches": [{"job_id": "100"}, {"job_id": "101"}],
+            "controllers": ["102"],
+        }),
+        encoding="utf-8",
+    )
+    manifest = {
+        "scheduler": {
+            "type": "slurm",
+            "job_ids": ["100"],
+            "rolling_state_file": str(state_file),
+        }
+    }
+
+    with patch(
+        "experiments.monitoring.remote_probe._run",
+        return_value={"returncode": 0, "stdout": "101_1|PENDING|0:00|Priority", "stderr": ""},
+    ) as run:
+        scheduler = _scheduler_state(manifest, tmp_path)
+
+    assert scheduler["rolling"] == {
+        "submitted": 2, "completed": 1, "blocked": 0, "batches": 2,
+    }
+    assert run.call_args_list[0].args[0] == [
+        "squeue", "-r", "-h", "-j", "100,101,102", "-o", "%i|%T|%M|%R",
+    ]

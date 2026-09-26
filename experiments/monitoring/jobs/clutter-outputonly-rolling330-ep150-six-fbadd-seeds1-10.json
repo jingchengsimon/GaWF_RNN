@@ -11,6 +11,7 @@
   },
   "scheduler": {
     "type": "slurm",
+    "rolling_state_file": "/scratch/js3269/results/artifacts/clutter_output_only_330_v1/rolling_state.json",
     "job_ids": [
       "61866399",
       "61866400",

@@ -196,10 +196,25 @@ def _scheduler_state(manifest: dict[str, Any], root: Path) -> dict[str, Any]:
     scheduler_type = scheduler.get("type", "none")
     state: dict[str, Any] = {"type": scheduler_type}
     job_ids = [str(value) for value in scheduler.get("job_ids", [])]
+    rolling_path = _resolve(root, scheduler.get("rolling_state_file"))
+    if rolling_path is not None:
+        rolling = _read_json(rolling_path)
+        batches = rolling.get("batches", [])
+        controllers = rolling.get("controllers", [])
+        job_ids.extend(str(batch["job_id"]) for batch in batches if batch.get("job_id"))
+        if controllers:
+            job_ids.append(str(controllers[-1]))
+        state["rolling"] = {
+            "submitted": len(rolling.get("submitted", {})),
+            "completed": len(rolling.get("completed", [])),
+            "blocked": len(rolling.get("blocked", {})),
+            "batches": len(batches),
+        }
+    job_ids = list(dict.fromkeys(job_ids))
     if scheduler_type == "slurm" and job_ids:
         joined = ",".join(job_ids)
         state["squeue"] = _run(
-            ["squeue", "-h", "-j", joined, "-o", "%i|%T|%M|%R"], cwd=root
+            ["squeue", "-r", "-h", "-j", joined, "-o", "%i|%T|%M|%R"], cwd=root
         )
         state["sacct"] = _run(
             [
