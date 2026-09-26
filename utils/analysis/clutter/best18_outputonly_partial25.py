@@ -233,6 +233,7 @@ def _plot_test(axis: plt.Axes, tests: TestData, readout: str) -> None:
 
     selected = 1 if readout == "sector" else 0
     rng = np.random.default_rng(18)
+    minimum = float("inf")
     for family_index, family in enumerate(FAMILIES):
         for version_index, version in enumerate(VERSIONS):
             seed_values = tests.get((version, family), {})
@@ -240,6 +241,7 @@ def _plot_test(axis: plt.Axes, tests: TestData, readout: str) -> None:
                 continue
             values = np.asarray([pair[selected] for _, pair in sorted(seed_values.items())])
             mean, sem = _mean_sem(values)
+            minimum = min(minimum, float(values.min()), float(mean - sem))
             x = family_index + (version_index - 1) * 0.25
             axis.bar(x, mean, width=0.22, color=MODEL_COLORS[family],
                      alpha=(0.4, 0.7, 1.0)[version_index], edgecolor="black" if version == "v3"
@@ -249,7 +251,7 @@ def _plot_test(axis: plt.Axes, tests: TestData, readout: str) -> None:
             axis.scatter(x + jitter, values, s=3.8, color="#242424", alpha=0.55,
                          linewidths=0, zorder=3)
     axis.set_xlim(-0.55, 5.55)
-    axis.set_ylim((38, 100) if readout == "sector" else (25, 95))
+    axis.set_ylim(2 * np.floor(minimum / 2), 100)
     axis.set_ylabel("Accuracy (%)")
     axis.set_xticks(np.arange(len(FAMILIES)), [DISPLAY[name] for name in FAMILIES])
     axis.grid(axis="y", alpha=0.18, linewidth=0.5)
