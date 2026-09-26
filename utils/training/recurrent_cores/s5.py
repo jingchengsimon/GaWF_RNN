@@ -51,7 +51,7 @@ class S5Core(nn.Module):
         self.layers = nn.ModuleList(
             [layer(self.d_model, self.state_size) for _ in range(self.num_layers)]
         )
-        self.layer_dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+        self.output_dropouts = nn.ModuleList([nn.Dropout(dropout) for _ in range(num_layers)])
 
     @staticmethod
     def _autocast_enabled(device_type: str) -> bool:
@@ -75,12 +75,10 @@ class S5Core(nn.Module):
             residual = x
             if autocast_active:
                 with torch.autocast(device_type=x.device.type, enabled=False):
-                    x = layer(x.float())
-                x = x.to(residual.dtype)
+                    branch = layer(x.float())
+                branch = branch.to(residual.dtype)
             else:
-                x = layer(x)
-            x = x + residual
+                branch = layer(x)
+            x = residual + self.output_dropouts[layer_idx](branch)
             layer_finals.append(x[:, -1, :])
-            if layer_idx < self.num_layers - 1:
-                x = self.layer_dropout(x)
         return x, torch.stack(layer_finals, dim=0)

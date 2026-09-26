@@ -26,9 +26,11 @@ Architecture and workflow rules live in `ARCHITECTURE.md` and `DEVELOPMENT_WORKF
 - Constants: `UPPER_SNAKE_CASE`.
 - Private helpers: one leading underscore.
 - Common loop indices: `sidx` sample, `t` time, `b` batch, `d` digit/component, `c` channel.
-- Public Clutter model keys are exactly `rnn`, `gru`, `lstm`, `gawf`, `mamba`, and `s5`.
+- The six canonical Clutter model keys are `rnn`, `gru`, `lstm`, `gawf`, `mamba`, and `s5`.
+  Additive-feedback controls use `rnn_fb_add`, `gru_fb_add`, and `lstm_fb_add`.
 - `gawf` is the reported feedback-gated recurrence with no bounded inner activation; its
-  `LayerNorm -> ReLU -> dropout` activity is both layer output and next recurrent state.
+  `LayerNorm -> ReLU` activity is the clean next recurrent state, and dropout applies only to
+  the readout-facing layer output.
 - `rnn` is the matched ungated recurrence with the same in-loop activity definition.
 - `gru`, `lstm`, `mamba`, and `s5` use their native no-wrap layer outputs.
 - Historical ablation names remain only as checkpoint-filename aliases for the six manuscript
@@ -58,8 +60,10 @@ Clutter training uses:
 
 | Argument | Contract |
 |---|---|
-| `--cnn_dropout` | one or more CNN dropout values; default `[0]` |
-| `--rnn_dropout` | one middle-path dropout value; default `0.5` |
+| `--cnn_dropout` | fixed at `0` for the output-only sequence dropout protocol |
+| `--dropout` | shared output dropout for the six cores and three additive controls; default `0.5`, recorded as `rdo` |
+| `--rnn_dropout` | legacy alias of `--dropout` |
+| `--s5_dropout` | legacy option accepted only at `0`; S5 uses the shared dropout value |
 | `--mamba_d_models` | one or more Mamba widths |
 | `--ssm_d_models` | one or more S5 sequence widths |
 | `--s5_state_sizes` | one or more S5 latent state sizes |

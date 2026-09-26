@@ -1,10 +1,11 @@
 """Canonical RNN, GRU, and LSTM cores.
 
-The Elman RNN uses the same in-loop activity definition as GaWF and has no tanh:
-`h_t = dropout(relu(layer_norm(W_ih x_t + W_hh h_(t-1) + b_ih + b_hh)))`.
+The Elman RNN carries clean ReLU activity and drops only the layer output:
+`h_t = relu(layer_norm(W_ih x_t + W_hh h_(t-1) + b_ih + b_hh))`,
+`out_t = dropout(h_t)`.
 Its four affine parameters retain the historical ``nn.RNN`` names for checkpoint compatibility,
 but no native ``nn.RNN`` forward or implicit activation is present.
-GRU and LSTM use the native PyTorch sequence layers without an external wrap.
+GRU and LSTM use native PyTorch layers with explicit output dropout.
 """
 
 from __future__ import annotations
@@ -54,8 +55,9 @@ class RNNCore(nn.Module):
         self.dropout = float(dropout)
         self.num_layers = int(num_layers)
         self.rnn_activation = "identity"
-        self.output_wrap = "in_loop_ln_relu_dropout"
-        self.wrap_recurrent_state = True
+        self.output_wrap = "in_loop_ln_relu_output_dropout"
+        self.wrap_recurrent_state = False
+        self.output_dropouts = nn.ModuleList([nn.Dropout(self.dropout) for _ in range(num_layers)])
 
         if self.num_layers == 1:
             self.rnn = ElmanAffine(self.input_size, self.hidden_size)
@@ -98,8 +100,9 @@ class RNNCore(nn.Module):
             preactivation = F.linear(layer_input, rnn.weight_ih_l0, rnn.bias_ih_l0) + F.linear(
                 state[layer_idx], rnn.weight_hh_l0, rnn.bias_hh_l0
             )
-            layer_input = F.dropout(F.relu(norm(preactivation)), self.dropout, self.training)
-            next_states.append(layer_input)
+            hidden = F.relu(norm(preactivation))
+            next_states.append(hidden)
+            layer_input = self.output_dropouts[layer_idx](hidden)
         return layer_input, torch.stack(next_states, dim=0)
 
     def forward(
@@ -119,7 +122,7 @@ class RNNCore(nn.Module):
 
 
 class GRUCore(nn.Module):
-    """Native PyTorch GRU with no external LayerNorm/ReLU/dropout wrap."""
+    """Native GRU layers with clean hidden state and explicit output dropout."""
 
     def __init__(
         self,
@@ -133,14 +136,18 @@ class GRUCore(nn.Module):
         self.hidden_size = int(hidden_size)
         self.output_size = int(hidden_size)
         self.num_layers = int(num_layers)
+        if self.num_layers < 1:
+            raise ValueError("num_layers must be >= 1")
         self.output_wrap = "none"
-        self.rnn = nn.GRU(
-            self.input_size,
-            self.hidden_size,
-            num_layers=self.num_layers,
-            batch_first=True,
-            dropout=float(dropout) if self.num_layers > 1 else 0.0,
-        )
+        self.output_dropouts = nn.ModuleList([nn.Dropout(dropout) for _ in range(num_layers)])
+        layer_inputs = [self.input_size] + [self.hidden_size] * (self.num_layers - 1)
+        if self.num_layers == 1:
+            self.rnn = nn.GRU(layer_inputs[0], self.hidden_size, batch_first=True, dropout=0.0)
+        else:
+            self.rnns = nn.ModuleList(
+                [nn.GRU(size, self.hidden_size, batch_first=True, dropout=0.0)
+                 for size in layer_inputs]
+            )
 
     def forward(
         self,
@@ -149,11 +156,18 @@ class GRUCore(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Run the native GRU sequence path."""
 
-        return self.rnn(x, state) if state is not None else self.rnn(x)
+        next_states: list[torch.Tensor] = []
+        for layer_idx in range(self.num_layers):
+            layer = self.rnn if self.num_layers == 1 else self.rnns[layer_idx]
+            layer_state = None if state is None else state[layer_idx : layer_idx + 1]
+            hidden, next_state = layer(x, layer_state)
+            next_states.append(next_state)
+            x = self.output_dropouts[layer_idx](hidden)
+        return x, torch.cat(next_states, dim=0)
 
 
 class LSTMCore(nn.Module):
-    """Native PyTorch LSTM with no external LayerNorm/ReLU/dropout wrap."""
+    """Native LSTM layers with clean hidden/cell states and output dropout."""
 
     def __init__(
         self,
@@ -167,14 +181,18 @@ class LSTMCore(nn.Module):
         self.hidden_size = int(hidden_size)
         self.output_size = int(hidden_size)
         self.num_layers = int(num_layers)
+        if self.num_layers < 1:
+            raise ValueError("num_layers must be >= 1")
         self.output_wrap = "none"
-        self.rnn = nn.LSTM(
-            self.input_size,
-            self.hidden_size,
-            num_layers=self.num_layers,
-            batch_first=True,
-            dropout=float(dropout) if self.num_layers > 1 else 0.0,
-        )
+        self.output_dropouts = nn.ModuleList([nn.Dropout(dropout) for _ in range(num_layers)])
+        layer_inputs = [self.input_size] + [self.hidden_size] * (self.num_layers - 1)
+        if self.num_layers == 1:
+            self.rnn = nn.LSTM(layer_inputs[0], self.hidden_size, batch_first=True, dropout=0.0)
+        else:
+            self.rnns = nn.ModuleList(
+                [nn.LSTM(size, self.hidden_size, batch_first=True, dropout=0.0)
+                 for size in layer_inputs]
+            )
 
     def forward(
         self,
@@ -183,4 +201,16 @@ class LSTMCore(nn.Module):
     ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         """Run the native LSTM sequence path."""
 
-        return self.rnn(x, state) if state is not None else self.rnn(x)
+        next_h: list[torch.Tensor] = []
+        next_c: list[torch.Tensor] = []
+        for layer_idx in range(self.num_layers):
+            layer = self.rnn if self.num_layers == 1 else self.rnns[layer_idx]
+            layer_state = None if state is None else (
+                state[0][layer_idx : layer_idx + 1],
+                state[1][layer_idx : layer_idx + 1],
+            )
+            hidden, (h, c) = layer(x, layer_state)
+            next_h.append(h)
+            next_c.append(c)
+            x = self.output_dropouts[layer_idx](hidden)
+        return x, (torch.cat(next_h, dim=0), torch.cat(next_c, dim=0))

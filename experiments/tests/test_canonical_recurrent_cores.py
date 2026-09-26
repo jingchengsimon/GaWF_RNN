@@ -72,11 +72,14 @@ def test_native_gru_and_lstm_have_no_external_wrap() -> None:
 
 
 def test_public_clutter_registry_contains_only_six_models() -> None:
-    """Historical ablations are not public model choices after archival."""
+    """The six canonical models remain, alongside the three additive controls."""
 
     classes = get_model_classes(RNNConv, LSTMConv, GRUConv, GaWFRNNConv, MambaConv, S5Conv)
     assert tuple(classes) == ("rnn", "lstm", "gru", "gawf", "mamba", "s5")
     choices = next(
         action.choices for action in build_arg_parser()._actions if action.dest == "model_types"
     )
-    assert choices == ["rnn", "lstm", "gru", "gawf", "mamba", "s5"]
+    assert choices == [
+        "rnn", "lstm", "gru", "gawf", "mamba", "s5",
+        "rnn_fb_add", "gru_fb_add", "lstm_fb_add",
+    ]

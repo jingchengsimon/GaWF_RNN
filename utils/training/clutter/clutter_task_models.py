@@ -1,7 +1,6 @@
 """Canonical Clutter models: encoder, one recurrent/state-space core, and task heads.
 
-GaWF and RNN use LayerNorm-ReLU-dropout activity inside the recurrence with no tanh.
-GRU, LSTM, Mamba, and S5 expose their native layer outputs without an extra readout wrap.
+Each core drops its layer output while preserving its recurrent state.
 """
 
 from __future__ import annotations
@@ -11,6 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..recurrent_cores.gawf import GaWFCore
+from ..recurrent_cores.additive_feedback import AdditiveFeedbackCellCore
 from ..recurrent_cores.rnn import GRUCore, LSTMCore, RNNCore
 
 MAMBA_DEFAULT_D_MODEL = 170
@@ -171,7 +171,7 @@ class ClutterSequenceModel(nn.Module):
 
 
 class RNNConv(ClutterSequenceModel):
-    """Elman recurrence with LayerNorm-ReLU-dropout inside the loop."""
+    """Elman recurrence with LayerNorm-ReLU state and output dropout."""
 
     def __init__(
         self,
@@ -214,7 +214,7 @@ class RNNConv(ClutterSequenceModel):
 
 
 class GRUConv(ClutterSequenceModel):
-    """Native PyTorch GRU with no external activity wrap."""
+    """Native PyTorch GRU with explicit output dropout."""
 
     core_class = GRUCore
 
@@ -249,17 +249,154 @@ class GRUConv(ClutterSequenceModel):
     def rnn(self) -> nn.Module:
         """Expose the native recurrent module."""
 
-        return self.core.rnn
+        return self.core.rnn if self.num_layers == 1 else self.core.rnns
 
 
 class LSTMConv(GRUConv):
-    """Native PyTorch LSTM with no external activity wrap."""
+    """Native PyTorch LSTM with explicit output dropout."""
 
     core_class = LSTMCore
 
 
+class AdditiveFeedbackConv(ClutterSequenceModel):
+    """Single-layer recurrent control with detached additive task-logit feedback."""
+
+    is_gawf_model = False
+    is_feedback_control_model = True
+    cell_type = "rnn"
+
+    def __init__(
+        self,
+        num_classes: int,
+        num_pos: int,
+        kernel_size: int = 3,
+        device: str = "cuda",
+        input_channels: int = 2,
+        cnn_dropout: float = 0.0,
+        rnn_dropout: float = 0.5,
+        hidden_size: int = 256,
+        max_chars: int = 15,
+        predict_all_chars: bool = False,
+    ) -> None:
+        if predict_all_chars:
+            raise ValueError("Additive feedback requires character and position heads")
+        super().__init__(
+            num_classes, num_pos, hidden_size, kernel_size, device, input_channels,
+            cnn_dropout, rnn_dropout, max_chars, False,
+        )
+        self.output_feedback_dim = self.num_classes + self.num_pos
+        self.core = AdditiveFeedbackCellCore(
+            self.encoder_flatten_size,
+            hidden_size,
+            self.output_feedback_dim,
+            cell_type=self.cell_type,
+            dropout=rnn_dropout,
+        )
+        self.register_buffer("prev_feedback", None, persistent=False)
+        self.to(self.device)
+
+    @property
+    def feedback_dim(self) -> int:
+        """Return the number of raw task logits fed back to the cell."""
+
+        return self.output_feedback_dim
+
+    @property
+    def rnn(self) -> nn.Module:
+        """Expose native cell parameters for feedback-control analyses."""
+
+        return self.core.cell
+
+    @property
+    def LNormRNN(self) -> nn.LayerNorm | None:
+        """Expose the RNN LayerNorm when present."""
+
+        return self.core.norm
+
+    def reset_sequence_state(self) -> None:
+        """Start the next sequence with zero feedback."""
+
+        self.prev_feedback = None
+
+    def _compute_feedback(
+        self, char_t: torch.Tensor, pos_t: torch.Tensor
+    ) -> torch.Tensor:
+        """Concatenate raw character and position logits for the next step."""
+
+        return torch.cat((char_t, pos_t), dim=-1)
+
+    def feedback_initial_state(
+        self, batch_size: int, device: torch.device | str, dtype: torch.dtype
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """Return the clean initial state for feedback-control rollouts."""
+
+        return self.core.initial_state(batch_size, device, dtype)
+
+    def feedback_step(
+        self,
+        x_t: torch.Tensor,
+        state: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
+        feedback: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor | tuple[torch.Tensor, torch.Tensor]]:
+        """Advance one recurrent step for feedback-control rollouts."""
+
+        return self.core.step(x_t, state, feedback)
+
+    def forward(
+        self, x: torch.Tensor, use_feedback: bool = True, reset_feedback: bool = False
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Run the detached previous-logit feedback loop."""
+
+        encoded = self.encode_frames(x)
+        batch_size, frame_num = encoded.shape[:2]
+        if not use_feedback:
+            self.prev_feedback = None
+            output, _state = self.core.forward_no_feedback(encoded)
+            char_logits, pos_logits = self.classifier(output)
+            return char_logits, pos_logits
+
+        if reset_feedback or self.prev_feedback is None:
+            feedback = torch.zeros(
+                batch_size, self.feedback_dim, device=encoded.device, dtype=torch.float32
+            )
+        else:
+            feedback = self.prev_feedback.to(device=encoded.device, dtype=torch.float32)
+            if feedback.size(0) != batch_size:
+                raise ValueError("Cached feedback batch size differs; call reset_sequence_state")
+
+        state = self.core.initial_state(batch_size, encoded.device, encoded.dtype)
+        char_outputs: list[torch.Tensor] = []
+        pos_outputs: list[torch.Tensor] = []
+        for time_idx in range(frame_num):
+            output, state = self.core.step(encoded[:, time_idx, :], state, feedback)
+            char_t, pos_t = self.classifier(output)
+            feedback = self._compute_feedback(char_t, pos_t).detach()
+            char_outputs.append(char_t)
+            pos_outputs.append(pos_t)
+        self.prev_feedback = feedback.to(dtype=torch.float32)
+        return torch.stack(char_outputs, dim=1), torch.stack(pos_outputs, dim=1)
+
+
+class RNNAdditiveFeedbackConv(AdditiveFeedbackConv):
+    """LayerNorm-ReLU RNN with additive feedback and output-only dropout."""
+
+    cell_type = "rnn"
+
+
+class GRUAdditiveFeedbackConv(AdditiveFeedbackConv):
+    """Native GRU gates with additive feedback and output-only dropout."""
+
+    cell_type = "gru"
+
+
+class LSTMAdditiveFeedbackConv(AdditiveFeedbackConv):
+    """Native LSTM gates with additive feedback and output-only dropout."""
+
+    cell_type = "lstm"
+
+
 class MambaConv(ClutterSequenceModel):
-    """Projected residual Mamba stack with no external activity wrap."""
+    """Projected residual Mamba stack with branch output dropout."""
 
     uses_mamba_core = True
 
@@ -287,12 +424,15 @@ class MambaConv(ClutterSequenceModel):
         )
         from ..recurrent_cores.mamba import MambaCore
 
+        if mamba_dropout != 0.0:
+            raise ValueError("mamba_dropout is obsolete; use rnn_dropout for every core")
+
         self.mamba_d_model = int(mamba_d_model)
         self.core = MambaCore(
             self.encoder_flatten_size,
             mamba_d_model,
             num_layers=mamba_num_layers,
-            dropout=mamba_dropout,
+            dropout=rnn_dropout,
             d_state=mamba_d_state,
             d_conv=mamba_d_conv,
             expand=mamba_expand,
@@ -307,7 +447,7 @@ class MambaConv(ClutterSequenceModel):
 
 
 class S5Conv(ClutterSequenceModel):
-    """Projected residual S5 stack with no external activity wrap."""
+    """Projected residual S5 stack with branch output dropout."""
 
     uses_s5_core = True
 
@@ -333,6 +473,9 @@ class S5Conv(ClutterSequenceModel):
         )
         from ..recurrent_cores.s5 import S5Core
 
+        if s5_dropout != 0.0:
+            raise ValueError("s5_dropout is obsolete; use rnn_dropout for every core")
+
         self.s5_d_model = int(s5_d_model)
         self.s5_state_size = int(s5_state_size)
         self.core = S5Core(
@@ -340,7 +483,7 @@ class S5Conv(ClutterSequenceModel):
             s5_d_model,
             s5_state_size,
             num_layers=s5_num_layers,
-            dropout=s5_dropout,
+            dropout=rnn_dropout,
         )
         self.to(self.device)
 
@@ -509,10 +652,11 @@ class GaWFRNNConv(ClutterSequenceModel):
         pos_outputs: list[torch.Tensor] = []
         for time_idx in range(frame_num):
             if self.num_layers == 1:
-                hidden = self.core(encoded[:, time_idx, :], state, output_feedback)
-                state = hidden
+                hidden, state = self.core.step_with_state(
+                    encoded[:, time_idx, :], state, output_feedback
+                )
             else:
-                hidden, state = self.core(
+                hidden, state = self.core.step_with_state(
                     encoded[:, time_idx, :],
                     state,
                     self._layer_feedbacks(state, output_feedback),

@@ -52,7 +52,7 @@ class MambaCore(nn.Module):
                 for _ in range(self.num_layers)
             ]
         )
-        self.layer_dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+        self.output_dropouts = nn.ModuleList([nn.Dropout(dropout) for _ in range(num_layers)])
 
     def forward(
         self,
@@ -65,8 +65,7 @@ class MambaCore(nn.Module):
         x = self.input_proj(x)
         layer_finals: list[torch.Tensor] = []
         for layer_idx, layer in enumerate(self.layers):
-            x = layer(x) + x
+            branch = layer(x)
+            x = x + self.output_dropouts[layer_idx](branch)
             layer_finals.append(x[:, -1, :])
-            if layer_idx < self.num_layers - 1:
-                x = self.layer_dropout(x)
         return x, torch.stack(layer_finals, dim=0)

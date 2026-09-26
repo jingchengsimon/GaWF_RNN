@@ -775,10 +775,13 @@ def get_model_classes(
     gawf_rnn_conv_class,
     mamba_conv_class,
     s5_conv_class,
+    rnn_fb_add_class=None,
+    gru_fb_add_class=None,
+    lstm_fb_add_class=None,
 ):
-    """Return the six canonical public model classes."""
+    """Return the six canonical models and optional additive-feedback controls."""
 
-    return {
+    classes = {
         "rnn": rnn_conv_class,
         "lstm": lstm_conv_class,
         "gru": gru_conv_class,
@@ -786,6 +789,14 @@ def get_model_classes(
         "mamba": mamba_conv_class,
         "s5": s5_conv_class,
     }
+    for key, model_class in (
+        ("rnn_fb_add", rnn_fb_add_class),
+        ("gru_fb_add", gru_fb_add_class),
+        ("lstm_fb_add", lstm_fb_add_class),
+    ):
+        if model_class is not None:
+            classes[key] = model_class
+    return classes
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -796,7 +807,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=str,
         nargs="+",
         default=["rnn"],
-        choices=["rnn", "lstm", "gru", "gawf", "mamba", "s5"],
+        choices=[
+            "rnn", "lstm", "gru", "gawf", "mamba", "s5",
+            "rnn_fb_add", "gru_fb_add", "lstm_fb_add",
+        ],
         help='Model types to train (default: ["rnn"])',
     )
     parser.add_argument(
@@ -843,7 +857,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--s5_dropout",
         type=float,
         default=0.0,
-        help="Dropout between stacked S5 layers (default: 0).",
+        help="Legacy option; must be 0. Use --dropout for all six cores.",
     )
     parser.add_argument(
         "--s5_ssm_lr_scale",
@@ -887,12 +901,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Dropout p for CNN encoder (dropout2d); repeat for grid search (default: [0])",
     )
     parser.add_argument(
+        "--dropout",
         "--rnn_dropout",
+        dest="rnn_dropout",
         type=float,
         default=0.5,
         help=(
-            "GaWF/RNN in-loop activity dropout; for stacked GRU/LSTM it is inter-layer "
-            "dropout. Recorded as rdo (default: 0.5)."
+            "Output dropout p for every layer of all six sequence cores. "
+            "--rnn_dropout is a legacy alias; recorded as rdo (default: 0.5)."
         ),
     )
     parser.add_argument(

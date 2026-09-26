@@ -44,9 +44,12 @@ from utils.training.clutter.clutter_train_engine import (
 
 from utils.training.clutter.clutter_task_models import (
     GaWFRNNConv,
+    GRUAdditiveFeedbackConv,
     GRUConv,
+    LSTMAdditiveFeedbackConv,
     LSTMConv,
     MambaConv,
+    RNNAdditiveFeedbackConv,
     RNNConv,
     S5Conv,
 )
@@ -759,6 +762,12 @@ def network_train(
 if __name__ == "__main__":
     parser = build_arg_parser()
     args = parser.parse_args()
+    if not 0.0 <= args.rnn_dropout < 1.0:
+        parser.error("--dropout must be in [0, 1)")
+    if args.s5_dropout != 0.0:
+        parser.error("--s5_dropout is obsolete; use --dropout for S5")
+    if any(value != 0.0 for value in args.cnn_dropout):
+        parser.error("--cnn_dropout must be 0 in the output-only sequence dropout protocol")
     if args.num_layers <= 0:
         parser.error("--num_layers must be >= 1")
     if args.gawf_feedback_lr_scale <= 0:
@@ -865,6 +874,9 @@ if __name__ == "__main__":
         GaWFRNNConv,
         MambaConv,
         S5Conv,
+        RNNAdditiveFeedbackConv,
+        GRUAdditiveFeedbackConv,
+        LSTMAdditiveFeedbackConv,
     )
 
     model_types = args.model_types
@@ -983,12 +995,14 @@ if __name__ == "__main__":
             width_kwarg = "s5_d_model"
             model_kwargs["s5_state_size"] = state_size
             model_kwargs["s5_num_layers"] = args.s5_num_layers
-            model_kwargs["s5_dropout"] = args.s5_dropout
         elif model_type == "gawf":
             model_kwargs["feedback_dim"] = feedback_dim
             model_kwargs["num_layers"] = num_layers
         elif model_type in ("rnn", "gru", "lstm"):
             model_kwargs["num_layers"] = num_layers
+        elif model_type in ("rnn_fb_add", "gru_fb_add", "lstm_fb_add"):
+            if num_layers != 1:
+                raise ValueError(f"{model_type} supports exactly one layer")
         mdl = ModelClass(
             num_classes=10,
             num_pos=num_pos,
@@ -1074,6 +1088,7 @@ if __name__ == "__main__":
             "weight_decay": float(weight_decay),
             "cnn_dropout": float(cnn_dropout),
             "rnn_dropout": float(rnn_dropout),
+            "dropout_protocol": "per_layer_output_only_clean_state_v1",
             "optimizer": args.optim,
             "data_suffix": args.data_suffix,
             "eval_data_suffix": eval_suffix,
@@ -1177,18 +1192,21 @@ if __name__ == "__main__":
         core_module = getattr(mdl, "core", None)
         metric_summary["core_rnn_activation"] = getattr(core_module, "rnn_activation", None)
         metric_summary["core_output_wrap"] = getattr(core_module, "output_wrap", None)
+        metric_summary["dropout_protocol"] = "per_layer_output_only_clean_state_v1"
         metric_summary["core_wrap_recurrent_state"] = bool(
             getattr(core_module, "wrap_recurrent_state", False)
         )
         metric_summary["gawf_core_semantics"] = (
-            "feedback_gated_in_loop_ln_relu_dropout_no_tanh"
+            "feedback_gated_in_loop_ln_relu_clean_state_output_dropout_no_tanh"
             if model_type == "gawf"
             else None
         )
         if train_lr != lr:
             metric_summary["requested_lr"] = lr
             metric_summary["effective_lr"] = train_lr
-        if model_type in ("rnn", "gru", "lstm", "gawf"):
+        if model_type in (
+            "rnn", "gru", "lstm", "gawf", "rnn_fb_add", "gru_fb_add", "lstm_fb_add"
+        ):
             metric_summary["num_layers"] = int(num_layers)
         metric_summary["core_param_count"] = int(sum(p.numel() for p in mdl.core.parameters()))
         metric_summary["total_param_count"] = int(sum(p.numel() for p in mdl.parameters()))
@@ -1198,7 +1216,6 @@ if __name__ == "__main__":
             metric_summary["s5_d_model"] = model_width
             metric_summary["s5_state_size"] = state_size
             metric_summary["s5_num_layers"] = args.s5_num_layers
-            metric_summary["s5_dropout"] = args.s5_dropout
             metric_summary["s5_ssm_lr_scale"] = args.s5_ssm_lr_scale
         elif model_type == "gawf":
             metric_summary["feedback_dim"] = (
@@ -1213,6 +1230,9 @@ if __name__ == "__main__":
                 metric_summary["layer_feedback_dims"] = [
                     int(dim) for dim in mdl.core.layer_feedback_dims
                 ]
+        elif model_type in ("rnn_fb_add", "gru_fb_add", "lstm_fb_add"):
+            metric_summary["feedback_dim"] = int(mdl.feedback_dim)
+            metric_summary["feedback_semantics"] = "independent_affine_bias_detached_logits"
         if gawf_diag_path is not None:
             metric_summary["gawf_diag_path"] = gawf_diag_path
             metric_summary["gawf_diag_every"] = args.gawf_diag_every

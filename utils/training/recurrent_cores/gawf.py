@@ -87,8 +87,9 @@ class GaWFCore(nn.Module):
         self.gate_tau = float(gate_tau)
         self.num_layers = int(num_layers)
         self.rnn_activation = "identity"
-        self.output_wrap = "in_loop_ln_relu_dropout"
-        self.wrap_recurrent_state = True
+        self.output_wrap = "in_loop_ln_relu_output_dropout"
+        self.wrap_recurrent_state = False
+        self.output_dropouts = nn.ModuleList([nn.Dropout(self.dropout) for _ in range(num_layers)])
 
         dims = (
             [int(value) for value in layer_feedback_dims]
@@ -206,13 +207,13 @@ class GaWFCore(nn.Module):
             "feedback_norm_max": state["feedback_norm_max"],
         }
 
-    def step(
+    def step_with_state(
         self,
         x_t: torch.Tensor,
         h_prev: torch.Tensor | Sequence[torch.Tensor],
         feedback: torch.Tensor | Sequence[torch.Tensor],
-    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
-        """Advance one timestep; wrapped activity is both output and next state."""
+    ) -> tuple[torch.Tensor, torch.Tensor | list[torch.Tensor]]:
+        """Advance one timestep and return dropped output plus clean next state."""
 
         if self.num_layers == 1:
             if not isinstance(h_prev, torch.Tensor) or not isinstance(feedback, torch.Tensor):
@@ -293,12 +294,26 @@ class GaWFCore(nn.Module):
                 recurrent_current = torch.einsum("bi,bhi,hi->bh", state, gate_hh, rnn.weight_hh_l0)
                 preactivation = input_current + recurrent_current + rnn.bias_ih_l0 + rnn.bias_hh_l0
 
-            layer_input = F.dropout(F.relu(norm(preactivation)), self.dropout, self.training)
-            next_states.append(layer_input)
+            hidden = F.relu(norm(preactivation))
+            next_states.append(hidden)
+            layer_input = self.output_dropouts[layer_idx](hidden)
 
         if self.num_layers == 1:
-            return next_states[0]
+            return layer_input, next_states[0]
         return layer_input, next_states
+
+    def step(
+        self,
+        x_t: torch.Tensor,
+        h_prev: torch.Tensor | Sequence[torch.Tensor],
+        feedback: torch.Tensor | Sequence[torch.Tensor],
+    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
+        """Keep the historical single-layer return shape for existing callers."""
+
+        output, state = self.step_with_state(x_t, h_prev, feedback)
+        if self.num_layers == 1:
+            return output
+        return output, state
 
     def forward(
         self,

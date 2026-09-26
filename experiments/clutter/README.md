@@ -1,14 +1,70 @@
 # Clutter protocol
 
-The publication-oriented Clutter training is complete. Its retained figures and minimal numeric
-inputs live in `results/save/` and `results/save_data/`; reproduction scripts remain in
+**Protocol status (2026-09-25):** The earlier tanh GaWF and the later
+`gawf_legacy_notanh` results are historical, non-formal results for the current
+output-only dropout definition. The existing result trees and frozen figure-input manifest
+remain provenance for those older protocols. No 40h ten-seed result has been completed under
+the current six-model definition. The 60 planned units are six models × seeds 1–10; they require
+a new result root and protocol-tagged checkpoints.
+
+The pending 40h rerun has **60 logical model-seed units**, with no new scheduler IDs assigned yet:
+
+| Model | Width | Seeds | Units |
+|---|---:|---|---:|
+| RNN-ReLU | 275 | 01–10 | 10 |
+| LSTM | 80 | 01–10 | 10 |
+| GRU | 105 | 01–10 | 10 |
+| GaWF-ReLU | 256 | 01–10 | 10 |
+| Mamba | 170 | 01–10 | 10 |
+| S5 | 256, state 128 | 01–10 | 10 |
+
+The widths and optimizer settings remain the existing parameter-matched choices; this rerun
+changes dropout placement and uses one shared `--dropout 0.5` with `--cnn_dropout 0`.
+
+## Output-only dropout 330-unit rolling campaign
+
+`experiments/clutter/amarel/submit_clutter_330_rolling.sh` is the one-command Amarel launcher.
+It submits one GPU smoke covering the nine model types, then a dependent CPU controller on the
+`main` partition. The controller submits sparse GPU arrays into a rolling window of at most 90
+campaign tasks and counts every user's expanded `PENDING`/`RUNNING` array element before filling
+vacancies. It caps the user-wide submitted count at 99 against the observed 100-task limit, with
+one spare slot. Each short controller job schedules a successor 15 minutes later; no process stays
+on a login node. An ambiguous submission or missing final artifact blocks that unit for review
+instead of risking a duplicate writer.
+
+The fixed task map is `0–59` 40h parameter-matched six-model, `60–89` 40h additive-feedback
+three-model, `90–149` 4h equal-width H=128 six-model, then `150–209`, `210–269`, and `270–329`
+for parameter-matched six-model 4h, 10h, and 20h respectively. Every group has ten seeds per
+model. All units train 150 epochs with `patience=0`, shared 40h validation, `--dropout 0.5`,
+`--cnn_dropout 0`, standard uint8 mmap/device-cast pipeline, and five-epoch auto-resume.
+RNN-FB uses H=271 for the updated parameter match. Old results from Amarel or SJC never satisfy
+the new campaign's completion gate.
+
+Training results use the isolated suffix
+`results/data/clutter/runs/clutter_output_only_330_v1/<group>/<scale>/<model>-seedNN/`.
+Controller state, source stamp, smoke report, and Slurm logs live below
+`results/artifacts/clutter_output_only_330_v1/`. The controller requires a matching source
+commit, `.done` receipt, final metrics with the output-only protocol tag, model checkpoint, and
+history before counting a unit complete.
+
+```bash
+AIM3_RESULTS_PATH=/scratch/js3269/results \
+AIM3_CLUTTER_DATA_DIR=/scratch/js3269/stimuli \
+bash experiments/clutter/amarel/submit_clutter_330_rolling.sh --dry-run
+```
+
+Omit `--dry-run` only after the new source is committed and fast-forwarded into a clean Amarel
+checkout. The submitter refuses a reused result or artifact root.
+
+The earlier publication-oriented Clutter training is complete. Its retained figures and minimal
+numeric inputs live in `results/save/` and `results/save_data/`; reproduction scripts remain in
 `utils/analysis/`. Historical grids are not part of the active project tree.
 
 The six manuscript-figure input paths are frozen in
 `experiments/clutter/iclr_figure_data_manifest.json`. Use its exact Amarel source paths and local
 visualization-cache mappings for layout-only redraws; do not search for substitute result trees.
 
-The active data-scale behavior campaign uses
+The historical data-scale behavior campaign used
 `experiments/clutter/amarel/submit_clutter_data_scale_formal.sh`. Each scale has 60 task IDs:
 `task_id = model_index * 10 + seed - 1`, with model order
 `rnn,lstm,gru,gawf,mamba,s5` and seeds 1-10. Runs use the fixed best6 hyperparameters, 150 epochs,
@@ -56,8 +112,10 @@ Results use `data/clutter/runs/data_scale/clutter_h128_comparison_4h_ep150/<mode
 The exact source snapshot, launcher, commands, generation evidence and smoke records are
 registered in `experiments/monitoring/jobs/clutter-4h-h128-comparison-l1-ep150-rnn-lstm-gru-gawf-mamba-s5-seeds1-10.json`.
 
-After all 60 units validate, render the equal-width multiseed summary locally from the copied
-metrics JSON and PKL files:
+After all 60 training units validate, evaluate every identity-selected checkpoint on the
+joint-balanced movie with 512-frame rollouts while excluding each rollout's initial frame. Copy
+those test-accuracy and target-switch-recovery artifacts beside the local metrics JSON and PKL
+files, then render the equal-width multiseed summary:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 conda run -n aim3_rnn python -B \
@@ -67,9 +125,10 @@ PYTHONDONTWRITEBYTECODE=1 conda run -n aim3_rnn python -B \
 The script writes seed-level CSV/NPZ and a manifest below
 `results/data/analysis/G_behaviour/h128_4h_multiseed_summary/`, a development PNG below
 `results/figs/G_behaviour/`, and the requested PDF at
-`results/save/Fig2_clutter_4h_h128_multiseed_2x4.pdf`. Its Location/Identity rows show best
-validation accuracy, validation-accuracy and validation-loss trajectories, and the
-train-validation gap. Every point and SEM sample is one independent training seed.
+`results/save/Fig2_clutter_4h_h128_multiseed_2x4.pdf`. The retained filename is historical; the
+figure is a 2-by-3 layout showing 512-frame joint-balanced test accuracy, validation-loss
+trajectories, and 512-frame joint-balanced target-switch recovery for Location and Identity.
+Every point and SEM sample is one independent training seed.
 
 ## Non-multiplicative feedback controls
 
@@ -87,8 +146,9 @@ The parameter-matching target is the complete GaWF `H=256` Clutter model with 58
 parameters. All controls use the same detached previous-step 19-D raw-logit feedback and the
 same model-family hyperparameters as the corresponding formal baseline; there is no tuning.
 
-The corrected seeds 1--10 additive-feedback campaign uses native no-wrap recurrent semantics and
-an independent feedback affine with its own trainable bias:
+The earlier seeds 1--10 additive-feedback campaign used native no-wrap recurrent semantics and
+an independent feedback affine with its own trainable bias. These counts and results are historical
+under the current output-only dropout and RNN-ReLU definition:
 
 | Model | Width | Full trainable parameters | LR | Weight decay |
 |---|---:|---:|---:|---:|
@@ -99,6 +159,14 @@ an independent feedback affine with its own trainable bias:
 For each model, `W_fb f_(t-1) + b_fb` is added to the native cell preactivation. The feedback
 parameters share the cell optimizer settings and initialization bound. This campaign reuses the
 family LR/weight decay without additional tuning.
+
+The pending rerun keeps that feedback affine and uses clean-state output-only dropout for all
+three controls. `rnn_fb_add` additionally switches to the canonical in-loop LayerNorm-ReLU
+equation, without tanh. At the previously used widths, the new full-model parameter counts are
+587,139 (RNN-FB, H=272), 584,665 (GRU-FB, H=103), and 585,564 (LSTM-FB, H=79). Against the
+586,067-parameter GaWF target, RNN-FB H=271 gives the closer match at 585,401 parameters;
+use H=271 for the new parameter-matched rerun. The other widths and family optimizer settings
+stay as recorded above. Use a distinct result root and protocol label for all 30 new units.
 
 On SJC, `experiments/remote/run_sjc_clutter_feedback_controls.sh` runs a mandatory seed-1,
 200-step sanity gate and then distributes four models times ten seeds across GPUs 0 and 1. Each

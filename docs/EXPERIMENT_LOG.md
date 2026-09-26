@@ -531,3 +531,40 @@
 - **接口（Interface）：** GaWF 不再提供 feedback-off path 或 `--nofb`；`--dz` 与
   `--num_layers` 保留。历史结果 stem 仅作为当前六种 checkpoint 的 input-only aliases，
   新训练不再生成旧 variant 名称。
+
+## 2026-09-25 — Clutter 六模型统一 output-only dropout 定义
+
+- **定义修订（Protocol correction）：** `gawf`/`rnn` 的 loop 内 `h_t` 保持
+  `ReLU(LayerNorm(z_t))`，只对传往 readout/下一层的 `out_t` 施加 `Dropout(p)`；GRU/LSTM
+  每层 native state 保持干净，对每层输出施加同一 `p`。GaWF 的 output logits 继续参与下一时刻
+  feedback。S5/Mamba 在 native mixer/SSM 输出分支、residual add 之前施加 `Dropout(p)`，
+  不直接 mask SSM state 或 residual stream。Clutter formal 使用 `--dropout 0.5`、
+  `--cnn_dropout 0`，新 checkpoint 写入 `dropout_protocol` 防止误接旧定义。
+- **状态（Status）：** 本地 CPU deterministic 测试覆盖六个 core 的 dropout 路径；新的
+  40h × 10-seed 训练结果尚未产生，旧结果不归入该定义。
+
+## 2026-09-25 — 三个 additive-feedback controls 对齐当前 Clutter 定义
+
+- **改动（Change）：** `rnn_fb_add`、`gru_fb_add`、`lstm_fb_add` 保留独立的
+  `W_fb f_(t-1) + b_fb` 反馈仿射项。RNN-FB 改为 loop 内 `LayerNorm -> ReLU`，无 inner
+  `tanh`；三个 cell 都只对 layer output 施加 dropout，直接 recurrent state 保持干净。
+- **原因（Reason）：** 使 additive-feedback 对照与当前同家族 baseline 的 core/dropout
+  定义相符；旧 no-wrap RNN-FB 与旧 dropout 结果不适用于本轮正式比较。
+- **证据（Evidence）：** 本地 deterministic core tests 检查固定外源反馈下 p=0/0.5 的
+  recurrent state 完全一致、train 输出 dropout 生效、eval 输出一致，以及 RNN 对齐无反馈
+  RNN、GRU/LSTM 对齐 native cell。H=271 的新 RNN-FB 参数量 585,401，比旧 H=272
+  在新定义下的 587,139 更接近 GaWF 586,067 的参数匹配目标。
+- **现状（Current）：** 修订后 30 个 model-seed 单元尚未训练，需独立结果根目录。
+
+## 2026-09-25 — 前两版 GaWF 结果转为历史非正式结果
+
+- **第一版（tanh，历史非正式）：** `tanh(preactivation) → LayerNorm → ReLU → Dropout`；
+  dropout 后的 `h_t` 同时是 layer output 与下一时刻 recurrent state。此前
+  `best6_multiseed_40h_ep150` 及旧 data-scale campaign 中的 GaWF 数值保留作历史分析，
+  不代表新的 output-only dropout 定义。
+- **第二版（no-tanh，历史非正式）：** `gawf_legacy_notanh` 去掉内层 `tanh`，但仍以
+  `Dropout(ReLU(LayerNorm(z_t)))` 作为下一时刻 recurrent state。其 40h × 10-seed
+  checkpoints 和派生分析保留原始 provenance；相对于第三版也不再是正式结果。
+- **第三版（当前待验证定义）：** `h_t=ReLU(LayerNorm(z_t))` 进入下一时刻 recurrence，
+  `out_t=Dropout(h_t)` 进入下一层或 readout；output logits 继续提供 GaWF feedback。
+  截至本次登记，第三版尚无 40h × 10-seed 完成结果，不能沿用前两版数值填入新比较。

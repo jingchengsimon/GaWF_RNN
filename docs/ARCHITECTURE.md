@@ -77,14 +77,16 @@ The gate multiplies every element of `W_ih` and `W_hh`. The current reported GaW
 
 ```text
 z_t = (gate_ih * W_ih) x_t + (gate_hh * W_hh) h_{t-1} + b_ih + b_hh
-h_t = dropout(ReLU(LayerNorm(z_t)))  # layer output and next recurrent state
+h_t = ReLU(LayerNorm(z_t))  # clean next recurrent state
+out_t = Dropout(h_t)       # layer output to readout or next layer
 ```
 
 The matched RNN removes only the feedback-conditioned gates:
 
 ```text
 z_t = W_ih x_t + W_hh h_{t-1} + b_ih + b_hh
-h_t = dropout(ReLU(LayerNorm(z_t)))  # layer output and next recurrent state
+h_t = ReLU(LayerNorm(z_t))  # clean next recurrent state
+out_t = Dropout(h_t)       # layer output to readout or next layer
 ```
 
 GaWF and RNN compute these recurrences explicitly. Their ``rnn.weight_ih_l0``,
@@ -95,8 +97,8 @@ calls ``nn.RNN`` or inherits its default ``tanh`` activation.
 For one layer, omitted Clutter `--dz` retains output-sized legacy feedback; explicit `--dz > 0`
 uses a projector. For multiple layers, direct feedback uses the detached adjacent upper hidden
 state at non-final layers and the detached previous task output at the final layer. Projected
-mode gives each layer its own U/V pair and projector dimension. Each layer carries the wrapped
-activity above as both its output and its next recurrent state.
+mode gives each layer its own U/V pair and projector dimension. Each layer carries the clean
+`h_t` to the next time step and sends `Dropout(h_t)` to the next layer or readout.
 
 `prev_feedback` is detached runtime state, registered as a non-persistent buffer in Clutter.
 Resume and best-validation loading filter legacy copies, reset the runtime cache, and use
@@ -125,9 +127,20 @@ channels or 6x6 spatial structure.
 `ClutterCharPosHead`. The public wrappers are exactly `RNNConv`, `GRUConv`, `LSTMConv`,
 `GaWFRNNConv`, `MambaConv`, and `S5Conv`. `GaWFRNNConv` owns both single- and multi-layer paths via
 `--num_layers`; there is no separate multi-layer class. GaWF feedback is always active after the
-zero-initialized first frame. GRU/LSTM return the native PyTorch layer output. Mamba/S5 return the
-projected residual stack output. None of these four baselines receives an external
-`LayerNorm -> ReLU -> dropout` wrap.
+zero-initialized first frame. All six cores use the same `--dropout` probability on every layer's
+output, including the final layer before the readout. RNN/GRU carry clean `h`, LSTM carries clean
+`(h, c)`, and GaWF carries clean `h`; GaWF's output logits remain its task feedback. Mamba/S5 apply
+dropout to each native mixer/SSM output branch before the residual add; neither has an outer norm
+in this wrapper. Their internal state and residual stream are not directly dropped. The CNN uses
+`--cnn_dropout 0` for this protocol.
+
+The Clutter additive-feedback controls `rnn_fb_add`, `gru_fb_add`, and `lstm_fb_add` use the
+same encoder and task heads in single-layer closed loops. Their independent
+`W_fb f_(t-1) + b_fb` acts on the cell preactivation, with detached previous character/position
+logits as feedback. RNN-FB uses the canonical in-loop `LayerNorm -> ReLU` state equation with no
+inner tanh; GRU-FB and LSTM-FB retain their native gate equations. Each core applies the shared
+dropout only to its readout-facing output, keeping its direct recurrent state clean. The dropout
+can still influence later states indirectly because its readout logits supply task feedback.
 
 `clutter_train_helpers.py` owns CLI construction, paths, dataset creation, logging, model
 registration, seeding, and saved summaries. `clutter_train_acceleration.py` owns loaders, AMP,
