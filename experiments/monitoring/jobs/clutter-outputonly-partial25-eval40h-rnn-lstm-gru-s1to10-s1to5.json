@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "id": "clutter-outputonly-partial25-eval40h-rnn-lstm-gru-s1to10-s1to5",
+  "description": "Reset-excluded standard test accuracy and joint-balanced target-switch recovery for the first 25 completed output-only 40h checkpoints (RNN/LSTM seeds 1-10, GRU seeds 1-5).",
+  "host": "amarel",
+  "status": "cancelled",
+  "source_commit": "a671eeac912008a4d39bddce7dd390e21da1bdb8",
+  "remote_root": "/cache/home/js3269/projects/aim3_gawf_rnn_snapshots/clutter_output_only_330_v1",
+  "environment": {
+    "name": "aim3_rnn",
+    "conda_init": "/home/js3269/enter/etc/profile.d/conda.sh"
+  },
+  "scheduler": {
+    "type": "slurm",
+    "job_ids": [
+      "61870320"
+    ],
+    "run_ids": [],
+    "collect_gpu": true
+  },
+  "paths": {
+    "log_globs": [
+      "/scratch/js3269/results/artifacts/clutter_output_only_330_partial25_eval_20260926/61870320.out",
+      "/scratch/js3269/results/artifacts/clutter_output_only_330_partial25_eval_20260926/61870320.err"
+    ],
+    "status_dir": "/scratch/js3269/results/artifacts/clutter_output_only_330_partial25_eval_20260926/status",
+    "result_paths": [
+      "/scratch/js3269/results/data/analysis/clutter_output_only_330_partial25_eval_20260926"
+    ],
+    "data_path": "/scratch/js3269/stimuli"
+  },
+  "tracking": {
+    "expected_units": 50,
+    "auto_complete": true,
+    "result_globs": [
+      "/scratch/js3269/results/data/analysis/clutter_output_only_330_partial25_eval_20260926/test/*/reset_excluded_test_accuracy.json",
+      "/scratch/js3269/results/data/analysis/clutter_output_only_330_partial25_eval_20260926/recovery/*/fg_switch_offset_acc_*.npz"
+    ],
+    "done_glob": "/scratch/js3269/results/artifacts/clutter_output_only_330_partial25_eval_20260926/status/*-seed*.done",
+    "fail_glob": "/scratch/js3269/results/artifacts/clutter_output_only_330_partial25_eval_20260926/status/*-seed*.fail",
+    "units": []
+  },
+  "notes": [
+    "The fixed 25-checkpoint cohort is RNN/LSTM seeds1-10 and GRU seeds1-5 from the validated matched40/40h 330 campaign output.",
+    "Standard test: 40h-uint8, sequence_length=32, exclude timestep0. Recovery: 40h-float32-jointswitch-balanced-10digit-unique, sequence_length=32, window_radius=10, exclude timestep0.",
+    "One GPU, 16 CPUs, 64G, Ada Lovelace, 12h. New result and artifact roots; no existing training outputs are modified.",
+    "This evaluation supplies the test and recovery panels of the local best18 partial25 visualization; training histories supply validation loss."
+  ],
+  "created_at": "2026-09-26T11:04:52.019745+00:00",
+  "updated_at": "2026-09-26T11:22:39+00:00"
+}
